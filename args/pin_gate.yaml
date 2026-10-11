@@ -108,6 +108,14 @@ pin_census:
     - docker-compose*.yml
     - docker-compose*.yaml
 
+  # External MCP server registries (rea-wire-01). A stdio server's command
+  # decides which bytes run, the same decision as an install. It is pinned when
+  # its `package:` names an exact version and its command resolves nothing
+  # itself (no `npx`, no `@latest`). Pins seen are listed under
+  # `mcp_server_pins`, so a reader can tell "pinned" from "not scanned".
+  mcp_server_files:
+    - args/external_mcp_servers.yaml
+
   # An EXCLUSION asserts the unpinned reference is CORRECT here — a different
   # claim from a census entry, and it must not count against the ceiling we are
   # driving down. Every one needs a written reason. EMPTY at adoption: every site

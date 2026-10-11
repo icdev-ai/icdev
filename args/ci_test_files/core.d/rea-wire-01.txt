@@ -1,0 +1,3 @@
+tests/test_rea_external_mcp.py
+tests/test_mcp_client.py
+tests/agent_runtime/test_external_mcp_wiring.py

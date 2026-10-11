@@ -1,0 +1,4729 @@
+{
+ "_comment": "rea-wire-01: recorded from rea-agents 6.4.0 (Windows, Node 24.11.0). `tools` is a SUBSET of the real tools/list (every allowlisted tool plus four that must never be exposed), name/description/inputSchema only. `effects` is dist/contracts/toolEffects.js for all 170 tools, true flags only. `responses` replays a real tools/call on the rea-spike-01 Fixture.dll, local path prefix rewritten to SCRATCH.",
+ "package": "rea-agents",
+ "version": "6.4.0",
+ "server_info": {
+  "name": "rea",
+  "version": "6.4.0"
+ },
+ "tools": [
+  {
+   "name": "inspect_native_load_image",
+   "description": "Verify the provider's loaded DOS MZ or explicitly selected COM image against its immutable target snapshot: complete original/modified source-byte digests, header/module file mappings and memory digests, relocations and external entry. Returns measured observations and independent checks with mismatch coordinates. COM verification includes its imposed entry register context and does not claim PSP/runtime coverage. Overlay and uninitialized coverage remain explicit; other formats return unsupported. Does not execute or modify the target.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {},
+    "additionalProperties": false,
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "inspect_native_data_type",
+   "description": "Inspect one recovered type by exact database category path or defined typed data address. Returns observed size, alignment, packing, fields, bitfields, enum values, and child type identities; source-level authority and flexible-tail semantics remain unknown unless substantiated.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "type": {
+      "$ref": "#/$defs/__schema0"
+     },
+     "address": {
+      "$ref": "#/$defs/__schema1"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema2",
+      "description": "Exact provider document or program identity."
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema1": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "type": "/MyStruct"
+     }
+    ]
+   }
+  },
+  {
+   "name": "inspect_native_instruction",
+   "description": "Inspect one exact instruction address: decoded bytes, mnemonic, ordered operand tokens, flow and typed references. Memory addressing decomposition is unavailable when the provider supplies only tokens. Data, interior instruction addresses and undecodable bytes are distinct outcomes.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "address": {
+      "$ref": "#/$defs/__schema0"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Exact provider document or program identity."
+     }
+    },
+    "required": [
+     "address"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema1": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "address": "0x1000"
+     }
+    ]
+   }
+  },
+  {
+   "name": "resolve_native_call_targets",
+   "description": "Resolve one explicit static call site using typed provider call references. Preserves ambiguous targets as candidates and unresolved computed calls as unknown; does not execute code or traverse a call graph.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "address": {
+      "$ref": "#/$defs/__schema0"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Exact provider document or program identity."
+     }
+    },
+    "required": [
+     "address"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema1": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "address": "0x1000"
+     }
+    ]
+   }
+  },
+  {
+   "name": "address_name",
+   "description": "Resolve the primary analyzed name at a code or data address. Headless providers require an explicit address; GUI providers may default to their current cursor. Null means the provider has no primary name at that address.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "document": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     },
+     "address": {
+      "$ref": "#/$defs/__schema2",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema1"
+     },
+     "__schema1": {
+      "type": "string"
+     },
+     "__schema2": {
+      "type": "string",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "current_document",
+   "description": "Return the document currently selected by REA's Hopper bridge.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {},
+    "additionalProperties": false,
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "list_documents",
+   "description": "List provider program or document identities. Hopper may expose several documents; a Ghidra headless session contains exactly its one imported Program.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {},
+    "additionalProperties": false,
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "list_names",
+   "description": "List every analyzed memory and external symbol as address/value pairs. Provider metadata distinguishes Ghidra primary, dynamic, external, type, and source facts when available.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "document": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     },
+     "address": {
+      "$ref": "#/$defs/__schema2",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema1"
+     },
+     "__schema1": {
+      "type": "string"
+     },
+     "__schema2": {
+      "type": "string",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "list_procedures",
+   "description": "List every analyzed procedure as address/value pairs after provider analysis. Ghidra metadata distinguishes thunks and external functions; use returned addresses in later function operations.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "document": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema1"
+     },
+     "__schema1": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "list_segments",
+   "description": "List segments or memory blocks using exclusive end addresses. Ghidra reports block permissions, address space, image base, initialization, and overlay facts; Hopper marks unavailable permissions explicitly.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "document": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema1"
+     },
+     "__schema1": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "list_strings",
+   "description": "List every provider-defined string object, or filter to one address, as address/value pairs with encoding, terminator status, and byte length when available. Hopper reads complete typed objects and retains its original display text as provider_value; long literals may span adjacent unterminated objects.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "document": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     },
+     "address": {
+      "$ref": "#/$defs/__schema2",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema1"
+     },
+     "__schema1": {
+      "type": "string"
+     },
+     "__schema2": {
+      "type": "string",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "procedure_address",
+   "description": "Resolve an unambiguous procedure symbol name or provider-normalized address to its canonical entry address. External address spaces remain explicit.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The procedure name or address"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "The procedure name or address"
+     },
+     "__schema1": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main"
+     }
+    ]
+   }
+  },
+  {
+   "name": "procedure_assembly",
+   "description": "Return assembly for one analyzed procedure identified by symbol or hexadecimal address. Use when pseudocode loses calling-convention or instruction-level detail; output is currently returned as one unpaginated string. Ghidra terminal-call assumptions that may cut the analyzed body are reported in Evidence limitations.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The procedure name or address"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "The procedure name or address"
+     },
+     "__schema1": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main"
+     }
+    ]
+   }
+  },
+  {
+   "name": "procedure_callees",
+   "description": "Return the provider's resolved direct callees for one procedure identified by symbol or address. Unresolved indirect calls may be absent; use analyze_function and typed references to preserve available edge uncertainty.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The procedure name or address"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "The procedure name or address"
+     },
+     "__schema1": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main"
+     }
+    ]
+   }
+  },
+  {
+   "name": "procedure_callers",
+   "description": "Return the provider's resolved direct callers for one procedure identified by symbol or address. Results reflect completed static analysis and may omit unresolved indirect references.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The procedure name or address"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "The procedure name or address"
+     },
+     "__schema1": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main"
+     }
+    ]
+   }
+  },
+  {
+   "name": "procedure_info",
+   "description": "Return provider metadata for one procedure identified by symbol or address: entrypoint, signature, locals, size, block count, and complete inclusive body ranges when observed. Extents reflect the provider's analyzed body; Ghidra terminal-call assumptions that may cut it are reported in Evidence limitations. Hopper locals preserve observed names and signed stack displacements; source types remain unknown. Body byte count and enclosing span remain distinct; unavailable extent is explicit.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The procedure name or address"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "The procedure name or address"
+     },
+     "__schema1": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main"
+     }
+    ]
+   }
+  },
+  {
+   "name": "read_function_instructions",
+   "description": "Return every raw instruction for one analyzed procedure. Instruction text and body extent are provider-specific. Ghidra terminal-call assumptions that may cut the analyzed body are reported in limitations.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The procedure name or address"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "The document name"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "The procedure name or address"
+     },
+     "__schema1": {
+      "description": "The document name",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main"
+     }
+    ]
+   }
+  },
+  {
+   "name": "read_bytes",
+   "description": "Read analyzed bytes from one provider-normalized virtual address. The hexadecimal payload reports the exact returned length; incomplete reads remain explicit and unsupported provider APIs return typed capability unavailability.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "address": {
+      "$ref": "#/$defs/__schema0",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     },
+     "length": {
+      "$ref": "#/$defs/__schema1"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema2",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "address"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     },
+     "__schema1": {
+      "default": 256,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+     },
+     "__schema2": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema3"
+     },
+     "__schema3": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "address": "0x1000",
+      "length": 16
+     }
+    ]
+   }
+  },
+  {
+   "name": "address_to_file_offset",
+   "description": "Map one provider-normalized virtual address to its original nonnegative file offset. Hopper verifies the original bytes against the selected executable digest and translates FAT image-relative offsets using the loaded header. Results preserve the provider coordinate, image base, and source path. Unmapped addresses fail explicitly; changed or unavailable sources return typed errors retaining native mapping facts as partial evidence.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "address": {
+      "$ref": "#/$defs/__schema0",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "address"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     },
+     "__schema1": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "address": "0x1000"
+     }
+    ]
+   }
+  },
+  {
+   "name": "procedure_references",
+   "description": "Return every raw incoming or outgoing reference edge for one procedure. Endpoint procedures are resolved only from provider containment. Ghidra preserves detailed reference flags. Hopper preserves native CallReference classifications and exact endpoints while leaving unavailable detailed flags explicit.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The procedure name or address"
+     },
+     "direction": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Direction in which to traverse or compare relationships."
+     },
+     "document": {
+      "$ref": "#/$defs/__schema2",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "The procedure name or address"
+     },
+     "__schema1": {
+      "default": "outgoing",
+      "type": "string",
+      "enum": [
+       "incoming",
+       "outgoing"
+      ]
+     },
+     "__schema2": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema3"
+     },
+     "__schema3": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main",
+      "direction": "outgoing"
+     }
+    ]
+   }
+  },
+  {
+   "name": "procedure_pseudo_code",
+   "description": "Decompile one analyzed procedure by symbol name or provider-normalized address. Returns provider-specific pseudocode, never original source or cross-provider text equivalence, and may return null; request procedure_assembly when instruction precision matters. Ghidra no-return assumptions may cut the analyzed body; Evidence limitations report observed terminal calls and available callee identities.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The procedure name or address"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "The procedure name or address"
+     },
+     "__schema1": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main"
+     }
+    ]
+   }
+  },
+  {
+   "name": "resolve_containing_procedure",
+   "description": "Resolve an arbitrary address, including an interior instruction or exact external entry, to its provider-analyzed containing procedure. A negative result distinguishes outside segments from not in a procedure and is never guessed from nearby symbols.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "address": {
+      "$ref": "#/$defs/__schema0",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "address"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     },
+     "__schema1": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "address": "0x1000"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_procedures",
+   "description": "Search every analyzed procedure name using literal matching by default or regex when requested. Results are deterministic and complete. Hopper regex mode uses ECMAScript Unicode syntax in a cancellable worker; a matching deadline leaves its API usable.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "pattern": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The literal text or regex pattern to search for"
+     },
+     "mode": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Operation mode that selects the requested behavior."
+     },
+     "case_sensitive": {
+      "$ref": "#/$defs/__schema2",
+      "description": "Whether to match case"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema4",
+      "description": "The document name"
+     }
+    },
+    "required": [
+     "pattern"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The literal text or regex pattern to search for"
+     },
+     "__schema1": {
+      "default": "literal",
+      "type": "string",
+      "enum": [
+       "literal",
+       "regex"
+      ]
+     },
+     "__schema2": {
+      "default": false,
+      "description": "Whether to match case",
+      "$ref": "#/$defs/__schema3"
+     },
+     "__schema3": {
+      "type": "boolean"
+     },
+     "__schema4": {
+      "description": "The document name",
+      "$ref": "#/$defs/__schema5"
+     },
+     "__schema5": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "pattern": "main",
+      "mode": "literal",
+      "case_sensitive": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "search_strings",
+   "description": "Search every provider-defined string object using literal matching by default or regex when requested. Results are deterministic and complete over those defined objects, not every text sequence in artifact bytes. Ghidra may omit packed or undefined literals, including Rust strings; an empty result does not prove text is absent. If an address is known, read_bytes and xrefs inspect its bytes and references. Hopper retains typed byte decoding, native display, and explicit decoding unknowns. Adjacent long-literal fragments match independently. Hopper regex mode uses ECMAScript Unicode syntax in a cancellable worker; a matching deadline leaves its API usable.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "pattern": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The literal text or regex pattern to search for"
+     },
+     "mode": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Operation mode that selects the requested behavior."
+     },
+     "case_sensitive": {
+      "$ref": "#/$defs/__schema2",
+      "description": "Whether to match case"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema4",
+      "description": "The document name"
+     }
+    },
+    "required": [
+     "pattern"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The literal text or regex pattern to search for"
+     },
+     "__schema1": {
+      "default": "literal",
+      "type": "string",
+      "enum": [
+       "literal",
+       "regex"
+      ]
+     },
+     "__schema2": {
+      "default": false,
+      "description": "Whether to match case",
+      "$ref": "#/$defs/__schema3"
+     },
+     "__schema3": {
+      "type": "boolean"
+     },
+     "__schema4": {
+      "description": "The document name",
+      "$ref": "#/$defs/__schema5"
+     },
+     "__schema5": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "pattern": "authorization failed",
+      "mode": "literal",
+      "case_sensitive": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "set_comment",
+   "description": "Write a regular analysis comment at a hexadecimal address and return whether readback matched. An empty comment clears it. This mutates the Hopper document; use comments to record evidence IDs or reasoning.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "address": {
+      "$ref": "#/$defs/__schema0",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     },
+     "comment": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Exact analyst comment text to write."
+     },
+     "document": {
+      "$ref": "#/$defs/__schema2",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     }
+    },
+    "required": [
+     "address",
+     "comment"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     },
+     "__schema1": {
+      "type": "string"
+     },
+     "__schema2": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema3"
+     },
+     "__schema3": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "address": "0x1000",
+      "comment": "validated entry point"
+     }
+    ]
+   }
+  },
+  {
+   "name": "xrefs",
+   "description": "Return analyzed references to a code or data address. Hopper may default to its current cursor; headless providers such as Ghidra require an explicit address. Use to connect strings, globals, selectors, and functions; bare addresses are untyped and indirect references may be incomplete.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "document": {
+      "$ref": "#/$defs/__schema0",
+      "description": "The active target's provider document name; use open_binary to switch targets"
+     },
+     "address": {
+      "$ref": "#/$defs/__schema2",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "description": "The active target's provider document name; use open_binary to switch targets",
+      "$ref": "#/$defs/__schema1"
+     },
+     "__schema1": {
+      "type": "string"
+     },
+     "__schema2": {
+      "type": "string",
+      "description": "A provider-normalized address; default memory uses 0x-prefixed hexadecimal"
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "batch_decompile",
+   "description": "Decompile each explicit procedure symbol or address concurrently. Preserves each input selector in address and reports the observed canonical entry and entry label in procedure; identity or label failures remain explicit without discarding usable pseudocode. Returns ordered per-item success or error results and aggregate counts.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "addresses": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Ordered provider-normalized procedure addresses to analyze."
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "default": [],
+      "type": "array",
+      "items": {
+       "type": "string",
+       "description": "A provider-normalized procedure address"
+      }
+     }
+    },
+    "examples": [
+     {
+      "addresses": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "get_call_graph",
+   "description": "Resolve one symbol or address to its canonical procedure entry, then traverse the bound provider's caller or callee relationships until the reachable graph is exhausted. Every node uses a canonical address and has an ok/error status; failures use safe typed projections. Unresolved indirect calls may be missing and results are not a whole-program CFG.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "address": {
+      "$ref": "#/$defs/__schema0",
+      "description": "A procedure symbol or address to resolve to its canonical entry"
+     },
+     "direction": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Direction in which to traverse or compare relationships."
+     }
+    },
+    "required": [
+     "address"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "A procedure symbol or address to resolve to its canonical entry"
+     },
+     "__schema1": {
+      "default": "forward",
+      "type": "string",
+      "enum": [
+       "forward",
+       "backward"
+      ]
+     }
+    },
+    "examples": [
+     {
+      "address": "0x1000",
+      "direction": "forward"
+     }
+    ]
+   }
+  },
+  {
+   "name": "find_xrefs_to_name",
+   "description": "Resolve an exact name against the bound provider's name inventory and return a resolved or unresolved result. Unresolved names use the stable name_not_found reason; this xref workflow returns address-only projections.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "name": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Exact name used by this operation."
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string"
+     }
+    },
+    "examples": [
+     {
+      "name": "malloc"
+     }
+    ]
+   }
+  },
+  {
+   "name": "binary_overview",
+   "description": "Return native-binary metadata, every segment with its length, and exhaustive procedure/string counts. Use search_procedures, list_procedures, or analyze_function directly when you already know which procedure to inspect.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {},
+    "additionalProperties": false,
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "analyze_function",
+   "description": "Build a dossier for one native function identified by symbol or provider-returned address. Returns identity with complete inclusive analyzed body ranges or explicit unknown, provider-specific pseudocode and assembly, comments, calls, references, referenced strings/names, local CFG blocks, and available native API boundary observations. Ghidra terminal-call assumptions that may cut the analyzed body are reported in limitations with available callee identities.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "A procedure name or address"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "A procedure name or address"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main"
+     }
+    ]
+   }
+  },
+  {
+   "name": "inspect_native_api",
+   "description": "Analyze a native API boundary in one function identified by symbol or provider-returned address. Returns confidence, evidence, jump-table dispatch/data/case mappings, separately evidenced default targets, unsupported branches, and residual unknowns. Null case values mean unresolved cases, never a known default.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "procedure": {
+      "$ref": "#/$defs/__schema0",
+      "description": "A procedure name or address"
+     }
+    },
+    "required": [
+     "procedure"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "A procedure name or address"
+     }
+    },
+    "examples": [
+     {
+      "procedure": "main"
+     }
+    ]
+   }
+  },
+  {
+   "name": "trace_feature",
+   "description": "Trace the complete literal query, preserving spaces, through every matching string and procedure, their xrefs, and truthful containing-procedure resolution. Returns observations, operation count, and residual unknowns without inferring reference kinds.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "query": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Non-empty feature or text query to investigate."
+     },
+     "case_sensitive": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Whether text matching distinguishes uppercase and lowercase."
+     }
+    },
+    "required": [
+     "query"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema1": {
+      "default": false,
+      "type": "boolean"
+     }
+    },
+    "examples": [
+     {
+      "query": "license",
+      "case_sensitive": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "trace_call_path",
+   "description": "Resolve start and optional goal symbols or addresses to canonical procedure entries, then trace direct callers or callees until the graph is exhausted or the goal is reached. Results use canonical addresses; Evidence preserves supplied selectors. Returns visited nodes, direct-call edges, a shortest traversal path, provider failures, and residual unknowns; unresolved indirect calls remain unknown.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "start": {
+      "$ref": "#/$defs/__schema0",
+      "description": "A starting procedure symbol or address"
+     },
+     "goal": {
+      "$ref": "#/$defs/__schema1",
+      "description": "An optional destination procedure symbol or address"
+     },
+     "direction": {
+      "$ref": "#/$defs/__schema2",
+      "description": "Direction in which to traverse or compare relationships."
+     }
+    },
+    "required": [
+     "start"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "description": "A starting procedure symbol or address"
+     },
+     "__schema1": {
+      "type": "string",
+      "description": "An optional destination procedure symbol or address"
+     },
+     "__schema2": {
+      "default": "forward",
+      "type": "string",
+      "enum": [
+       "forward",
+       "backward"
+      ]
+     }
+    },
+    "examples": [
+     {
+      "start": "0x1000",
+      "goal": "0x1100",
+      "direction": "forward"
+     }
+    ]
+   }
+  },
+  {
+   "name": "inspect_managed_artifact",
+   "description": "Open and classify an explicit managed PE/CLI path, or inspect the active managed target, then inventory exact assembly/module identity, target framework evidence, references, resources, and custom attributes without loading or executing target code. Returns complete inline inventories when metadata is admitted and explicit partial or malformed coverage otherwise.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "path": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Explicit absolute managed PE/CLI path; omit to reuse the previously selected managed target"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$",
+      "description": "Explicit absolute managed PE/CLI path; omit to reuse the previously selected managed target"
+     }
+    },
+    "examples": [
+     {
+      "path": "/tmp/Example.dll"
+     }
+    ]
+   }
+  },
+  {
+   "name": "inspect_managed_members",
+   "description": "Inspect PE/CLI metadata members, signatures, raw CIL hashes, decoded-instruction-tuple hashes, separately reported exception regions, call edges, and field-access anchors without loading or executing target code. Metadata tokens are reported as build-local coordinates bound to the artifact SHA-256 and MVID; the tuple hash does not resolve them or fully commit control flow.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "path": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Explicit absolute managed PE/CLI path; omit to reuse the previously selected managed target"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$",
+      "description": "Explicit absolute managed PE/CLI path; omit to reuse the previously selected managed target"
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "inspect_managed_native_boundaries",
+   "description": "Inspect PE/CLI ModuleRef, ImplMap/PInvoke declarations, CLI native-header indicators, and non-IL method implementation flags without loading or executing target code. Results are managed declarations and degraded native-boundary observations, not verified native exports or addresses.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "path": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Explicit absolute managed PE/CLI path; omit to reuse the previously selected managed target"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$",
+      "description": "Explicit absolute managed PE/CLI path; omit to reuse the previously selected managed target"
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "inspect_pe_resources",
+   "description": "Inspect one explicit local PE32/PE32+ image's complete bounded type/name/language resource tree without executing it or opening a disassembler. Returns numeric IDs versus original UTF-16 names, directory/data-entry file locations, payload RVA/file ranges, complete SHA-256 hashes and static RT_GROUP_ICON image-resource candidates. Language fallback, image decoding and actual shell/window loading remain unobserved. Reads a stable regular file; malformed or ambiguous mappings, non-identical overlapping ranges and exhausted budgets return no partial success. Portable on supported Node hosts; no Windows SDK or engine installation required.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "path": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Absolute filesystem path to a PE image"
+     },
+     "max_file_bytes": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Maximum stable artifact bytes to read (default 64 MiB)"
+     },
+     "max_entries": {
+      "$ref": "#/$defs/__schema3",
+      "description": "Maximum resource directory entries to examine; exceeding the budget fails without partial success"
+     }
+    },
+    "required": [
+     "path"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute filesystem path to a PE image"
+     },
+     "__schema1": {
+      "default": 67108864,
+      "description": "Maximum stable artifact bytes to read (default 64 MiB)",
+      "$ref": "#/$defs/__schema2"
+     },
+     "__schema2": {
+      "type": "integer",
+      "minimum": 64,
+      "maximum": 536870912
+     },
+     "__schema3": {
+      "default": 4096,
+      "description": "Maximum resource directory entries to examine; exceeding the budget fails without partial success",
+      "$ref": "#/$defs/__schema4"
+     },
+     "__schema4": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65536
+     }
+    },
+    "examples": [
+     {
+      "path": "/artifacts/application.exe"
+     }
+    ]
+   }
+  },
+  {
+   "name": "inspect_evm_interface",
+   "description": "Inspect an explicit local flat EVM bytecode carrier and infer dispatch selectors, argument strings and mutability without executing the target or accessing a chain/RPC endpoint. Choose raw or hex encoding explicitly. Returns original carrier and decoded-byte SHA-256, full bytecode and interface candidates inline as inferred Evidence; bytecode kind, hardfork, deployed authenticity and discovery completeness remain unknown. Initial real-verified Linux x64 profile uses unchanged bundled EVMole 0.9.3/WASM in a bounded owned worker; EOF-style EF00 containers are unsupported. No signature lookup, wallet action or transaction broadcast.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "path": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Absolute path to caller-selected local bytecode carrier"
+     },
+     "encoding": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Raw bytes or UTF-8 hex with optional 0x prefix and outer ASCII whitespace"
+     }
+    },
+    "required": [
+     "path",
+     "encoding"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute path to caller-selected local bytecode carrier"
+     },
+     "__schema1": {
+      "type": "string",
+      "enum": [
+       "raw",
+       "hex"
+      ],
+      "description": "Raw bytes or UTF-8 hex with optional 0x prefix and outer ASCII whitespace"
+     }
+    },
+    "examples": [
+     {
+      "path": "/artifacts/runtime.hex",
+      "encoding": "hex"
+     }
+    ]
+   }
+  },
+  {
+   "name": "inspect_web_network_capture",
+   "description": "Inspect retained local HAR 1.2 or native mitmproxy capture records without contacting recorded URLs. Returns original ordinals, pointers/byte ranges, preserved producer fields, precise numeric representations and exact exposed binary bytes inline. Excludes known transport credentials and explicitly marked values. Decodes every record before optional ordinal selection; malformed or oversized captures return no partial success. Duplicate HAR members are invalid; prototype-named members such as __proto__ are preserved as ordinary own JSON members without prototype mutation. Uses pinned upstream parsers, owned temporary files and bounded offline processes. Native mitmproxy requires caller-supplied mitmdump 12.2.3 on Linux. Browser transaction IDs, runtime attribution and original bytes of HAR Unicode text remain unknown.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "capture_path": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Absolute local HAR or mitmproxy capture path."
+     },
+     "format": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Declared input artifact format."
+     },
+     "record_ordinals": {
+      "$ref": "#/$defs/__schema2",
+      "description": "Zero-based producer record ordinals, in caller-selected order. Omit to inspect every record."
+     },
+     "sensitive_values": {
+      "$ref": "#/$defs/__schema5",
+      "description": "Literal text excluded from capture payloads, byte/numeric projections, producer coordinates, artifact paths/digests and diagnostic text. Declaration strings are never persisted in Evidence parameters. Canonical contract keys, enums and provider identities remain intact."
+     }
+    },
+    "required": [
+     "capture_path",
+     "format"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Absolute local HAR or mitmproxy capture path."
+     },
+     "__schema1": {
+      "type": "string",
+      "enum": [
+       "har",
+       "mitmproxy"
+      ]
+     },
+     "__schema2": {
+      "description": "Zero-based producer record ordinals, in caller-selected order. Omit to inspect every record.",
+      "$ref": "#/$defs/__schema3"
+     },
+     "__schema3": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+       "$ref": "#/$defs/__schema4"
+      }
+     },
+     "__schema4": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "__schema5": {
+      "default": [],
+      "description": "Literal text excluded from capture payloads, byte/numeric projections, producer coordinates, artifact paths/digests and diagnostic text. Declaration strings are never persisted in Evidence parameters. Canonical contract keys, enums and provider identities remain intact.",
+      "$ref": "#/$defs/__schema6"
+     },
+     "__schema6": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "minLength": 1
+      }
+     }
+    },
+    "examples": [
+     {
+      "capture_path": "/captures/session.har",
+      "format": "har",
+      "record_ordinals": [
+       0,
+       2
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "install_adb_package",
+   "description": "Install one local APK on the device (`adb install [-r]`), recording the APK's host digest and byte size. A device-mutating tool: `replace` re-installs over an existing package while keeping its data; the device's own Success/Failure verdict is preserved with its reason.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "serial": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Device serial exactly as `adb devices` reports it"
+     },
+     "apk_path": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Existing local APK file to install"
+     },
+     "replace": {
+      "$ref": "#/$defs/__schema2",
+      "description": "Replace an existing installation and keep its data (adb install -r)"
+     }
+    },
+    "required": [
+     "serial",
+     "apk_path"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\x00\\s\"']+$",
+      "description": "Device serial exactly as `adb devices` reports it"
+     },
+     "__schema1": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$",
+      "description": "Existing local APK file to install"
+     },
+     "__schema2": {
+      "default": false,
+      "description": "Replace an existing installation and keep its data (adb install -r)",
+      "$ref": "#/$defs/__schema3"
+     },
+     "__schema3": {
+      "type": "boolean"
+     }
+    },
+    "examples": [
+     {
+      "serial": "emulator-5554",
+      "apk_path": "/tmp/app.apk"
+     },
+     {
+      "serial": "emulator-5554",
+      "apk_path": "/tmp/app.apk",
+      "replace": true
+     }
+    ]
+   }
+  },
+  {
+   "name": "analyze_javascript_application",
+   "description": "Reconstruct one local ASAR or extracted JavaScript application as an inline application graph without executing it. Returns recovered graph nodes, edges, semantic relations, integrity contradictions, limitations, and coverage. Select detail summary to retain the complete analysis Evidence in this session and receive only its summary view, then inspect selected modules or pages with inspect_analysis_view. Integrity mismatches fail by default; record-and-continue retains observed bytes as untrusted and marks graph coverage partial.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "input_path": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Local filesystem path for input."
+     },
+     "format": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Declared input artifact format."
+     },
+     "integrity_policy": {
+      "$ref": "#/$defs/__schema2"
+     },
+     "max_heap_mb": {
+      "$ref": "#/$defs/__schema3",
+      "description": "Maximum V8 old-space heap in MiB for the isolated JavaScript source analyzer; defaults to 1024. This does not change the CLI/MCP process heap."
+     },
+     "analysis_timeout_ms": {
+      "$ref": "#/$defs/__schema5",
+      "description": "Maximum startup, analysis and transfer time per JavaScript source, in milliseconds; defaults to 300000. On timeout, return collected partial Evidence and stop the analysis."
+     },
+     "detail": {
+      "$ref": "#/$defs/__schema7",
+      "description": "complete returns the complete analysis Evidence inline. summary retains that complete Evidence in this session and returns its inspect_analysis_view summary; inspect pages, items or facets through normalized_result.parent_evidence_id."
+     }
+    },
+    "required": [
+     "input_path"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$"
+     },
+     "__schema1": {
+      "default": "auto",
+      "type": "string",
+      "enum": [
+       "auto",
+       "asar",
+       "directory"
+      ]
+     },
+     "__schema2": {
+      "default": "fail",
+      "type": "string",
+      "enum": [
+       "fail",
+       "record-and-continue"
+      ]
+     },
+     "__schema3": {
+      "description": "Maximum V8 old-space heap in MiB for the isolated JavaScript source analyzer; defaults to 1024. This does not change the CLI/MCP process heap.",
+      "$ref": "#/$defs/__schema4"
+     },
+     "__schema4": {
+      "type": "integer",
+      "minimum": 128,
+      "maximum": 16384
+     },
+     "__schema5": {
+      "description": "Maximum startup, analysis and transfer time per JavaScript source, in milliseconds; defaults to 300000. On timeout, return collected partial Evidence and stop the analysis.",
+      "$ref": "#/$defs/__schema6"
+     },
+     "__schema6": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+     },
+     "__schema7": {
+      "default": "complete",
+      "description": "complete returns the complete analysis Evidence inline. summary retains that complete Evidence in this session and returns its inspect_analysis_view summary; inspect pages, items or facets through normalized_result.parent_evidence_id.",
+      "$ref": "#/$defs/__schema8"
+     },
+     "__schema8": {
+      "type": "string",
+      "enum": [
+       "complete",
+       "summary"
+      ]
+     }
+    },
+    "examples": [
+     {
+      "input_path": "/Applications/Example.app/Contents/Resources/app.asar",
+      "format": "auto",
+      "integrity_policy": "fail"
+     },
+     {
+      "input_path": "/Applications/Example.app/Contents/Resources/app.asar",
+      "detail": "summary"
+     }
+    ]
+   }
+  },
+  {
+   "name": "trace_application_feature",
+   "description": "Trace a typed literal seed through every reachable part of an authenticated JavaScript Application Graph supplied as inline Evidence or exact same-session retained references. Original static, native, passive-runtime, inferred, and unknown authorities remain distinct; native addon handoffs never open a provider or execute the application.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "native_observations": {
+      "$ref": "#/$defs/__schema0"
+     },
+     "seed": {
+      "$ref": "#/$defs/__schema19"
+     },
+     "direction": {
+      "$ref": "#/$defs/__schema20",
+      "description": "Direction in which to traverse or compare relationships."
+     },
+     "application": {
+      "$ref": "#/$defs/__schema21"
+     }
+    },
+    "required": [
+     "seed",
+     "application"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "array",
+      "items": {
+       "$ref": "#/$defs/__schema1"
+      }
+     },
+     "__schema1": {
+      "type": "object",
+      "properties": {
+       "evidence_id": {
+        "$ref": "#/$defs/__schema2",
+        "description": "Stable identifier of the recorded Evidence observation."
+       },
+       "subject": {
+        "$ref": "#/$defs/__schema3"
+       },
+       "provider": {
+        "$ref": "#/$defs/__schema5"
+       },
+       "analysis_profile": {
+        "$ref": "#/$defs/__schema6"
+       },
+       "predicate_type": {
+        "$ref": "#/$defs/__schema9"
+       },
+       "operation": {
+        "$ref": "#/$defs/__schema10"
+       },
+       "parameters": {
+        "$ref": "#/$defs/__schema8"
+       },
+       "raw_result": {
+        "$ref": "#/$defs/__schema11"
+       },
+       "normalized_result": {
+        "$ref": "#/$defs/__schema12"
+       },
+       "confidence": {
+        "$ref": "#/$defs/__schema13"
+       },
+       "authority": {
+        "$ref": "#/$defs/__schema14"
+       },
+       "environment": {
+        "$ref": "#/$defs/__schema15"
+       },
+       "limitations": {
+        "$ref": "#/$defs/__schema16"
+       },
+       "locations": {
+        "$ref": "#/$defs/__schema17"
+       },
+       "evidence_links": {
+        "$ref": "#/$defs/__schema18"
+       }
+      },
+      "required": [
+       "evidence_id",
+       "subject",
+       "provider",
+       "analysis_profile",
+       "predicate_type",
+       "operation",
+       "parameters",
+       "raw_result",
+       "normalized_result",
+       "confidence",
+       "authority",
+       "environment",
+       "limitations",
+       "locations",
+       "evidence_links"
+      ],
+      "additionalProperties": false
+     },
+     "__schema2": {
+      "type": "string",
+      "pattern": "^ev_[a-f0-9]{64}$"
+     },
+     "__schema3": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact name used by this operation."
+         },
+         "digest": {
+          "type": "object",
+          "properties": {
+           "sha256": {
+            "$ref": "#/$defs/__schema4"
+           }
+          },
+          "required": [
+           "sha256"
+          ]
+         },
+         "format": {
+          "type": "string",
+          "enum": [
+           "hopper",
+           "analysis-database",
+           "mach-o",
+           "elf",
+           "pe",
+           "dos-mz",
+           "dos-com",
+           "zip",
+           "ipa",
+           "apk",
+           "msix",
+           "appx",
+           "asar",
+           "dmg",
+           "pkg",
+           "plist",
+           "javascript",
+           "source-map",
+           "directory",
+           "file",
+           "unknown",
+           "mach-o-universal",
+           "javascript-bundle",
+           "entitlements"
+          ],
+          "description": "Declared input artifact format."
+         },
+         "architecture": {
+          "anyOf": [
+           {
+            "type": "string",
+            "enum": [
+             "x86",
+             "x86_64",
+             "arm",
+             "arm64",
+             "mips"
+            ]
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "local_path": {
+          "type": "string",
+          "description": "Local filesystem path for local."
+         }
+        },
+        "required": [
+         "name",
+         "digest",
+         "format",
+         "architecture",
+         "local_path"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "__schema4": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+     },
+     "__schema5": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Exact name used by this operation."
+       },
+       "version": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "id",
+       "name",
+       "version"
+      ]
+     },
+     "__schema6": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "provider": {
+          "$ref": "#/$defs/__schema7"
+         },
+         "parameters": {
+          "$ref": "#/$defs/__schema8"
+         },
+         "digest": {
+          "$ref": "#/$defs/__schema4"
+         }
+        },
+        "required": [
+         "provider",
+         "parameters",
+         "digest"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "__schema7": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Exact name used by this operation."
+       },
+       "version": {
+        "type": "string",
+        "minLength": 1
+       }
+      },
+      "required": [
+       "id",
+       "name",
+       "version"
+      ]
+     },
+     "__schema8": {
+      "type": "object",
+      "additionalProperties": {}
+     },
+     "__schema9": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema10": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema11": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/__schema12"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "__schema12": {},
+     "__schema13": {
+      "type": "string",
+      "enum": [
+       "observed",
+       "derived",
+       "inferred"
+      ]
+     },
+     "__schema14": {
+      "type": "string",
+      "enum": [
+       "shipped-artifact",
+       "controlled-replay",
+       "historical-reference",
+       "external-service",
+       "analyst-inference"
+      ]
+     },
+     "__schema15": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string",
+          "minLength": 1
+         },
+         "platform": {
+          "type": "string",
+          "minLength": 1
+         },
+         "architecture": {
+          "type": "string",
+          "minLength": 1
+         },
+         "isolation": {
+          "type": "string",
+          "enum": [
+           "none",
+           "process",
+           "container",
+           "virtual-machine"
+          ]
+         }
+        },
+        "required": [
+         "id",
+         "platform",
+         "architecture",
+         "isolation"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "__schema16": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "__schema17": {
+      "type": "array",
+      "items": {
+       "oneOf": [
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "address"
+          },
+          "address": {
+           "type": "string",
+           "minLength": 1
+          }
+         },
+         "required": [
+          "kind",
+          "address"
+         ]
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "address-range"
+          },
+          "start": {
+           "type": "string",
+           "minLength": 1
+          },
+          "end": {
+           "type": "string",
+           "minLength": 1
+          }
+         },
+         "required": [
+          "kind",
+          "start",
+          "end"
+         ]
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "artifact-path"
+          },
+          "path": {
+           "type": "string",
+           "minLength": 1,
+           "description": "Local filesystem path used by this operation."
+          }
+         },
+         "required": [
+          "kind",
+          "path"
+         ]
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "file-offset"
+          },
+          "offset": {
+           "type": "integer",
+           "minimum": 0,
+           "maximum": 9007199254740991
+          }
+         },
+         "required": [
+          "kind",
+          "offset"
+         ]
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "file-offset-range"
+          },
+          "start": {
+           "type": "integer",
+           "minimum": 0,
+           "maximum": 9007199254740991
+          },
+          "end": {
+           "type": "integer",
+           "minimum": 0,
+           "maximum": 9007199254740991
+          }
+         },
+         "required": [
+          "kind",
+          "start",
+          "end"
+         ]
+        }
+       ]
+      }
+     },
+     "__schema18": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "pattern": "^ev_[a-f0-9]{64}$"
+      }
+     },
+     "__schema19": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "type": "string",
+          "enum": [
+           "node-id",
+           "route",
+           "string",
+           "api",
+           "channel",
+           "module",
+           "native-export"
+          ]
+         },
+         "value": {
+          "type": "string",
+          "minLength": 1
+         },
+         "match": {
+          "default": null,
+          "anyOf": [
+           {
+            "type": "string",
+            "enum": [
+             "exact",
+             "contains"
+            ]
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "case_sensitive": {
+          "default": false,
+          "type": "boolean",
+          "description": "Whether text matching distinguishes uppercase and lowercase."
+         }
+        },
+        "required": [
+         "kind",
+         "value"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "type": "string",
+          "enum": [
+           "route",
+           "string",
+           "api",
+           "channel",
+           "module",
+           "native-export"
+          ]
+         },
+         "value": {
+          "type": "string",
+          "const": ""
+         },
+         "match": {
+          "type": "string",
+          "const": "exact"
+         },
+         "case_sensitive": {
+          "default": false,
+          "type": "boolean",
+          "description": "Whether text matching distinguishes uppercase and lowercase."
+         }
+        },
+        "required": [
+         "kind",
+         "value",
+         "match"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     },
+     "__schema20": {
+      "default": "both",
+      "type": "string",
+      "enum": [
+       "outgoing",
+       "incoming",
+       "both"
+      ]
+     },
+     "__schema21": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/__schema1"
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "type": "string",
+          "const": "retained-evidence"
+         },
+         "evidence_id": {
+          "type": "string",
+          "pattern": "^ev_[a-f0-9]{64}$",
+          "description": "Stable identifier of the recorded Evidence observation."
+         }
+        },
+        "required": [
+         "kind",
+         "evidence_id"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "examples": [
+     {
+      "application": {
+       "kind": "retained-evidence",
+       "evidence_id": "ev_2a6371cd2a7665bdad6d37d9b3a69da558e9882a0696d195f1f1a7707f14b5e5"
+      },
+      "seed": {
+       "kind": "module",
+       "value": "renderer.js",
+       "match": "exact",
+       "case_sensitive": false
+      },
+      "direction": "both"
+     }
+    ]
+   }
+  },
+  {
+   "name": "trace_javascript_semantics",
+   "description": "Trace static JavaScript data-flow, direct call/return, and closure relations from inline application Evidence or an exact same-session retained reference. Dynamic or unsupported semantics remain explicit unknowns; static reachability never claims runtime execution.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "application": {
+      "$ref": "#/$defs/__schema0"
+     },
+     "query": {
+      "$ref": "#/$defs/__schema18",
+      "description": "Non-empty feature or text query to investigate."
+     }
+    },
+    "required": [
+     "application",
+     "query"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "evidence_id": {
+          "$ref": "#/$defs/__schema1",
+          "description": "Stable identifier of the recorded Evidence observation."
+         },
+         "subject": {
+          "$ref": "#/$defs/__schema2"
+         },
+         "provider": {
+          "$ref": "#/$defs/__schema4"
+         },
+         "analysis_profile": {
+          "$ref": "#/$defs/__schema5"
+         },
+         "predicate_type": {
+          "$ref": "#/$defs/__schema8"
+         },
+         "operation": {
+          "$ref": "#/$defs/__schema9"
+         },
+         "parameters": {
+          "$ref": "#/$defs/__schema7"
+         },
+         "raw_result": {
+          "$ref": "#/$defs/__schema10"
+         },
+         "normalized_result": {
+          "$ref": "#/$defs/__schema11"
+         },
+         "confidence": {
+          "$ref": "#/$defs/__schema12"
+         },
+         "authority": {
+          "$ref": "#/$defs/__schema13"
+         },
+         "environment": {
+          "$ref": "#/$defs/__schema14"
+         },
+         "limitations": {
+          "$ref": "#/$defs/__schema15"
+         },
+         "locations": {
+          "$ref": "#/$defs/__schema16"
+         },
+         "evidence_links": {
+          "$ref": "#/$defs/__schema17"
+         }
+        },
+        "required": [
+         "evidence_id",
+         "subject",
+         "provider",
+         "analysis_profile",
+         "predicate_type",
+         "operation",
+         "parameters",
+         "raw_result",
+         "normalized_result",
+         "confidence",
+         "authority",
+         "environment",
+         "limitations",
+         "locations",
+         "evidence_links"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "kind": {
+          "type": "string",
+          "const": "retained-evidence"
+         },
+         "evidence_id": {
+          "type": "string",
+          "pattern": "^ev_[a-f0-9]{64}$",
+          "description": "Stable identifier of the recorded Evidence observation."
+         }
+        },
+        "required": [
+         "kind",
+         "evidence_id"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     },
+     "__schema1": {
+      "type": "string",
+      "pattern": "^ev_[a-f0-9]{64}$"
+     },
+     "__schema2": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact name used by this operation."
+         },
+         "digest": {
+          "type": "object",
+          "properties": {
+           "sha256": {
+            "$ref": "#/$defs/__schema3"
+           }
+          },
+          "required": [
+           "sha256"
+          ]
+         },
+         "format": {
+          "type": "string",
+          "enum": [
+           "hopper",
+           "analysis-database",
+           "mach-o",
+           "elf",
+           "pe",
+           "dos-mz",
+           "dos-com",
+           "zip",
+           "ipa",
+           "apk",
+           "msix",
+           "appx",
+           "asar",
+           "dmg",
+           "pkg",
+           "plist",
+           "javascript",
+           "source-map",
+           "directory",
+           "file",
+           "unknown",
+           "mach-o-universal",
+           "javascript-bundle",
+           "entitlements"
+          ],
+          "description": "Declared input artifact format."
+         },
+         "architecture": {
+          "anyOf": [
+           {
+            "type": "string",
+            "enum": [
+             "x86",
+             "x86_64",
+             "arm",
+             "arm64",
+             "mips"
+            ]
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "local_path": {
+          "type": "string",
+          "description": "Local filesystem path for local."
+         }
+        },
+        "required": [
+         "name",
+         "digest",
+         "format",
+         "architecture",
+         "local_path"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "__schema3": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+     },
+     "__schema4": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Exact name used by this operation."
+       },
+       "version": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "id",
+       "name",
+       "version"
+      ]
+     },
+     "__schema5": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "provider": {
+          "$ref": "#/$defs/__schema6"
+         },
+         "parameters": {
+          "$ref": "#/$defs/__schema7"
+         },
+         "digest": {
+          "$ref": "#/$defs/__schema3"
+         }
+        },
+        "required": [
+         "provider",
+         "parameters",
+         "digest"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "__schema6": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "minLength": 1
+       },
+       "name": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Exact name used by this operation."
+       },
+       "version": {
+        "type": "string",
+        "minLength": 1
+       }
+      },
+      "required": [
+       "id",
+       "name",
+       "version"
+      ]
+     },
+     "__schema7": {
+      "type": "object",
+      "additionalProperties": {}
+     },
+     "__schema8": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema9": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema10": {
+      "anyOf": [
+       {
+        "$ref": "#/$defs/__schema11"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "__schema11": {},
+     "__schema12": {
+      "type": "string",
+      "enum": [
+       "observed",
+       "derived",
+       "inferred"
+      ]
+     },
+     "__schema13": {
+      "type": "string",
+      "enum": [
+       "shipped-artifact",
+       "controlled-replay",
+       "historical-reference",
+       "external-service",
+       "analyst-inference"
+      ]
+     },
+     "__schema14": {
+      "anyOf": [
+       {
+        "type": "object",
+        "properties": {
+         "id": {
+          "type": "string",
+          "minLength": 1
+         },
+         "platform": {
+          "type": "string",
+          "minLength": 1
+         },
+         "architecture": {
+          "type": "string",
+          "minLength": 1
+         },
+         "isolation": {
+          "type": "string",
+          "enum": [
+           "none",
+           "process",
+           "container",
+           "virtual-machine"
+          ]
+         }
+        },
+        "required": [
+         "id",
+         "platform",
+         "architecture",
+         "isolation"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "__schema15": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "__schema16": {
+      "type": "array",
+      "items": {
+       "oneOf": [
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "address"
+          },
+          "address": {
+           "type": "string",
+           "minLength": 1
+          }
+         },
+         "required": [
+          "kind",
+          "address"
+         ]
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "address-range"
+          },
+          "start": {
+           "type": "string",
+           "minLength": 1
+          },
+          "end": {
+           "type": "string",
+           "minLength": 1
+          }
+         },
+         "required": [
+          "kind",
+          "start",
+          "end"
+         ]
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "artifact-path"
+          },
+          "path": {
+           "type": "string",
+           "minLength": 1,
+           "description": "Local filesystem path used by this operation."
+          }
+         },
+         "required": [
+          "kind",
+          "path"
+         ]
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "file-offset"
+          },
+          "offset": {
+           "type": "integer",
+           "minimum": 0,
+           "maximum": 9007199254740991
+          }
+         },
+         "required": [
+          "kind",
+          "offset"
+         ]
+        },
+        {
+         "type": "object",
+         "properties": {
+          "kind": {
+           "type": "string",
+           "const": "file-offset-range"
+          },
+          "start": {
+           "type": "integer",
+           "minimum": 0,
+           "maximum": 9007199254740991
+          },
+          "end": {
+           "type": "integer",
+           "minimum": 0,
+           "maximum": 9007199254740991
+          }
+         },
+         "required": [
+          "kind",
+          "start",
+          "end"
+         ]
+        }
+       ]
+      }
+     },
+     "__schema17": {
+      "type": "array",
+      "items": {
+       "type": "string",
+       "pattern": "^ev_[a-f0-9]{64}$"
+      }
+     },
+     "__schema18": {
+      "type": "object",
+      "properties": {
+       "seed": {
+        "oneOf": [
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "semantic-node"
+           },
+           "node_id": {
+            "type": "string",
+            "pattern": "^jsrg_node_[a-f0-9]{64}$"
+           }
+          },
+          "required": [
+           "kind",
+           "node_id"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "application-node"
+           },
+           "node_id": {
+            "type": "string",
+            "pattern": "^jag_node_[a-f0-9]{64}$"
+           }
+          },
+          "required": [
+           "kind",
+           "node_id"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "literal"
+           },
+           "value": {
+            "anyOf": [
+             {
+              "type": "string"
+             },
+             {
+              "type": "number"
+             },
+             {
+              "type": "boolean"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           }
+          },
+          "required": [
+           "kind",
+           "value"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "function"
+           },
+           "fingerprint_sha256": {
+            "$ref": "#/$defs/__schema3",
+            "description": "Exact SHA-256 digest of fingerprint."
+           }
+          },
+          "required": [
+           "kind",
+           "fingerprint_sha256"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "property"
+           },
+           "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact name used by this operation."
+           }
+          },
+          "required": [
+           "kind",
+           "name"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "endpoint"
+           },
+           "value": {
+            "type": "string",
+            "minLength": 1
+           }
+          },
+          "required": [
+           "kind",
+           "value"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "event"
+           },
+           "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact name used by this operation."
+           }
+          },
+          "required": [
+           "kind",
+           "name"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "object",
+          "properties": {
+           "kind": {
+            "type": "string",
+            "const": "boundary-field"
+           },
+           "field": {
+            "type": "string",
+            "minLength": 1
+           }
+          },
+          "required": [
+           "kind",
+           "field"
+          ],
+          "additionalProperties": false
+         }
+        ]
+       },
+       "direction": {
+        "type": "string",
+        "enum": [
+         "backward-provenance",
+         "forward-influence",
+         "callers",
+         "ownership"
+        ],
+        "description": "Direction in which to traverse or compare relationships."
+       },
+       "allowed_relations": {
+        "minItems": 1,
+        "type": "array",
+        "items": {
+         "$ref": "#/$defs/__schema19"
+        }
+       },
+       "include_ambiguous_dynamic_edges": {
+        "default": false,
+        "type": "boolean",
+        "description": "Whether to include ambiguous dynamic edges in the result."
+       },
+       "expected": {
+        "default": null,
+        "anyOf": [
+         {
+          "type": "object",
+          "properties": {
+           "role": {
+            "type": "string",
+            "enum": [
+             "source",
+             "sink"
+            ]
+           },
+           "classes": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+             "$ref": "#/$defs/__schema20"
+            }
+           }
+          },
+          "required": [
+           "role",
+           "classes"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "seed",
+       "direction"
+      ],
+      "additionalProperties": false
+     },
+     "__schema19": {
+      "type": "string",
+      "enum": [
+       "acquires",
+       "aggregates",
+       "aliases",
+       "argument-to-parameter",
+       "awaits",
+       "calls",
+       "cancels-timer",
+       "captures",
+       "chains",
+       "coerces",
+       "connects-stdio",
+       "consumed-by",
+       "constructs-request",
+       "creates-promise",
+       "defaults",
+       "defines",
+       "destructures",
+       "detaches-task",
+       "dispatches-candidate",
+       "forwards-signal",
+       "listens-error",
+       "listens-exit",
+       "owns",
+       "overrides",
+       "parses",
+       "reads",
+       "reads-argv",
+       "reads-config",
+       "reads-environment",
+       "reads-property",
+       "registers-listener",
+       "releases",
+       "removes-listener",
+       "returns-task",
+       "returns-to-call",
+       "schedules-timer",
+       "spawns",
+       "spreads",
+       "supplies-argv",
+       "supplies-env",
+       "supplies-request-field",
+       "validates",
+       "writes",
+       "writes-property"
+      ]
+     },
+     "__schema20": {
+      "type": "string",
+      "enum": [
+       "module",
+       "function",
+       "parameter",
+       "binding",
+       "expression",
+       "literal",
+       "property-slot",
+       "call-site",
+       "return-site",
+       "closure-capture",
+       "promise",
+       "task",
+       "event",
+       "listener",
+       "timer",
+       "child-process",
+       "stdio",
+       "signal",
+       "config-source",
+       "request",
+       "response",
+       "boundary",
+       "resource",
+       "unknown-frontier"
+      ]
+     }
+    },
+    "examples": [
+     {
+      "application": {
+       "kind": "retained-evidence",
+       "evidence_id": "ev_2a6371cd2a7665bdad6d37d9b3a69da558e9882a0696d195f1f1a7707f14b5e5"
+      },
+      "query": {
+       "seed": {
+        "kind": "semantic-node",
+        "node_id": "jsrg_node_0000000000000000000000000000000000000000000000000000000000000000"
+       },
+       "direction": "backward-provenance"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "open_binary",
+   "description": "Open a local executable, application bundle, archive, JavaScript, source map, plist, or analysis database after validation. format=dos-com explicitly interprets 1..65280 headerless bytes as a DOS COM analysis image; omission preserves header-based detection. provider_id selects one deep provider or deterministic auto selection; the binding remains stable until close or an explicit switch, with no failure fallback. Reopening the same target and profile retains its active database and metadata edits. An optional analysis snapshot is imported atomically and must match the binary identity, concrete provider, and canonical analysis profile exactly; importing into a session with metadata mutations requires closing and reopening it first.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "path": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Absolute local filesystem path for the analysis target; relative paths are rejected."
+     },
+     "format": {
+      "$ref": "#/$defs/__schema2",
+      "description": "Explicit headerless DOS COM interpretation; omission preserves header-based detection"
+     },
+     "provider_id": {
+      "$ref": "#/$defs/__schema4",
+      "description": "Exact deep-analysis provider ID, or automatic selection when omitted."
+     },
+     "snapshot_path": {
+      "$ref": "#/$defs/__schema5",
+      "description": "Absolute local filesystem path for the analysis snapshot; relative paths are rejected."
+     }
+    },
+    "required": [
+     "path"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$",
+      "description": "Absolute local filesystem path for the analysis target; relative paths are rejected.",
+      "$ref": "#/$defs/__schema1"
+     },
+     "__schema1": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$"
+     },
+     "__schema2": {
+      "description": "Explicit headerless DOS COM interpretation; omission preserves header-based detection",
+      "$ref": "#/$defs/__schema3"
+     },
+     "__schema3": {
+      "type": "string",
+      "const": "dos-com"
+     },
+     "__schema4": {
+      "anyOf": [
+       {
+        "type": "string",
+        "const": "auto"
+       },
+       {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9\\x2d]*$"
+       }
+      ]
+     },
+     "__schema5": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$",
+      "description": "Absolute local filesystem path for the analysis snapshot; relative paths are rejected.",
+      "$ref": "#/$defs/__schema1"
+     }
+    },
+    "examples": [
+     {
+      "path": "/tmp/fixture"
+     }
+    ]
+   }
+  },
+  {
+   "name": "binary_session",
+   "description": "Report the complete current target, provider, capability availability, client-feature, analysis, and server-identity status without starting analysis.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "expected_package_version": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Expected package version used to reject stale or mismatched input."
+     },
+     "expected_catalog_digest": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Expected catalog digest used to reject stale or mismatched input."
+     },
+     "expected_server_path": {
+      "$ref": "#/$defs/__schema2",
+      "description": "Absolute local filesystem path expected for the running server; relative paths are rejected."
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema1": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+     },
+     "__schema2": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$",
+      "description": "Absolute local filesystem path expected for the running server; relative paths are rejected."
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "export_evidence_bundle",
+   "description": "Atomically write the session's deterministic Evidence bundle to the requested local path. Existing files require overwrite: true; records and manifests use canonical byte-stable ordering.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "path": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Absolute local filesystem path for the exported evidence bundle; relative paths are rejected."
+     },
+     "overwrite": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Whether an existing destination may be replaced."
+     }
+    },
+    "required": [
+     "path"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\x00]*$",
+      "description": "Absolute local filesystem path for the exported evidence bundle; relative paths are rejected."
+     },
+     "__schema1": {
+      "default": false,
+      "type": "boolean"
+     }
+    },
+    "examples": [
+     {
+      "path": "/tmp/evidence.json",
+      "overwrite": false
+     }
+    ]
+   }
+  },
+  {
+   "name": "get_evidence_bundle",
+   "description": "Return every retained Evidence record and residual unknown as a complete canonical bundle by default. detail=summary discovers retained records without copying or transferring their payloads; optionally filter by exact Evidence ID, operation, target SHA-256, analysis-profile digest or canonical native procedure address. Metadata distinguishes complete record retention from native value-flow truncation or unavailable/unknown coverage. Use a discovered evidence_id with inspect_analysis_view without restarting a provider. Filters apply only to summary delivery.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "detail": {
+      "$ref": "#/$defs/__schema0"
+     },
+     "filters": {
+      "$ref": "#/$defs/__schema1"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "default": "complete",
+      "type": "string",
+      "enum": [
+       "complete",
+       "summary"
+      ]
+     },
+     "__schema1": {
+      "type": "object",
+      "properties": {
+       "evidence_id": {
+        "type": "string",
+        "pattern": "^ev_[a-f0-9]{64}$",
+        "description": "Stable identifier of the recorded Evidence observation."
+       },
+       "operation": {
+        "type": "string",
+        "minLength": 1
+       },
+       "target_sha256": {
+        "$ref": "#/$defs/__schema2",
+        "description": "Exact SHA-256 digest of target."
+       },
+       "analysis_profile_digest": {
+        "$ref": "#/$defs/__schema2"
+       },
+       "procedure_address": {
+        "type": "string",
+        "minLength": 1
+       }
+      },
+      "additionalProperties": false
+     },
+     "__schema2": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+     }
+    },
+    "examples": [
+     {
+      "detail": "summary",
+      "filters": {
+       "operation": "analyze_function",
+       "procedure_address": "0x1000"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "capture_process_scenario",
+   "description": "Run one caller-selected command under a PTY and return process capture Evidence with residual unknowns. The renderer admits at most 1,000,000 combined terminal cells, computed as columns \u00d7 (rows + scrollback); every resize uses the selected scrollback and must fit the same budget. Supply a smaller terminal shape when that product is too large; dimensions are never clamped. A command name resolves through the inherited PATH; the working directory defaults to the caller's current directory; host environment variables are inherited with scenario overrides. Environment keys cannot contain '=' or NUL, and REA_PROCESS_RUN_ID is reserved for process ownership. Filesystem snapshots are opt-in through filesystem_observation_paths. A positive finalization_ms makes a timeout or idle deadline send SIGTERM to the captured root through its start identity, keep observing, and send SIGKILL once after the interval; exit.finalization records each attempt with its delivery result and the observed exit, and cancellation still ends the run at once. The target runs with the current user's permissions; this is not a security sandbox.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "executable": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Command name or executable path to run."
+     },
+     "arguments": {
+      "$ref": "#/$defs/__schema2"
+     },
+     "working_directory": {
+      "$ref": "#/$defs/__schema3"
+     },
+     "environment": {
+      "$ref": "#/$defs/__schema4"
+     },
+     "filesystem_observation_paths": {
+      "$ref": "#/$defs/__schema5"
+     },
+     "terminal": {
+      "$ref": "#/$defs/__schema6",
+      "description": "The visible terminal and scrollback together must use at most 1,000,000 xterm renderer cells: columns \u00d7 (rows + scrollback). Resize events use the same scrollback and limit."
+     },
+     "events": {
+      "$ref": "#/$defs/__schema10"
+     },
+     "timeout_ms": {
+      "$ref": "#/$defs/__schema12"
+     },
+     "idle_timeout_ms": {
+      "$ref": "#/$defs/__schema14"
+     },
+     "settle_ms": {
+      "$ref": "#/$defs/__schema15"
+     },
+     "finalization_ms": {
+      "$ref": "#/$defs/__schema16",
+      "description": "Milliseconds a target may keep running after SIGTERM when timeout_ms or idle_timeout_ms fires, before SIGKILL; 0 sends SIGKILL immediately. Both signals reach the captured root only while its launch-time start identity still matches; cancellation ends the run at once."
+     },
+     "limits": {
+      "$ref": "#/$defs/__schema18",
+      "description": "Resource budgets that bound execution and retained output for this operation."
+     },
+     "normalization": {
+      "$ref": "#/$defs/__schema19"
+     }
+    },
+    "required": [
+     "executable"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "minLength": 1,
+      "$ref": "#/$defs/__schema1"
+     },
+     "__schema1": {
+      "type": "string",
+      "pattern": "^[^\\x00]*$"
+     },
+     "__schema2": {
+      "default": [],
+      "type": "array",
+      "items": {
+       "$ref": "#/$defs/__schema1"
+      }
+     },
+     "__schema3": {
+      "default": ".",
+      "$ref": "#/$defs/__schema1"
+     },
+     "__schema4": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+       "type": "string",
+       "minLength": 1,
+       "pattern": "^(?:[^=\\x00R][^=\\x00]*|R(?:[^=\\x00E][^=\\x00]*|E(?:[^=\\x00A][^=\\x00]*|A(?:[^=\\x00_][^=\\x00]*|_(?:[^=\\x00P][^=\\x00]*|P(?:[^=\\x00R][^=\\x00]*|R(?:[^=\\x00O][^=\\x00]*|O(?:[^=\\x00C][^=\\x00]*|C(?:[^=\\x00E][^=\\x00]*|E(?:[^=\\x00S][^=\\x00]*|S(?:[^=\\x00S][^=\\x00]*|S(?:[^=\\x00_][^=\\x00]*|_(?:[^=\\x00R][^=\\x00]*|R(?:[^=\\x00U][^=\\x00]*|U(?:[^=\\x00N][^=\\x00]*|N(?:[^=\\x00_][^=\\x00]*|_(?:[^=\\x00I][^=\\x00]*|I(?:[^=\\x00D][^=\\x00]*|D[^=\\x00]+)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)?)$"
+      },
+      "additionalProperties": {
+       "$ref": "#/$defs/__schema1"
+      }
+     },
+     "__schema5": {
+      "default": [],
+      "type": "array",
+      "items": {
+       "minLength": 1,
+       "$ref": "#/$defs/__schema1"
+      }
+     },
+     "__schema6": {
+      "default": {
+       "columns": 80,
+       "rows": 24,
+       "scrollback": 1000
+      },
+      "type": "object",
+      "properties": {
+       "columns": {
+        "$ref": "#/$defs/__schema7"
+       },
+       "rows": {
+        "$ref": "#/$defs/__schema8"
+       },
+       "scrollback": {
+        "$ref": "#/$defs/__schema9"
+       }
+      },
+      "additionalProperties": false,
+      "description": "The visible terminal and scrollback together must use at most 1,000,000 xterm renderer cells: columns \u00d7 (rows + scrollback). Resize events use the same scrollback and limit."
+     },
+     "__schema7": {
+      "default": 80,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+     },
+     "__schema8": {
+      "default": 24,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+     },
+     "__schema9": {
+      "default": 1000,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "__schema10": {
+      "default": [],
+      "type": "array",
+      "items": {
+       "oneOf": [
+        {
+         "type": "object",
+         "properties": {
+          "at_ms": {
+           "$ref": "#/$defs/__schema11"
+          },
+          "type": {
+           "type": "string",
+           "const": "input"
+          },
+          "data": {
+           "type": "string"
+          },
+          "sensitive": {
+           "default": false,
+           "type": "boolean"
+          }
+         },
+         "required": [
+          "at_ms",
+          "type",
+          "data"
+         ],
+         "additionalProperties": false
+        },
+        {
+         "type": "object",
+         "properties": {
+          "at_ms": {
+           "$ref": "#/$defs/__schema11"
+          },
+          "type": {
+           "type": "string",
+           "const": "resize"
+          },
+          "columns": {
+           "type": "integer",
+           "minimum": 1,
+           "maximum": 65535
+          },
+          "rows": {
+           "type": "integer",
+           "minimum": 1,
+           "maximum": 65535
+          }
+         },
+         "required": [
+          "at_ms",
+          "type",
+          "columns",
+          "rows"
+         ],
+         "additionalProperties": false
+        },
+        {
+         "type": "object",
+         "properties": {
+          "at_ms": {
+           "$ref": "#/$defs/__schema11"
+          },
+          "type": {
+           "type": "string",
+           "const": "signal"
+          },
+          "signal": {
+           "type": "string",
+           "enum": [
+            "SIGINT",
+            "SIGTERM",
+            "SIGKILL"
+           ]
+          }
+         },
+         "required": [
+          "at_ms",
+          "type",
+          "signal"
+         ],
+         "additionalProperties": false
+        }
+       ]
+      }
+     },
+     "__schema11": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "__schema12": {
+      "default": 30000,
+      "$ref": "#/$defs/__schema13"
+     },
+     "__schema13": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+     },
+     "__schema14": {
+      "default": 30000,
+      "$ref": "#/$defs/__schema13"
+     },
+     "__schema15": {
+      "default": 100,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "__schema16": {
+      "default": 0,
+      "description": "Milliseconds a target may keep running after SIGTERM when timeout_ms or idle_timeout_ms fires, before SIGKILL; 0 sends SIGKILL immediately. Both signals reach the captured root only while its launch-time start identity still matches; cancellation ends the run at once.",
+      "$ref": "#/$defs/__schema17"
+     },
+     "__schema17": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+     },
+     "__schema18": {
+      "default": {
+       "output_bytes": 1000000,
+       "files": 10000,
+       "file_bytes": 10000000,
+       "processes": 1000,
+       "filesystem_depth": 16
+      },
+      "type": "object",
+      "properties": {
+       "output_bytes": {
+        "default": 1000000,
+        "$ref": "#/$defs/__schema13",
+        "description": "Byte count for output."
+       },
+       "files": {
+        "default": 10000,
+        "$ref": "#/$defs/__schema13"
+       },
+       "file_bytes": {
+        "default": 10000000,
+        "$ref": "#/$defs/__schema13",
+        "description": "Byte count for file."
+       },
+       "processes": {
+        "default": 1000,
+        "$ref": "#/$defs/__schema13"
+       },
+       "filesystem_depth": {
+        "default": 16,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+       }
+      },
+      "additionalProperties": false
+     },
+     "__schema19": {
+      "default": {
+       "paths": false,
+       "pids": true,
+       "ports": true,
+       "time_bucket_ms": 10,
+       "patterns": []
+      },
+      "type": "object",
+      "properties": {
+       "paths": {
+        "default": false,
+        "type": "boolean"
+       },
+       "pids": {
+        "default": true,
+        "type": "boolean"
+       },
+       "ports": {
+        "default": true,
+        "type": "boolean"
+       },
+       "time_bucket_ms": {
+        "default": 10,
+        "$ref": "#/$defs/__schema13"
+       },
+       "patterns": {
+        "default": [],
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "pattern": {
+           "type": "string",
+           "description": "Literal text to replace in captured output; not a regular expression."
+          },
+          "replacement": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "pattern",
+          "replacement"
+         ],
+         "additionalProperties": false
+        }
+       }
+      },
+      "additionalProperties": false
+     }
+    },
+    "examples": [
+     {
+      "executable": "/usr/bin/true",
+      "arguments": [],
+      "working_directory": "/tmp",
+      "environment": {},
+      "filesystem_observation_paths": [],
+      "terminal": {
+       "columns": 80,
+       "rows": 24,
+       "scrollback": 1000
+      },
+      "events": [],
+      "timeout_ms": 30000,
+      "idle_timeout_ms": 30000,
+      "settle_ms": 100,
+      "finalization_ms": 1500,
+      "limits": {
+       "output_bytes": 1000000,
+       "files": 10000,
+       "file_bytes": 10000000,
+       "processes": 1000,
+       "filesystem_depth": 16
+      },
+      "normalization": {
+       "paths": false,
+       "pids": true,
+       "ports": true,
+       "time_bucket_ms": 10,
+       "patterns": []
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "list_unknowns",
+   "description": "List every current residual-unknown head in deterministic ID order, with optional exact status, severity, and domain filters. Results are complete and inline. This is read-only; unresolved, contradicted, and non-truth dispositions remain distinct.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "status": {
+      "$ref": "#/$defs/__schema0",
+      "description": "Current lifecycle or verification status."
+     },
+     "severity": {
+      "$ref": "#/$defs/__schema1"
+     },
+     "domain": {
+      "$ref": "#/$defs/__schema2"
+     }
+    },
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "enum": [
+       "open",
+       "investigating",
+       "blocked",
+       "contradicted",
+       "resolved"
+      ]
+     },
+     "__schema1": {
+      "type": "string",
+      "enum": [
+       "low",
+       "medium",
+       "high",
+       "critical"
+      ]
+     },
+     "__schema2": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "examples": [
+     {}
+    ]
+   }
+  },
+  {
+   "name": "inspect_address_context",
+   "description": "Inspect one explicit reproducible address for its analyzed name, containing procedure, regular and inline comments, and matching bookmarks. Each unsupported facet returns a typed unavailable outcome; use xrefs, assembly, or pseudocode for those deeper views.",
+   "inputSchema": {
+    "type": "object",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+     "address": {
+      "$ref": "#/$defs/__schema0"
+     },
+     "document": {
+      "$ref": "#/$defs/__schema1",
+      "description": "Exact provider document or program identity."
+     }
+    },
+    "required": [
+     "address"
+    ],
+    "additionalProperties": false,
+    "$defs": {
+     "__schema0": {
+      "type": "string",
+      "minLength": 1
+     },
+     "__schema1": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "examples": [
+     {
+      "address": "0x1000"
+     }
+    ]
+   }
+  }
+ ],
+ "effects": {
+  "address_name": [
+   "mutatesSession"
+  ],
+  "address_to_file_offset": [
+   "mutatesSession"
+  ],
+  "analyze_function": [
+   "mutatesSession"
+  ],
+  "analyze_javascript_application": [
+   "mutatesSession"
+  ],
+  "analyze_swift_types": [
+   "mutatesSession"
+  ],
+  "analyze_web_bundle": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "annotate_native_function": [
+   "launchesProcess",
+   "mutatesSession",
+   "mutatesTarget",
+   "writesFilesystem"
+  ],
+  "batch_decompile": [
+   "mutatesSession"
+  ],
+  "binary_overview": [
+   "mutatesSession"
+  ],
+  "binary_session": [],
+  "build_call_path": [
+   "mutatesSession"
+  ],
+  "build_reconstruction_obligation_ledger": [
+   "mutatesSession"
+  ],
+  "capture_adb_screen": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "capture_browser_scenario": [
+   "accessesNetwork",
+   "changesUiState",
+   "launchesProcess",
+   "mayDiscardData",
+   "mutatesSession",
+   "mutatesTarget",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "capture_electron_scenario": [
+   "accessesNetwork",
+   "changesUiState",
+   "launchesProcess",
+   "mayDiscardData",
+   "mutatesSession",
+   "mutatesTarget",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "capture_native_ui_scenario": [
+   "accessesNetwork",
+   "changesUiState",
+   "launchesProcess",
+   "mayDiscardData",
+   "mutatesSession",
+   "mutatesTarget",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "capture_process_scenario": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "capture_web_screenshot": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "close_binary": [
+   "mayDiscardData",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "collect_adb_bugreport": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "comment": [
+   "mutatesSession"
+  ],
+  "compare_application_versions": [
+   "mutatesSession"
+  ],
+  "compare_artifacts": [
+   "mutatesSession"
+  ],
+  "compare_bundles": [
+   "mutatesSession"
+  ],
+  "compare_functions": [
+   "mutatesSession"
+  ],
+  "compare_javascript_export_shapes": [
+   "mutatesSession"
+  ],
+  "compare_managed_members": [
+   "mutatesSession"
+  ],
+  "compare_process_captures": [
+   "mutatesSession"
+  ],
+  "compare_source_to_bundle": [
+   "mutatesSession"
+  ],
+  "compare_web_captures": [
+   "mutatesSession"
+  ],
+  "compare_web_screenshots": [
+   "mutatesSession"
+  ],
+  "correlate_static_and_runtime": [
+   "mutatesSession"
+  ],
+  "current_address": [
+   "mutatesSession"
+  ],
+  "current_document": [
+   "mutatesSession"
+  ],
+  "current_procedure": [
+   "mutatesSession"
+  ],
+  "decode_android_resources": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "decode_interface_builder": [
+   "mutatesSession"
+  ],
+  "decompile_jeb_item": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "demangle_swift": [
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "discover_webmcp_tools": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "evaluate_reconstruction_coverage": [],
+  "export_evidence_bundle": [
+   "mayDiscardData",
+   "writesFilesystem"
+  ],
+  "export_web_scripts": [
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "extract_artifact": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "extract_firmware": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "find_changed_behavior": [
+   "mutatesSession"
+  ],
+  "find_xrefs_to_name": [
+   "mutatesSession"
+  ],
+  "get_call_graph": [
+   "mutatesSession"
+  ],
+  "get_evidence_bundle": [],
+  "get_navigation_context": [
+   "mutatesSession"
+  ],
+  "get_objc_classes": [
+   "mutatesSession"
+  ],
+  "get_objc_protocols": [
+   "mutatesSession"
+  ],
+  "goto_address": [
+   "changesUiState",
+   "mutatesSession"
+  ],
+  "import_evidence_bundle": [
+   "mutatesSession"
+  ],
+  "import_managed_reconstruction": [
+   "mutatesSession"
+  ],
+  "inline_comment": [
+   "mutatesSession"
+  ],
+  "inspect_adb_client": [
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_adb_device": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_adb_display": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_adb_package": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_adb_window": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_address_context": [
+   "mutatesSession"
+  ],
+  "inspect_analysis_view": [
+   "mutatesSession"
+  ],
+  "inspect_android_class": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "inspect_android_method": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "inspect_android_package": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "inspect_apktool_client": [
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_artifact": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "inspect_asset_catalog": [
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_binary_layout": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "inspect_electron_page": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "inspect_evm_interface": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "inspect_firmware_regions": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "inspect_jeb_client": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "inspect_keyed_archive": [
+   "mutatesSession"
+  ],
+  "inspect_macho": [
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_managed_artifact": [
+   "mutatesSession"
+  ],
+  "inspect_managed_members": [
+   "mutatesSession"
+  ],
+  "inspect_managed_native_boundaries": [
+   "mutatesSession"
+  ],
+  "inspect_native_api": [
+   "mutatesSession",
+   "notIdempotent"
+  ],
+  "inspect_native_data_type": [
+   "mutatesSession"
+  ],
+  "inspect_native_dispatch_metadata": [
+   "mutatesSession"
+  ],
+  "inspect_native_instruction": [
+   "mutatesSession"
+  ],
+  "inspect_native_load_image": [
+   "mutatesSession"
+  ],
+  "inspect_pe_resources": [
+   "mutatesSession"
+  ],
+  "inspect_plist": [
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_recorded_crash": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "inspect_signature": [
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "inspect_web_event_listeners": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "inspect_web_network_capture": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "inspect_web_page": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "install_adb_package": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "mutatesTarget",
+   "notIdempotent"
+  ],
+  "list_adb_devices": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "list_adb_directory": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "list_adb_features": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "list_adb_packages": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "list_adb_processes": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "list_adb_services": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "list_architectures": [
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "list_bookmarks": [
+   "mutatesSession"
+  ],
+  "list_browser_targets": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "list_documents": [
+   "mutatesSession"
+  ],
+  "list_electron_targets": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "list_javascript_runtime_targets": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "list_jeb_units": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "list_names": [
+   "mutatesSession"
+  ],
+  "list_procedures": [
+   "mutatesSession"
+  ],
+  "list_segments": [
+   "mutatesSession"
+  ],
+  "list_strings": [
+   "mutatesSession"
+  ],
+  "list_unknowns": [],
+  "next_address": [
+   "mutatesSession"
+  ],
+  "observe_javascript_runtime": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "observe_native_calls": [
+   "accessesNetwork",
+   "changesUiState",
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "observe_native_ui": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "observe_web_execution": [
+   "accessesNetwork",
+   "mayDiscardData",
+   "mutatesSession",
+   "mutatesTarget",
+   "notIdempotent"
+  ],
+  "observe_web_session": [
+   "accessesNetwork",
+   "mutatesSession"
+  ],
+  "open_binary": [
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "open_jeb_project": [
+   "accessesNetwork",
+   "mutatesSession",
+   "notIdempotent"
+  ],
+  "prev_address": [
+   "mutatesSession"
+  ],
+  "procedure_address": [
+   "mutatesSession"
+  ],
+  "procedure_assembly": [
+   "mutatesSession"
+  ],
+  "procedure_callees": [
+   "mutatesSession"
+  ],
+  "procedure_callers": [
+   "mutatesSession"
+  ],
+  "procedure_info": [
+   "mutatesSession"
+  ],
+  "procedure_pseudo_code": [
+   "mutatesSession"
+  ],
+  "procedure_references": [
+   "mutatesSession"
+  ],
+  "project_android_application_graph": [
+   "mutatesSession"
+  ],
+  "project_apple_application_graph": [
+   "mutatesSession"
+  ],
+  "project_managed_application_graph": [
+   "mutatesSession"
+  ],
+  "pull_adb_file": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "pull_adb_package": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "push_adb_file": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "mutatesTarget",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "read_adb_logcat": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "read_adb_setting": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "read_bytes": [
+   "mutatesSession"
+  ],
+  "read_function_instructions": [
+   "mutatesSession"
+  ],
+  "reconcile_javascript_runtime": [
+   "mutatesSession"
+  ],
+  "record_unknown": [
+   "mutatesSession",
+   "notIdempotent"
+  ],
+  "recover_javascript_sources": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem",
+   "notIdempotent"
+  ],
+  "resolve_adb_packages": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession"
+  ],
+  "resolve_containing_procedure": [
+   "mutatesSession"
+  ],
+  "resolve_native_call_targets": [
+   "mutatesSession"
+  ],
+  "search_android_classes": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "search_procedures": [
+   "mutatesSession"
+  ],
+  "search_strings": [
+   "mutatesSession"
+  ],
+  "set_address_name": [
+   "mutatesSession",
+   "mutatesTarget"
+  ],
+  "set_addresses_names": [
+   "mutatesSession",
+   "mutatesTarget"
+  ],
+  "set_bookmark": [
+   "mutatesSession",
+   "mutatesTarget"
+  ],
+  "set_comment": [
+   "mutatesSession",
+   "mutatesTarget"
+  ],
+  "set_inline_comment": [
+   "mutatesSession",
+   "mutatesTarget"
+  ],
+  "start_adb_activity": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "mutatesTarget",
+   "notIdempotent"
+  ],
+  "start_adb_app": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "mutatesTarget",
+   "notIdempotent"
+  ],
+  "stop_adb_app": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "mutatesTarget",
+   "notIdempotent"
+  ],
+  "trace_android_references": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "trace_application_feature": [
+   "mutatesSession"
+  ],
+  "trace_call_path": [
+   "mutatesSession",
+   "notIdempotent"
+  ],
+  "trace_dylib_resolution": [
+   "mutatesSession"
+  ],
+  "trace_feature": [
+   "mutatesSession",
+   "notIdempotent"
+  ],
+  "trace_javascript_semantics": [
+   "mutatesSession"
+  ],
+  "trace_native_ui_action": [
+   "mutatesSession"
+  ],
+  "trace_native_values": [
+   "mutatesSession"
+  ],
+  "trace_web_module_imports": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "trace_web_source_location": [
+   "launchesProcess",
+   "mutatesSession",
+   "writesFilesystem"
+  ],
+  "uninstall_adb_package": [
+   "accessesNetwork",
+   "launchesProcess",
+   "mutatesSession",
+   "mutatesTarget",
+   "notIdempotent"
+  ],
+  "unset_bookmark": [
+   "mayDiscardData",
+   "mutatesSession",
+   "mutatesTarget"
+  ],
+  "update_unknown": [
+   "mutatesSession",
+   "notIdempotent"
+  ],
+  "verify_managed_native_boundaries": [
+   "mutatesSession"
+  ],
+  "verify_reconstruction": [
+   "mutatesSession"
+  ],
+  "verify_unknown_resolution": [],
+  "xrefs": [
+   "mutatesSession"
+  ]
+ },
+ "responses": {
+  "inspect_managed_artifact": {
+   "content": [
+    {
+     "type": "text",
+     "text": "{\"evidence_id\":\"ev_7dfab27c99fecb2c010d5ee2e8401ac2bd2dd123791ae2717a9e04a65e88d02b\",\"subject\":{\"name\":\"SCRATCH\\\\rea-spike-01\\\\fixtures\\\\bin\\\\Fixture.dll\",\"digest\":{\"sha256\":\"2a65db842ec854caf21d766b24f25617d1d34bd6b32b3ff614fda90d43755478\"},\"format\":\"pe\",\"architecture\":\"x86\",\"local_path\":\"SCRATCH\\\\rea-spike-01\\\\fixtures\\\\bin\\\\Fixture.dll\"},\"provider\":{\"id\":\"rea-dotnet-static\",\"name\":\"REA managed static analysis provider\",\"version\":\"1\"},\"analysis_profile\":null,\"predicate_type\":\"rea.analysis\",\"operation\":\"inspect_managed_artifact\",\"parameters\":{\"path\":\"SCRATCH/rea-spike-01/fixtures/bin/Fixture.dll\"},\"raw_result\":null,\"normalized_result\":{\"artifact\":{\"path\":\"SCRATCH\\\\rea-spike-01\\\\fixtures\\\\bin\\\\Fixture.dll\",\"sha256\":\"2a65db842ec854caf21d766b24f25617d1d34bd6b32b3ff614fda90d43755478\",\"byte_length\":4096,\"format\":\"pe\"},\"pe\":{\"machine\":332,\"machine_hex\":\"0x014c\",\"architecture\":\"x86\",\"optional_header\":\"pe32\",\"section_count\":3,\"characteristics\":8450,\"cli\":{\"header_offset\":520,\"header_size\":72,\"runtime_version\":\"2.5\",\"flags\":1,\"flag_names\":[\"il-only\"],\"entry_point\":{\"kind\":\"none\",\"value\":null},\"metadata_rva\":8500,\"metadata_size\":1240,\"resources_rva\":0,\"resources_size\":0,\"strong_name_rva\":0,\"strong_name_size\":0,\"managed_native_header_rva\":0,\"managed_native_header_size\":0,\"ready_to_run_signature\":false}},\"classification\":{\"status\":\"managed\",\"container\":\"pe\",\"runtime_family\":\"unknown\",\"implementation\":\"cil\",\"managed_architecture\":\"anycpu\",\"evidence\":[{\"code\":\"cli-header-observed\",\"detail\":\"A file-backed PE CLI header and metadata root were admitted.\",\"file_offset\":520},{\"code\":\"managed-architecture-derived\",\"detail\":\"Managed architecture anycpu is derived from PE machine and CLI flags.\",\"file_offset\":536}]},\"metadata\":{\"status\":\"complete\",\"version\":\"v4.0.30319\",\"stream_names\":[\"#Blob\",\"#GUID\",\"#Strings\",\"#US\",\"#~\"],\"table_row_counts\":{\"Module\":1,\"TypeRef\":6,\"TypeDef\":3,\"Field\":2,\"MethodDef\":7,\"Param\":4,\"MemberRef\":8,\"Constant\":1,\"CustomAttribute\":5,\"StandAloneSig\":3,\"PropertyMap\":1,\"Property\":1,\"MethodSemantics\":2,\"ModuleRef\":1,\"ImplMap\":1,\"Assembly\":1,\"AssemblyRef\":1}},\"module\":{\"name\":\"Fixture.dll\",\"generation\":0,\"mvid\":\"c449b8ab-2954-4aea-ab05-a25d3bd71487\",\"enc_id\":null,\"enc_base_id\":null,\"token\":\"0x00000001\",\"row_offset\":1020},\"assembly\":{\"name\":\"Fixture\",\"version\":\"0.0.0.0\",\"culture\":null,\"flags\":0,\"hash_algorithm\":32772,\"public_key\":{\"kind\":\"none\",\"byte_length\":0,\"sha256\":null,\"token\":null},\"token\":\"0x20000001\",\"row_offset\":1364},\"target_frameworks\":[],\"references\":[{\"name\":\"mscorlib\",\"version\":\"4.0.0.0\",\"culture\":null,\"flags\":0,\"public_key_or_token\":{\"kind\":\"public-key-token\",\"byte_length\":8,\"sha256\":\"1b960802b155541df3837ade50790da7e91762d14b8e011fa8223424ff75acdb\",\"token\":\"b77a5c561934e089\"},\"hash_value_sha256\":null,\"hash_value_length\":0,\"token\":\"0x23000001\",\"row_offset\":1386}],\"resources\":[],\"attributes\":[{\"parent_token\":\"0x20000001\",\"constructor_token\":\"0x0a000002\",\"type_name\":\"System.Runtime.CompilerServices.RuntimeCompatibilityAttribute\",\"value_length\":30,\"value_sha256\":\"4611a48823d62972173df33a4677daf48b4c4a5e8bd71f94914052aa56c7c2e0\",\"decoded_fixed_string\":null,\"token\":\"0x0c000001\",\"row_offset\":1296},{\"parent_token\":\"0x20000001\",\"constructor_token\":\"0x0a000001\",\"type_name\":\"System.Runtime.CompilerServices.CompilationRelaxationsAttribute\",\"value_length\":8,\"value_sha256\":\"e37a02053d377bad23ea19b7443bffd15fc0b9b45cf9d88a2b2464838374009b\",\"decoded_fixed_string\":null,\"token\":\"0x0c000002\",\"row_offset\":1302},{\"parent_token\":\"0x04000002\",\"constructor_token\":\"0x0a000006\",\"type_name\":\"System.Runtime.CompilerServices.CompilerGeneratedAttribute\",\"value_length\":4,\"value_sha256\":\"67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450\",\"decoded_fixed_string\":null,\"token\":\"0x0c000003\",\"row_offset\":1308},{\"parent_token\":\"0x06000004\",\"constructor_token\":\"0x0a000006\",\"type_name\":\"System.Runtime.CompilerServices.CompilerGeneratedAttribute\",\"value_length\":4,\"value_sha256\":\"67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450\",\"decoded_fixed_string\":null,\"token\":\"0x0c000004\",\"row_offset\":1314},{\"parent_token\":\"0x06000005\",\"constructor_token\":\"0x0a000006\",\"type_name\":\"System.Runtime.CompilerServices.CompilerGeneratedAttribute\",\"value_length\":4,\"value_sha256\":\"67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450\",\"decoded_fixed_string\":null,\"token\":\"0x0c000005\",\"row_offset\":1320}],\"coverage\":{\"state\":\"complete\",\"issues\":[]},\"limitations\":[\"Static inspection did not load the assembly, resolve dependencies through a CLR, decompile C#, or execute target code.\"]},\"confidence\":\"observed\",\"authority\":\"shipped-artifact\",\"environment\":null,\"limitations\":[\"Static inspection did not load the assembly, resolve dependencies through a CLR, decompile C#, or execute target code.\"],\"locations\":[{\"kind\":\"file-offset-range\",\"start\":520,\"end\":592},{\"kind\":\"file-offset\",\"offset\":1020},{\"kind\":\"file-offset\",\"offset\":1364}],\"evidence_links\":[]}"
+    }
+   ],
+   "structuredContent": {
+    "evidence_id": "ev_7dfab27c99fecb2c010d5ee2e8401ac2bd2dd123791ae2717a9e04a65e88d02b",
+    "subject": {
+     "name": "SCRATCH\\rea-spike-01\\fixtures\\bin\\Fixture.dll",
+     "digest": {
+      "sha256": "2a65db842ec854caf21d766b24f25617d1d34bd6b32b3ff614fda90d43755478"
+     },
+     "format": "pe",
+     "architecture": "x86",
+     "local_path": "SCRATCH\\rea-spike-01\\fixtures\\bin\\Fixture.dll"
+    },
+    "provider": {
+     "id": "rea-dotnet-static",
+     "name": "REA managed static analysis provider",
+     "version": "1"
+    },
+    "analysis_profile": null,
+    "predicate_type": "rea.analysis",
+    "operation": "inspect_managed_artifact",
+    "parameters": {
+     "path": "SCRATCH/rea-spike-01/fixtures/bin/Fixture.dll"
+    },
+    "raw_result": null,
+    "normalized_result": {
+     "artifact": {
+      "path": "SCRATCH\\rea-spike-01\\fixtures\\bin\\Fixture.dll",
+      "sha256": "2a65db842ec854caf21d766b24f25617d1d34bd6b32b3ff614fda90d43755478",
+      "byte_length": 4096,
+      "format": "pe"
+     },
+     "pe": {
+      "machine": 332,
+      "machine_hex": "0x014c",
+      "architecture": "x86",
+      "optional_header": "pe32",
+      "section_count": 3,
+      "characteristics": 8450,
+      "cli": {
+       "header_offset": 520,
+       "header_size": 72,
+       "runtime_version": "2.5",
+       "flags": 1,
+       "flag_names": [
+        "il-only"
+       ],
+       "entry_point": {
+        "kind": "none",
+        "value": null
+       },
+       "metadata_rva": 8500,
+       "metadata_size": 1240,
+       "resources_rva": 0,
+       "resources_size": 0,
+       "strong_name_rva": 0,
+       "strong_name_size": 0,
+       "managed_native_header_rva": 0,
+       "managed_native_header_size": 0,
+       "ready_to_run_signature": false
+      }
+     },
+     "classification": {
+      "status": "managed",
+      "container": "pe",
+      "runtime_family": "unknown",
+      "implementation": "cil",
+      "managed_architecture": "anycpu",
+      "evidence": [
+       {
+        "code": "cli-header-observed",
+        "detail": "A file-backed PE CLI header and metadata root were admitted.",
+        "file_offset": 520
+       },
+       {
+        "code": "managed-architecture-derived",
+        "detail": "Managed architecture anycpu is derived from PE machine and CLI flags.",
+        "file_offset": 536
+       }
+      ]
+     },
+     "metadata": {
+      "status": "complete",
+      "version": "v4.0.30319",
+      "stream_names": [
+       "#Blob",
+       "#GUID",
+       "#Strings",
+       "#US",
+       "#~"
+      ],
+      "table_row_counts": {
+       "Module": 1,
+       "TypeRef": 6,
+       "TypeDef": 3,
+       "Field": 2,
+       "MethodDef": 7,
+       "Param": 4,
+       "MemberRef": 8,
+       "Constant": 1,
+       "CustomAttribute": 5,
+       "StandAloneSig": 3,
+       "PropertyMap": 1,
+       "Property": 1,
+       "MethodSemantics": 2,
+       "ModuleRef": 1,
+       "ImplMap": 1,
+       "Assembly": 1,
+       "AssemblyRef": 1
+      }
+     },
+     "module": {
+      "name": "Fixture.dll",
+      "generation": 0,
+      "mvid": "c449b8ab-2954-4aea-ab05-a25d3bd71487",
+      "enc_id": null,
+      "enc_base_id": null,
+      "token": "0x00000001",
+      "row_offset": 1020
+     },
+     "assembly": {
+      "name": "Fixture",
+      "version": "0.0.0.0",
+      "culture": null,
+      "flags": 0,
+      "hash_algorithm": 32772,
+      "public_key": {
+       "kind": "none",
+       "byte_length": 0,
+       "sha256": null,
+       "token": null
+      },
+      "token": "0x20000001",
+      "row_offset": 1364
+     },
+     "target_frameworks": [],
+     "references": [
+      {
+       "name": "mscorlib",
+       "version": "4.0.0.0",
+       "culture": null,
+       "flags": 0,
+       "public_key_or_token": {
+        "kind": "public-key-token",
+        "byte_length": 8,
+        "sha256": "1b960802b155541df3837ade50790da7e91762d14b8e011fa8223424ff75acdb",
+        "token": "b77a5c561934e089"
+       },
+       "hash_value_sha256": null,
+       "hash_value_length": 0,
+       "token": "0x23000001",
+       "row_offset": 1386
+      }
+     ],
+     "resources": [],
+     "attributes": [
+      {
+       "parent_token": "0x20000001",
+       "constructor_token": "0x0a000002",
+       "type_name": "System.Runtime.CompilerServices.RuntimeCompatibilityAttribute",
+       "value_length": 30,
+       "value_sha256": "4611a48823d62972173df33a4677daf48b4c4a5e8bd71f94914052aa56c7c2e0",
+       "decoded_fixed_string": null,
+       "token": "0x0c000001",
+       "row_offset": 1296
+      },
+      {
+       "parent_token": "0x20000001",
+       "constructor_token": "0x0a000001",
+       "type_name": "System.Runtime.CompilerServices.CompilationRelaxationsAttribute",
+       "value_length": 8,
+       "value_sha256": "e37a02053d377bad23ea19b7443bffd15fc0b9b45cf9d88a2b2464838374009b",
+       "decoded_fixed_string": null,
+       "token": "0x0c000002",
+       "row_offset": 1302
+      },
+      {
+       "parent_token": "0x04000002",
+       "constructor_token": "0x0a000006",
+       "type_name": "System.Runtime.CompilerServices.CompilerGeneratedAttribute",
+       "value_length": 4,
+       "value_sha256": "67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450",
+       "decoded_fixed_string": null,
+       "token": "0x0c000003",
+       "row_offset": 1308
+      },
+      {
+       "parent_token": "0x06000004",
+       "constructor_token": "0x0a000006",
+       "type_name": "System.Runtime.CompilerServices.CompilerGeneratedAttribute",
+       "value_length": 4,
+       "value_sha256": "67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450",
+       "decoded_fixed_string": null,
+       "token": "0x0c000004",
+       "row_offset": 1314
+      },
+      {
+       "parent_token": "0x06000005",
+       "constructor_token": "0x0a000006",
+       "type_name": "System.Runtime.CompilerServices.CompilerGeneratedAttribute",
+       "value_length": 4,
+       "value_sha256": "67abdd721024f0ff4e0b3f4c2fc13bc5bad42d0b7851d456d88d203d15aaa450",
+       "decoded_fixed_string": null,
+       "token": "0x0c000005",
+       "row_offset": 1320
+      }
+     ],
+     "coverage": {
+      "state": "complete",
+      "issues": []
+     },
+     "limitations": [
+      "Static inspection did not load the assembly, resolve dependencies through a CLR, decompile C#, or execute target code."
+     ]
+    },
+    "confidence": "observed",
+    "authority": "shipped-artifact",
+    "environment": null,
+    "limitations": [
+     "Static inspection did not load the assembly, resolve dependencies through a CLR, decompile C#, or execute target code."
+    ],
+    "locations": [
+     {
+      "kind": "file-offset-range",
+      "start": 520,
+      "end": 592
+     },
+     {
+      "kind": "file-offset",
+      "offset": 1020
+     },
+     {
+      "kind": "file-offset",
+      "offset": 1364
+     }
+    ],
+    "evidence_links": []
+   }
+  }
+ }
+}

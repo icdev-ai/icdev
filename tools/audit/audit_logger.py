@@ -78,6 +78,13 @@ VALID_EVENT_TYPES = (
     # the producer. See tools/compliance/sbom_revision.py.
     "sbom_revised",
     "sbom_corrected",
+    # Reverse-engineering provenance (rea-wire-01). One row per call to an
+    # external RE server (REA): the target's sha256 and the operator's
+    # authorization basis on an allowed call, the reason on a refused one.
+    # tools/mcp_client/registry.py writes both, and refuses the call when the
+    # authorized row cannot be written.
+    "re_analysis.authorized",
+    "re_analysis.refused",
     # Migration Design Canvas (nmce-purge-01). tools/migration_canvas/blueprint.py
     # has bridged every _audit call here since it was written, under this
     # event_type — but it was never admitted to the vocabulary, so the CHECK

@@ -247,7 +247,9 @@ def test_disabled_by_default():
     """Connecting out is opt-in per deployment."""
     config = reg.load_config()
     assert config.get("enabled") is False
-    assert config.get("servers") == []
+    # Servers may be REGISTERED (rea, rea-wire-01) but every one ships off.
+    assert all(s.get("enabled") is False for s in config.get("servers"))
+    assert reg.enabled_servers() == []
 
 
 def test_missing_config_degrades_to_no_servers(monkeypatch):
@@ -279,6 +281,25 @@ def test_secrets_are_referenced_not_inlined(monkeypatch):
     assert _resolve_secret("literal") == "literal"
 
 
+def test_command_env_references_are_resolved(monkeypatch):
+    """A launch path is per-host, so config names it as `env:VAR` (rea-wire-01)."""
+    from icdev.tools.mcp_client.client import resolve_command
+
+    monkeypatch.setenv("SOME_MCP_ENTRY", "/opt/server/main.mjs")
+    spec = {"name": "t", "command": ["node", "env:SOME_MCP_ENTRY", "mcp"]}
+    assert resolve_command(spec) == ["node", "/opt/server/main.mjs", "mcp"]
+
+
+def test_an_unset_command_reference_spawns_nothing(monkeypatch):
+    """A hole in argv would run something other than the configured server."""
+    from icdev.tools.mcp_client.client import build_transport, resolve_command
+
+    monkeypatch.delenv("UNSET_MCP_ENTRY_XYZ", raising=False)
+    spec = {"name": "t", "transport": "stdio", "command": ["node", "env:UNSET_MCP_ENTRY_XYZ"]}
+    assert resolve_command(spec) is None
+    assert build_transport(spec) is None
+
+
 def test_shipped_config_contains_no_live_endpoints():
     """A registry arriving with third-party endpoints enabled is supply chain."""
     from pathlib import Path
@@ -290,4 +311,7 @@ def test_shipped_config_contains_no_live_endpoints():
 
     parsed = yaml.safe_load(text)
     assert parsed["enabled"] is False
-    assert parsed["servers"] == []
+    for server in parsed["servers"]:
+        assert server.get("enabled") is False, server.get("name")
+        assert server.get("transport") == "stdio", "no remote endpoint is shipped"
+        assert "url" not in server
