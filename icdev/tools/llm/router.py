@@ -212,10 +212,15 @@ class RedactionUnavailableError(RuntimeError):
 
 
 def _expand_env(value):
-    """Expand ${VAR:-default} patterns in string values."""
+    """Expand ${VAR:-default} patterns in string values.
+
+    A default may itself be a reference -- ``${VLLM_EMBED_BASE_URL:-${VLLM_BASE_URL:-}}``
+    (omx-vllm-03) -- so the INNERMOST reference is resolved first, repeatedly.
+    An unset reference with no default is left as written, as before.
+    """
     if not isinstance(value, str):
         return value
-    pattern = r"\$\{([^}]+)\}"
+    pattern = r"\$\{([^${}]+)\}"
 
     def replacer(match):
         expr = match.group(1)
@@ -224,7 +229,12 @@ def _expand_env(value):
             return os.environ.get(var, default)
         return os.environ.get(expr, match.group(0))
 
-    return re.sub(pattern, replacer, value)
+    for _ in range(8):
+        expanded = re.sub(pattern, replacer, value)
+        if expanded == value:
+            break
+        value = expanded
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -3073,12 +3083,28 @@ class LLMRouter:
                         api_key_env = pcfg.get("api_key_env", "")
                         if api_key_env:
                             api_key = os.environ.get(api_key_env, "")
-                    base_url = _expand_env(pcfg.get("base_url", "https://api.openai.com/v1"))
+                    # A model may name its OWN endpoint and model id (omx-vllm-03):
+                    # vLLM serves embeddings from a separate pooling instance, so
+                    # `vllm-embed` overrides the provider's chat base_url. Either
+                    # resolving empty means "not configured" -- skip it, and do not
+                    # record a probe failure for an embedder nobody switched on.
+                    base_url = _expand_env(mcfg.get("base_url") or pcfg.get("base_url", "https://api.openai.com/v1"))
+                    model_id = _expand_env(str(mcfg.get("model_id", "text-embedding-3-small")))
+                    if not base_url.strip() or not model_id.strip() or "${" in base_url + model_id:
+                        logger.debug("embeddings: skipping %s (endpoint or model id unset)", model_name)
+                        continue
+                    # Locality from THE one definition (omx-vllm-01), judged on the
+                    # URL this embedder will actually call, not the provider's.
+                    local = _provider_is_local_only(
+                        provider_name, {provider_name: {**pcfg, "base_url": base_url}}
+                    )
                     emb = OpenAIEmbeddingProvider(
                         api_key=api_key,
                         base_url=base_url,
-                        model_id=mcfg.get("model_id", "text-embedding-3-small"),
-                        dims=mcfg.get("dimensions", 1536),
+                        model_id=model_id,
+                        # `dimensions: 0` = not known in advance: probed on first use.
+                        dims=int(mcfg.get("dimensions", 1536) or 0),
+                        local=local,
                     )
                 elif ptype == "bedrock":
                     from tools.llm.embedding_provider import BedrockEmbeddingProvider

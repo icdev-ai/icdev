@@ -1430,7 +1430,7 @@ agent_effort_defaults:
 # Embedding Configuration
 # -----------------------------------------------------------------------
 embeddings:
-  default_chain: [openai-embed, gemini-embed, nomic-embed-local]
+  default_chain: [openai-embed, gemini-embed, nomic-embed-local, vllm-embed]
 
   models:
     openai-embed:
@@ -1455,6 +1455,24 @@ embeddings:
       provider: ollama
       model_id: nomic-embed-text
       dimensions: 768
+      pricing: { input_per_1k: 0.0 }
+
+    # vLLM embeddings (omx-vllm-03). vLLM serves embeddings from a SEPARATE
+    # instance started as a pooling/embed model, not from the chat server:
+    #   vllm serve BAAI/bge-m3 --task embed --port 8001
+    # then set VLLM_EMBED_BASE_URL=http://localhost:8001/v1 and
+    # VLLM_EMBED_MODEL=BAAI/bge-m3. VLLM_EMBED_BASE_URL falls back to
+    # VLLM_BASE_URL (one instance serving both); VLLM_EMBED_MODEL has NO
+    # default, so with it unset this entry is skipped, never probed.
+    # Locality is the `vllm` provider's declaration, judged on the embed URL
+    # (cli_bridge/activate.py::_is_local_only_provider).
+    # dimensions: 0 = probed on first use. A store already holding vectors of
+    # another dimension REFUSES the write (tools/llm/embedding_dimension.py).
+    vllm-embed:
+      provider: vllm
+      base_url: ${VLLM_EMBED_BASE_URL:-${VLLM_BASE_URL:-}}
+      model_id: ${VLLM_EMBED_MODEL:-}
+      dimensions: 0
       pricing: { input_per_1k: 0.0 }
 
     # Azure OpenAI embedding (D238)
