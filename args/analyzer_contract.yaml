@@ -497,7 +497,11 @@ analyzers:
       max_calls: 10
       per_seconds: 3600
     # decompile(path, *, timeout_s=None, max_cpu=None, ghidra_home=None,
-    #           max_functions=None, max_strings=None)
+    #           max_functions=None, max_strings=None, ghidra_python=None,
+    #           authorization_basis=None)
+    # Ghidra 12+ via PyGhidra (rea-eng-02). authorization_basis falls back to
+    # ICDEV_RE_AUTHORIZATION_BASIS; with neither, a run is refused (error /
+    # authorization_missing) before any JVM starts.
     # — every keyword carries a default, so only the observable is bound.
     binding:
       observable_arg: path

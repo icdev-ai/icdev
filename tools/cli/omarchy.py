@@ -33,6 +33,16 @@ ONE command for the steps an operator otherwise runs by hand (omx-setup-01):
                  agents plugin's ``assets/``, and a ``systemd --user`` timer that
                  refreshes the record. Read-only, so enabled without ``--start``.
 
+OPTIONAL, only with ``--ghidra`` (rea-eng-02):
+
+  ghidra    -- NSA Ghidra 12 (Apache-2.0) + JDK 21 from pacman, and an
+               interpreter that can ``import pyghidra`` -- what
+               ``tools/analyzers/ghidra_headless.py`` needs to decompile. Opt-in
+               because it is a ~1 GB install most hosts never use; the pacman
+               half needs root, so it RUNS only with ``--yes``. Not reversed by
+               ``uninstall``: it is a system package. Windows: see
+               docs/install/ghidra.md.
+
 Every step probes first and reports ``skipped`` when already in place, so a
 second run changes nothing. ``--dry-run`` prints the plan and writes nothing.
 ``status`` probes only. ``uninstall`` reverses 4-8 and NEVER touches the
@@ -42,8 +52,8 @@ Every external command goes through one injectable runner (``Host``), which is
 how the tests fake pacman / psql / systemctl / the harness CLIs.
 
 Usage:
-    icdev omarchy setup [--dry-run] [--yes] [--start] [--json]
-    icdev omarchy status [--json]
+    icdev omarchy setup [--dry-run] [--yes] [--start] [--ghidra] [--json]
+    icdev omarchy status [--ghidra] [--json]
     icdev omarchy uninstall [--dry-run] [--json]
 """
 
@@ -638,14 +648,82 @@ def plan_panel(host: Host, det: Detected, remove: bool = False) -> Plan:
 
 
 # --------------------------------------------------------------------------- #
+# Optional -- Ghidra 12 + PyGhidra (rea-eng-02)
+# --------------------------------------------------------------------------- #
+
+GHIDRA_PACKAGES = ("ghidra", "jdk21-openjdk")
+#: Where Arch's ``ghidra`` package installs. ICDEV_GHIDRA_HOME outranks it.
+GHIDRA_DEFAULT_HOME = "/opt/ghidra"
+#: PyPI fallback when the install carries no bundled wheel. 3.x is the line
+#: that matches Ghidra 12 ("PyGhidra 3.0.0 (compatible with Ghidra 12.0 and later)").
+PYGHIDRA_REQUIREMENT = "pyghidra>=3.0"
+
+
+def _pyghidra_python(host: Host) -> Optional[str]:
+    """The first interpreter that can ``import pyghidra``: ICDEV_GHIDRA_PYTHON,
+    this ICDEV's own, then ``python3`` on PATH (Arch's ``ghidra`` package puts
+    ``pyghidra`` in the system python)."""
+    from tools.analyzers.ghidra_headless import ENV_PYTHON
+    seen: List[str] = []
+    for cand in (host.environ.get(ENV_PYTHON), host.python, host.which("python3")):
+        if not cand or cand in seen:
+            continue
+        seen.append(cand)
+        if host.ok([cand, "-c", "import pyghidra"]):
+            return cand
+    return None
+
+
+def plan_ghidra(host: Host) -> Plan:
+    from tools.analyzers.ghidra_headless import (
+        ENV_GHIDRA_HOME, MIN_GHIDRA_VERSION, _version_tuple, ghidra_version)
+    home = host.environ.get(ENV_GHIDRA_HOME) or GHIDRA_DEFAULT_HOME
+    version = ghidra_version(home)
+    parsed = _version_tuple(version)
+    current = parsed is not None and parsed[:2] >= MIN_GHIDRA_VERSION
+    python = _pyghidra_python(host)
+    want = "%s.%s" % MIN_GHIDRA_VERSION
+    if current and python:
+        return Plan(done=True, detail=f"Ghidra {version} at {home}; pyghidra via {python}")
+
+    actions: List[Action] = []
+    needs_yes = False
+    if not current:
+        if host.platform != "linux" or not host.which("pacman"):
+            return Plan(done=False, state="pending",
+                        detail=(f"Ghidra {version or 'not found'} at {home}; {want}+ is required. "
+                                "No pacman here: install the release zip + a JDK 21 and set "
+                                f"{ENV_GHIDRA_HOME} -- docs/install/ghidra.md"))
+        actions.append(Action(f"install {' + '.join(GHIDRA_PACKAGES)}",
+                              ["sudo", "pacman", "-S", "--needed", "--noconfirm", *GHIDRA_PACKAGES]))
+        needs_yes = True
+    if not python:
+        dist = Path(home) / "Ghidra" / "Features" / "PyGhidra" / "pypkg" / "dist"
+        source = (["--no-index", "-f", str(dist), "pyghidra"] if dist.is_dir()
+                  else [PYGHIDRA_REQUIREMENT])
+        # Skipped when the pacman step just put pyghidra into the system python.
+        probe = host.which("python3") or "python3"
+        actions.append(Action(f"install pyghidra into {host.python}",
+                              [host.python, "-m", "pip", "install", *source],
+                              unless=[probe, "-c", "import pyghidra"], unless_output=False))
+    detail = (f"Ghidra {version} at {home}" if current
+              else f"Ghidra {version or 'not found'} at {home}; {want}+ is required")
+    detail += "; pyghidra " + ("ok" if python else "not importable")
+    return Plan(done=False, actions=actions, needs_yes=needs_yes, detail=detail)
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
 
 STEPS = ("postgres", "env", "mcp", "skill", "guard", "systemd", "panel")
 REVERSIBLE = ("mcp", "skill", "guard", "systemd", "panel")
+#: Run only when asked for. Listed in every setup report so the offer is seen.
+OPTIONAL_STEPS = {"ghidra": "--ghidra: Ghidra 12 + JDK 21 + PyGhidra, the optional decompiler"}
 
 
-def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = False) -> Dict[str, Callable[[], Plan]]:
+def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = False,
+           ghidra: bool = False) -> Dict[str, Callable[[], Plan]]:
     plans: Dict[str, Callable[[], Plan]] = {
         "mcp": lambda: plan_mcp(host, det, remove),
         "skill": lambda: plan_skill(host, det, remove),
@@ -655,6 +733,8 @@ def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = Fal
     }
     if not remove:
         plans = {"postgres": lambda: plan_postgres(host), "env": lambda: plan_env(host), **plans}
+        if ghidra:
+            plans["ghidra"] = lambda: plan_ghidra(host)
     return plans
 
 
@@ -689,15 +769,16 @@ def _execute(host: Host, name: str, plan: Plan, *, mode: str, yes: bool) -> Dict
 
 
 def run(command: str, host: Host, *, dry_run: bool = False, yes: bool = False,
-        start: bool = False) -> Dict:
+        start: bool = False, ghidra: bool = False) -> Dict:
     det = detect(host)
     remove = command == "uninstall"
     mode = "status" if command == "status" else ("dry-run" if dry_run else "apply")
     report = {"command": command, "mode": mode, "omarchy": det.omarchy, "harnesses": det.harnesses,
               "host": ("Omarchy" if det.omarchy else
                        "not on Omarchy: plain Arch/Linux, Omarchy desktop bits skipped"),
-              "steps": []}
-    for name, make in _plans(host, det, start=start, remove=remove).items():
+              "steps": [],
+              "optional": [] if remove or ghidra else list(OPTIONAL_STEPS.values())}
+    for name, make in _plans(host, det, start=start, remove=remove, ghidra=ghidra).items():
         try:
             plan = make()
         except Exception as exc:  # noqa: BLE001 -- one broken probe must not hide the others
@@ -725,6 +806,8 @@ def _print(report: Dict) -> None:
             print(f"      $ {c}")
         if s.get("error"):
             print(f"      error: {s['error']}")
+    for offer in report.get("optional", []):
+        print(f"  optional: {offer}")
 
 
 def main(argv: Optional[List[str]] = None, host: Optional[Host] = None) -> int:
@@ -734,8 +817,11 @@ def main(argv: Optional[List[str]] = None, host: Optional[Host] = None) -> int:
     sp.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
     sp.add_argument("--yes", action="store_true", help="run the root (sudo) PostgreSQL steps")
     sp.add_argument("--start", action="store_true", help="enable + start the genesis systemd timer")
+    sp.add_argument("--ghidra", action="store_true",
+                    help="also install Ghidra 12 + JDK 21 + PyGhidra (optional decompiler)")
     sp.add_argument("--json", action="store_true")
     st = sub.add_parser("status", help="Report each step's state.")
+    st.add_argument("--ghidra", action="store_true", help="also probe the optional Ghidra step")
     st.add_argument("--json", action="store_true")
     up = sub.add_parser("uninstall", help="Reverse steps 4-8 (never drops the database).")
     up.add_argument("--dry-run", action="store_true")
@@ -743,7 +829,8 @@ def main(argv: Optional[List[str]] = None, host: Optional[Host] = None) -> int:
     args = ap.parse_args(argv)
 
     report = run(args.cmd, host or Host.real(), dry_run=getattr(args, "dry_run", False),
-                 yes=getattr(args, "yes", False), start=getattr(args, "start", False))
+                 yes=getattr(args, "yes", False), start=getattr(args, "start", False),
+                 ghidra=getattr(args, "ghidra", False))
     if args.json:
         print(json.dumps(report, indent=2))
     else:

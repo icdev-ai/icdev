@@ -2659,7 +2659,7 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
 
 **Module:** `tools/analyzers/ghidra_headless.py::decompile` (xrv-bin-02). Library + `python -m` CLI + a declared `ghidra_decompile` entry in `args/analyzer_contract.yaml`. **A separate module and a separate declaration from `binary_triage`, on purpose** — that analyzer's guarantee is that it executes *nothing*, and folding a decompiler into it would widen that guarantee silently while leaving the wording above unchanged.
 
-**Ingress path:** the same `binary` observable as above — an arbitrary compiled artifact — but handed to **NSA Ghidra** (Apache-2.0) running headless, via `support/analyzeHeadless` and the JVM it execs.
+**Ingress path:** the same `binary` observable as above — an arbitrary compiled artifact — but handed to **NSA Ghidra** (Apache-2.0) running headless. Since rea-eng-02 that is Ghidra **12+ under PyGhidra**: `<python> -m pyghidra.ghidra_launch --install-dir <home> ghidra.app.util.headless.AnalyzeHeadless …`, i.e. a CPython interpreter hosting the JVM through JPype, with the export script running in that CPython. **Two rails added there:** a run with no operator authorization basis (`owned` | `licensed` | `customer-authorized`) is refused before the JVM starts, and every report records the target sha256 + basis under `provenance`; the decompiled entry body is labelled `decompiled` / confidence `low`, never recovered source. `stdin` is `/dev/null`, so a launcher that stops to prompt (as `pyghidraRun` does on first run) meets EOF rather than holding the wall budget. Install: `docs/install/ghidra.md`.
 
 - **Decision:** **sandboxed.** The strictest posture, and the widest ingress in this table.
 - **Rationale:**

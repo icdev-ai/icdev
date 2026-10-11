@@ -19,7 +19,8 @@ depends=('python' 'git')
 optdepends=('postgresql: primary storage backend (SQLite is the fallback)'
             'pgvector: vector search on PostgreSQL'
             'opencode: default agent harness on Omarchy'
-            'ollama: local LLM inference')
+            'ollama: local LLM inference'
+            'ghidra: decompiler for tools/analyzers/ghidra_headless (Ghidra 12 + PyGhidra)')
 options=('!strip' '!debug')
 install=icdev.install
 _whl="${pkgname}-${pkgver}-py3-none-any.whl"

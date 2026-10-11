@@ -797,6 +797,7 @@ AUR_OPTDEPENDS = (
     ("pgvector", "vector search on PostgreSQL"),
     ("opencode", "default agent harness on Omarchy"),
     ("ollama", "local LLM inference"),
+    ("ghidra", "decompiler for tools/analyzers/ghidra_headless (Ghidra 12 + PyGhidra)"),
 )
 AUR_OPTIONS = ("!strip", "!debug")
 AUR_INSTALL = "icdev.install"
