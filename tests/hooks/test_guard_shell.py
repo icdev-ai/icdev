@@ -115,6 +115,22 @@ def test_an_eval_payload_is_checked_as_the_shell_runs_it():
     assert gs.decide_text(benign)["allowed"] is True
 
 
+def test_the_quoted_eval_segment_is_replaced_not_also_checked():
+    # The fire-rate replay: checked whole, `eval '<docker rm -f x ...>'` reads as
+    # an rm with no target (= wide) and was refused 209 times in 30 days.
+    docker = "docker " + "rm -f box >/dev/null; docker run --" + "rm -v x:/src img"
+    wrapped = CLAUDE_WRAPPED_ENV_READ.replace("cat .env", docker)
+    assert hg.decide(gs.HARNESS, "Bash", {"command": wrapped})["allowed"] is False
+    assert gs.decide_text(wrapped)["allowed"] is True
+
+
+def test_eval_must_be_the_command_word():
+    rest, payloads = gs.split_evals("cat .env eval")
+    assert payloads == [] and "cat .env" in rest
+    assert gs.decide_text("cat .env eval")["allowed"] is False
+    assert gs.split_evals("builtin eval 'git status'")[1] == ["git status"]
+
+
 def test_claude_wrapped_env_read_is_blocked_end_to_end(shim):
     proc = shim(["-c", CLAUDE_WRAPPED_ENV_READ.replace("cat .env", "cat .env; touch RAN")])
     assert proc.returncode == gs.BLOCKED_EXIT

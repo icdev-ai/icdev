@@ -52,7 +52,7 @@ import tempfile
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from icdev.core.paths import repo_root
 from tools.logging.icdev_logger import get_logger
@@ -157,30 +157,65 @@ def read_command(inv: Invocation) -> Invocation:
 
 # ── decision ────────────────────────────────────────────────────────────────
 
-def eval_payloads(text: str, depth: int = 0) -> List[str]:
-    """The text each ``eval`` in *text* will run, nested ``eval`` included.
+_EVAL_PREFIXES = (("eval",), ("builtin", "eval"), ("command", "eval"))
+
+
+def _posix_tokens(segment: str) -> List[str]:
+    # POSIX rules on every host: this module only ever fronts POSIX shells, and
+    # a non-POSIX lex keeps the quotes and mangles a multi-line payload.
+    try:
+        return shlex.split(segment, posix=True)
+    except ValueError:
+        return segment.split()
+
+
+def split_evals(text: str) -> Tuple[str, List[str]]:
+    """``(text minus its eval segments, the text each eval will run)``.
 
     MEASURED, not hypothetical: Claude Code sends ``bash -c "source <snapshot>
-    && eval 'cat .env' < /dev/null && pwd -P >| <tmp>"``, and the ``.env`` check
-    reads ``'cat .env'`` as ONE quoted token -- the real run on 2026-10-11 was
-    allowed until this unwrapping. ``eval`` is a builtin, so unlike a nested
-    ``bash -c`` it never comes back through a PATH shim; the shim must read its
-    argument as the shell will. The segmenting and tokenising are
-    ``shared_checks``' own, so this is input extraction, not a second check.
+    && eval 'cat .env' < /dev/null && pwd -P >| <tmp>"``. The ``.env`` check
+    reads ``'cat .env'`` as ONE quoted token, so the first real run on
+    2026-10-11 was ALLOWED; and ``dangerous_rm`` reads the same token as an rm
+    with no target, so a plain ``docker rm -f x`` was REFUSED (the fire-rate
+    replay: 209 extra refusals). ``eval`` is a builtin and never comes back
+    through a PATH shim, so its argument is checked as the shell will run it,
+    INSTEAD of the quoted segment. Segmenting is ``shared_checks``' own; this
+    is input extraction, not a second check. Only a segment whose COMMAND is
+    ``eval`` counts, so ``cat .env eval`` is still checked whole.
     """
-    from tools.hooks.shared_checks import command_segments, shell_tokens  # noqa: PLC0415
+    from tools.hooks.shared_checks import command_segments  # noqa: PLC0415
 
+    rest: List[str] = []
     payloads: List[str] = []
     for segment in command_segments(text):
-        tokens = shell_tokens(segment)
-        if "eval" not in tokens:
-            continue
-        inner = " ".join(tokens[tokens.index("eval") + 1:])
-        if inner.strip():
-            payloads.append(inner)
-            if depth < 3:
-                payloads.extend(eval_payloads(inner, depth + 1))
+        tokens = _posix_tokens(segment)
+        prefix = next((p for p in _EVAL_PREFIXES if tuple(tokens[:len(p)]) == p), None)
+        if prefix is None:
+            rest.append(segment)
+        elif tokens[len(prefix):]:
+            payloads.append(" ".join(tokens[len(prefix):]))
+    return "\n".join(rest), payloads
+
+
+def eval_payloads(text: str, depth: int = 0) -> List[str]:
+    """Every text an ``eval`` in *text* will run, nested ``eval`` included."""
+    payloads = split_evals(text)[1]
+    if depth < 3:
+        for inner in list(payloads):
+            payloads.extend(eval_payloads(inner, depth + 1))
     return payloads
+
+
+def _decide(text: str, depth: int = 0) -> Dict[str, Any]:
+    from tools.hooks import harness_guard  # noqa: PLC0415
+
+    rest, payloads = split_evals(text) if depth < 4 else (text, [])
+    if not payloads:
+        # No eval: exactly the text L1 would see, so exactly L1's verdict.
+        return harness_guard.decide(HARNESS, "Bash", {"command": text})
+    verdicts = [harness_guard.decide(HARNESS, "Bash", {"command": rest})] if rest.strip() else []
+    verdicts += [_decide(p, depth + 1) for p in payloads]
+    return next((v for v in verdicts if not v.get("allowed")), verdicts[0])
 
 
 def decide_text(text: Optional[str]) -> Dict[str, Any]:
@@ -191,16 +226,7 @@ def decide_text(text: Optional[str]) -> Dict[str, Any]:
     # see the command that way too: `cat \<newline>.env` is `cat .env`.
     text = text.replace("\\\r\n", "").replace("\\\n", "")
     try:
-        from tools.hooks import harness_guard  # noqa: PLC0415
-
-        first = harness_guard.decide(HARNESS, "Bash", {"command": text})
-        if not first.get("allowed"):
-            return first
-        for payload in eval_payloads(text):
-            verdict = harness_guard.decide(HARNESS, "Bash", {"command": payload})
-            if not verdict.get("allowed"):
-                return verdict
-        return first
+        return _decide(text)
     except Exception as exc:  # noqa: BLE001 -- fail open, like pre_tool_use.main()
         logger.warning("guard_shell: bridge unavailable (%s: %s); FAILING OPEN",
                        type(exc).__name__, exc)
