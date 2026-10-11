@@ -40,10 +40,23 @@ class _Conn:
 def db(tmp_path, monkeypatch):
     raw = sqlite3.connect(str(tmp_path / "k.db"))
     raw.row_factory = sqlite3.Row
-    raw.execute("CREATE TABLE kanban_tasks (id TEXT PRIMARY KEY, status TEXT, "
-                "branch_name TEXT, commit_summary TEXT, updated_at TEXT)")
-    raw.execute("CREATE TABLE kanban_status_transitions (id TEXT, task_id TEXT, "
-                "from_status TEXT, to_status TEXT, actor TEXT, reason TEXT, recorded_at TEXT)")
+    # Columns as tools/db/schema/pg_consolidated.sql declares them (schema drift census).
+    # One literal per table: the census does not join concatenated literals.
+    raw.execute("""CREATE TABLE kanban_tasks (
+        id TEXT NOT NULL PRIMARY KEY,
+        title TEXT NOT NULL,
+        status TEXT DEFAULT 'backlog' NOT NULL,
+        branch_name TEXT,
+        commit_summary TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)""")
+    raw.execute("""CREATE TABLE kanban_status_transitions (
+        id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        from_status TEXT,
+        to_status TEXT NOT NULL,
+        actor TEXT DEFAULT 'unknown' NOT NULL,
+        reason TEXT,
+        recorded_at TEXT NOT NULL)""")
     raw.commit()
     monkeypatch.setattr(cli, "get_connection", lambda: _Conn(raw))
     # The lease layer: a claim always succeeds; a release always lets go.
@@ -60,7 +73,8 @@ def db(tmp_path, monkeypatch):
 
 
 def _seed(db, status):
-    db.execute("INSERT INTO kanban_tasks (id, status) VALUES (?, ?)", (TASK, status))
+    db.execute("INSERT INTO kanban_tasks (id, title, status) VALUES (?, ?, ?)",
+               (TASK, "a task", status))
     db.commit()
 
 
