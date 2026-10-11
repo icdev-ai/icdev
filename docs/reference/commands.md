@@ -562,6 +562,14 @@ python -m tools.dx.tool_index --name analyzeHeadless --json     # is Ghidra on t
 # analyzeHeadless has no version flag. The version is read from
 # <home>/Ghidra/application.properties and is on every report.
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
+
+# RE engine registry + license gate (rea-eng-01) -- Ghidra always; Hopper/IDA bring-your-own
+python -m tools.analyzers.re_engines --json                    # allow/refuse + named reason, every engine
+python -m tools.analyzers.re_engines --engine ida --json       # one engine's decision + provenance
+python -m tools.analyzers.re_engines --template                # a license declaration to copy to ~/.config/icdev/
+# YOU maintain your own Hopper/IDA license: declare edition/use in ~/.config/icdev/re_licenses.yaml
+# (or $ICDEV_RE_LICENSES). ICDEV reads no keys and never downloads or installs a commercial engine.
+# IDA Free + use=commercial, and Hopper / non-OEM IDA on ICDEV_SAAS_MODE / ICDEV_MULTI_TENANT, are refused.
 ```
 
 ### The two consumers of that triage (xrv-bin-03)

@@ -2682,3 +2682,18 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
 - **Not in scope:** no HTTP route, no upload endpoint, and **no decompilation of more than the entry point**. A whole-program decompilation surface has a different cost profile and owes its own entry.
 - **No dedicated MCP tool, deliberately.** Point 4 of the new-tool checklist in `CLAUDE.md` asks for a `tools/mcp/tool_registry.py` entry; this analyzer is reachable over MCP *already*, through the existing `analyzer_dispatch` tool and its `binary` observable, so a second entry point would add a **473rd** registry entry to a class where only 4 have ever been dispatched — pushing `capability_liveness`'s `mcp_dispatch_tool` count further past a budget that `CLAUDE.md` forbids raising. Declaring a door nobody opens is the exact defect this module's `unavailable` status exists to avoid, one layer up.
 - **Revisit if:** a route or upload endpoint is added; a second decompiler backend is added; whole-program decompilation is added; the module gains a write path outside its temporary directory; or `ICDEV_GHIDRA_ENABLED` acquires a default other than on.
+
+### Gap 72 — RE engine registry + license gate (`tools/analyzers/re_engines.py`)
+
+**Module:** `tools/analyzers/re_engines.py::evaluate` (rea-eng-01, card `rea`). Library + `python -m` CLI. It is the gate every later REA card asks before driving Ghidra / Hopper / IDA; it runs no engine itself.
+
+**Ingress path:** one user-owned YAML file — the license declaration at `~/.config/icdev/re_licenses.yaml` (or `$ICDEV_RE_LICENSES`) — plus file-existence probes of engine install paths named by `ICDEV_GHIDRA_HOME`, `ICDEV_IDA_HOME`/`IDADIR` and `ICDEV_HOPPER_PATH`. No binary under analysis reaches this module.
+
+- **Decision:** **trusted-first-party — bounded.** The declaration is written by the operator about their own license, on their own machine, and read with `yaml.safe_load`.
+- **Guardrails (all code, not prose):**
+  - **Nothing is executed, downloaded or installed.** No `subprocess`, `socket`, `urllib`/`http`/`requests`, `shutil`, `ctypes`, archive or `pip` import, and no `os.system`/`popen`/`urlopen` call — asserted from the AST by `tests/analyzers/test_re_engines.py`, which also asserts no module under `tools/` or `icdev/tools/` carries a Hex-Rays or Hopper vendor URL as a string constant (they live only in `args/re_engines.yaml`, to quote terms). Detection is file existence plus `application.properties` / package-metadata reads.
+  - **No key is read or repeated.** Only `edition`, `use`, `user`, `host` survive per engine; any other field is ignored and reported by NAME (`ignored_fields`), never by value.
+  - **A declaration inside a git work tree is refused** (`declaration_in_repo`) so it cannot be committed by accident.
+  - **Commercial engines are refused on a shared deployment** (`ICDEV_SAAS_MODE` / `ICDEV_MULTI_TENANT`, the existing signals) unless the declared IDA edition is `oem`.
+- **Residual, named rather than implied:** the gate checks the declaration's CONSISTENCY with the vendor's published terms; it cannot verify that the user holds the license, and says so in every `allowed` message. The REA server and engine runs themselves (later `rea-*` cards) are a different ingress — an arbitrary binary handed to a decompiler — and owe their own `sandboxed` entry, like Gap 71's Ghidra backend.
+- **Revisit if:** the module gains a network or process path, an HTTP route, or starts reading any field beyond the four above.
