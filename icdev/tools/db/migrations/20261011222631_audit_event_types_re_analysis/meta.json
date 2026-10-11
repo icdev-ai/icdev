@@ -1,0 +1,8 @@
+{
+  "description": "rea-wire-01 - rebuild audit_trail.event_type CHECK from VALID_EVENT_TYPES so re_analysis.authorized and re_analysis.refused are admitted (PostgreSQL; SQLite generates it at init)",
+  "date": "2026-10-11",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "task": "rea-wire-01"
+}

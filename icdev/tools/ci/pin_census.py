@@ -133,7 +133,8 @@ KIND_INSTALL = "unpinned_install"        # a package literal with no version pin
 KIND_SCRIPT = "unpinned_script"          # curl/wget piped into a shell
 KIND_ACTION = "tag_pinned_action"        # uses: owner/repo@<non-sha>
 KIND_IMAGE = "undigested_image"          # compose image: with no vendored digest
-KINDS = (KIND_INSTALL, KIND_SCRIPT, KIND_ACTION, KIND_IMAGE)
+KIND_MCP = "unpinned_mcp_server"         # stdio MCP server with no exact package pin
+KINDS = (KIND_INSTALL, KIND_SCRIPT, KIND_ACTION, KIND_IMAGE, KIND_MCP)
 
 
 class PinCensusError(RuntimeError):
@@ -497,6 +498,68 @@ def scan_compose(
     return sites, []
 
 
+#: An exact package version. The same spelling as
+#: ``tools/mcp_client/registry.py::_EXACT_VERSION``, which refuses to launch a
+#: server whose installed version differs from it.
+_EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
+#: A launcher that resolves a package from a registry at spawn time.
+_RESOLVING_LAUNCHERS = {"npx", "npx.cmd", "pnpx", "bunx", "uvx", "pipx"}
+
+
+def scan_mcp_servers(rel: str, text: str) -> tuple[list[dict], list[dict], list[str]]:
+    """External MCP server entries: unpinned sites, the pins seen, problems.
+
+    A stdio server is the same decision as an install: its command picks which
+    bytes run. It is pinned when its ``package:`` block names an exact version
+    AND its command does not resolve a package itself (``npx …``, ``…@latest``).
+    Disabled entries are scanned too: ``enabled: false`` is one edit away.
+    """
+    try:
+        import yaml  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover
+        return [], [], [f"{rel}: pyyaml unavailable ({exc}) — MCP servers NOT measured"]
+    try:
+        document = yaml.safe_load(text) or {}
+    except Exception as exc:  # noqa: BLE001
+        return [], [], [f"{rel}: will not parse ({exc}) — MCP servers NOT measured"]
+    servers = document.get("servers") if isinstance(document, dict) else None
+    if servers is None:
+        servers = []
+    if not isinstance(servers, list):
+        return [], [], [f"{rel}: `servers` is not a list — MCP servers NOT measured"]
+
+    sites: list[dict] = []
+    pins: list[dict] = []
+    for spec in servers:
+        if not isinstance(spec, dict):
+            continue
+        if str(spec.get("transport") or "stdio").lower() != "stdio":
+            continue
+        name = str(spec.get("name") or "?")
+        command = [str(c) for c in (spec.get("command") or [])]
+        package = spec.get("package") if isinstance(spec.get("package"), dict) else {}
+        version = str(package.get("version") or "")
+        resolving = bool(command) and (
+            Path(command[0]).name.lower() in _RESOLVING_LAUNCHERS
+            or any("@latest" in c for c in command)
+        )
+        if package.get("name") and _EXACT_VERSION.match(version) and not resolving:
+            pins.append({
+                "file": rel, "server": name,
+                "package": str(package["name"]), "version": version,
+                "integrity": package.get("integrity"),
+                "enabled": bool(spec.get("enabled")),
+            })
+            continue
+        sites.append({
+            "kind": KIND_MCP,
+            "key": f"{rel}::{KIND_MCP}::{name}",
+            "file": rel, "line": 0, "subject": name,
+            "reference": " ".join(command) or "(no command)", "manager": "mcp-stdio",
+        })
+    return sites, pins, []
+
+
 # ── config ─────────────────────────────────────────────────────────────────
 DEFAULT_COMMAND_GLOBS = (
     ".github/workflows/*.yml", ".github/workflows/*.yaml",
@@ -504,6 +567,7 @@ DEFAULT_COMMAND_GLOBS = (
 )
 DEFAULT_ACTION_GLOBS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
 DEFAULT_COMPOSE_GLOBS = ("docker-compose*.yml", "docker-compose*.yaml")
+DEFAULT_MCP_GLOBS = ("args/external_mcp_servers.yaml",)
 
 
 def load_config(root: Optional[Path] = None) -> dict:
@@ -541,6 +605,7 @@ def scan_globs(cfg: dict) -> list[str]:
         ("command_files", DEFAULT_COMMAND_GLOBS),
         ("action_files", DEFAULT_ACTION_GLOBS),
         ("compose_files", DEFAULT_COMPOSE_GLOBS),
+        ("mcp_server_files", DEFAULT_MCP_GLOBS),
     ):
         out += _globs(cfg, key, default)
     return sorted(set(out))
@@ -584,24 +649,33 @@ def collect(
     repo: Path = REPO,
     cfg: Optional[dict] = None,
     only: Optional[Sequence[str]] = None,
+    pins: Optional[list] = None,
 ) -> tuple[list[dict], list[str]]:
-    """Every site, plus everything that could not be measured."""
+    """Every site, plus everything that could not be measured.
+
+    *pins*, when given, receives every PINNED external MCP server seen, so a
+    reader can tell "pinned" from "not scanned" (an empty unregistered list says
+    neither).
+    """
     cfg = cfg if cfg is not None else load_config()
     digested, unmeasurable = vendored_repos(repo)
 
     command_globs = _globs(cfg, "command_files", DEFAULT_COMMAND_GLOBS)
     action_globs = _globs(cfg, "action_files", DEFAULT_ACTION_GLOBS)
     compose_globs = _globs(cfg, "compose_files", DEFAULT_COMPOSE_GLOBS)
+    mcp_globs = _globs(cfg, "mcp_server_files", DEFAULT_MCP_GLOBS)
 
     if only is None:
         command_files = _expand(repo, command_globs)
         action_files = _expand(repo, action_globs)
         compose_files = _expand(repo, compose_globs)
+        mcp_files = _expand(repo, mcp_globs)
     else:
         wanted = filter_scope(only, cfg)
         command_files = [f for f in wanted if _matches(f, command_globs)]
         action_files = [f for f in wanted if _matches(f, action_globs)]
         compose_files = [f for f in wanted if _matches(f, compose_globs)]
+        mcp_files = [f for f in wanted if _matches(f, mcp_globs)]
 
     cache: dict[str, Optional[str]] = {}
 
@@ -637,6 +711,17 @@ def collect(
         found, problems = scan_compose(rel, text, digested)
         sites += found
         unmeasurable += problems
+    for rel in mcp_files:
+        if _excluded(rel, cfg):
+            continue
+        text = read(rel)
+        if text is None:
+            continue
+        found, seen_pins, problems = scan_mcp_servers(rel, text)
+        sites += found
+        unmeasurable += problems
+        if pins is not None:
+            pins += seen_pins
 
     seen: set[str] = set()
     unique: list[dict] = []
@@ -758,7 +843,8 @@ def build_report(
     """The whole census as data. Raises ``PinCensusError`` if unproducible."""
     cfg = cfg if cfg is not None else load_config(repo if repo != REPO else None)
     census, thin = load_census(repo, cfg)
-    sites, unmeasurable = collect(repo, cfg, only)
+    mcp_pins: list[dict] = []
+    sites, unmeasurable = collect(repo, cfg, only, pins=mcp_pins)
     keys = {s["key"] for s in sites}
 
     unregistered = [s for s in sites if s["key"] not in census]
@@ -779,6 +865,7 @@ def build_report(
         "thin_reasons": sorted(thin),
         "unmeasurable": sorted(set(unmeasurable)),
         "surveyed_not_gated": {"requirements_txt": survey_requirements(repo)},
+        "mcp_server_pins": mcp_pins,
     }
     # A partial scan cannot tell a deleted site from an unscanned one, so the
     # ceiling and stale halves are suppressed on it — "225 entries are stale" on
@@ -873,8 +960,12 @@ def _print(report: dict) -> None:
         f"  by kind: {kinds[KIND_INSTALL]} unpinned install, "
         f"{kinds[KIND_ACTION]} tag-pinned action, "
         f"{kinds[KIND_IMAGE]} undigested image, "
-        f"{kinds[KIND_SCRIPT]} unpinned script"
+        f"{kinds[KIND_SCRIPT]} unpinned script, "
+        f"{kinds[KIND_MCP]} unpinned MCP server"
     )
+    for pin in report.get("mcp_server_pins") or []:
+        print(f"  PINNED MCP  {pin['file']}  {pin['server']}: {pin['package']}=={pin['version']}"
+              f"{'' if pin['enabled'] else '  (enabled: false)'}")
     for site in report["unregistered"][:40]:
         print(f"  NEW  {site['file']}:{site['line']}  [{site['kind']}] {site['reference']}")
     for entry in report["stale_entries"][:20]:
