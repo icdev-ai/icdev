@@ -257,6 +257,13 @@ def plan_postgres(host: Host) -> Plan:
     ready = host.run(["psql", "-h", "localhost", "-U", DB_ROLE, "-d", DB_NAME, "-tAc", READY_SQL])
     if ready.rc == 0 and ready.stdout.strip() == "1":
         return Plan(done=True, detail=f"database {DB_NAME} reachable with pgvector and the ICDEV schema")
+    # The schema load (and ICDEV itself, once .env says postgresql) needs the
+    # driver IN THIS interpreter -- the [postgresql] extra, not a base dependency.
+    if host.run([host.python, "-c", "import psycopg2"]).rc != 0:
+        return Plan(done=False, state="failed",
+                    detail=f"the PostgreSQL driver (psycopg2) is not installed for {host.python}: "
+                           "reinstall with the extra -- `pipx install --force 'icdev[postgresql]'` or "
+                           "`pip install 'icdev[postgresql]'` -- then re-run")
 
     installed = bool(host.which("psql"))
     if not installed and not host.which("pacman"):

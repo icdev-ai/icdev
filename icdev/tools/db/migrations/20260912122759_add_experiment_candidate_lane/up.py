@@ -106,7 +106,16 @@ def _lane_present(conn) -> bool:
 
 def up(conn) -> dict:
     """Add the column if the live table lacks it. Idempotent, both backends."""
-    from tools.autoresearch.real_mutation import LANE_INCUBATOR, LANES
+    try:
+        from tools.autoresearch.real_mutation import LANE_INCUBATOR, LANES
+    except ImportError:
+        # autoresearch is an owner-operated child app the public wheel EXCLUDES
+        # (pyproject.toml). A package install therefore has no writer for this
+        # table and no LANES to derive the CHECK from -- and respelling the tuple
+        # here is exactly what this migration forbids. A stated skip, not a
+        # failure: raising failed `icdev omarchy setup` on every package install
+        # (omx-setup-02).
+        return {"column_added": False, "reason": "autoresearch_not_installed"}
 
     if not _table_present(conn):
         return {"column_added": False, "reason": "table_absent",

@@ -48,9 +48,14 @@ is needed.
 On any Linux with pipx (`sudo pacman -S python-pipx` on Arch):
 
 ```bash
-pipx install icdev
+pipx install 'icdev[postgresql]'   # the extra carries the PostgreSQL driver
 pipx ensurepath   # once, if ~/.local/bin is not on PATH yet
 ```
+
+`icdev omarchy setup` configures PostgreSQL, which needs the `psycopg2` driver
+in ICDEV's venv. The AUR package installs it. For a pipx install made
+without the extra, run `pipx inject icdev psycopg2-binary`. Until the driver is
+there, the setup `postgres` step stops with that remedy and changes nothing.
 
 ## Then: `icdev omarchy setup`
 

@@ -116,7 +116,17 @@ def up(conn=None) -> None:
     else:
         print(f"20260803005919: {TABLE}.{COLUMN} already present")
 
-    loader = _content_loader()
+    try:
+        loader = _content_loader()
+    except ImportError as exc:
+        # A package install (wheel / AUR) ships no apps/forge_academy, so there is
+        # no content to read objectives from: they stay NULL, exactly as for
+        # content that states none. Raising here failed `icdev omarchy setup`'s
+        # schema load on every package install (omx-setup-02).
+        if own:
+            conn.commit()
+        print(f"20260803005919: FORGE Academy content not installed ({exc}) — no backfill")
+        return
     discovered = loader.discover_steps()
 
     rows = conn.execute(

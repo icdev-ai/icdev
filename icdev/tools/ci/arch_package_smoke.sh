@@ -134,15 +134,18 @@ setup)
   cd "$PROJECT"
   command -v omarchy >/dev/null && { echo "omarchy must be absent for the plain-Arch path"; exit 1; }
   as_user() { sudo -u "$BUILDER" -H env -u ICDEV_PROJECT_ROOT LANG="$LANG" LC_ALL="$LC_ALL" "$@"; }
+  # The report is written whatever the exit code, and assert_report checks
+  # report['exit'] -- so a failing run prints its steps instead of dying silent.
+  setup_report() { local out=$1 rc=0; shift; as_user icdev omarchy setup "$@" --json > "$out" || rc=$?; echo "  exit $rc"; }
 
   log "icdev omarchy setup --dry-run (as $BUILDER)"
-  as_user icdev omarchy setup --dry-run --json > "$WORK/dry.json"
+  setup_report "$WORK/dry.json" --dry-run
   assert_report "$WORK/dry.json" "report['exit'] == 0; report['omarchy'] is False;
     'not on Omarchy' in report['host']; steps['postgres']['state'] == 'planned';
     '$USER_ENV' in ' '.join(steps['env']['actions']); not os.path.exists('$USER_ENV')"
 
   log "icdev omarchy setup --yes (as $BUILDER)"
-  as_user icdev omarchy setup --yes --json > "$WORK/yes.json"
+  setup_report "$WORK/yes.json" --yes
   assert_report "$WORK/yes.json" "report['exit'] == 0; steps['postgres']['state'] == 'done';
     steps['env']['state'] == 'done'; steps['systemd']['state'] == 'n/a'"
   grep -q '^ICDEV_STORAGE_BACKEND=postgresql' "$USER_ENV"
@@ -150,19 +153,18 @@ setup)
   if [ -e "$PKG_ENV" ]; then echo "setup wrote into the package dir: $PKG_ENV"; exit 1; fi
 
   log "icdev omarchy setup --yes again: idempotent"
-  as_user icdev omarchy setup --yes --json > "$WORK/yes2.json"
+  setup_report "$WORK/yes2.json" --yes
   assert_report "$WORK/yes2.json" "report['exit'] == 0; steps['postgres']['state'] == 'skipped';
     steps['env']['state'] == 'skipped'"
 
   log "--start on a package install refuses, and says why"
-  rc=0; as_user icdev omarchy setup --yes --start --json > "$WORK/start.json" || rc=$?
-  test "$rc" = 1 || { echo "--start exited $rc, expected 1 (refused)"; exit 1; }
+  setup_report "$WORK/start.json" --yes --start
   assert_report "$WORK/start.json" "report['exit'] == 1; steps['systemd']['state'] == 'failed';
     'needs a source checkout' in steps['systemd']['detail']"
 
   log "a schema load that died part-way is retried, never reported skipped"
   sudo -u postgres psql -v ON_ERROR_STOP=1 -d icdev -c 'CREATE TABLE public.schema_bootstrap_partial (started_at timestamptz)'
-  as_user icdev omarchy setup --dry-run --json > "$WORK/partial.json"
+  setup_report "$WORK/partial.json" --dry-run
   assert_report "$WORK/partial.json" "steps['postgres']['state'] == 'planned'"
   sudo -u postgres psql -v ON_ERROR_STOP=1 -d icdev -c 'DROP TABLE public.schema_bootstrap_partial'
   ;;

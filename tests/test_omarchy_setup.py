@@ -255,6 +255,19 @@ def test_failed_schema_load_is_not_reported_skipped_on_rerun(make_host):
     assert _states(omarchy.run("setup", host, yes=True))["postgres"] == "skipped"
 
 
+def test_missing_postgres_driver_fails_with_the_remedy_not_a_traceback(make_host):
+    """Measured in the Arch smoke: the bare wheel has no psycopg2, so the schema load died."""
+    world = FakeWorld(omarchy_on=False, pg_ready=False)
+    base_run = world.run
+    world.run = lambda argv, env=None: (Result(1, "", "No module named 'psycopg2'")
+                                        if list(argv)[1:] == ["-c", "import psycopg2"] else base_run(argv, env))
+    report = omarchy.run("setup", make_host(world), yes=True)
+    pg = report["steps"][0]
+    assert pg["state"] == "failed" and report["exit"] == 1
+    assert "icdev[postgresql]" in pg["detail"]
+    assert not any("createdb" in " ".join(c) for c in world.calls)
+
+
 def test_ready_probe_requires_the_schema_not_only_the_extension():
     sql = omarchy.READY_SQL
     assert "extname = 'vector'" in sql

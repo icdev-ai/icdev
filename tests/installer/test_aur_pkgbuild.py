@@ -91,6 +91,8 @@ def test_package_installs_into_a_venv_never_system_pip(tmp_path):
     pkgbuild = (tmp_path / "aur" / "PKGBUILD").read_text(encoding="utf-8")
     assert 'python -m venv "${_venv}"' in pkgbuild
     assert '"${_venv}/bin/python" -m pip install' in pkgbuild
+    # `icdev omarchy setup` configures PostgreSQL: the driver ships with the package (omx-setup-02).
+    assert '"${srcdir}/${_whl}[postgresql]"' in pkgbuild
     assert "--break-system-packages" not in pkgbuild
     assert _field(pkgbuild, "depends") == "('python' 'git')"
     for opt in ("postgresql", "pgvector", "opencode", "ollama"):
