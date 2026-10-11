@@ -594,7 +594,10 @@ def plan_panel(host: Host, det: Detected, remove: bool = False) -> Plan:
         targets = [host.home / ".local" / "bin" / PANEL_BIN, panel_usage_record(host)]
         targets += [panel_assets_dir(host) / m for m in PANEL_MARKS]
         targets += [host.unit_dir() / u for u in PANEL_UNITS]
-        present = [p for p in targets if p.is_file()]
+        # unlink needs a writable DIRECTORY: a mark in a root-owned packaged plugin was
+        # never ours to write (omx-panel-02), so it is not ours to remove (omx-panel-03).
+        present = [p for p in targets
+                   if p.is_file() and os.access(p.parent, os.W_OK | os.X_OK)]
         units_present = any(p.parent == host.unit_dir() for p in present)
         if units_present and systemctl:
             actions.append(Action(f"disable {PANEL_TIMER}",

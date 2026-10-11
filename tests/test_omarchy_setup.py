@@ -423,6 +423,25 @@ def test_panel_skips_the_mark_when_the_assets_dir_is_root_owned(make_host, monke
     assert _states(omarchy.run("setup", host))["panel"] == "skipped"
 
 
+def test_panel_uninstall_leaves_marks_in_a_root_owned_assets_dir(make_host, monkeypatch):
+    """omx-panel-03: a mark in a root-owned packaged plugin was never ours, and
+    unlinking it would fail the step -- uninstall removes everything else."""
+    world = FakeWorld(omarchy_on=True, pg_ready=True)
+    host = make_host(world)
+    assert _states(omarchy.run("setup", host))["panel"] == "done"
+    _assets(host).mkdir(parents=True)
+    for m in omarchy.PANEL_MARKS:
+        (_assets(host) / m).write_text("<svg/>", encoding="utf-8")
+    real_access = omarchy.os.access
+    monkeypatch.setattr(omarchy.os, "access",
+                        lambda p, mode: False if Path(p) == _assets(host) else real_access(p, mode))
+    report = omarchy.run("uninstall", host)
+    assert _states(report)["panel"] == "done", report
+    assert not (host.home / ".local" / "bin" / omarchy.PANEL_BIN).exists()
+    assert omarchy.PANEL_TIMER not in world.timers
+    assert all((_assets(host) / m).is_file() for m in omarchy.PANEL_MARKS)
+
+
 def test_panel_is_not_applicable_off_omarchy(make_host):
     world = FakeWorld(omarchy_on=False, pg_ready=True)
     host = make_host(world)
