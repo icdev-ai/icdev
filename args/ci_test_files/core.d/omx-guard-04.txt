@@ -1,0 +1,2 @@
+# omx-guard-04 -- L2 guarded shell in front of every spawned harness's $SHELL / PATH
+tests/hooks/test_guard_shell.py

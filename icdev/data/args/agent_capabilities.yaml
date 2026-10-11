@@ -48,6 +48,7 @@ declared:
     sandbox_passthrough: false # argv fixes --dangerously-skip-permissions
     context_budget: true       # --max-turns
     structured_output: true    # --output-format json
+    guard_shell: true          # measured: Claude Code runs commands via $SHELL (omx-guard-04, Linux)
 
   # exa-bench-01. `codex exec --json` emits a JSONL event stream that the
   # adapter parses into AgentResult.structured, and --sandbox is a real flag.
@@ -63,6 +64,7 @@ declared:
     sandbox_passthrough: true  # --sandbox, per-session via metadata
     context_budget: false      # the CLI takes no turn/token flag
     structured_output: true
+    guard_shell: false         # measured: codex execs its shell by absolute path, L2 cannot see it (omx-guard-04)
 
   # OPT-71. A single-shot router completion. It produces prose: no tools, no
   # files, no stream.
@@ -74,6 +76,7 @@ declared:
     sandbox_passthrough: false
     context_budget: true       # LLMRequest(max_tokens=session.max_tokens)
     structured_output: false
+    guard_shell: false         # runs no commands
 
   # hgx-exec-02. The owned rubric-gated loop with the worktree toolset.
   # omx-adapt-01 corrected two rows measured absent: the loop uses tools but
@@ -88,6 +91,7 @@ declared:
     sandbox_passthrough: false # traversal-guarded, but not caller-selectable
     context_budget: true       # max_iterations / max_tokens into the loop
     structured_output: true    # grades + verdict on AgentResult.structured
+    guard_shell: false         # run_command is an in-process allowlist, not a shell
 
   # exa-bench-02 will implement this. A stub claims nothing; every row below is
   # false so the probe's "absent" findings agree rather than reading as gaps.
@@ -99,6 +103,7 @@ declared:
     sandbox_passthrough: false
     context_budget: false
     structured_output: false
+    guard_shell: false         # not measured: copilot was not logged in on the probe host
 
   # omx-adapt-01. Only what omx-spike-01 measured (docs/research/omx-spike-01/
   # findings.md): `opencode run --format json` emits JSONL whose tool_use
@@ -113,6 +118,7 @@ declared:
     context_budget: false      # ...nor a turn/token budget
     structured_output: true    # tokens, cost, stop reason, session id
     guard_wired: true          # icdev-guard.ts plugin -> harness_guard bridge, live-probed (omx-guard-01)
+    guard_shell: true          # measured: opencode runs commands via $SHELL (omx-guard-04, Linux)
 
   # omx-adapt-02. Only what omx-spike-01 measured for Pi (findings.md, "Pi"):
   # `pi --mode json` emits JSONL whose tool_execution_* records and per-message
@@ -126,3 +132,4 @@ declared:
     context_budget: false      # ...nor a turn/token budget
     structured_output: true    # usage, cost, stopReason, session id
     guard_wired: true          # -e icdev-guard.ts extension -> harness_guard bridge, live-probed (omx-guard-03)
+    guard_shell: false         # measured: pi execs /bin/bash by absolute path (omx-guard-04)

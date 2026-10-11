@@ -176,6 +176,15 @@ CAPABILITIES: Dict[str, str] = {
         "sees the backend's tool calls and can refuse them, as reported by the "
         "adapter's verify_guard() self-test."
     ),
+    # omx-guard-04 (L2). Two measurements must agree: the harness was seen
+    # resolving its shell through $SHELL or PATH (args/guard_shell_resolution
+    # .yaml, a live run), AND the shim the runner's env puts there -- passed
+    # through the adapter's own build_env() -- refuses a known-bad command.
+    "guard_shell": (
+        "Every shell command the backend runs passes ICDEV's shared checks "
+        "through the guarded shell the runner puts in front of $SHELL / PATH "
+        "(tools/hooks/guard_shell.py)."
+    ),
 }
 
 # ── probe fixtures ──────────────────────────────────────────────────────────
@@ -749,6 +758,46 @@ def _probe_guard_wired(adapter: Any) -> ProbeOutcome:
     )
 
 
+def _probe_guard_shell(adapter: Any) -> ProbeOutcome:
+    """L2: does the guarded shell sit in front of the shell this harness runs?
+
+    ``absolute`` in the resolution record is a measured absence -- no PATH or
+    $SHELL shim can see a shell exec'd by absolute path. ``unmeasured`` and an
+    OS where the shim cannot be wired are unconfirmed, never present.
+    """
+    from tools.hooks import guard_shell  # noqa: PLC0415
+
+    name = getattr(adapter, "name", "")
+    record = guard_shell.load_resolution().get(name) or {}
+    resolves = record.get("resolves", "unmeasured")
+    where = f"{record.get('harness', name)} on {record.get('os', '?')}, " \
+            f"{record.get('measured_at', '?')}"
+    if resolves == "absolute":
+        return ProbeOutcome(
+            ABSENT, BEHAVIORAL,
+            f"measured ({where}): the harness execs {record.get('shell', 'its shell')} "
+            "by absolute path, so no $SHELL/PATH shim sees its commands",
+        )
+    if resolves not in (guard_shell.VIA_SHELL, guard_shell.VIA_PATH):
+        return _unconfirmed(
+            "no live measurement of how this harness finds its shell: "
+            + str(record.get("evidence") or "not in args/guard_shell_resolution.yaml"),
+        )
+    wired = guard_shell.wiring()
+    if not wired["supported"]:
+        return _unconfirmed(wired["reason"], method=BEHAVIORAL)
+    env = dict(wired["env"])
+    if _public_callable(adapter, "build_env"):
+        env = adapter.build_env(_session(metadata={"env": wired["env"]}))
+    report = guard_shell.self_test(env, resolves, record.get("shell", "bash"))
+    status = PRESENT if report["wired"] else ABSENT
+    return ProbeOutcome(
+        status, BEHAVIORAL,
+        f"measured ({where}) to resolve its shell via {resolves}; through the "
+        f"adapter's spawn env: {report['reason']}",
+    )
+
+
 _PROBES = {
     "streaming": _probe_streaming,
     "tool_calling": _probe_tool_calling,
@@ -758,6 +807,7 @@ _PROBES = {
     "context_budget": _probe_context_budget,
     "structured_output": _probe_structured_output,
     "guard_wired": _probe_guard_wired,
+    "guard_shell": _probe_guard_shell,
 }
 
 

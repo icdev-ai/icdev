@@ -1,0 +1,95 @@
+# CUI // SP-CTI
+# omx-guard-04 -- how each adapter's harness FINDS the shell it runs commands in.
+#
+# Consumed by: tools/hooks/guard_shell.py :: load_resolution
+#              tools/agents/capability_matrix.py :: _probe_guard_shell
+#
+# THESE ARE MEASUREMENTS, NOT CLAIMS. Each row records a live run of the real
+# harness with recording shims in front of the shell (a `$SHELL` target and a
+# PATH-prefixed bash/sh/dash/zsh), asked to run `echo <marker>`:
+#
+#   shell_env   the shim behind $SHELL saw the marker       -> L2 can cover it
+#   path        a PATH-prefixed shim saw the marker         -> L2 can cover it
+#   absolute    the marker RAN, and no shim saw it: the harness execs its shell
+#               by absolute path (e.g. /bin/bash)           -> L2 can NOT cover it
+#   unmeasured  no live run was possible; the reason says why
+#
+# Re-measure (one harness at a time, costs a model call):
+#   python -m tools.hooks.guard_shell --measure -- \
+#       opencode run "Use your shell tool to run exactly: echo {marker}"
+#
+# A row says nothing about Windows: the guarded shell is unsupported there
+# (guard_shell.UNSUPPORTED_WINDOWS), and the capability probe says so.
+
+adapters:
+
+  claude_cli:
+    harness: "Claude Code 2.1.296"
+    os: linux
+    measured_at: "2026-10-11"
+    resolves: shell_env
+    shell: bash
+    evidence: >-
+      `claude -p` on the omarchy host: the $SHELL shim logged
+      `bash -c source <snapshot> ... && eval 'echo ICDEV_L2_MARK_claude'`.
+      Claude wraps every command in a snapshot `source` + `eval '...'`; the
+      shared checks still see (and refuse) the command inside the eval.
+
+  opencode_cli:
+    harness: "opencode 1.18.35"
+    os: linux
+    measured_at: "2026-10-11"
+    resolves: shell_env
+    shell: bash
+    evidence: >-
+      `opencode run` (ollama-cloud/kimi-k3) on the omarchy host: the $SHELL
+      shim logged `bash -c echo ICDEV_L2_MARK_opencode`.
+
+  codex_cli:
+    harness: "codex-cli 0.162.1"
+    os: linux
+    measured_at: "2026-10-11"
+    resolves: absolute
+    shell: /bin/bash
+    evidence: >-
+      `codex exec --sandbox workspace-write` on the omarchy host printed the
+      marker; neither the $SHELL shim nor any PATH shim saw it (0 shim calls),
+      so codex execs its shell by absolute path. NOT covered by L2.
+
+  pi_cli:
+    harness: "pi 1.1.0"
+    os: linux
+    measured_at: "2026-10-11"
+    resolves: absolute
+    shell: /bin/bash
+    evidence: >-
+      `pi --mode rpc` `{"type":"bash"}` (the same resolved executable the
+      model's bash tool uses, per pi docs/shell-aliases.md) printed the marker
+      with 0 shim calls. Pi's documented order is /bin/bash, then bash on PATH,
+      then sh. NOT covered by L2; Pi has the L1 extension (omx-guard-03).
+
+  copilot_cli:
+    harness: "GitHub Copilot CLI 1.0.95"
+    os: linux
+    measured_at: "2026-10-11"
+    resolves: unmeasured
+    evidence: >-
+      `copilot -p` on the omarchy host exited "No authentication information
+      found" before any tool ran. Re-measure once it is logged in.
+
+  goose_cli:
+    resolves: unmeasured
+    evidence: >-
+      Not installed on the Linux probe host; installed only on the Windows
+      host, where the guarded shell is unsupported.
+
+  local_agent:
+    resolves: unmeasured
+    evidence: >-
+      Not a harness: the owned loop's run_command goes through the allowlisted
+      tools/skills/invoke.run_command in-process, not a shell the runner can
+      front.
+
+  local_llm_router:
+    resolves: unmeasured
+    evidence: Not a harness -- a single completion runs no commands.
