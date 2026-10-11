@@ -6059,6 +6059,10 @@ def _guard_parity_screen(adapter, chain: list, task_id: str,
                          tier_outcomes: List[str]):
     """Screen the chain adapter through ``tools.agents.guard_parity`` (omx-guard-02).
 
+    An adapter passes when its MEASURED guard layers meet the coverage policy
+    in ``args/guard_coverage.yaml`` (omx-guard-06) -- not only when it has a
+    native hook, so a harness with L2+L3 (codex) is dispatchable too.
+
     ``enforce`` swaps an unguarded adapter for the next guarded one in the
     chain's ``fallback_order``, or returns None so the adapter tiers are skipped
     and the existing no-executor path parks the task. ``report`` returns the
@@ -8237,6 +8241,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
 
     # omx-guard-02: never AUTONOMOUSLY spawn an adapter whose guard is not
     # verified — it would run with no ICDEV control over its tool calls.
+    # omx-guard-06: "verified" is guard COVERAGE (args/guard_coverage.yaml):
+    # L1 native hook, or L2 guarded shell + L3 write sandbox, by default.
     chain_adapter = _guard_parity_screen(chain_adapter, effective_chain,
                                          task_id, tier_outcomes)
     # omx-select-02: an adapter that is no tier of this chain was chosen by a
