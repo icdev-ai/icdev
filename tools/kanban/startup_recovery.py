@@ -68,6 +68,12 @@ EV_PROCESS = "os-process"         # a live OS process whose cwd/env/argv names i
 # Why a task was held rather than reset.
 HELD_GATE = "manual-gate"
 HELD_EXTERNAL = "external-executor"
+#: The task's work is already on the default branch (omx-linux-02). Resetting it
+#: to backlog re-dispatches finished work: measured 2026-10-11, /start's reset
+#: sent the verified-and-landed omx-smoke-04 back to backlog and the runner
+#: scheduled it again. Not liveness -- nothing is working it -- so it is never
+#: announced as "held because alive".
+HELD_LANDED = "landed-on-default-branch"
 
 # A session with no heartbeat inside this window is not evidence of life.
 # Mirrors tools/coordination/constants.SESSION_TTL_SECONDS; imported lazily so
@@ -522,6 +528,34 @@ def classify_task(
             "detail": live.detail}
 
 
+def landed_task_ids(task_ids: Sequence[str], repo_root: Optional[Path] = None) -> Dict[str, str]:
+    """``{task_id: commit}`` for every id whose work is ALREADY on the default branch.
+
+    One ``git log`` for the batch via :func:`tools.kanban.landed_check.check_landed_bulk`,
+    counting only the tiers that may complete a task (``merge_ref``, ``subject``);
+    a body mention is a citation, not a landing. Fail-open: no git, no origin
+    ref, ``KANBAN_LANDED_CHECK=off`` or any error answers ``{}`` -- the reset
+    then behaves exactly as it did before this check existed.
+    """
+    if not task_ids:
+        return {}
+    try:
+        from tools.kanban import landed_check as _lc
+
+        if _lc.mode() == "off":
+            return {}
+        reports = _lc.check_landed_bulk(task_ids, repo_root=repo_root)
+    except Exception as exc:  # noqa: BLE001 — a landed check must never block recovery
+        logger.debug("startup-recovery: landed check unavailable: %s", exc)
+        return {}
+    out: Dict[str, str] = {}
+    for tid, rep in reports.items():
+        if rep.get("landed"):
+            commits = rep.get("commits") or [{}]
+            out[tid] = str(commits[0].get("sha") or "")
+    return out
+
+
 def _record_transition(
     conn, task_id: str, reason: str, *,
     from_status: str = "in_progress", to_status: str = "backlog",
@@ -958,6 +992,14 @@ def recover_interrupted_tasks(
                           process_pids=process_pids)
             for r in rows
         ]
+        landed = landed_task_ids(
+            [d["id"] for d in decisions if d["action"] == "reset"], repo_root=repo_root,
+        )
+        for d in decisions:
+            if d["action"] == "reset" and d["id"] in landed:
+                d.update(action="hold", reason=HELD_LANDED,
+                         detail=f"work already on the default branch ({landed[d['id']]}) "
+                                "— not re-dispatched")
 
         now_iso = datetime.now(timezone.utc).isoformat()
         for d in decisions:
@@ -1008,7 +1050,8 @@ def recover_interrupted_tasks(
             subject, body, severity = build_recovery_message(d["id"], d.get("title"), prov)
             _send(subject, body, severity)
 
-    live_held = [h for h in out["held"] if h.get("reason") not in (HELD_GATE, HELD_EXTERNAL)]
+    live_held = [h for h in out["held"]
+                 if h.get("reason") not in (HELD_GATE, HELD_EXTERNAL, HELD_LANDED)]
     for h in live_held:
         logger.info("startup-recovery: HELD %s — %s", h["id"], h["detail"])
     if notify and not dry_run and live_held:
