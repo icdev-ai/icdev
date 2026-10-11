@@ -524,7 +524,16 @@ python tools/analyzers/dispatch.py --type binary --value <path>   # through the 
 python -m tools.analyzers.ghidra_headless <path> --json         # functions, imports, strings, entry C
 python -m tools.analyzers.ghidra_headless <path>                # human report
 python -m tools.analyzers.ghidra_headless <path> --timeout 900 --max-cpu 4
-python -m tools.analyzers.ghidra_headless <path> --ghidra-home /opt/ghidra_11.1.2_PUBLIC
+python -m tools.analyzers.ghidra_headless <path> --ghidra-home /opt/ghidra --authorization-basis owned
+python -m tools.analyzers.ghidra_headless <path> --ghidra-python /usr/bin/python3   # the python that imports pyghidra
+icdev omarchy setup --ghidra --yes                               # Arch/Omarchy: ghidra + jdk21 + pyghidra (rea-eng-02)
+icdev omarchy status --ghidra
+# GHIDRA 12+ VIA PYGHIDRA (rea-eng-02): the run is `<python> -m pyghidra.ghidra_launch
+# --install-dir <home> ghidra.app.util.headless.AnalyzeHeadless ...`; an older Ghidra is
+# `unavailable` / ghidra_version_unsupported. A run needs an authorization basis
+# (owned | licensed | customer-authorized; --authorization-basis or
+# ICDEV_RE_AUTHORIZATION_BASIS) or it is refused before the JVM; `provenance` records the
+# target sha256 + basis. Install, Windows included: docs/install/ghidra.md.
 python -m tools.dx.tool_index --name analyzeHeadless --json     # is Ghidra on this host at all?
 # ON A DEFAULT INSTALL THIS REPORTS `unavailable`, and that IS the correct reading.
 # Ghidra needs a JDK 21+ and a ~400 MB install, so it is deliberately NOT in

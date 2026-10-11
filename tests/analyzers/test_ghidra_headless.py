@@ -5,10 +5,13 @@ THE FAKE GHIDRA IS A REAL EXECUTABLE, not a patched ``subprocess``. A test that
 monkeypatches ``Popen`` proves the code calls ``Popen``, which was never in
 doubt; it cannot catch a malformed ``-postScript`` argument order, a path that
 needed quoting, or a launcher spelled ``.bat`` on Windows. So the fixture writes
-an actual ``support/analyzeHeadless`` (or ``.bat``) that re-execs this
-interpreter on a helper, and the helper PARSES THE REAL ARGV to find where the
-export JSON should go. Everything between ``decompile`` and the JSON on disk is
-therefore executed for real.
+an actual ``support/analyzeHeadless`` (or ``.bat``), a
+``Ghidra/application.properties`` naming a 12.x version, and a fake PyGhidra
+INTERPRETER (``ICDEV_GHIDRA_PYTHON``) that re-execs this interpreter on a
+helper. The helper answers the ``-c "import pyghidra"`` probe and, on the run,
+PARSES THE REAL ARGV to find where the export JSON should go. Everything
+between ``decompile`` and the JSON on disk is therefore executed for real
+(rea-eng-02: the run is ``<python> -m pyghidra.ghidra_launch ...``).
 
 THE ASSERTIONS THAT MATTER ARE THE ONES ABOUT ABSENCE. ``unavailable`` must
 never be confused with an empty result, and several tests here exist only to
@@ -28,6 +31,7 @@ asserts a real run. One test, no skip, no census entry.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import stat
@@ -43,6 +47,10 @@ from tools.analyzers import ghidra_headless as gh
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+#: The real package-manager roots, captured before the autouse fixture empties
+#: them, so the live test can probe the host the way production does.
+REAL_WELL_KNOWN_HOMES = gh.WELL_KNOWN_HOMES
+
 
 # ---------------------------------------------------------------------------
 # Fixture builders -- a real launcher on disk
@@ -57,6 +65,14 @@ import json, os, sys, time
 argv = sys.argv[1:]
 mode = argv[0]
 rest = argv[1:]
+here = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+# The `<python> -c "import pyghidra"` probe. Answered before anything else so
+# it never writes the pid / argv records the run assertions read.
+if rest[:1] == ["-c"]:
+    sys.exit(1 if mode == "no_pyghidra" else 0)
+
+open(os.path.join(here, "argv.json"), "w").write(json.dumps(rest))
 
 # Own pid, recorded BEFORE anything blocks. On Windows the launcher is a .bat
 # under cmd.exe and this is a grandchild, which is the process a parent-only
@@ -80,6 +96,9 @@ for i, item in enumerate(rest):
         maxs = int(rest[i + 3])
         break
 
+if mode == "prompt":
+    input("Do you wish to install PyGhidra (y/n)? ")   # EOF under DEVNULL
+    sys.exit(0)
 if mode == "hang":
     time.sleep(120)
     sys.exit(0)
@@ -110,27 +129,45 @@ sys.exit(0)
 '''
 
 
-def _install_fake_ghidra(home: Path, mode: str) -> Path:
-    """Write a runnable ``<home>/support/analyzeHeadless`` for this platform."""
-    support = home / "support"
-    support.mkdir(parents=True, exist_ok=True)
-    helper = home / "helper.py"
-    helper.write_text(_HELPER, encoding="utf-8")
-
+def _write_exec(path: Path, helper: Path, mode: str) -> Path:
+    """A launcher that re-execs this interpreter on ``helper`` with ``mode``."""
     if os.name == "nt":
-        launcher = support / "analyzeHeadless.bat"
-        launcher.write_text(
+        path = path.with_suffix(".bat")
+        path.write_text(
             '@echo off\r\n"%s" "%s" %s %%*\r\n' % (sys.executable, helper, mode),
             encoding="utf-8",
         )
     else:
-        launcher = support / "analyzeHeadless"
-        launcher.write_text(
+        path.write_text(
             '#!/bin/sh\nexec "%s" "%s" %s "$@"\n' % (sys.executable, helper, mode),
             encoding="utf-8",
         )
-        launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
-    return launcher
+        path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP)
+    return path
+
+
+def _install_fake_ghidra(home: Path, mode: str, version: str | None = "12.1.4") -> Path:
+    """A Ghidra install on disk, and a fake PyGhidra interpreter for it.
+
+    Writes ``<home>/support/analyzeHeadless`` (what ``locate_ghidra`` finds),
+    ``<home>/Ghidra/application.properties`` (what the version pin reads; None
+    leaves it out) and ``<home>/pyghidra-python`` -- the interpreter
+    ``decompile`` launches, named through ``ICDEV_GHIDRA_PYTHON``. The autouse
+    fixture restores that variable after the test. Returns the launcher.
+    """
+    support = home / "support"
+    support.mkdir(parents=True, exist_ok=True)
+    helper = home / "helper.py"
+    helper.write_text(_HELPER, encoding="utf-8")
+    if version is not None:
+        props = home / "Ghidra" / "application.properties"
+        props.parent.mkdir(parents=True, exist_ok=True)
+        props.write_text(
+            "application.name=Ghidra\napplication.version=%s\n" % version, encoding="utf-8"
+        )
+    python = _write_exec(home / "pyghidra-python", helper, mode)
+    os.environ[gh.ENV_PYTHON] = str(python)
+    return _write_exec(support / gh.HEADLESS_STEM, helper, mode)
 
 
 @pytest.fixture()
@@ -153,6 +190,13 @@ def _clean_env(monkeypatch):
     for name in (gh.ENV_ENABLED, gh.ENV_TIMEOUT, gh.ENV_MAX_CPU,
                  gh.ENV_MAX_FUNCTIONS, gh.ENV_MAX_STRINGS):
         monkeypatch.delenv(name, raising=False)
+    # setenv RECORDS the prior value, so the fixture builder's direct write to
+    # os.environ is undone at teardown too. "" reads as unset.
+    monkeypatch.setenv(gh.ENV_PYTHON, "")
+    # Every fake run is an authorized one unless a test says otherwise.
+    monkeypatch.setenv(gh.ENV_AUTHORIZATION, "owned")
+    # A host with a real /opt/ghidra must not answer a test about absence.
+    monkeypatch.setattr(gh, "WELL_KNOWN_HOMES", ())
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +436,7 @@ def test_the_analysis_timeout_is_set_below_the_wall_budget():
     """Ghidra's own budget must expire FIRST, or a slow analysis is killed with
     no export to label instead of yielding a partial one."""
     argv = gh.build_argv(
-        "headless", Path("proj"), Path("t.bin"), Path("o.json"),
+        "python", "home", Path("proj"), Path("t.bin"), Path("o.json"),
         analysis_timeout=540, max_cpu=2, max_functions=10, max_strings=10,
     )
     index = argv.index("-analysisTimeoutPerFile")
@@ -486,6 +530,7 @@ def test_every_status_carries_every_key(tmp_path, artifact, mode):
         "entry_decompiled_basis", "ghidra_version", "ghidra_home", "headless",
         "headless_source", "truncation", "exit_code", "duration_seconds",
         "kill_method", "stderr_tail", "limits", "generated_at",
+        "runtime", "provenance", "evidence_basis", "entry_decompiled_confidence",
     ):
         assert key in report, f"{mode}: missing {key}"
     assert report["status"] in gh.STATUSES
@@ -544,7 +589,8 @@ def test_the_export_script_ships_beside_the_module():
 
 
 def test_the_export_script_imports_nothing_third_party_but_ghidra():
-    """It runs under Jython 2.7 inside Ghidra: no pip, no site-packages.
+    """It runs inside Ghidra under whichever CPython carries ``pyghidra``,
+    and nothing else can be assumed installed there.
 
     Read from the AST, because a behavioural test cannot run this file at all
     on a host with no Ghidra -- which is every host this suite runs on.
@@ -616,32 +662,42 @@ def test_the_kill_helper_is_imported_and_never_re_implemented():
 # ---------------------------------------------------------------------------
 
 
-def test_the_live_backend_matches_this_hosts_actual_ghidra_state(artifact):
-    """Opt-in by ``ICDEV_GHIDRA_HOME``, but asserting either way.
+def test_the_live_backend_matches_this_hosts_actual_ghidra_state(artifact, monkeypatch):
+    """Probes THIS host the way production does, and asserts either way.
 
     A ``pytest.skip`` here would assert nothing on every host in CI and read as
-    a pass. Instead: with no Ghidra declared, the reported absence IS the
-    assertion; with Ghidra declared, a real ``analyzeHeadless`` runs.
+    a pass. Instead: with no Ghidra on the host, the reported absence IS the
+    assertion; with a runnable Ghidra 12 + pyghidra, a real run happens.
     """
-    home = os.environ.get(gh.ENV_GHIDRA_HOME)
+    monkeypatch.setattr(gh, "WELL_KNOWN_HOMES", REAL_WELL_KNOWN_HOMES)
+    monkeypatch.delenv(gh.ENV_PYTHON, raising=False)
+    located = gh.locate_ghidra()
     report = gh.decompile(str(artifact), timeout_s=900)
 
     assert report["status"] in gh.STATUSES
 
-    if not home:
-        # The state on this host and in CI, and it must be legible as such.
+    if not located["headless"]:
+        # The state in CI, and it must be legible as such.
         assert report["status"] == gh.STATUS_UNAVAILABLE
         assert report["functions"] is None
         assert gh.ENV_GHIDRA_HOME in (report["reason_detail"] or "")
         return
 
-    # A real Ghidra. `unavailable` is now the one answer that would be wrong --
-    # the operator named an install, so it must have been found.
-    assert report["status"] != gh.STATUS_UNAVAILABLE, report["reason_detail"]
-    assert report["headless"], "a declared ICDEV_GHIDRA_HOME must resolve a launcher"
+    assert report["headless"] == located["headless"]
+    if report["status"] == gh.STATUS_UNAVAILABLE:
+        # Found but not runnable: it must say WHICH install step is missing.
+        assert report["reason"] in (
+            gh.REASON_VERSION_UNDETERMINED,
+            gh.REASON_VERSION_UNSUPPORTED,
+            gh.REASON_PYGHIDRA_MISSING,
+            gh.REASON_PYTHON_INVALID,
+        ), report["reason_detail"]
+        assert report["functions"] is None
+        return
+    assert report["ghidra_version"], "a runnable install must report its version"
     if report["status"] in (gh.STATUS_OK, gh.STATUS_TRUNCATED):
         assert report["functions"] is not None
-        assert report["ghidra_version"], "a real install must report its version"
+        assert report["provenance"]["authorization_basis"] == "owned"
 
 
 def test_the_cli_produces_a_report_and_exits_zero(capsys, artifact):
@@ -654,3 +710,188 @@ def test_the_cli_produces_a_report_and_exits_zero(capsys, artifact):
 
     assert gh.main([str(artifact)]) == 0
     assert "ghidra headless:" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# rea-eng-02 -- Ghidra 12 / PyGhidra, the version pin, the authorization rail
+# ---------------------------------------------------------------------------
+
+
+def test_the_run_is_a_pyghidra_launch_of_analyze_headless(tmp_path, artifact):
+    """Ghidra 12 runs a ``.py`` postScript only under PyGhidra. The helper
+    records the argv it was REALLY given, after the interpreter."""
+    home = tmp_path / "ghidra"
+    _install_fake_ghidra(home, "ok")
+
+    report = gh.decompile(str(artifact), ghidra_home=str(home), timeout_s=120)
+
+    assert report["status"] == gh.STATUS_OK
+    argv = json.loads((home / "argv.json").read_text(encoding="utf-8"))
+    assert argv[:5] == [
+        "-m", gh.PYGHIDRA_LAUNCH_MODULE, "--install-dir", str(home), gh.HEADLESS_CLASS,
+    ]
+    assert gh.EXPORT_SCRIPT_NAME in argv and "-deleteProject" in argv
+    assert report["runtime"]["engine"] == "pyghidra"
+    assert report["runtime"]["python_source"] == gh.ENV_PYTHON
+
+
+@pytest.mark.parametrize("version", ["11.4.2", "10.1"])
+def test_a_ghidra_older_than_the_pin_is_unavailable_and_runs_nothing(
+    tmp_path, artifact, version
+):
+    home = tmp_path / "ghidra"
+    _install_fake_ghidra(home, "ok", version=version)
+
+    report = gh.decompile(str(artifact), ghidra_home=str(home), timeout_s=120)
+
+    assert report["status"] == gh.STATUS_UNAVAILABLE
+    assert report["reason"] == gh.REASON_VERSION_UNSUPPORTED
+    assert version in report["reason_detail"]
+    assert report["functions"] is None
+    assert not (home / "argv.json").exists(), "a pre-12 Ghidra was launched"
+
+
+def test_an_unreadable_version_is_its_own_reason(tmp_path, artifact):
+    home = tmp_path / "ghidra"
+    _install_fake_ghidra(home, "ok", version=None)
+
+    report = gh.decompile(str(artifact), ghidra_home=str(home), timeout_s=120)
+
+    assert report["status"] == gh.STATUS_UNAVAILABLE
+    assert report["reason"] == gh.REASON_VERSION_UNDETERMINED
+
+
+def test_twelve_point_anything_passes_the_pin():
+    assert gh._version_tuple("12.0") >= gh.MIN_GHIDRA_VERSION
+    assert gh._version_tuple("12.1.4") == (12, 1, 4)
+    assert gh._version_tuple("12.1_DEV") == (12, 1)
+    assert gh._version_tuple("11.4.2")[:2] < gh.MIN_GHIDRA_VERSION
+    assert gh._version_tuple("") is None and gh._version_tuple("abc") is None
+
+
+def test_a_declared_python_without_pyghidra_never_falls_through(tmp_path, artifact):
+    """Like ICDEV_GHIDRA_HOME: the interpreter the operator NAMED is the answer."""
+    home = tmp_path / "ghidra"
+    _install_fake_ghidra(home, "no_pyghidra")
+
+    report = gh.decompile(str(artifact), ghidra_home=str(home), timeout_s=120)
+
+    assert report["status"] == gh.STATUS_UNAVAILABLE
+    assert report["reason"] == gh.REASON_PYTHON_INVALID
+    assert report["runtime"]["python"] is None
+    assert report["functions"] is None
+
+
+def test_no_interpreter_with_pyghidra_names_the_bundled_wheel(tmp_path, artifact, monkeypatch):
+    home = tmp_path / "ghidra"
+    _install_fake_ghidra(home, "ok")
+    monkeypatch.setenv(gh.ENV_PYTHON, "")
+    monkeypatch.setattr(gh, "_probe_pyghidra", lambda python: (False, "No module named pyghidra"))
+
+    report = gh.decompile(str(artifact), ghidra_home=str(home), timeout_s=120)
+
+    assert report["status"] == gh.STATUS_UNAVAILABLE
+    assert report["reason"] == gh.REASON_PYGHIDRA_MISSING
+    assert "pypkg/dist" in report["reason_detail"]
+    assert report["functions_basis"] == gh.BASIS_GHIDRA_UNAVAILABLE
+
+
+def test_a_launcher_that_prompts_gets_eof_not_the_wall_budget(tmp_path, artifact):
+    """``pyghidraRun`` asks on first run whether to pip-install. A child that
+    reads stdin must meet EOF at once -- never hold the run until timeout."""
+    home = tmp_path / "ghidra"
+    _install_fake_ghidra(home, "prompt")
+
+    started = time.monotonic()
+    report = gh.decompile(str(artifact), ghidra_home=str(home), timeout_s=60)
+
+    assert time.monotonic() - started < 45
+    assert report["status"] == gh.STATUS_ERROR
+    assert report["reason"] == "nonzero_exit"
+    assert "EOFError" in (report["stderr_tail"] or "")
+
+
+def test_a_package_install_root_is_found_without_any_configuration(
+    tmp_path, artifact, monkeypatch
+):
+    """Arch's ``ghidra`` lives in /opt/ghidra with no analyzeHeadless on PATH."""
+    home = tmp_path / "opt-ghidra"
+    _install_fake_ghidra(home, "ok")
+    monkeypatch.delenv(gh.ENV_GHIDRA_HOME, raising=False)
+    monkeypatch.setattr(gh.shutil, "which", lambda *a, **k: None)
+    monkeypatch.setattr("tools.dx.tool_index.shutil.which", lambda *a, **k: None)
+    monkeypatch.setattr(gh, "WELL_KNOWN_HOMES", (str(home),))
+
+    report = gh.decompile(str(artifact), timeout_s=120)
+
+    assert report["headless_source"] == "well_known_home"
+    assert report["ghidra_home"] == str(home)
+    assert report["status"] == gh.STATUS_OK
+
+
+def test_a_run_without_an_authorization_basis_is_refused_before_the_jvm(
+    tmp_path, artifact, monkeypatch
+):
+    home = tmp_path / "ghidra"
+    _install_fake_ghidra(home, "ok")
+    monkeypatch.delenv(gh.ENV_AUTHORIZATION, raising=False)
+
+    report = gh.decompile(str(artifact), ghidra_home=str(home), timeout_s=120)
+
+    assert report["status"] == gh.STATUS_ERROR
+    assert report["reason"] == gh.BASIS_AUTHORIZATION_MISSING
+    assert report["functions"] is None
+    assert report["functions_basis"] == gh.BASIS_AUTHORIZATION_MISSING
+    # The refusal still names WHICH artifact it refused.
+    assert report["provenance"]["target_sha256"] == hashlib.sha256(
+        artifact.read_bytes()
+    ).hexdigest()
+    assert not (home / "argv.json").exists(), "the JVM was started without a basis"
+
+
+def test_an_unknown_authorization_basis_is_no_basis(tmp_path, artifact):
+    home = tmp_path / "ghidra"
+    _install_fake_ghidra(home, "ok")
+
+    report = gh.decompile(
+        str(artifact), ghidra_home=str(home), timeout_s=120, authorization_basis="trust me"
+    )
+
+    assert report["reason"] == gh.BASIS_AUTHORIZATION_MISSING
+    assert report["provenance"]["authorization_basis"] is None
+
+
+def test_a_run_records_provenance_and_marks_decompiled_output(tmp_path, artifact):
+    home = tmp_path / "ghidra"
+    _install_fake_ghidra(home, "ok")
+
+    report = gh.decompile(
+        str(artifact), ghidra_home=str(home), timeout_s=120,
+        authorization_basis="customer-authorized",
+    )
+
+    assert report["status"] == gh.STATUS_OK
+    prov = report["provenance"]
+    assert prov["target_sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
+    assert prov["authorization_basis"] == "customer-authorized"
+    assert prov["analysis"] == "local"
+    assert report["evidence_basis"]["entry_decompiled"] == "decompiled"
+    assert report["evidence_basis"]["functions"] == "observed"
+    assert report["entry_decompiled_confidence"] == gh.DECOMPILED_CONFIDENCE
+    rendered = gh._render(report)
+    assert "DECOMPILED" in rendered and "not recovered source" in rendered
+
+
+def test_the_export_script_declares_pyghidra_and_never_dict_gets_the_host():
+    """``PyGhidraScript`` resolves ``currentProgram`` in ``__missing__``, which
+    ``dict.get`` bypasses: ``_HOST.get("currentProgram")`` is None on a run
+    that HAS a program. Read from the AST -- no host here can run the file."""
+    import ast
+
+    source = (gh.SCRIPT_DIR / gh.EXPORT_SCRIPT_NAME).read_text(encoding="utf-8")
+    assert "# @runtime PyGhidra" in source.splitlines()[:5]
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            target = node.func.value
+            if isinstance(target, ast.Name) and target.id == "_HOST":
+                assert node.func.attr != "get", "host globals must be subscripted"

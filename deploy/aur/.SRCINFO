@@ -13,6 +13,7 @@ pkgbase = icdev
 	optdepends = pgvector: vector search on PostgreSQL
 	optdepends = opencode: default agent harness on Omarchy
 	optdepends = ollama: local LLM inference
+	optdepends = ghidra: decompiler for tools/analyzers/ghidra_headless (Ghidra 12 + PyGhidra)
 	noextract = icdev-1.2.43-py3-none-any.whl
 	options = !strip
 	options = !debug

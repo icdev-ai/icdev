@@ -80,6 +80,33 @@ stock deployment that means ``sandbox_unavailable`` at the dispatch layer AND
 ``unavailable`` here, and BOTH of those readings are correct rather than a
 fault to be worked around.
 
+GHIDRA 12 RUNS PYTHON THROUGH PYGHIDRA, SO THIS MODULE DOES TOO (rea-eng-02).
+Ghidra 12.0 made PyGhidra (CPython 3 over JPype) the default Python engine and
+moved Jython out to an optional extension; a ``.py`` postScript handed to a
+plain ``analyzeHeadless`` on 12.x has no Python to run in. So the run is
+launched the way ``support/pyghidraRun -H`` launches it --
+``<python> -m pyghidra.ghidra_launch --install-dir <home>
+ghidra.app.util.headless.AnalyzeHeadless ...`` -- but WITHOUT ``pyghidraRun``,
+whose first run stops at ``input()`` to offer a pip install and dies with
+``EOFError`` under a pipe. The minimum is pinned at ``MIN_GHIDRA_VERSION``
+(12.0): an older install is ``unavailable`` with ``ghidra_version_unsupported``,
+never a half-run against a script runtime that is not there. The interpreter
+that carries the ``pyghidra`` module is LOCATED, not assumed, because it is
+rarely ICDEV's own: Arch's ``ghidra`` package puts ``pyghidra`` in the SYSTEM
+python, a Windows zip install needs ``pip install --no-index -f
+<home>/Ghidra/Features/PyGhidra/pypkg/dist pyghidra`` into one. Install steps:
+docs/install/ghidra.md.
+
+EVERY RUN NAMES WHAT IT WAS ALLOWED TO OPEN. Reverse engineering is for
+authorized targets only (project ``rea``): a run records the artifact's sha256
+and the operator's authorization basis (``owned`` | ``licensed`` |
+``customer-authorized``, from ``authorization_basis=`` or
+``ICDEV_RE_AUTHORIZATION_BASIS``) under ``provenance``, and a run with NO basis
+is REFUSED -- ``error`` / ``authorization_missing`` -- before a JVM starts.
+Functions, imports and strings are ``observed`` (read by Ghidra's loaders);
+``entry_decompiled`` is ``decompiled`` -- a RECONSTRUCTION with a stated
+confidence, never presented as recovered source.
+
 NOTHING IS WRITTEN OUTSIDE A TEMPORARY DIRECTORY. The Ghidra project and the
 export JSON live under one ``tempfile.mkdtemp`` removed on EVERY path,
 including the timeout path. ``-deleteProject`` is passed as well, so Ghidra
@@ -89,6 +116,7 @@ Usage:
     python -m tools.analyzers.ghidra_headless /path/to/artifact --json
     python -m tools.analyzers.ghidra_headless /path/to/artifact
     python -m tools.analyzers.ghidra_headless /path/to/artifact --timeout 900
+    python -m tools.analyzers.ghidra_headless ./fixture --authorization-basis owned --json
 
     >>> from icdev.tools.analyzers.ghidra_headless import decompile
     >>> report = decompile("/bin/ls")
@@ -101,6 +129,7 @@ report); 2 no report could be produced at all.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -118,6 +147,7 @@ __all__ = [
     "decompile",
     "ghidra_version",
     "locate_ghidra",
+    "locate_pyghidra",
 ]
 
 # ---------------------------------------------------------------------------
@@ -148,6 +178,7 @@ BASIS_EXPORT_ABSENT = "export_absent"
 BASIS_EXPORT_MALFORMED = "export_malformed"
 BASIS_SCRIPT_ERROR = "script_error"
 BASIS_SOURCE_UNREADABLE = "source_unreadable"
+BASIS_AUTHORIZATION_MISSING = "authorization_missing"
 
 #: Why Ghidra could not be located. ``ghidra_home_invalid`` is deliberately NOT
 #: merged into ``not_found``: an operator who SET the variable and got the path
@@ -156,6 +187,30 @@ REASON_NOT_FOUND = "not_found"
 REASON_HOME_INVALID = "ghidra_home_invalid"
 REASON_DISABLED = "disabled_by_env"
 REASON_UNDECLARED = "undeclared_in_tool_index"
+#: Ghidra was found and cannot run THIS module's script. Each is its own
+#: reason because each is a different install step.
+REASON_VERSION_UNDETERMINED = "ghidra_version_undetermined"
+REASON_VERSION_UNSUPPORTED = "ghidra_version_unsupported"
+REASON_PYGHIDRA_MISSING = "pyghidra_unavailable"
+REASON_PYTHON_INVALID = "ghidra_python_invalid"
+
+#: What makes a target one this platform may open (project ``rea`` rails).
+#: Closed: a free-text basis is one nobody can audit.
+AUTHORIZATION_BASES: Tuple[str, ...] = ("owned", "licensed", "customer-authorized")
+
+#: Where each section's evidence comes from. Functions, imports and strings are
+#: READ from the program by Ghidra's loaders; the entry body is RECONSTRUCTED.
+EVIDENCE_BASIS: Dict[str, str] = {
+    "functions": "observed",
+    "imports": "observed",
+    "strings": "observed",
+    "entry_decompiled": "decompiled",
+}
+
+#: Decompiler C is a plausible reading of machine code -- names, types and
+#: control flow are inferred -- so it is never better than ``low`` confidence
+#: as a statement of what the original source said.
+DECOMPILED_CONFIDENCE = "low"
 
 # ---------------------------------------------------------------------------
 # Environment / bounds. Every one is reported in ``limits``; a hit bound is
@@ -168,6 +223,27 @@ ENV_TIMEOUT = "ICDEV_GHIDRA_TIMEOUT"
 ENV_MAX_CPU = "ICDEV_GHIDRA_MAX_CPU"
 ENV_MAX_FUNCTIONS = "ICDEV_GHIDRA_MAX_FUNCTIONS"
 ENV_MAX_STRINGS = "ICDEV_GHIDRA_MAX_STRINGS"
+ENV_PYTHON = "ICDEV_GHIDRA_PYTHON"
+ENV_AUTHORIZATION = "ICDEV_RE_AUTHORIZATION_BASIS"
+
+#: The oldest Ghidra whose default Python engine is PyGhidra (12.0).
+MIN_GHIDRA_VERSION: Tuple[int, int] = (12, 0)
+
+#: How PyGhidra starts a Ghidra class -- exactly what ``support/pyghidraRun -H``
+#: runs, minus its interactive install prompt.
+PYGHIDRA_LAUNCH_MODULE = "pyghidra.ghidra_launch"
+HEADLESS_CLASS = "ghidra.app.util.headless.AnalyzeHeadless"
+
+#: Bound on ``<python> -c "import pyghidra"``. It imports JPype, not a JVM.
+PYGHIDRA_PROBE_TIMEOUT_SECONDS = 60
+
+#: Package-manager install roots, probed after ICDEV_GHIDRA_HOME and PATH.
+#: Arch's ``ghidra`` package installs to /opt/ghidra and puts only
+#: ``ghidra-analyzeHeadless`` on PATH, so PATH alone never finds it. A Windows
+#: zip has no conventional root: there, ICDEV_GHIDRA_HOME is how it is named.
+WELL_KNOWN_HOMES: Tuple[str, ...] = (
+    () if os.name == "nt" else ("/opt/ghidra", "/usr/share/ghidra")
+)
 
 #: Wall budget for the whole ``analyzeHeadless`` run. Ghidra's import and
 #: auto-analysis of a mid-sized binary is minutes, not seconds.
@@ -300,9 +376,21 @@ def locate_ghidra(ghidra_home: Optional[str] = None) -> Dict[str, Any]:
         found = shutil.which(HEADLESS_STEM)
 
     if not found:
+        for candidate_home in WELL_KNOWN_HOMES:
+            for name in _headless_names():
+                candidate = Path(candidate_home) / "support" / name
+                if candidate.is_file():
+                    return {
+                        "headless": str(candidate),
+                        "home": str(candidate_home),
+                        "source": "well_known_home",
+                        "reason": None,
+                    }
         return {"headless": None, "home": None, "source": "PATH", "reason": REASON_NOT_FOUND}
 
-    headless = Path(found)
+    # A PATH entry is often a symlink into the install (usr/bin -> opt/...);
+    # the home is derived from where it POINTS.
+    headless = Path(found).resolve()
     # <home>/support/analyzeHeadless -- the home is two levels up. DERIVED, not
     # assumed: a launcher somewhere else still resolves, and `home` then reads
     # None so `ghidra_version` reports None rather than a guess.
@@ -314,6 +402,105 @@ def locate_ghidra(ghidra_home: Optional[str] = None) -> Dict[str, Any]:
         "source": "PATH",
         "reason": None,
     }
+
+
+def _version_tuple(version: Optional[str]) -> Optional[Tuple[int, ...]]:
+    """``"12.1.4"`` -> ``(12, 1, 4)``; a suffix (``12.1_DEV``) is dropped. None
+    when no leading number can be read -- never a guessed version."""
+    if not version:
+        return None
+    parts: List[int] = []
+    for piece in str(version).split("."):
+        digits = ""
+        for ch in piece:
+            if not ch.isdigit():
+                break
+            digits += ch
+        if not digits:
+            break
+        parts.append(int(digits))
+        if len(digits) != len(piece):
+            break
+    return tuple(parts) or None
+
+
+def _probe_pyghidra(python: str) -> Tuple[bool, Optional[str]]:
+    """Run ``<python> -c "import pyghidra"``. ``(importable, why_not)``."""
+    try:
+        proc = subprocess.run(  # noqa: S603 -- argv list, never a shell
+            [python, "-c", "import pyghidra"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=PYGHIDRA_PROBE_TIMEOUT_SECONDS,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, "%s: %s" % (type(exc).__name__, exc)
+    if proc.returncode == 0:
+        return True, None
+    return False, _tail(proc.stderr, 300) or "exit %s" % proc.returncode
+
+
+def locate_pyghidra(python: Optional[str] = None) -> Dict[str, Any]:
+    """Find an interpreter that can ``import pyghidra``; say which, or why none.
+
+    A DECLARED interpreter (``python=`` or ICDEV_GHIDRA_PYTHON) is the only one
+    tried, for the reason ICDEV_GHIDRA_HOME is: an operator who named one must
+    not be answered by a different one. Otherwise ICDEV's own interpreter, the
+    interpreter its venv was made from, then ``python3`` / ``python`` on PATH
+    -- the system python is where Arch's ``ghidra`` package installs
+    ``pyghidra``, and ICDEV usually runs from a venv over it.
+
+    Returns ``{python, source, reason, detail}``.
+    """
+    declared = python if python is not None else (os.environ.get(ENV_PYTHON) or "").strip()
+    if declared:
+        ok, why = _probe_pyghidra(declared)
+        if ok:
+            return {"python": declared, "source": ENV_PYTHON, "reason": None, "detail": None}
+        return {
+            "python": None,
+            "source": ENV_PYTHON,
+            "reason": REASON_PYTHON_INVALID,
+            "detail": "%s=%r cannot import pyghidra (%s)" % (ENV_PYTHON, declared, why),
+        }
+
+    tried: List[str] = []
+    candidates = [sys.executable, getattr(sys, "_base_executable", None)] + [
+        shutil.which(n) for n in ("python3", "python")
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        key = os.path.normcase(os.path.abspath(candidate))
+        if key in tried:
+            continue
+        tried.append(key)
+        ok, _why = _probe_pyghidra(candidate)
+        if ok:
+            source = {
+                # Base first: outside a venv the two are one path, and then it
+                # is ICDEV's own interpreter.
+                getattr(sys, "_base_executable", None): "venv_base",
+                sys.executable: "sys.executable",
+            }.get(candidate, "PATH")
+            return {"python": candidate, "source": source, "reason": None, "detail": None}
+    return {
+        "python": None,
+        "source": None,
+        "reason": REASON_PYGHIDRA_MISSING,
+        "detail": "no interpreter can import pyghidra (tried %s)" % ", ".join(tried),
+    }
+
+
+def _target_sha256(target: Path) -> str:
+    digest = hashlib.sha256()
+    with target.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def ghidra_version(home: Optional[str]) -> Optional[str]:
@@ -344,7 +531,8 @@ def ghidra_version(home: Optional[str]) -> Optional[str]:
 
 
 def build_argv(
-    headless: str,
+    python: str,
+    home: str,
     project_dir: Path,
     target: Path,
     out_json: Path,
@@ -360,9 +548,17 @@ def build_argv(
     a ``finally``: on Windows a live file handle can defeat the directory
     removal, and Ghidra tearing its own project down first is what makes that
     survivable rather than a leaked 400 MB.
+
+    Ghidra's headless arguments follow ``HEADLESS_CLASS`` unchanged:
+    ``ghidra_launch`` hands everything it does not parse to ``Ghidra.main``.
     """
     return [
-        headless,
+        python,
+        "-m",
+        PYGHIDRA_LAUNCH_MODULE,
+        "--install-dir",
+        str(home),
+        HEADLESS_CLASS,
         str(project_dir),
         PROJECT_NAME,
         "-import",
@@ -418,6 +614,8 @@ def _report(
     duration_seconds: Optional[float] = None,
     kill_method: Optional[str] = None,
     stderr_tail: Optional[str] = None,
+    runtime: Optional[Dict[str, Any]] = None,
+    provenance: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """One constructor, so EVERY status carries the same keys.
 
@@ -438,6 +636,8 @@ def _report(
         "strings_basis": BASIS_PARSED if strings is not None else basis,
         "entry_decompiled": entry_decompiled,
         "entry_decompiled_basis": entry_basis or (BASIS_PARSED if entry_decompiled else basis),
+        "entry_decompiled_confidence": DECOMPILED_CONFIDENCE if entry_decompiled else None,
+        "evidence_basis": dict(EVIDENCE_BASIS),
         "ghidra_version": ghidra_version(located.get("home")),
         "ghidra_home": located.get("home"),
         "headless": located.get("headless"),
@@ -449,13 +649,24 @@ def _report(
         "duration_seconds": duration_seconds,
         "kill_method": kill_method,
         "stderr_tail": stderr_tail,
+        "runtime": runtime
+        if runtime is not None
+        else {"engine": "pyghidra", "python": None, "python_source": None},
+        "provenance": provenance
+        if provenance is not None
+        else {"target_sha256": None, "authorization_basis": None, "analysis": "local"},
         "limits": limits,
         "generated_at": _iso_now(),
     }
 
 
 def _unavailable(
-    path: str, located: Dict[str, Any], *, reason: str, limits: Dict[str, Any]
+    path: str,
+    located: Dict[str, Any],
+    *,
+    reason: str,
+    limits: Dict[str, Any],
+    detail_extra: Optional[str] = None,
 ) -> Dict[str, Any]:
     basis = BASIS_DISABLED if reason == REASON_DISABLED else BASIS_GHIDRA_UNAVAILABLE
     detail = {
@@ -471,7 +682,31 @@ def _unavailable(
         REASON_UNDECLARED: (
             "%s is not declared in args/tool_index.yaml, so PATH was not probed." % HEADLESS_STEM
         ),
+        REASON_VERSION_UNDETERMINED: (
+            "Ghidra found at %r but its version could not be read from "
+            "Ghidra/application.properties; %s.%s or later is required."
+            % (located.get("home"), MIN_GHIDRA_VERSION[0], MIN_GHIDRA_VERSION[1])
+        ),
+        REASON_VERSION_UNSUPPORTED: (
+            "Ghidra %s found; %s.%s or later is required (PyGhidra is its default "
+            "Python engine). Upgrade the install named by %s."
+            % (
+                ghidra_version(located.get("home")),
+                MIN_GHIDRA_VERSION[0],
+                MIN_GHIDRA_VERSION[1],
+                ENV_GHIDRA_HOME,
+            )
+        ),
+        REASON_PYGHIDRA_MISSING: (
+            "Ghidra is installed but no Python can import pyghidra. Install it from "
+            "the bundled wheel: python -m pip install --no-index -f "
+            "<ghidra_home>/Ghidra/Features/PyGhidra/pypkg/dist pyghidra -- or set %s."
+            % ENV_PYTHON
+        ),
+        REASON_PYTHON_INVALID: "%s names an interpreter that cannot import pyghidra." % ENV_PYTHON,
     }.get(reason, reason)
+    if detail_extra:
+        detail = "%s (%s)" % (detail, detail_extra)
     return _report(
         path,
         STATUS_UNAVAILABLE,
@@ -491,6 +726,8 @@ def decompile(
     ghidra_home: Optional[str] = None,
     max_functions: Optional[int] = None,
     max_strings: Optional[int] = None,
+    ghidra_python: Optional[str] = None,
+    authorization_basis: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Decompile one artifact with Ghidra headless, or say why it did not.
 
@@ -529,6 +766,23 @@ def decompile(
     if not located["headless"]:
         return _unavailable(str(path), located, reason=located["reason"], limits=limits)
 
+    # PyGhidra needs the install ROOT (``--install-dir``) and 12.0+. A launcher
+    # found with no derivable root, or no readable version, is not runnable.
+    version = _version_tuple(ghidra_version(located.get("home")))
+    if version is None:
+        return _unavailable(str(path), located, reason=REASON_VERSION_UNDETERMINED, limits=limits)
+    if version[:2] < MIN_GHIDRA_VERSION:
+        return _unavailable(str(path), located, reason=REASON_VERSION_UNSUPPORTED, limits=limits)
+
+    py = locate_pyghidra(ghidra_python)
+    runtime = {"engine": "pyghidra", "python": py["python"], "python_source": py["source"]}
+    if not py["python"]:
+        report = _unavailable(
+            str(path), located, reason=py["reason"], limits=limits, detail_extra=py["detail"]
+        )
+        report["runtime"] = runtime
+        return report
+
     # The artifact is checked AFTER the backend, deliberately: on a host with no
     # Ghidra the answer is `unavailable` whatever the path says, and reporting
     # `source_unreadable` there would send a reader to look at their file when
@@ -547,6 +801,39 @@ def decompile(
             basis=BASIS_SOURCE_UNREADABLE,
             located=located,
             limits=limits,
+            runtime=runtime,
+        )
+
+    # Authorization is checked once the run is otherwise possible, and BEFORE
+    # the JVM: the sha256 is recorded on the refusal too, so the report says
+    # WHICH artifact was not opened.
+    sha256 = _target_sha256(target)
+    basis_raw = (
+        authorization_basis
+        if authorization_basis is not None
+        else os.environ.get(ENV_AUTHORIZATION, "")
+    )
+    auth = str(basis_raw or "").strip().lower()
+    provenance = {
+        "target_sha256": sha256,
+        "authorization_basis": auth if auth in AUTHORIZATION_BASES else None,
+        "analysis": "local",
+    }
+    if auth not in AUTHORIZATION_BASES:
+        return _report(
+            str(path),
+            STATUS_ERROR,
+            reason=BASIS_AUTHORIZATION_MISSING,
+            reason_detail=(
+                "no authorization basis for this target (%s): pass "
+                "authorization_basis= or set %s. Nothing was run."
+                % (" | ".join(AUTHORIZATION_BASES), ENV_AUTHORIZATION)
+            ),
+            basis=BASIS_AUTHORIZATION_MISSING,
+            located=located,
+            limits=limits,
+            runtime=runtime,
+            provenance=provenance,
         )
 
     workdir = Path(tempfile.mkdtemp(prefix="icdev-ghidra-"))
@@ -554,7 +841,8 @@ def decompile(
     out_json = workdir / "export.json"
     project_dir.mkdir(parents=True, exist_ok=True)
     argv = build_argv(
-        located["headless"],
+        py["python"],
+        located["home"],
         project_dir,
         target.resolve(),
         out_json,
@@ -571,6 +859,9 @@ def decompile(
                 argv,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                # Nothing to read: a launcher that stops to ask a question gets
+                # EOF at once rather than holding the wall budget.
+                stdin=subprocess.DEVNULL,
                 cwd=str(workdir),
                 text=True,
                 encoding="utf-8",
@@ -588,6 +879,8 @@ def decompile(
                 basis=BASIS_FAILED,
                 located=located,
                 limits=limits,
+                runtime=runtime,
+                provenance=provenance,
                 duration_seconds=round(time.monotonic() - started, 3),
             )
 
@@ -610,6 +903,8 @@ def decompile(
                 basis=BASIS_TIMEOUT,
                 located=located,
                 limits=limits,
+                runtime=runtime,
+                provenance=provenance,
                 duration_seconds=round(time.monotonic() - started, 3),
                 kill_method=how,
                 stderr_tail=_tail(err),
@@ -626,6 +921,8 @@ def decompile(
                 basis=BASIS_FAILED,
                 located=located,
                 limits=limits,
+                runtime=runtime,
+                provenance=provenance,
                 exit_code=code,
                 duration_seconds=duration,
                 stderr_tail=_tail(err),
@@ -647,6 +944,8 @@ def decompile(
                 basis=BASIS_EXPORT_ABSENT,
                 located=located,
                 limits=limits,
+                runtime=runtime,
+                provenance=provenance,
                 exit_code=code,
                 duration_seconds=duration,
                 stderr_tail=_tail(err),
@@ -665,6 +964,8 @@ def decompile(
                 basis=BASIS_EXPORT_MALFORMED,
                 located=located,
                 limits=limits,
+                runtime=runtime,
+                provenance=provenance,
                 exit_code=code,
                 duration_seconds=duration,
                 stderr_tail=_tail(err),
@@ -678,6 +979,8 @@ def decompile(
             exit_code=code,
             duration_seconds=duration,
             stderr_tail=_tail(err),
+            runtime=runtime,
+            provenance=provenance,
         )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
@@ -701,6 +1004,8 @@ def _from_payload(
     exit_code: int,
     duration_seconds: float,
     stderr_tail: Optional[str],
+    runtime: Optional[Dict[str, Any]] = None,
+    provenance: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Turn the export script's JSON into a report.
 
@@ -767,6 +1072,8 @@ def _from_payload(
         exit_code=exit_code,
         duration_seconds=duration_seconds,
         stderr_tail=stderr_tail,
+        runtime=runtime,
+        provenance=provenance,
     )
 
 
@@ -807,7 +1114,14 @@ def _render(report: Dict[str, Any]) -> str:
     lines += [
         "  ghidra         %s" % (report["headless"] or "not found"),
         "  version        %s" % (report["ghidra_version"] or "not determined"),
+        "  pyghidra       %s" % (report["runtime"].get("python") or "not located"),
     ]
+    prov = report["provenance"]
+    if prov.get("target_sha256"):
+        lines.append(
+            "  target         sha256 %s  authorization %s"
+            % (prov["target_sha256"], prov.get("authorization_basis") or "NONE")
+        )
     if report["status"] == STATUS_UNAVAILABLE:
         lines.append("  nothing was run; nothing is reported about the artifact.")
         return "\n".join(lines)
@@ -820,7 +1134,10 @@ def _render(report: Dict[str, Any]) -> str:
             lines.append("  %-14s %d%s" % (key, len(value), mark))
     entry = report["entry_decompiled"]
     if entry:
-        lines.append("  entry          %d chars decompiled" % len(entry))
+        lines.append(
+            "  entry          %d chars DECOMPILED (confidence %s; a reconstruction, "
+            "not recovered source)" % (len(entry), report["entry_decompiled_confidence"])
+        )
     else:
         lines.append("  entry          not decompiled (%s)" % report["entry_decompiled_basis"])
     if report.get("duration_seconds") is not None:
@@ -847,6 +1164,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--max-functions", type=int, default=None, help="Override " + ENV_MAX_FUNCTIONS
     )
     parser.add_argument("--max-strings", type=int, default=None, help="Override " + ENV_MAX_STRINGS)
+    parser.add_argument("--ghidra-python", default=None, help="Override " + ENV_PYTHON)
+    parser.add_argument(
+        "--authorization-basis",
+        choices=AUTHORIZATION_BASES,
+        default=None,
+        help="Why this target may be opened (overrides %s); required to run" % ENV_AUTHORIZATION,
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -857,6 +1181,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             ghidra_home=args.ghidra_home,
             max_functions=args.max_functions,
             max_strings=args.max_strings,
+            ghidra_python=args.ghidra_python,
+            authorization_basis=args.authorization_basis,
         )
     except Exception as exc:  # a report could not be produced at all
         print(
