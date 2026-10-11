@@ -1164,6 +1164,11 @@ def _work_dir_for(task_id: str) -> str:
 # Verification uses this as the baseline (not current main) so agent commits
 # stay visible even if main advances between dispatch and verification.
 _dispatch_main_heads: Dict[str, str] = {}
+# The same snapshot of ``origin/<base>`` -- the ref the task branch is CUT from
+# (omx-adapt-03). The local base drifts behind origin in a checkout nobody
+# pulls, so ``<local main>..<branch>`` also counts commits the branch merely
+# inherited; this is the baseline that names only the task's own commits.
+_dispatch_origin_heads: Dict[str, str] = {}
 
 # Cache the detected default branch so we only shell out once per process.
 _default_branch_cache: Optional[str] = None
@@ -6467,6 +6472,88 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
 
 
+#: Tool names, lowercased, that write a file -- in opencode's spelling
+#: (write / edit / multiedit / patch) and Pi's (write / edit). ``todowrite`` is
+#: opencode's TODO list and touches no file.
+_ADAPTER_FILE_TOOLS = frozenset({"write", "edit", "multiedit", "patch",
+                                 "apply_patch", "str_replace"})
+
+
+def _adapter_stream_path(task_id: str) -> Path:
+    """Where an adapter dispatch keeps its raw stream for the verifier."""
+    return PROMPT_DIR / f"{task_id}.adapter-stream.json"
+
+
+def _write_adapter_stream(path: Path, adapter_name: str, result) -> None:
+    """Persist the adapter's RAW stream next to the task log (omx-adapt-03).
+
+    The log holds ``result.output`` -- for opencode and Pi that is the final
+    assistant sentence, and the run's file edits live only in the JSONL stream
+    the adapter parsed. Without this file the verifier's output fallback judges
+    a harness by Claude-shaped prose it never wrote. Best-effort: a failed write
+    leaves the verifier exactly where it was before.
+    """
+    import json as _json
+
+    raw = (getattr(result, "structured", None) or {}).get("raw_output") or ""
+    if not raw:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_json.dumps({"adapter": adapter_name, "raw": raw}),
+                        encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("kanban: could not persist adapter stream %s: %s", path, exc)
+
+
+def _adapter_file_evidence(task_id: str, work_dir: str = "") -> Tuple[int, List[str]]:
+    """Files the adapter's OWN stream says were written, read via parse_response.
+
+    Returns ``(writes, paths)``: the number of COMPLETED file-writing tool
+    calls (a call the guard refused has status ``error`` and is not evidence)
+    and the paths they name, relative to ``work_dir`` where possible. A write
+    whose input names no path (opencode's ``patch``) counts in ``writes`` only.
+    ``(0, [])`` when there is no stream, the adapter is unknown, or nothing was
+    written.
+    """
+    import json as _json
+
+    path = _adapter_stream_path(task_id)
+    try:
+        payload = _json.loads(path.read_text(encoding="utf-8"))
+        from tools.agents.registry import get_adapter
+
+        parsed = get_adapter(str(payload.get("adapter") or "")).parse_response(
+            str(payload.get("raw") or "")
+        )
+    except Exception:  # noqa: BLE001 — no stream / unknown adapter: no evidence
+        return 0, []
+    work = Path(work_dir).resolve() if work_dir else None
+    writes = 0
+    out: List[str] = []
+    for call in parsed.get("tool_calls") or []:
+        if not isinstance(call, dict):
+            continue
+        if str(call.get("name") or "").lower() not in _ADAPTER_FILE_TOOLS:
+            continue
+        if str(call.get("status") or "").lower() != "completed":
+            continue
+        writes += 1
+        args = call.get("input") if isinstance(call.get("input"), dict) else {}
+        target = str(args.get("filePath") or args.get("file_path")
+                     or args.get("path") or "").strip()
+        if not target:
+            continue
+        if work is not None and Path(target).is_absolute():
+            try:
+                target = Path(target).resolve().relative_to(work).as_posix()
+            except (ValueError, OSError):
+                pass
+        if target not in out:
+            out.append(target)
+    return writes, out
+
+
 def _dispatch_via_agent_adapter(adapter, task: dict, prompt_path: str,
                                 instruction: str, work_dir: str,
                                 task_log: Path) -> bool:
@@ -6494,6 +6581,12 @@ def _dispatch_via_agent_adapter(adapter, task: dict, prompt_path: str,
 
     session = _agent_session(task, instruction, work_dir)
     adapter_name = getattr(adapter, "name", "agent-adapter")
+    stream_path = _adapter_stream_path(task_id)
+    # A previous dispatch's stream must never be read as THIS run's evidence.
+    try:
+        stream_path.unlink()
+    except OSError:
+        pass
 
     def _runner():
         with open(task_log, "w", encoding="utf-8", newline="",
@@ -6501,6 +6594,7 @@ def _dispatch_via_agent_adapter(adapter, task: dict, prompt_path: str,
             fh.write(f"[{adapter_name} dispatch — task {task_id}]\n")
             fh.write(f"[work_dir {work_dir}]\n\n")
             result = adapter.invoke(session)
+            _write_adapter_stream(stream_path, adapter_name, result)
             fh.write(result.output or "")
             if result.error:
                 fh.write(f"\n[error] {result.error}\n")
@@ -7797,6 +7891,14 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         )
         if head_proc.returncode == 0:
             _dispatch_main_heads[task_id] = head_proc.stdout.strip()
+        origin_proc = _sp.run(
+            ["git", "rev-parse", "--verify", "--quiet",
+             f"origin/{_task_base_branch(task_id)}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(_task_repo_root(task_id)), timeout=10,
+        )
+        if origin_proc.returncode == 0 and origin_proc.stdout.strip():
+            _dispatch_origin_heads[task_id] = origin_proc.stdout.strip()
     except Exception as exc:
         logger.debug("kanban: failed to capture main HEAD for %s: %s", task_id, exc)
 
@@ -8285,6 +8387,53 @@ def _git_worktree_has_real_changes(task_id: str,
     except Exception:
         pass
 
+    # 1b. the branch's own commits ALREADY ON origin/<default> (omx-adapt-03).
+    #
+    # Arm 1's `--not origin/<default>` empties the moment the work lands, and
+    # arm 3 only notices a landing in the LOCAL checkout's HEAD. A worker that
+    # pushes its branch straight to the default branch -- the norm in an
+    # external repo with no forge, where there is no PR to merge -- satisfies
+    # neither. MEASURED 2026-10-11 on the Omarchy box: omx-smoke-02 (opencode)
+    # committed calc.py + test_calc.py and pushed them to origin/kanban/omx-smoke-02
+    # AND origin/main; local main sat 2 behind origin, so the verifier said
+    # "No evidence of file changes in output" and the runner re-dispatched work
+    # that had already landed.
+    #
+    # The range starts at origin/<default> AS IT WAS AT DISPATCH -- the commit
+    # the branch was cut from -- so it holds only commits the task made, never
+    # ones it inherited. Without that snapshot this arm does not run: a local
+    # base that is behind origin would count inherited commits and pass a task
+    # that did nothing (the kpr-rvfy-04 defect).
+    origin_baseline = _dispatch_origin_heads.get(task_id)
+    if origin_baseline:
+        try:
+            r = _sp.run(
+                ["git", "log", f"{origin_baseline}..{branch_name}",
+                 "--name-only", "--pretty=format:"],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                cwd=str(_task_repo_root(task_id)), timeout=10,
+            )
+            files = [
+                ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()
+            ]
+            if r.returncode == 0 and files:
+                landed = _sp.run(
+                    ["git", "merge-base", "--is-ancestor", branch_name,
+                     f"origin/{default_branch_for_task}"],
+                    capture_output=True, text=True,
+                    cwd=str(_task_repo_root(task_id)), timeout=10,
+                )
+                if landed.returncode == 0:
+                    preview = ", ".join(sorted(set(files))[:3])
+                    return True, (
+                        f"{len(set(files))} file(s) committed on {branch_name} "
+                        f"and already on origin/{default_branch_for_task} "
+                        f"(e.g. {preview})"
+                    )
+        except Exception:
+            pass
+
     # 2. uncommitted changes in the worktree — only valid when the task has
     # an actual registered worktree; checking BASE_DIR's dirty state would
     # produce false positives from unrelated in-progress work.
@@ -8513,8 +8662,19 @@ def _run_verify_checks(task_id, claude_output):
     except Exception:
         pass
 
+    # Check 0d — ADAPTER STREAM (omx-adapt-03). opencode and Pi report their
+    # work as JSONL tool calls; the log holds only their final sentence, which
+    # is routinely shorter than MIN_OUTPUT_LENGTH and names no file. Read the
+    # stream through the adapter's own parse_response: completed file writes
+    # are evidence for checks 1 and 3, and the paths they name join the
+    # phantom guard below, so a claimed write still has to exist on disk.
+    _adapter_writes, _adapter_paths = _adapter_file_evidence(
+        task_id, _work_dir_for(task_id)
+    )
+    claude_output = claude_output or ""
+
     # Check 1: Claude output must be substantial
-    if not claude_output or len(claude_output) < MIN_OUTPUT_LENGTH:
+    if not _adapter_writes and len(claude_output) < MIN_OUTPUT_LENGTH:
         return False, "Output too short — likely no work done"
 
     # Check 2: Look for failure indicators (scan first 1000 chars — the
@@ -8602,7 +8762,8 @@ def _run_verify_checks(task_id, claude_output):
         "goals/",
         "docs/",
     ]
-    has_file_evidence = any(m in output_lower for m in file_change_markers)
+    has_file_evidence = (any(m in output_lower for m in file_change_markers)
+                         or _adapter_writes > 0)
     if not has_file_evidence and not has_nochange_signal:
         # Only hard-fail for task types that SHOULD produce file changes.
         # research/test/chore tasks may legitimately produce only pass/fail
@@ -8623,6 +8784,7 @@ def _run_verify_checks(task_id, claude_output):
     # claims to have touched and verify at least SOME of them exist.
     work_dir_for_check = _work_dir_for(task_id)
     claimed_paths = _extract_claimed_file_paths(claude_output)
+    claimed_paths += [p for p in _adapter_paths if p not in claimed_paths]
 
     # Check 4a: If the task description mentions file creation but the
     # output claims zero paths, the agent likely hallucinated.
@@ -8633,7 +8795,7 @@ def _run_verify_checks(task_id, claude_output):
     # legitimately produce zero file output (e.g. "verify dependency
     # available", "run a check"). Per V&V policy these are fail-open.
     # Only apply zero-path guard to task types that imply file creation.
-    if not claimed_paths and not has_nochange_signal:
+    if not claimed_paths and not has_nochange_signal and not _adapter_writes:
         try:
             with get_connection() as _c:
                 _row = _c.execute(
