@@ -8,12 +8,13 @@ from typing import Any, Dict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
-# Directories safe to clean within .tmp/
+# Directories safe to clean within .tmp/. NOT `worktrees` or
+# `genesis/worktrees`: those hold LIVE git worktrees, and an age-based unlink
+# deletes every tracked file older than MAX_AGE_DAYS out from under them
+# (rem-hyg-22). Worktrees are removed by `git worktree remove`, never here.
 SAFE_CLEAN_DIRS = [
     "test_runs",
     "screenshots",
-    "worktrees",
-    "genesis/worktrees",
 ]
 
 # File extensions safe to delete

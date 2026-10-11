@@ -1131,9 +1131,14 @@ class DaemonBase(abc.ABC):
         """Run all reflexes that are currently due."""
         results = []
         due_reflexes = []
+        # Why each reflex did NOT run this cycle. An empty `results` must never
+        # be the whole answer: every reflex sat disabled in the state table for
+        # four months and `--once` printed `"results": []` (rem-hyg-22).
+        self.last_skipped = {}
 
         # Active hours gate — skip entire cycle if outside window
         if not in_active_hours(self.config):
+            self.last_skipped = {name: "outside_active_hours" for name in self.reflex_names}
             return results
 
         cb_config = self.config.get("trust_kernel", {}).get("circuit_breaker", {})
@@ -1142,9 +1147,14 @@ class DaemonBase(abc.ABC):
         for name in self.reflex_names:
             schedule = self.schedules.get(name)
             if not schedule:
+                self.last_skipped[name] = "no_schedule"
                 continue
             state = self.reflex_states[name].load()
             if not state.get("enabled", 1):
+                self.last_skipped[name] = (
+                    f"disabled in {self.reflex_states[name].state_table} "
+                    f"(enable with: python tools/{self.event_prefix}/daemon.py --enable {name})"
+                )
                 continue
             if self.reflex_states[name].is_circuit_open(cb_config):
                 # Do not skip silently.  A bare `continue` here is what made
@@ -1152,9 +1162,12 @@ class DaemonBase(abc.ABC):
                 # stopped appearing in every cycle, with nothing logged and
                 # nothing alerted (xbm-wake-01).
                 self._warn_reflex_dormant(name, state)
+                self.last_skipped[name] = "circuit_breaker_open"
                 continue
             if is_due(schedule, state.get("last_run_at")):
                 due_reflexes.append(name)
+            else:
+                self.last_skipped[name] = "not_due"
 
         # crx-gen-03: honor optional `reflexes.<name>.depends_on: [names]` so a
         # reflex runs after its dependencies WITHIN this cycle (best-effort intra-
@@ -1482,11 +1495,16 @@ class DaemonBase(abc.ABC):
             self._init_states()
             results = self.run_due_reflexes()
             if args.json:
-                print(json.dumps({"mode": "once", "results": results}, indent=2))
+                print(json.dumps(
+                    {"mode": "once", "results": results, "skipped": getattr(self, "last_skipped", {})},
+                    indent=2,
+                ))
             else:
                 print(f"Ran {len(results)} reflex(es)")
                 for r in results:
                     print(f"  {r.get('reflex', '?')}: {r.get('status', 'unknown')}")
+                for name, reason in getattr(self, "last_skipped", {}).items():
+                    print(f"  {name}: skipped — {reason}")
             return
 
         # --- Daemon mode ---

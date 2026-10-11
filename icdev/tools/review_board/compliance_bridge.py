@@ -100,54 +100,141 @@ def log_to_audit_trail(event_type: str, action: str, details: Dict = None) -> in
         return -1
 
 
-def register_cato_evidence(health_score: float, findings_summary: Dict) -> List[Dict]:
-    """Register review board health score as cATO continuous monitoring evidence."""
+# Evidence is valid for this long, and must be backed by a review run inside it.
+EVIDENCE_WINDOW_HOURS = 24
+
+# PG-native upsert on cato_evidence's real unique key -- also valid on SQLite
+# >= 3.24. Authored directly so translate_sql is not load-bearing: its
+# `INSERT OR REPLACE` rewrite picked a conflict target with no matching
+# constraint and aborted the transaction on PostgreSQL (rem-hyg-22).
+_UPSERT_EVIDENCE_SQL = """
+    INSERT INTO cato_evidence
+        (project_id, control_id, evidence_type, evidence_source,
+         evidence_path, evidence_hash, collected_at, expires_at,
+         is_fresh, status, automation_frequency)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (project_id, control_id, evidence_type, evidence_source) DO UPDATE SET
+        evidence_path = excluded.evidence_path,
+        evidence_hash = excluded.evidence_hash,
+        collected_at = excluded.collected_at,
+        expires_at = excluded.expires_at,
+        is_fresh = excluded.is_fresh,
+        status = excluded.status,
+        automation_frequency = excluded.automation_frequency
+"""
+
+
+def register_cato_evidence(health_score: float, findings_summary: Dict, score_ref: str = None) -> List[Dict]:
+    """Register review board health score as cATO continuous monitoring evidence.
+
+    Refuses when ``health_score`` is None: an unmeasured score (no review
+    ran) is not evidence, and registering it would write `status='current'`
+    rows for six controls backed by nothing (rem-hyg-22).
+    """
+    if health_score is None:
+        return [
+            {"control_id": control_id, "status": "refused", "reason": "health score unmeasured: no review ran"}
+            for control_id in CONTROL_MAPPINGS
+        ]
+
     conn = _get_connection()
     results = []
     try:
         now = _now()
-        expires = (datetime.now(timezone.utc) + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        expires = (datetime.now(timezone.utc) + timedelta(hours=EVIDENCE_WINDOW_HOURS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        evidence_path_base = f"review_board_health_history/{score_ref}" if score_ref else "review_board/health"
 
-        for control_id, mapping in CONTROL_MAPPINGS.items():
+        for control_id in CONTROL_MAPPINGS:
             evidence_hash = hashlib.sha256(
                 json.dumps({"score": health_score, "control": control_id, "at": now}).encode()
             ).hexdigest()
-
-            try:
-                # Use INSERT OR REPLACE to update existing evidence for this control
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO cato_evidence
-                        (project_id, control_id, evidence_type, evidence_source,
-                         evidence_path, evidence_hash, collected_at, expires_at,
-                         is_fresh, status, automation_frequency)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                    (
-                        "icdev",
-                        control_id,
-                        "scan_result",
-                        "review_board_daemon",
-                        f"review_board/health/{control_id}",
-                        evidence_hash,
-                        now,
-                        expires,
-                        1,
-                        "current",
-                        "daily",
-                    ),
-                )
-                results.append({"control_id": control_id, "status": "registered"})
-            except Exception as e:
-                results.append({"control_id": control_id, "status": "failed", "error": str(e)})
+            conn.execute(
+                _UPSERT_EVIDENCE_SQL,
+                (
+                    "icdev",
+                    control_id,
+                    "scan_result",
+                    "review_board_daemon",
+                    f"{evidence_path_base}?control={control_id}&score={health_score}",
+                    evidence_hash,
+                    now,
+                    expires,
+                    1,
+                    "current",
+                    "daily",
+                ),
+            )
+            results.append({"control_id": control_id, "status": "registered", "score": health_score})
 
         conn.commit()
     except Exception as e:
-        results.append({"status": "error", "error": str(e)})
+        # One failed statement aborts a PG transaction, so a partial batch is
+        # not committed: report every control as failed rather than a mix.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        results = [
+            {"control_id": control_id, "status": "failed", "error": str(e)} for control_id in CONTROL_MAPPINGS
+        ]
     finally:
         conn.close()
 
     return results
+
+
+def _parse_ts(value) -> datetime:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+
+
+def measured_score(window_hours: int = EVIDENCE_WINDOW_HOURS) -> Dict[str, Any]:
+    """Return the score evidence may cite, or why there is none.
+
+    Evidence needs BOTH a reflex run inside the window and a measured health
+    score computed inside it. The latest history row alone is not enough: the
+    table holds scores of 100 computed while no reflex ran at all.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
+    conn = _get_connection()
+    try:
+        reviews_in_window = 0
+        try:
+            rows = conn.execute(
+                "SELECT reflex_name, last_run_at FROM review_board_reflex_state WHERE last_run_at IS NOT NULL"
+            ).fetchall()
+            for r in rows:
+                try:
+                    if _parse_ts(r[1]) >= cutoff:
+                        reviews_in_window += 1
+                except (ValueError, TypeError):
+                    continue
+        except Exception:
+            pass
+        if reviews_in_window == 0:
+            return {
+                "score": None,
+                "reviews_in_window": 0,
+                "reason": f"no Review Board reflex ran in the last {window_hours}h",
+            }
+
+        try:
+            latest = conn.execute(
+                "SELECT id, score, created_at FROM review_board_health_history ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+        except Exception:
+            latest = None
+        if not latest or latest[1] is None or _parse_ts(latest[2]) < cutoff:
+            return {
+                "score": None,
+                "reviews_in_window": reviews_in_window,
+                "reason": f"no measured health score computed in the last {window_hours}h",
+            }
+        return {"score": latest[1], "score_ref": latest[0], "reviews_in_window": reviews_in_window}
+    finally:
+        conn.close()
 
 
 def get_control_coverage() -> Dict[str, Any]:
@@ -207,15 +294,14 @@ def sync_all(health_score: float = None) -> Dict[str, Any]:
         {"health_score": health_score},
     )
 
-    # 2. Get current health score if not provided
+    # 2. Get the score evidence may cite. Never default to 0 or 100: with no
+    # review in the window there is no score, and no evidence is registered.
+    score_ref = None
     if health_score is None:
-        try:
-            from tools.review_board.health_scorer import get_latest
-
-            latest = get_latest()
-            health_score = latest.get("score", 0)
-        except Exception:
-            health_score = 0
+        measured = measured_score()
+        health_score = measured.get("score")
+        score_ref = measured.get("score_ref")
+        results["measurement"] = measured
 
     # 3. Get findings summary
     conn = _get_connection()
@@ -231,7 +317,7 @@ def sync_all(health_score: float = None) -> Dict[str, Any]:
         conn.close()
 
     # 4. Register cATO evidence
-    results["evidence"] = register_cato_evidence(health_score, findings_summary)
+    results["evidence"] = register_cato_evidence(health_score, findings_summary, score_ref=score_ref)
 
     # 5. Get control coverage
     results["controls"] = get_control_coverage()
@@ -256,11 +342,15 @@ def main():
             print(json.dumps(result, indent=2))
         else:
             print(f"Audit event: {result['audit']}")
-            print(f"Evidence registered: {len(result['evidence'])} controls")
+            registered = sum(1 for e in result["evidence"] if e.get("status") == "registered")
+            print(f"Evidence registered: {registered}/{len(result['evidence'])} controls")
+            if result.get("measurement", {}).get("reason"):
+                print(f"  Not registered: {result['measurement']['reason']}")
             controls = result.get("controls", {})
             print(f"Control coverage: {controls.get('fully_implemented', 0)}/{controls.get('total_controls', 0)}")
     elif args.evidence:
-        evidence = register_cato_evidence(0, {})
+        measured = measured_score()
+        evidence = register_cato_evidence(measured.get("score"), {}, score_ref=measured.get("score_ref"))
         if args.json:
             print(json.dumps(evidence, indent=2))
         else:
