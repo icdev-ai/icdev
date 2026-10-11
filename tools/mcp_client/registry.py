@@ -194,7 +194,10 @@ def enabled_servers() -> list[dict]:
 class ExternalToolRegistry:
     """Discovers, namespaces and dispatches external MCP tools."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, command_prefix: list[str] | None = None) -> None:
+        #: Prepended to every stdio server command this registry spawns -- a
+        #: containment wrapper. The pin is checked on the UNWRAPPED command.
+        self.command_prefix = list(command_prefix or [])
         self._transports: dict[str, Any] = {}
         self._tools: dict[str, ExternalTool] = {}
         self._specs: dict[str, dict] = {}
@@ -231,7 +234,8 @@ class ExternalToolRegistry:
                     if problem:
                         logger.warning("mcp_client[%s]: refused: %s", name, problem)
                         continue
-                    transport = transport_mod.build_transport(spec)
+                    transport = transport_mod.build_transport(
+                        spec, command_prefix=self.command_prefix)
                     if transport is None:
                         continue
                     self._transports[name] = transport
