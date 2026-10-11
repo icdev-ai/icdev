@@ -1437,7 +1437,7 @@ jobs:
           pattern='^(<diff-failed>$|deploy/aur/|tools/ci/arch_package_smoke\.sh$|\.github/workflows/icdev-ci\.yml$'
           pattern+='|pyproject\.toml$|requirements\.txt$|icdev/_version\.py$|args/agent_capabilities\.yaml$'
           pattern+='|(icdev/)?tools/(agents/|cli/omarchy\.py$|cli/__main__\.py$|installer/release\.py$'
-          pattern+='|hooks/harness_guard\.py$|hooks/shared_checks\.py$|airgap/hook_compat\.py$|db/init_icdev_db\.py$))'
+          pattern+='|hooks/harness_guard\.py$|hooks/shared_checks\.py$|airgap/hook_compat\.py$|db/init_icdev_db\.py$|db/bootstrap_pg\.py$|db/schema/))'
           if echo "$files" | grep -Eq "$pattern"; then run=true; else run=false; fi
           echo "run=$run" | tee -a "$GITHUB_OUTPUT"
 

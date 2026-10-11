@@ -3,9 +3,14 @@
 
 post_install() {
   echo ">>> ICDEV is installed in /opt/icdev."
-  echo ">>> Finish the host setup (PostgreSQL, MCP, skills, guards, systemd units):"
+  echo ">>> Finish the host setup (PostgreSQL, .env, MCP, skills, guards) as YOUR user:"
   echo ">>>   icdev omarchy setup --dry-run    # see the plan"
-  echo ">>>   icdev omarchy setup --yes --start"
+  echo ">>>   icdev omarchy setup --yes"
+  echo ">>> .env goes to \$ICDEV_PROJECT_ROOT, else the 'icdev init' project you run it from,"
+  echo ">>> else ~/.config/icdev -- never into /opt/icdev, which root owns."
+  echo ">>> The genesis supervisor (systemd timer, --start) needs a source checkout: it writes"
+  echo ">>> its pid lock, logs and data under its own root. From a git clone of icdev, run"
+  echo ">>> 'python -m tools.cli omarchy setup --yes --start'."
 }
 
 post_upgrade() {

@@ -48,16 +48,44 @@ is needed.
 On any Linux with pipx (`sudo pacman -S python-pipx` on Arch):
 
 ```bash
-pipx install icdev
+pipx install 'icdev[postgresql]'   # the extra carries the PostgreSQL driver
 pipx ensurepath   # once, if ~/.local/bin is not on PATH yet
 ```
+
+`icdev omarchy setup` configures PostgreSQL, which needs the `psycopg2` driver
+in ICDEV's venv. The AUR package installs it. For a pipx install made
+without the extra, run `pipx inject icdev psycopg2-binary`. Until the driver is
+there, the setup `postgres` step stops with that remedy and changes nothing.
 
 ## Then: `icdev omarchy setup`
 
 ```bash
 icdev omarchy setup --dry-run        # print the step plan; change nothing
-icdev omarchy setup --yes --start    # run it (--yes allows the sudo PostgreSQL steps)
+icdev omarchy setup --yes            # run it (--yes allows the sudo PostgreSQL steps)
 icdev omarchy status                 # per-step state: ok / missing / n/a
+```
+
+Run it as **your** user, not root. A package install (AUR, mise, pipx) keeps
+the code in a directory you do not own, so `.env` is written to the first of:
+
+1. `$ICDEV_PROJECT_ROOT`, if set;
+2. the `icdev init` project you run `setup` from (a directory with `AGENTS.md`
+   and `.env.template`, or any of its parents);
+3. `~/.config/icdev` (`$XDG_CONFIG_HOME/icdev`).
+
+The `env` step names the file it used. Point ICDEV at that directory with
+`ICDEV_PROJECT_ROOT` when it is not an `icdev init` project.
+
+**The genesis supervisor needs a source checkout.** `--start` enables the
+`icdev-genesis` systemd timer, which runs `tools/genesis/launch.py`. That
+supervisor writes its pid lock, logs and data under its own root, and a package
+install keeps that root read-only. So on a package install the `systemd` step
+reports `n/a`, and `--start` fails with that reason instead of writing a unit
+that would crash-loop. To run the supervisor, work from a clone:
+
+```bash
+git clone https://github.com/icdev-ai/icdev && cd icdev
+python -m tools.cli omarchy setup --yes --start
 ```
 
 `setup` is idempotent — re-run it after every upgrade. On a host without the

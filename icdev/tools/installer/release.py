@@ -800,6 +800,9 @@ AUR_OPTDEPENDS = (
 )
 AUR_OPTIONS = ("!strip", "!debug")
 AUR_INSTALL = "icdev.install"
+#: Installed into the venv with the wheel. `icdev omarchy setup` configures
+#: PostgreSQL, so the driver is not optional for this package (omx-setup-02).
+AUR_EXTRAS = "postgresql"
 
 _WHEEL_NAME_RE = re.compile(r"^icdev-(?P<v>\d+\.\d+\.\d+)-(?P<tag>[^/\\]+)\.whl$")
 
@@ -872,7 +875,7 @@ package() {{
   local _venv="${{pkgdir}}/opt/${{pkgname}}"
   python -m venv "${{_venv}}"
   "${{_venv}}/bin/python" -m pip install --no-cache-dir --no-compile \\
-    --disable-pip-version-check "${{srcdir}}/${{_whl}}"
+    --disable-pip-version-check "${{srcdir}}/${{_whl}}[{AUR_EXTRAS}]"
 
   # venv scripts (shebangs) and pyvenv.cfg (`command =`) record the build-time
   # path; point them at /opt. makepkg warns "reference to $pkgdir" otherwise.

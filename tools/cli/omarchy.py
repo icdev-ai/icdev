@@ -9,10 +9,14 @@ ONE command for the steps an operator otherwise runs by hand (omx-setup-01):
                  step below; only Omarchy desktop integration is skipped.
   2. postgres -- PostgreSQL + pgvector, role + database ``icdev`` (the name
                  ``icdev_domain.yaml`` declares), ``CREATE EXTENSION vector``,
-                 then ``icdev-init-db``. Needs root, so it RUNS only with
-                 ``--yes``; without it the commands are printed.
+                 then the schema (``bootstrap_pg``). Ready means pgvector AND a
+                 finished schema, so a failed load is retried, never `skipped`.
+                 Needs root, so it RUNS only with ``--yes``; without it the
+                 commands are printed.
   3. env      -- ``ICDEV_DATABASE_URL`` + ``ICDEV_STORAGE_BACKEND=postgresql``
                  in ``.env``. An existing value is KEPT, never overwritten.
+                 On a package install (pacman/pipx) that ``.env`` is NOT in the
+                 root-owned package dir: see ``project_root()``.
                  LLM keys are left to the operator; the providers configured /
                  missing are reported.
   4. mcp      -- ``icdev-unified`` registered with each installed harness, at
@@ -22,7 +26,8 @@ ONE command for the steps an operator otherwise runs by hand (omx-setup-01):
   6. guard    -- ``icdev harness install-guard <opencode|pi> --global``
                  (omx-guard-01 / omx-guard-03) for each one installed.
   7. systemd  -- the omx-linux-01 ``--user`` units for ``tools/genesis/launch.py``;
-                 enabled + started only with ``--start``.
+                 enabled + started only with ``--start``. A package install
+                 has no checkout to run: ``n/a``, and ``--start`` refuses.
   8. panel    -- Omarchy only (omx-panel-01): the ``omarchy-agent-usage-icdev``
                  collector into ``~/.local/bin``, the ``icdev.svg`` mark into the
                  agents plugin's ``assets/``, and a ``systemd --user`` timer that
@@ -62,6 +67,12 @@ DB_ROLE = "icdev"
 DSN = f"postgresql://{DB_ROLE}@localhost:5432/{DB_NAME}"
 PG_DATA = "/var/lib/postgres/data"
 GENESIS_TIMER = "icdev-genesis.timer"
+#: Why --start refuses on a package install (omx-setup-02); deploy/aur/icdev.install says the same.
+GENESIS_NEEDS_CHECKOUT = (
+    "the genesis supervisor (tools/genesis/launch.py) needs a source checkout: it writes its "
+    "pid lock, logs and data under its own root, which a package install keeps root-owned. "
+    "Run it from a clone: git clone https://github.com/icdev-ai/icdev && cd icdev && "
+    "python -m tools.cli omarchy setup --yes --start")
 
 
 # --------------------------------------------------------------------------- #
@@ -93,6 +104,35 @@ def _host_platform() -> str:
     return "linux"
 
 
+#: What `icdev init` writes into every project it scaffolds (omx-setup-02).
+INIT_PROJECT_MARKERS = ("AGENTS.md", ".env.template")
+
+
+def is_source_checkout(root: Path) -> bool:
+    from icdev.core.paths import SOURCE_MARKERS
+    return any((root / m).exists() for m in SOURCE_MARKERS)
+
+
+def project_root(root: Path, environ: Dict[str, str], home: Path, cwd: Path) -> Path:
+    """Where this host's ``.env`` lives (omx-setup-02).
+
+    A source checkout is its own project. A PACKAGE install (pacman, pipx, pip)
+    resolves ``root`` to the installed ``icdev`` package -- root-owned under
+    /opt/icdev for the AUR -- so ``.env`` goes to, in order: $ICDEV_PROJECT_ROOT;
+    the ``icdev init`` project enclosing the working directory; else
+    ``$XDG_CONFIG_HOME/icdev``, which the user always owns.
+    """
+    declared = (environ.get("ICDEV_PROJECT_ROOT") or "").strip()
+    if declared:
+        return Path(declared).expanduser().resolve()
+    if is_source_checkout(root):
+        return root
+    for d in (cwd, *cwd.parents):
+        if all((d / m).is_file() for m in INIT_PROJECT_MARKERS):
+            return d
+    return Path(environ.get("XDG_CONFIG_HOME") or home / ".config") / "icdev"
+
+
 @dataclass
 class Host:
     root: Path
@@ -102,16 +142,23 @@ class Host:
     python: str
     which: Callable[[str], Optional[str]] = shutil.which
     run: Callable[..., Result] = _real_run
+    #: where .env lives; None = root (a source checkout). See project_root().
+    project: Optional[Path] = None
 
     @classmethod
     def real(cls) -> "Host":
         from icdev.core.paths import repo_root
-        return cls(root=repo_root().resolve(), home=Path.home(), environ=dict(os.environ),
-                   platform=_host_platform(), python=sys.executable)
+        root, home, environ = repo_root().resolve(), Path.home(), dict(os.environ)
+        return cls(root=root, home=home, environ=environ, platform=_host_platform(),
+                   python=sys.executable, project=project_root(root, environ, home, Path.cwd()))
+
+    @property
+    def project_dir(self) -> Path:
+        return self.project or self.root
 
     @property
     def env_file(self) -> Path:
-        return self.root / ".env"
+        return self.project_dir / ".env"
 
     def xdg_config(self) -> Path:
         return Path(self.environ.get("XDG_CONFIG_HOME") or self.home / ".config")
@@ -196,12 +243,27 @@ def _psql_su(sql: str, db: str = "postgres") -> List[str]:
     return ["sudo", "-u", "postgres", "psql", "-v", "ON_ERROR_STOP=1", "-d", db, "-tAc", sql]
 
 
+#: Ready = pgvector AND a schema bootstrap_pg finished (omx-setup-02). The
+#: extension alone is created BEFORE the schema step, so probing only it reported
+#: `skipped` forever after a schema load that failed. bootstrap_pg creates
+#: schema_migrations last-but-one and drops its partial-load sentinel last.
+READY_SQL = ("SELECT 1 FROM pg_extension WHERE extname = 'vector' "
+             "AND to_regclass('public.schema_migrations') IS NOT NULL "
+             "AND to_regclass('public.schema_bootstrap_partial') IS NULL")
+
+
 def plan_postgres(host: Host) -> Plan:
     _check_db_name()
-    ready = host.run(["psql", "-h", "localhost", "-U", DB_ROLE, "-d", DB_NAME, "-tAc",
-                      "SELECT 1 FROM pg_extension WHERE extname = 'vector'"])
+    ready = host.run(["psql", "-h", "localhost", "-U", DB_ROLE, "-d", DB_NAME, "-tAc", READY_SQL])
     if ready.rc == 0 and ready.stdout.strip() == "1":
-        return Plan(done=True, detail=f"database {DB_NAME} reachable with pgvector")
+        return Plan(done=True, detail=f"database {DB_NAME} reachable with pgvector and the ICDEV schema")
+    # The schema load (and ICDEV itself, once .env says postgresql) needs the
+    # driver IN THIS interpreter -- the [postgresql] extra, not a base dependency.
+    if host.run([host.python, "-c", "import psycopg2"]).rc != 0:
+        return Plan(done=False, state="failed",
+                    detail=f"the PostgreSQL driver (psycopg2) is not installed for {host.python}: "
+                           "reinstall with the extra -- `pipx install --force 'icdev[postgresql]'` or "
+                           "`pip install 'icdev[postgresql]'` -- then re-run")
 
     installed = bool(host.which("psql"))
     if not installed and not host.which("pacman"):
@@ -228,8 +290,11 @@ def plan_postgres(host: Host) -> Plan:
                ["sudo", "-u", "postgres", "createdb", "-O", DB_ROLE, DB_NAME],
                unless=_psql_su(f"SELECT 1 FROM pg_database WHERE datname = '{DB_NAME}'")),
         Action("create extension vector", _psql_su("CREATE EXTENSION IF NOT EXISTS vector", DB_NAME)),
-        Action("initialise the ICDEV schema (icdev-init-db)",
-               [host.python, "-m", "icdev.tools.db.init_icdev_db"],
+        # NOT icdev-init-db: on postgresql it prints a pointer and creates
+        # nothing. bootstrap_pg loads the consolidated snapshot, runs the newer
+        # migrations, and exits non-zero on a partial load.
+        Action("load the ICDEV schema (bootstrap_pg)",
+               [host.python, "-m", "icdev.tools.db.bootstrap_pg"],
                env={"ICDEV_DATABASE_URL": DSN, "ICDEV_STORAGE_BACKEND": "postgresql"}),
     ]
     return Plan(done=False, actions=actions, needs_yes=True,
@@ -268,6 +333,9 @@ def plan_env(host: Host) -> Plan:
               f"missing keys: {', '.join(llm['missing']) or 'none'}")
     if kept:
         detail = f"kept existing {', '.join(kept)}; " + detail
+    if host.project_dir != host.root:
+        detail = (f"package install: .env is {host.env_file} (set ICDEV_PROJECT_ROOT to "
+                  f"{host.project_dir} so ICDEV reads it); " + detail)
     if not missing:
         return Plan(done=True, detail=detail)
     return Plan(done=False, detail=detail, actions=[Action(
@@ -422,10 +490,11 @@ def plan_systemd(host: Host, start: bool = False, remove: bool = False) -> Plan:
     # wheel/AUR package ships neither the templates nor a launch.py at the root,
     # so a unit written there would crash-loop. Measured by the Arch Package
     # Smoke job (omx-ci-01): this step reported `failed` on every package install.
+    # A REFUSAL, not a gap (omx-setup-02): launch.py keeps its pid lock, logs and
+    # data under its own root, and a package install keeps that root-owned.
     if not (host.root / "scripts" / "systemd").is_dir():
-        detail = (f"the genesis units need a source checkout; {host.root} is not one "
-                  "(package install) -- no units written")
-        return Plan(done=not start, state="failed" if start else "n/a", detail=detail)
+        return Plan(done=not start, state="failed" if start else "n/a",
+                    detail=f"{host.root} is a package install -- {GENESIS_NEEDS_CHECKOUT}")
     try:
         units = unit_plan(host.root, host.python)
     except (OSError, ValueError) as exc:

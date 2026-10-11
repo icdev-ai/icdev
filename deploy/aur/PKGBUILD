@@ -31,7 +31,7 @@ package() {
   local _venv="${pkgdir}/opt/${pkgname}"
   python -m venv "${_venv}"
   "${_venv}/bin/python" -m pip install --no-cache-dir --no-compile \
-    --disable-pip-version-check "${srcdir}/${_whl}"
+    --disable-pip-version-check "${srcdir}/${_whl}[postgresql]"
 
   # venv scripts (shebangs) and pyvenv.cfg (`command =`) record the build-time
   # path; point them at /opt. makepkg warns "reference to $pkgdir" otherwise.

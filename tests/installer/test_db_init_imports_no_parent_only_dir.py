@@ -20,10 +20,31 @@ from tools.installer.sync_package_tree import PARENT_ONLY_DIRS
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+_IMPORT_ERRORS = {"ImportError", "ModuleNotFoundError"}
+
+
+def _guarded_imports(tree: ast.AST) -> set:
+    """Import nodes inside a `try` that handles ImportError: they degrade, not crash."""
+    guarded = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        caught = set()
+        for h in node.handlers:
+            types = h.type.elts if isinstance(h.type, ast.Tuple) else [h.type]
+            caught |= {t.id for t in types if isinstance(t, ast.Name)}
+        if caught & _IMPORT_ERRORS:
+            guarded |= {id(n) for stmt in node.body for n in ast.walk(stmt)}
+    return guarded
+
+
 def _parent_only_imports(path: Path, root: Path = REPO_ROOT) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
+    guarded = _guarded_imports(tree)
     hits = []
     for node in ast.walk(tree):
+        if id(node) in guarded:
+            continue
         if isinstance(node, ast.Import):
             mods = [a.name for a in node.names]
         elif isinstance(node, ast.ImportFrom) and node.module:
@@ -48,10 +69,10 @@ def test_init_icdev_db_imports_nothing_the_wheel_excludes():
 # discovery. Enumerated by name so the set can only shrink: fix one by moving its
 # constants out of the parent-only dir (as compliance_matrix_schema was) and
 # delete its line here.
+# 20260912122759 left this set in omx-setup-02: its import is now guarded and the
+# migration reports a stated skip on a package install.
 _KNOWN_MIGRATION_DEBT = {
     "tools/db/migrations/266_proposal_key_personnel/up.py:66: tools.govcon.key_personnel",
-    "tools/db/migrations/20260912122759_add_experiment_candidate_lane/up.py:109: "
-    "tools.autoresearch.real_mutation",
 }
 
 
@@ -74,3 +95,20 @@ def test_detector_sees_the_original_defect(tmp_path):
         "x.py:1: tools.govcon.compliance_matrix_schema",
         "x.py:2: icdev.tools.saas",
     ]
+
+
+def test_an_import_guarded_by_import_error_degrades_and_is_not_a_hit(tmp_path):
+    f = tmp_path / "y.py"
+    f.write_text(
+        "def up(conn):\n"
+        "    try:\n"
+        "        from tools.autoresearch.real_mutation import LANES\n"
+        "    except ImportError:\n"
+        "        return {}\n"
+        "    try:\n"
+        "        from tools.govcon.x import y\n"
+        "    except ValueError:\n"
+        "        pass\n",
+        encoding="utf-8",
+    )
+    assert _parent_only_imports(f, root=tmp_path) == ["y.py:7: tools.govcon.x"]
