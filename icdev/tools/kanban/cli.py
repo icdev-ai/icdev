@@ -957,7 +957,8 @@ def cmd_claim(task_id: str, json_out: bool, intent: Optional[str] = None,
                 "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
                 ("in_progress", now, task_id),
             )
-            _record_manual_transition(conn, task_id, prior, "in_progress")
+            _record_manual_transition(conn, task_id, prior, "in_progress",
+                                      reason=CLAIM_TRANSITION_REASON)
         info.update({
             "prior_status": prior,
             "branch": d.get("branch_name"),
@@ -1008,6 +1009,76 @@ def cmd_claim(task_id: str, json_out: bool, intent: Optional[str] = None,
     return 0
 
 
+#: The reason ``--claim`` writes on its ``-> in_progress`` row, and the one
+#: ``--release`` looks for to put the task back (kpr-watch-26). It used to fall
+#: through to the ``--set-status`` default, so the row did not even say a claim
+#: made it.
+CLAIM_TRANSITION_REASON = "tools/kanban/cli.py --claim"
+
+#: Statuses ``--release`` never writes back. ``done`` has its own door
+#: (``--set-status done``, merge-verified); restoring it here would walk round it.
+_NEVER_RESTORE = frozenset({"done", "in_progress"})
+
+
+def _restore_pre_claim_status(task_id: str) -> Optional[dict]:
+    """Put a released task back where ``--claim`` took it from (kpr-watch-26).
+
+    ``--claim`` moves the task to in_progress; ``--release`` used to drop only
+    the lease. An in_progress task with no lease and no live worker is exactly
+    what the stale-reaper and startup-recovery read as a dead dispatch, so they
+    moved it to backlog/scheduled and the runner could build again a task whose
+    PR was already open -- omx-vllm-04 on 2026-10-11, claimed from pr_opened
+    and left in_progress until a human moved it back.
+
+    Restores only when the claim is still the LAST word on the task: it is
+    in_progress, and the newest transition is this CLI's claim row. Anything
+    that moved it since -- a merge, a hand move, a re-dispatch -- wins.
+    ``recorded_at`` is TEXT with more than one writer, so the comparison parses
+    each timestamp rather than trusting a string ORDER BY.
+
+    Returns ``{"from", "to"}`` when it moved the task, else None. Best-effort:
+    the lease is already released, and that must stand whatever happens here.
+    """
+    from tools.common.helpers import parse_utc_timestamp
+
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,),
+            ).fetchone()
+            if not row or row["status"] != "in_progress":
+                return None
+            rows = conn.execute(
+                "SELECT from_status, to_status, actor, reason, recorded_at "
+                "FROM kanban_status_transitions WHERE task_id = %s",
+                (task_id,),
+            ).fetchall()
+            epoch = datetime.min.replace(tzinfo=timezone.utc)
+            dated = [(parse_utc_timestamp(r["recorded_at"]) or epoch, dict(r)) for r in rows]
+            if not dated:
+                return None
+            last = max(dated, key=lambda t: t[0])[1]
+            prior = last.get("from_status")
+            if (last.get("to_status") != "in_progress"
+                    or last.get("actor") != "manual"
+                    or (last.get("reason") or "") != CLAIM_TRANSITION_REASON
+                    or not prior or prior in _NEVER_RESTORE):
+                return None
+            conn.execute(
+                "UPDATE kanban_tasks SET status = %s, updated_at = %s "
+                "WHERE id = %s AND status = 'in_progress'",
+                (prior, _now(), task_id),
+            )
+            _record_manual_transition(
+                conn, task_id, "in_progress", prior,
+                reason="tools/kanban/cli.py --release: restored the status --claim took it from",
+            )
+            return {"from": "in_progress", "to": prior}
+    except Exception as exc:  # noqa: BLE001 - the release already happened; never undo it
+        logger.warning("_restore_pre_claim_status(%s) failed (non-blocking): %s", task_id, exc)
+        return None
+
+
 def cmd_release(task_id: str, json_out: bool) -> int:
     """Release the per-task lease so the runner (or another session) can take it.
 
@@ -1052,6 +1123,7 @@ def cmd_release(task_id: str, json_out: bool) -> int:
     prior, still = out["prior"], out["still"]
     worker_alive = out["worker_heartbeating"]
     why = out["why"]
+    restored = _restore_pre_claim_status(task_id) if released else None
     if json_out:
         print(json.dumps({
             "released": released,
@@ -1062,6 +1134,7 @@ def cmd_release(task_id: str, json_out: bool) -> int:
             "still_held_by": (still or {}).get("holder_session"),
             "lease_state": out["verdict_state"],
             "worker_heartbeating": worker_alive,
+            "status_restored": restored,
         }, indent=2))
     elif released and reclaimed:
         print(f"  RELEASED: {task_id} (reclaimed from exited session "
@@ -1089,6 +1162,8 @@ def cmd_release(task_id: str, json_out: bool) -> int:
             print(f"    {why}")
     else:
         print(f"  NOT CLAIMED: {task_id}")
+    if restored and not json_out:
+        print(f"    status restored: in_progress -> {restored['to']} (where --claim took it from)")
     return 0 if released else 1
 
 
