@@ -1459,7 +1459,7 @@ embeddings:
 
     # vLLM embeddings (omx-vllm-03). vLLM serves embeddings from a SEPARATE
     # instance started as a pooling/embed model, not from the chat server:
-    #   vllm serve BAAI/bge-m3 --task embed --port 8001
+    #   vllm serve BAAI/bge-m3 --runner pooling --port 8001  (v0.31.0 spelling; `--task` is gone)
     # then set VLLM_EMBED_BASE_URL=http://localhost:8001/v1 and
     # VLLM_EMBED_MODEL=BAAI/bge-m3. VLLM_EMBED_BASE_URL falls back to
     # VLLM_BASE_URL (one instance serving both); VLLM_EMBED_MODEL has NO

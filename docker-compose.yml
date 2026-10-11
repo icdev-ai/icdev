@@ -949,6 +949,154 @@ services:
           memory: 256M
 
   # ====================================================================
+  # vLLM — OpenAI-compatible local inference (OPT-IN, OFF BY DEFAULT) (omx-vllm-05)
+  # ====================================================================
+  # OPTIONAL, and it never displaces Ollama as the default local provider:
+  # Ollama (GGUF + partial CPU offload) is the better fit for the low-end GPUs
+  # ICDEV's target boxes carry, and the llm_config chains keep ollama entries
+  # ahead of vllm ones. vLLM preallocates a fixed fraction of VRAM for KV cache,
+  # so on a small GPU only a small quantized model with a short context fits.
+  # The realistic production path is a REMOTE vLLM on a bigger GPU — point
+  # VLLM_BASE_URL at it; this service is for the box that has the GPU.
+  #
+  # Behind the `vllm` compose profile, so a plain `docker compose up` does not
+  # start it:
+  #     docker compose --profile vllm up -d vllm
+  # and the rest of OMX picks it up from .env:
+  #     VLLM_BASE_URL=http://localhost:8000/v1
+  #     VLLM_MODEL=Qwen/Qwen2.5-1.5B-Instruct-AWQ   # == the served model name
+  # Install notes (Arch/Omarchy + NVIDIA, Windows via WSL2, CPU-only, air gap):
+  # docs/install/vllm.md.
+  #
+  # SUPPLY CHAIN: PINNED BY DIGEST. The default ref names the multi-arch index
+  # digest of vllm/vllm-openai:v0.31.0, resolved 2026-10-10 with
+  # `docker buildx imagetools inspect` (no pull). The same digest is the
+  # air-gap pin in vendor/images/images-vllm.txt; a test holds the two equal.
+  # VLLM_IMAGE exists for ONE reason: an image delivered by `docker load` on the
+  # high side resolves by neither tag nor repo digest, so deploy/offline/
+  # vllm_bundle.py re-tags the verified image locally and prints the VLLM_IMAGE
+  # line to use. Never point it at a mutable registry tag.
+  #
+  # DEFAULT = LOW-VRAM PROFILE. A ~1.5B AWQ model, 80% of VRAM, a 4096-token
+  # context and eager mode (CUDA graphs cost VRAM a small card does not have).
+  # No throughput or capacity number is claimed for it: none has been measured
+  # on the target hardware. The large-GPU profile is the commented block in
+  # `command:` below.
+  vllm:
+    profiles: ["vllm"]
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.31.0@sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3}
+    container_name: icdev-vllm
+    ports:
+      # Loopback by default. A host serving vLLM to OTHER boxes (the bigger-GPU
+      # path) sets VLLM_BIND_ADDR=0.0.0.0 AND VLLM_API_KEY — never one without
+      # the other.
+      - "${VLLM_BIND_ADDR:-127.0.0.1}:${VLLM_PORT:-8000}:8000"
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      # Set VLLM_HF_OFFLINE=1 on an air-gapped host: weights come from the
+      # bundle extracted into ./data/vllm/hf-cache, never from the Hub.
+      HF_HUB_OFFLINE: ${VLLM_HF_OFFLINE:-0}
+      HF_TOKEN: ${HF_TOKEN:-}
+      # The same variable the ICDEV client sends (args/llm_config.yaml
+      # providers.vllm.api_key_env). vLLM v0.31.0 declares it in vllm/envs.py.
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+    volumes:
+      # Model weights. ./data/vllm is gitignored (omx-vllm-05).
+      - ./data/vllm/hf-cache:/root/.cache/huggingface
+    # Shared memory for the engine's worker processes.
+    ipc: host
+    command:
+      - "--model"
+      - "${VLLM_MODEL:-Qwen/Qwen2.5-1.5B-Instruct-AWQ}"
+      # No --quantization flag: vLLM reads it from the checkpoint's own
+      # config.json, so swapping VLLM_MODEL for an unquantized model just works.
+      - "--gpu-memory-utilization"
+      - "${VLLM_GPU_MEMORY_UTILIZATION:-0.80}"
+      - "--max-model-len"
+      - "${VLLM_MAX_MODEL_LEN:-4096}"
+      - "--enforce-eager"
+      # Tool calling: the parser is PER MODEL FAMILY (Qwen2.5 -> hermes,
+      # Llama 3.x -> llama3_json, Mistral -> mistral). See docs/install/vllm.md.
+      - "--enable-auto-tool-choice"
+      - "--tool-call-parser"
+      - "${VLLM_TOOL_CALL_PARSER:-hermes}"
+      # ── LARGE-GPU PROFILE (a bigger card; NOT the default) ────────────────
+      # Set in .env, e.g.:
+      #   VLLM_MODEL=Qwen/Qwen2.5-7B-Instruct
+      #   VLLM_GPU_MEMORY_UTILIZATION=0.90
+      #   VLLM_MAX_MODEL_LEN=32768
+      #   (drop --enforce-eager to get CUDA graphs back)
+      # Size max_model_len to what the KV cache actually holds — vLLM refuses
+      # to start when it does not fit, and says so in its log.
+    networks:
+      - icdev-net
+    healthcheck:
+      # /v1/models is what settings.vllm_discovery reads, so health means
+      # "discovery would answer". Python, not curl: the image is a Python env.
+      test: ["CMD-SHELL", "python3 -c \"import os,urllib.request as u; k=os.environ.get('VLLM_API_KEY'); r=u.Request('http://localhost:8000/v1/models', headers={'Authorization': 'Bearer '+k} if k else {}); u.urlopen(r, timeout=5)\" || exit 1"]
+      <<: *healthcheck-defaults
+      # Loading weights and profiling the KV cache takes minutes, not seconds.
+      start_period: 600s
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # vllm-embed — a SEPARATE pooling instance for embeddings (omx-vllm-05).
+  # Its own profile, not `vllm`: two engines each preallocating VRAM do not fit
+  # on a low-end card together, so running both is a deliberate second act:
+  #     docker compose --profile vllm-embed up -d vllm-embed
+  # and in .env:
+  #     VLLM_EMBED_BASE_URL=http://localhost:8001/v1
+  #     VLLM_EMBED_MODEL=BAAI/bge-small-en-v1.5
+  # `--runner pooling` is the v0.31.0 spelling; the older `--task embed` flag
+  # no longer exists in that release's arg parser.
+  vllm-embed:
+    profiles: ["vllm-embed"]
+    image: ${VLLM_IMAGE:-vllm/vllm-openai:v0.31.0@sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3}
+    container_name: icdev-vllm-embed
+    ports:
+      - "${VLLM_BIND_ADDR:-127.0.0.1}:${VLLM_EMBED_PORT:-8001}:8000"
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      HF_HUB_OFFLINE: ${VLLM_HF_OFFLINE:-0}
+      HF_TOKEN: ${HF_TOKEN:-}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+    volumes:
+      - ./data/vllm/hf-cache:/root/.cache/huggingface
+    ipc: host
+    command:
+      - "--model"
+      - "${VLLM_EMBED_MODEL:-BAAI/bge-small-en-v1.5}"
+      - "--runner"
+      - "pooling"
+      - "--gpu-memory-utilization"
+      - "${VLLM_EMBED_GPU_MEMORY_UTILIZATION:-0.15}"
+      - "--max-model-len"
+      - "${VLLM_EMBED_MAX_MODEL_LEN:-512}"
+      - "--enforce-eager"
+    networks:
+      - icdev-net
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import os,urllib.request as u; k=os.environ.get('VLLM_API_KEY'); r=u.Request('http://localhost:8000/v1/models', headers={'Authorization': 'Bearer '+k} if k else {}); u.urlopen(r, timeout=5)\" || exit 1"]
+      <<: *healthcheck-defaults
+      start_period: 300s
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ====================================================================
   # floci — AWS API Emulator (OPT-IN, OFF BY DEFAULT) (flx-compose-01)
   # ====================================================================
   # floci is MIT-licensed, Java/Quarkus, listens on 4566, and is a documented

@@ -109,10 +109,32 @@ docker save \
   | gzip > icdev-images.tar.gz
 ```
 
+### Optional: vLLM image + model weights (omx-vllm-05)
+
+Only if the high side will serve a local model with the optional `vllm` compose
+profile. Ollama stays the default local provider. vLLM is pinned by digest in
+`vendor/images/images-vllm.txt` and bundled by the same `image_vendor` mechanism
+the floci image cache uses, with a hashed model-weights tarball alongside it:
+
+```bash
+# low side: both must already be in the local caches -- nothing is pulled for you
+docker pull vllm/vllm-openai@sha256:c1c9f6fd5c109ba7f0546a59f5b2f15fb87f64c77782e90a27b648b42a8e67c3
+HF_HOME=data/vllm/hf-cache hf download Qwen/Qwen2.5-1.5B-Instruct-AWQ
+python deploy/offline/vllm_bundle.py save --model Qwen/Qwen2.5-1.5B-Instruct-AWQ
+
+# high side, after moving vendor/images/vllm/ and vendor/models/vllm/
+python deploy/offline/vllm_bundle.py verify
+python deploy/offline/vllm_bundle.py load     # prints the VLLM_IMAGE / VLLM_HF_OFFLINE lines for .env
+```
+
+Full walkthrough (GPU prerequisites, low-VRAM defaults, tool-call parsers):
+[docs/install/vllm.md](../../docs/install/vllm.md).
+
 ### Transfer to Air-Gapped Environment
 
 Transfer the following files to the air-gapped cluster:
 - `icdev-images.tar.gz` -- container images
+- `vendor/images/vllm/` + `vendor/models/vllm/` -- only if serving vLLM (see above)
 - `deploy/` -- Helm chart and installer
 - `license.json` -- your license key
 - TLS certificate and key (if using custom certs)

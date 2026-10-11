@@ -9119,6 +9119,18 @@ There is deliberately no credential setting: `credentials()` always returns the
 dummy `("test", "test")` pair, because these values reach `docker run -e` and a
 Terraform provider block aimed at localhost.
 
+### vLLM air-gap bundle — pinned image + model weights (omx-vllm-05)
+
+```bash
+docker compose --profile vllm config --quiet                     # validate the optional service
+python deploy/offline/vllm_bundle.py save --model Qwen/Qwen2.5-1.5B-Instruct-AWQ   # low side
+python deploy/offline/vllm_bundle.py verify                      # re-hash weights + image
+python deploy/offline/vllm_bundle.py load                        # high side; prints VLLM_IMAGE line
+python tools/airgap/image_vendor.py --save --topic vllm --json   # image half only
+```
+
+Walkthrough: [docs/install/vllm.md](../install/vllm.md).
+
 ### floci runtime base images — what the emulator PULLS at run time (flx-airgap-02)
 
 ```bash
