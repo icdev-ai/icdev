@@ -18,9 +18,10 @@ set ICDEV_REVIEW_BOARD_ENABLED=true
 set PYTHONIOENCODING=utf-8
 
 REM Resolve Python executable (prefer pythonw for windowless, fall back to python)
-for /f %%i in ('where pythonw 2^>nul') do set PYEXE=%%i
+REM First match wins: `do set` alone keeps the LAST, e.g. the Store python (rem-hyg-21)
+for /f %%i in ('where pythonw 2^>nul') do if not defined PYEXE set PYEXE=%%i
 if not defined PYEXE (
-    for /f %%i in ('where python 2^>nul') do set PYEXE=%%i
+    for /f %%i in ('where python 2^>nul') do if not defined PYEXE set PYEXE=%%i
 )
 if not defined PYEXE set PYEXE=python
 
