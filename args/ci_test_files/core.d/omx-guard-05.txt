@@ -1,0 +1,2 @@
+# omx-guard-05 -- L3 write sandbox: an autonomous worker can only write inside its task worktree
+tests/hooks/test_write_sandbox.py

@@ -185,6 +185,14 @@ CAPABILITIES: Dict[str, str] = {
         "through the guarded shell the runner puts in front of $SHELL / PATH "
         "(tools/hooks/guard_shell.py)."
     ),
+    # omx-guard-05 (L3). Measured by real writes: the sandbox is taken from the
+    # adapter's OWN build_argv, then a write inside the worktree and into the
+    # adapter's declared state dir must land and one outside must not.
+    "sandboxed": (
+        "An autonomous run can only write inside its task worktree (plus the "
+        "harness's declared state dirs): the OS write sandbox the runner asks "
+        "for wraps the adapter's command line (tools/hooks/write_sandbox.py)."
+    ),
 }
 
 # ── probe fixtures ──────────────────────────────────────────────────────────
@@ -798,6 +806,36 @@ def _probe_guard_shell(adapter: Any) -> ProbeOutcome:
     )
 
 
+def _probe_sandboxed(adapter: Any) -> ProbeOutcome:
+    """L3: does the adapter's own command line confine its writes?
+
+    An adapter with no command line runs in-process -- there is no OS process
+    to sandbox, a measured absence. An OS with no sandbox backend is
+    unconfirmed, with the reason (Windows says so explicitly).
+    """
+    from tools.hooks import write_sandbox  # noqa: PLC0415
+
+    name = getattr(adapter, "name", "")
+    try:
+        _build_argv(adapter, {})
+    except AttributeError:
+        return ProbeOutcome(
+            ABSENT, INTERFACE,
+            "no build_argv: the adapter runs in-process, so there is no OS "
+            "process for the write sandbox to wrap",
+        )
+    except Exception as exc:  # noqa: BLE001 -- unconstructible is unconfirmed
+        return _unconfirmed(f"build_argv raised {type(exc).__name__}: {exc}")
+    report = write_sandbox.probe(
+        name,
+        build_argv=lambda wt, meta: _build_argv(adapter, meta, working_dir=wt),
+    )
+    if report["sandboxed"] is None:
+        return _unconfirmed(report["reason"], method=BEHAVIORAL)
+    return ProbeOutcome(PRESENT if report["sandboxed"] else ABSENT, BEHAVIORAL,
+                        f"{report['status'].get('backend')}: {report['reason']}")
+
+
 _PROBES = {
     "streaming": _probe_streaming,
     "tool_calling": _probe_tool_calling,
@@ -808,6 +846,7 @@ _PROBES = {
     "structured_output": _probe_structured_output,
     "guard_wired": _probe_guard_wired,
     "guard_shell": _probe_guard_shell,
+    "sandboxed": _probe_sandboxed,
 }
 
 
