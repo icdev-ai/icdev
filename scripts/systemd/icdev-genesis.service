@@ -1,0 +1,44 @@
+# CUI // SP-CTI
+# ICDEV(tm) Genesis supervisor -- systemd --user unit (omx-linux-01).
+#
+# The Linux equivalent of the Windows Task Scheduler registration in
+# tools/genesis/install_scheduled_task.ps1 / register_startup.ps1: it runs
+# tools/genesis/launch.py, which holds the .tmp/genesis/launcher.pid lock and
+# supervises the dashboard, genesis daemon, kanban scheduler and pr_watcher.
+# Activated at logon by icdev-genesis.timer, not by [Install] here.
+#
+# Valid as-is for a checkout at ~/icdev. Install with
+#   python -m tools.genesis.install_units --platform linux
+# which rewrites %h/icdev to the real checkout and /usr/bin/env python3 to the
+# interpreter that ran the installer (your venv), then writes the unit to
+# ~/.config/systemd/user/.
+#
+# Stop with /stop (python tools/genesis/shutdown_dashboard.py), never with a
+# name filter. KillMode=process: `systemctl --user stop` signals the
+# supervisor only, so an agent worker mid-build is not cut down with it --
+# the same rule shutdown_dashboard.py enforces without --include-workers.
+
+[Unit]
+Description=ICDEV(tm) Genesis supervisor (dashboard, daemon, kanban scheduler, pr_watcher)
+Documentation=https://github.com/icdev-ai/icdev
+# Task Scheduler parity: 3 restarts, 5 minutes apart, then give up.
+StartLimitIntervalSec=30min
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=%h/icdev
+ExecStart=/usr/bin/env python3 tools/genesis/launch.py
+EnvironmentFile=-%h/icdev/.env
+Environment=PYTHONPATH=%h/icdev
+Environment=ICDEV_GENESIS_ENABLED=true
+Environment=PYTHONIOENCODING=utf-8
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5min
+KillMode=process
+TimeoutStopSec=60
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=icdev-genesis

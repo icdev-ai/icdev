@@ -18,6 +18,8 @@ from tools.agents.registry import (  # noqa: F401
     get_adapter,
     list_adapters,
     pick_default,
+    select_adapter,
+    AdapterSelection,
     detect_available,
 )
 from tools.agents.capability_matrix import (  # noqa: F401

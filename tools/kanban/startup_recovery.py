@@ -52,6 +52,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from tools.compat.platform_utils import path_has_component
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -126,10 +127,10 @@ def path_mentions_task(path: Optional[str], task_id: str) -> bool:
     """
     if not path or not task_id:
         return False
-    tid = task_id.lower()
-    wanted = {tid, f".merge-{tid}"}
-    parts = str(path).lower().replace("\\", "/").split("/")
-    return any(p in wanted for p in parts)
+    # Host case rules (omx-linux-01): a Linux directory named differently in
+    # case is a different directory, so it is not this task's worktree.
+    return (path_has_component(path, task_id)
+            or path_has_component(path, f".merge-{task_id}"))
 
 
 def _session_ttl_seconds() -> int:

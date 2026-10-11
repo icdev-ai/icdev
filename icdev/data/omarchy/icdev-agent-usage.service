@@ -1,0 +1,13 @@
+# CUI // SP-CTI
+# ICDEV(tm) agents-panel record for Omarchy (omx-panel-01).
+# Omarchy's omarchy-agent-usage-update only runs collectors from
+# $OMARCHY_PATH/bin, so this writes ICDEV's record straight into
+# ~/.local/state/omarchy/agents/usage/, where the panel picks it up.
+
+[Unit]
+Description=Write the ICDEV(tm) record for the Omarchy agents panel
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/omarchy-agent-usage-icdev --write
+StandardOutput=null

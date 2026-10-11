@@ -112,6 +112,7 @@ BASE_DIR = repo_root(__file__)
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools.compat.platform_utils import path_key  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("kanban.worktree_husks")
@@ -202,8 +203,7 @@ class HuskVerdict:
 
 
 def _norm(p) -> str:
-    s = str(Path(p).resolve()).replace("\\", "/").rstrip("/")
-    return s.lower() if os.name == "nt" else s
+    return path_key(Path(p).resolve())
 
 
 def worktree_listing(repo_root_path) -> Optional[set]:

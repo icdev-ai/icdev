@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+# omarchy:summary=Print the ICDEV usage record as JSON
+# omarchy:args=[--force] [--limits-only] [--write]
+# CUI // SP-CTI
+"""Omarchy agents-panel collector for ICDEV (omx-panel-01).
+
+A thin entry: the record is built by ``icdev.tools.cli.omarchy_panel``.
+``icdev omarchy setup`` installs a copy into ``~/.local/bin`` with the
+interpreter and the ICDEV checkout root filled in below.
+"""
+import os
+import sys
+
+_INSTALLED_ROOT = ""  # icdev omarchy setup writes the checkout root here
+
+_root = os.environ.get("ICDEV_PROJECT_ROOT") or _INSTALLED_ROOT
+if _root and _root not in sys.path:
+    sys.path.insert(0, _root)
+
+try:
+    from icdev.tools.cli.omarchy_panel import main
+except ImportError as exc:
+    # No record beats a fabricated one: the updater treats a non-zero exit as
+    # "collector failed" and the panel keeps the last record with its age.
+    print(f"omarchy-agent-usage-icdev: ICDEV not importable ({exc})", file=sys.stderr)
+    sys.exit(1)
+
+sys.exit(main())

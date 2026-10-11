@@ -839,8 +839,9 @@ def _wins_sibling_tiebreak(pr_url: str, siblings, blocked=None) -> bool:
     The guard itself is unchanged for everyone else — the losers still wait, and
     still rebase afterwards.
 
-    `blocked` — urls of siblings that CANNOT merge right now (draft, or the forge
-    reports CONFLICTING) — are dropped from the tie-break, because the same
+    `blocked` — urls of siblings that CANNOT merge right now (draft, the forge
+    reports CONFLICTING, a REQUIRED check concluded red, or it touches a
+    protected path a human must merge — see `_pr_can_merge`) — are dropped from the tie-break, because the same
     sentence above applies one level up. A PR held behind a sibling that cannot
     merge is not being serialised behind it; it is waiting for a queue position
     that will never come free, and the hold is re-evaluated every poll so the
@@ -872,6 +873,13 @@ def _pr_can_merge(state: dict) -> bool:
     with consequences.
     """
     if (state or {}).get("draft"):
+        return False
+    # A sibling whose REQUIRED checks concluded red, or which touches a protected
+    # path, cannot be merged by this pipeline either (kpr-watch-23). MEASURED
+    # 2026-10-10: #2400 and #2402, green and CLEAN, held 81-138 min behind #2397,
+    # whose required `Test` had been red ~5h. Pending is NOT failed — a sibling
+    # mid-CI keeps its queue position; that is serialisation working.
+    if (state or {}).get("ci_failed") or (state or {}).get("protected"):
         return False
     mergeable = (state or {}).get("mergeable")
     if mergeable is None:
@@ -1225,12 +1233,21 @@ class PRWatcher:
             return {"keys": [], "promoted": [], "error": str(exc)}
 
     def _open_pr_index(self, repo: str | None = None) -> Dict[str, dict]:
-        """url -> {files, mergeable, draft} for every open PR (single gh call).
+        """url -> {files, mergeable, draft, ci_failed, protected} for every open
+        PR (single gh call).
 
         `mergeable`/`draft` are what let the tie-break skip a sibling that cannot
         merge — see `_wins_sibling_tiebreak`. Fetched in the SAME call that
         already lists the files, so the guard gained a second input without a
         second API round-trip per cycle.
+
+        `ci_failed` (kpr-watch-23): a REQUIRED check concluded FAILURE /
+        CANCELLED / TIMED_OUT / ACTION_REQUIRED. Pending or unreported is NOT
+        failed. `protected`: the PR's files intersect `_protected_paths()`, so
+        only a human can merge it. Either one made the sibling a queue position
+        that never comes free; both are read from the same listing (the rollup
+        rides along in the one `gh pr list`). The required set is resolved only
+        when some PR actually carries a failed check, and is cached.
 
         Best-effort: returns {} if gh is unavailable / errors, so the sibling
         check degrades to a no-op rather than blocking the watcher.
@@ -1243,7 +1260,8 @@ class PRWatcher:
             # (measured 2026-08-30 on icdev_ft#320).
             proc = self._pr_list_runner(
                 ["gh", "pr", "list", "--state", "open", "--json",
-                 "url,files,mergeable,isDraft", "--limit", "200",
+                 "url,files,mergeable,isDraft,statusCheckRollup",
+                 "--limit", "200",
                  *(["--repo", repo] if repo else [])],
                 capture_output=True, text=True, encoding="utf-8",
                 errors="replace", timeout=60,
@@ -1254,24 +1272,63 @@ class PRWatcher:
         except Exception as exc:  # noqa: BLE001
             logger.debug("pr_watcher: open-PR file listing failed: %s", exc)
             return {}
+        protected = self._protected_paths()
+        unresolved = object()
+        required = unresolved
         out: Dict[str, dict] = {}
         for pr in data:
             url = pr.get("url")
             if not url:
                 continue
+            files = {
+                f.get("path", "")
+                for f in (pr.get("files") or []) if f.get("path")
+            }
+            ci_failed = False
+            if ec.is_ci_failed(pr):  # any red at all — only then ask which count
+                if required is unresolved:
+                    try:
+                        required = self._required_checks_for_repo(repo)
+                    except Exception:  # noqa: BLE001 -- unresolved: every check counts
+                        required = None
+                ci_failed = ec.is_ci_failed(pr, required=required)
             out[url] = {
-                "files": {
-                    f.get("path", "")
-                    for f in (pr.get("files") or []) if f.get("path")
-                },
+                "files": files,
                 "mergeable": pr.get("mergeable"),
                 "draft": bool(pr.get("isDraft")),
+                "ci_failed": bool(ci_failed),
+                "protected": bool(protected and protected_hits(files, protected)),
             }
         return out
 
+    def _required_checks_for_repo(self, repo: str | None) -> Optional[FrozenSet[str]]:
+        """The required-check set for a listing of `repo` (None: this checkout).
+
+        Same cache and same fail-safe as `required_checks()`: unresolved -> None
+        -> every check counts, which is also how this watcher's own merge
+        predicate reads a PR, so a sibling is dropped exactly when the watcher
+        itself would refuse to merge it.
+        """
+        if repo is None or not self.config.get("required_checks_only", True):
+            return self.required_checks()
+        ttl = float(self.config.get("required_checks_cache_seconds", 300) or 0)
+        now = time.monotonic()
+        cached = self._required_checks_by_repo.get(repo)
+        if cached is not None and now - cached[0] < ttl:
+            return cached[1]
+        resolved = None
+        try:
+            resolved = fetch_required_checks(
+                self._default_branch(), runner=self._gh_runner, repo=repo)
+        except Exception as exc:  # noqa: BLE001 -- unresolved, never a crash
+            logger.warning("pr_watcher: required-check resolution failed for %s: %s",
+                           repo, exc)
+        self._required_checks_by_repo[repo] = (now, resolved)
+        return resolved
+
     def _protected_paths(self) -> List[str]:
         """Paths no automation may merge a change to. Empty disables the guard."""
-        raw = self.config.get("protected_paths") or []
+        raw = (getattr(self, "config", None) or {}).get("protected_paths") or []
         return [str(x).strip() for x in raw if str(x or "").strip()]
 
     def _protected_hits(self, pr_url: str) -> List[str]:
@@ -3522,9 +3579,10 @@ class PRWatcher:
             else {}
         )
         sibling_map = {url: e["files"] for url, e in sibling_index.items()}
-        # Siblings that cannot merge at all right now. They are dropped from the
-        # tie-break below: waiting behind a PR the forge would refuse is not
-        # serialisation, it is a queue position that never comes free.
+        # Siblings that cannot merge at all right now — draft, CONFLICTING, a
+        # REQUIRED check red, or a protected path (kpr-watch-23). They are dropped
+        # from the tie-break below: waiting behind a PR the forge would refuse is
+        # not serialisation, it is a queue position that never comes free.
         blocked_siblings = {
             url for url, e in sibling_index.items() if not _pr_can_merge(e)
         }

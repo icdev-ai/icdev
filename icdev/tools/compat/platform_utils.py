@@ -23,7 +23,7 @@ import signal
 import sys
 import tempfile
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +104,44 @@ def normalize_path(path_str: str) -> Path:
         return p.resolve()
     except OSError:
         return p
+
+
+def path_key(path, *, case_insensitive: Optional[bool] = None) -> str:
+    """A comparison key for *path* that is correct on the host's filesystem.
+
+    Windows paths are case- AND separator-insensitive (``C:\\AI\\ICDev`` and
+    ``c:/ai/icdev`` are one directory); POSIX paths are neither, so lowering a
+    Linux path makes ``/srv/Repo`` and ``/srv/repo`` -- two directories --
+    compare equal. ``case_insensitive`` defaults to the host's behaviour and
+    exists so both behaviours are testable on either OS. The key is for
+    COMPARISON only; never open it.
+    """
+    ci = IS_WINDOWS if case_insensitive is None else case_insensitive
+    s = str(path)
+    if ci:
+        s = s.replace("\\", "/").lower()
+    stripped = s.rstrip("/")
+    return stripped or s[:1]
+
+
+def same_path(a, b, *, case_insensitive: Optional[bool] = None) -> bool:
+    """True when *a* and *b* name the same path under the host's case rules."""
+    return path_key(a, case_insensitive=case_insensitive) == path_key(
+        b, case_insensitive=case_insensitive)
+
+
+def path_has_component(path, name: str, *, case_insensitive: Optional[bool] = None) -> bool:
+    """True when one whole component of *path* is *name* (host case rules).
+
+    Splits on BOTH separators: a cwd recorded by a Windows session may be read
+    on any host, and a component never legitimately contains a backslash.
+    """
+    if not path or not name:
+        return False
+    ci = IS_WINDOWS if case_insensitive is None else case_insensitive
+    want = name.lower() if ci else name
+    parts = str(path).replace("\\", "/").split("/")
+    return any((p.lower() if ci else p) == want for p in parts)
 
 
 # ---------------------------------------------------------------------------

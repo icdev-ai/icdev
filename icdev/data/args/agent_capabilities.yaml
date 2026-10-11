@@ -125,4 +125,4 @@ declared:
     sandbox_passthrough: false # pi --mode json takes no sandbox flag
     context_budget: false      # ...nor a turn/token budget
     structured_output: true    # usage, cost, stopReason, session id
-    guard_wired: false         # no -e guard extension passed yet
+    guard_wired: true          # -e icdev-guard.ts extension -> harness_guard bridge, live-probed (omx-guard-03)

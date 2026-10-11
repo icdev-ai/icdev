@@ -1,0 +1,22 @@
+pkgbase = icdev
+	pkgdesc = ICDEV - AI-powered SDLC with NIST 800-53 RMF compliance and multi-agent orchestration
+	pkgver = 1.2.43
+	pkgrel = 1
+	url = https://icdev.ai/
+	install = icdev.install
+	arch = x86_64
+	arch = aarch64
+	license = Apache-2.0
+	depends = python
+	depends = git
+	optdepends = postgresql: primary storage backend (SQLite is the fallback)
+	optdepends = pgvector: vector search on PostgreSQL
+	optdepends = opencode: default agent harness on Omarchy
+	optdepends = ollama: local LLM inference
+	options = !strip
+	options = !debug
+	source = icdev-1.2.43-py3-none-any.whl::https://files.pythonhosted.org/packages/py3/i/icdev/icdev-1.2.43-py3-none-any.whl
+	noextract = icdev-1.2.43-py3-none-any.whl
+	sha256sums = 1388d4c0be3f3a46ac20c4801b33dfcb0493beb8c321cd7fbda12b1b43a566c9
+
+pkgname = icdev

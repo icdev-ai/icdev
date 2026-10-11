@@ -44,12 +44,20 @@ Subcommands:
                            List / export (JSONL) / full-text search conversations.
   skills list|search|install|update
                            Manage skills via the local registry + marketplace.
+  skill install|uninstall|status [--dirs auto|claude,codex,...]
+                           Install the ONE cross-harness ICDEV skill into
+                           ~/.agents/skills and link it into each harness.
   cron create|list|pause|resume|remove|run|runs
                            Schedule standalone-agent prompts or allowlisted
                            scripts (interval or 5-field cron).
-  harness install-guard opencode [--project DIR|--global]
+  harness install-guard opencode|pi [--project DIR|--global]
                            Install ICDEV's PreToolUse guard as an opencode
-                           plugin (same checks as the Claude Code hook).
+                           plugin or a Pi extension (same checks as the
+                           Claude Code hook).
+  omarchy setup|status|uninstall [--dry-run] [--yes] [--start]
+                           Fresh Omarchy / Arch host to a running ICDEV:
+                           PostgreSQL+pgvector, .env, MCP, skill, guards,
+                           systemd --user units. Idempotent.
   audit export             Export SOC 2 (and future framework) evidence reports.
   audit tail [--follow]    Tail the audit feed (audit_trail + hook_events), or
                            --source runtime_invocations for invocation rows.
@@ -132,6 +140,10 @@ def main(argv: list[str] | None = None) -> int:
         from tools.cli.skills import main as skills_main
         return skills_main(rest)
 
+    if sub == "skill":
+        from icdev.tools.dx.skill_install import main as skill_main
+        return skill_main(rest)
+
     if sub == "cron":
         from tools.agent_runtime.cron import cron_main
         return cron_main(rest)
@@ -139,6 +151,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "harness":
         from tools.cli.harness import main as harness_main
         return harness_main(rest)
+
+    if sub == "omarchy":
+        from tools.cli.omarchy import main as omarchy_main
+        return omarchy_main(rest)
 
     if sub == "audit":
         from tools.cli.audit import main as audit_main

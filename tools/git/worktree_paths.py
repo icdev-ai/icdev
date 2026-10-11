@@ -170,7 +170,9 @@ def is_sanctioned(path: Path | str, repo_root: Optional[Path] = None) -> bool:
             return True
 
     # Per-session scratchpad: .../claude/<project-slug>/<session-uuid>/scratchpad/...
-    parts = [s.lower() for s in p.parts]
+    # normcase: case-insensitive on Windows only (omx-linux-01) -- lowering on
+    # Linux would sanction a ``Claude/.../Scratchpad`` tree nobody created.
+    parts = [os.path.normcase(s) for s in p.parts]
     if "scratchpad" in parts and "claude" in parts:
         return True
     return False

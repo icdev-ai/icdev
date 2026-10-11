@@ -53,7 +53,13 @@ lock, reused pid) — never a clean answer.
 ## Workflow
 
 > **Windows PowerShell note:** set `$env:PYTHONPATH = "C:\AI\ICDev"` before any
-> `python` call. Run from the checkout that STARTED the stack — a worktree's
+> `python` call.
+>
+> **Linux / macOS note:** every step below has a POSIX form. From the checkout
+> root run `export PYTHONPATH="$PWD"` once; the `python` commands are identical
+> (use `python3` if that is your interpreter's name). Where a step shows a
+> PowerShell block, its `bash` block follows it. There is no `taskkill` and no
+> `pkill` anywhere in this procedure on any OS — every stop is by verified pid. Run from the checkout that STARTED the stack — a worktree's
 > `.tmp/` is empty and reads as "already down" while 5050 is still served. From
 > anywhere else, pass `--pid-file C:\AI\ICDev\.tmp\genesis\launcher.pid`.
 
@@ -62,6 +68,10 @@ lock, reused pid) — never a clean answer.
    and the current listeners, and acts on none of it:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
+   python tools/genesis/shutdown_dashboard.py --dry-run
+   ```
+   ```bash
+   export PYTHONPATH="$PWD"
    python tools/genesis/shutdown_dashboard.py --dry-run
    ```
    If it lists a worker under **LEFT RUNNING**, decide now: let it finish (the
@@ -73,7 +83,10 @@ lock, reused pid) — never a clean answer.
    nothing touched), stops the supervisor first, then `POST /api/v1/admin/shutdown`
    with `FIN_API_TOKEN` from the FT `.env`, waits `grace_seconds`, and proves
    the pids and port 5200 from the process table. Skip this step (and drop
-   `--keep-ft` in 1b) only if you WANT the hard kill:
+   `--keep-ft` in 1b) only if you WANT the hard kill. On a host with no FT
+   checkout (any Linux/macOS host today) there is nothing to stop: skip 1a and
+   leave `--keep-ft` off — `shutdown_dashboard.py` finds no FT supervisor and
+   reports it absent:
    ```powershell
    python C:\AI\icdev_ft\stop_ft.py --dry-run     # who is running; touches nothing
    python C:\AI\icdev_ft\stop_ft.py               # exit 0 stopped+verified · 1 survivor/listener · 2 refused, nothing touched
@@ -97,26 +110,31 @@ lock, reused pid) — never a clean answer.
    python tools/genesis/shutdown_dashboard.py --pause --keep-ft
    echo "exit: $LASTEXITCODE"
    ```
+   ```bash
+   export PYTHONPATH="$PWD"
+   python tools/genesis/shutdown_dashboard.py --pause; echo "exit: $?"
+   ```
    - exit **1**: read the `SURVIVORS:` / `LISTENER REMAINS:` lines — each names
      a pid. Confirm its command line with
-     `Get-CimInstance Win32_Process -Filter "ProcessId=<id>"` and stop THAT
-     exact pid with `Stop-Process -Id <id>`. Never by name, never by filter.
+     `Get-CimInstance Win32_Process -Filter "ProcessId=<id>"` (Windows) or
+     `ps -o pid=,args= -p <id>` (Linux/macOS) and stop THAT exact pid with
+     `Stop-Process -Id <id>` / `kill <id>`. Never by name, never by filter.
    - exit **2**: nothing was touched. Fix what it names (install psutil, remove
      a lock naming a process that is not the launcher) and re-run.
 
 2. **The two unsupervised services `/start` launches are not in the tree.** The
    SaaS portal (`tools/saas/api_gateway.py`, port 8443) and the poll trigger
-   (`tools/ci/triggers/poll_trigger.py`) are started with `Start-Process`, have
-   no supervisor to respawn them, and are stopped by verified pid. List them,
-   READ the command lines, then stop only those pids:
-   ```powershell
-   $svc = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
-     Where-Object { $_.CommandLine -match 'tools[\\/]saas[\\/]api_gateway\.py|tools[\\/]ci[\\/]triggers[\\/]poll_trigger\.py' }
-   $svc | Format-Table ProcessId, CommandLine -AutoSize
-   $svc | ForEach-Object { Stop-Process -Id $_.ProcessId }
+   (`tools/ci/triggers/poll_trigger.py`) have no supervisor to respawn them.
+   `/start` records each pid in `.tmp/services/<name>.pid`; the helper stops
+   that pid only after VERIFYING its argv names the service's script (a reused
+   pid is refused and left alone), and falls back to an argv match — a token
+   whose basename IS the script, so a shell that merely typed the name does not
+   qualify — for a service started before pidfiles existed. Same command on
+   every OS:
+   ```bash
+   python -m tools.genesis.unsupervised_services --stop --dry-run   # review the pids
+   python -m tools.genesis.unsupervised_services --stop             # exit 0 stopped · 1 survivor · 2 no psutil
    ```
-   The match is on the SCRIPT PATH in argv, so a shell that merely typed the
-   name does not qualify; review the table before the last line regardless.
 
 3. **Prove it from the record.** The supervisor must read DOWN with no lock,
    and no listener may remain on the four ports:
@@ -126,6 +144,12 @@ lock, reused pid) — never a clean answer.
    Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
      Where-Object { $_.LocalPort -in 5050, 5200, 5300, 8443 } |
      Format-Table LocalPort, OwningProcess -AutoSize
+   ```
+   ```bash
+   export PYTHONPATH="$PWD"
+   python tools/genesis/supervisor_status.py
+   ss -ltnp '( sport = :5050 or sport = :5200 or sport = :5300 or sport = :8443 )'   # Linux
+   lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(5050|5200|5300|8443) '                   # macOS
    ```
    An empty table is the answer. A row names the owning pid — verify its
    command line before stopping it, as in step 1b.
@@ -138,8 +162,10 @@ lock, reused pid) — never a clean answer.
 
 ## Do NOT
 
-- `taskkill /f /im python.exe` — it kills the supervisor with everything else
-  and has taken out unrelated tooling on this machine before.
+- `taskkill /f /im python.exe`, `pkill python`, `killall python` — each kills
+  the supervisor with everything else and has taken out unrelated tooling on
+  this machine before (on a Linux desktop it also takes the session's own
+  Python services).
 - `Stop-Process` a scheduler, pr_watcher, daemon or dashboard by name or
   `Where-Object` filter while the supervisor is up — it restarts them, and a
   name filter is what produced three concurrent pr_watchers.

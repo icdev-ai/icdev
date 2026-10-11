@@ -70,8 +70,8 @@ from icdev.core.paths import repo_root  # noqa: E402
 BASE_DIR = repo_root(__file__)
 
 #: What `launch.py` runs -- the only command line the lock's pid may carry.
-SUPERVISOR_FRAGMENTS = ("tools/genesis/launch.py", "tools\\genesis\\launch.py",
-                        "tools/genesis/launcher.py", "tools\\genesis\\launcher.py")
+#: ONE list, owned by supervisor_status, which applies it to every lock read.
+from tools.genesis.supervisor_status import SUPERVISOR_FRAGMENTS  # noqa: E402
 #: The external auto-redeploy supervisors, each with the child it restarts on
 #: exit and the port that child serves: (key, supervisor script, child script,
 #: port). Stopping order is supervisor THEN child, per row; `--keep-<key>`

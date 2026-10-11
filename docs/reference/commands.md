@@ -185,6 +185,9 @@ icdev profile list                 # List available profiles
 icdev profile show [<name>]        # Show profile details (active profile by default)
 icdev profile apply <name>         # Append profile env overrides to .env
 icdev profile apply <name> --dry-run  # Preview overrides
+icdev skill install [--dirs auto|claude,codex,pi,gemini,hermes,opencode]  # ONE ICDEV skill -> ~/.agents/skills, linked into each existing harness skill dir (omx-dx-02)
+icdev skill uninstall              # Remove exactly what install created (manifest: ~/.icdev/skill-install-manifest.json)
+icdev skill status [--json]        # What install created, and whether it is still there
 
 # Scaffolding
 icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>] [--template <dir>] [--out <dir>]   # Generate a new canvas
@@ -2491,6 +2494,14 @@ python tools/genesis/shutdown_dashboard.py --keep-ft --keep-rt --json   # leave 
 # produced three concurrent pr_watchers. Agent workers (grandchildren) are reported
 # and left running unless --include-workers. Exit 0 stopped/already down, 1 a
 # survivor or listener on 5050/5200/5300 remains, 2 the tree could not be measured.
+# The two services /start runs OUTSIDE the supervisor (portal :8443, poll trigger), by verified pidfile
+python -m tools.genesis.unsupervised_services --status
+python -m tools.genesis.unsupervised_services --start                 # adopts a running instance
+python -m tools.genesis.unsupervised_services --stop --dry-run        # pids it would stop; touches nothing
+# Start the Genesis supervisor at logon (omx-linux-01): systemd --user units on Linux, Task Scheduler on Windows
+python -m tools.genesis.install_units --platform linux --dry-run
+python -m tools.genesis.install_units --platform linux --enable       # write units + systemctl --user enable --now icdev-genesis.timer
+python -m tools.genesis.install_units --platform linux --uninstall
 python tools/genesis/daemon.py --reflex audit --json          # Self-scan (code quality + SAST)
 python tools/genesis/daemon.py --reflex comply --json         # cATO evidence + crosswalk + SbD
 python tools/genesis/daemon.py --reflex ingest --json         # RSS → innovation_signals
@@ -4239,6 +4250,19 @@ icdev harness install-guard opencode --project .     # writes ./.opencode/plugin
 icdev harness install-guard opencode --global        # writes $XDG_CONFIG_HOME/opencode/plugin/ (default ~/.config)
 python -m tools.hooks.harness_guard --harness opencode < call.json   # stdin {"tool","args"}, stdout JSON verdict
 # Same kill switches as the hook; fails open (logged) on a broken bridge.
+# omx-guard-03 — the same bridge inside Pi (tool_call extension)
+icdev harness install-guard pi --project .           # writes ./.pi/extensions/icdev-guard.ts
+icdev harness install-guard pi --global              # writes $PI_CODING_AGENT_DIR/extensions/ (default ~/.pi/agent)
+python -m tools.hooks.harness_guard --harness pi < call.json         # Pi spelling: path, edits[], powershell
+
+# omx-setup-01 — fresh Omarchy / plain Arch host to a running ICDEV, idempotent
+icdev omarchy setup --dry-run        # print the step plan; change nothing
+icdev omarchy setup --yes --start    # run it: --yes allows the sudo PostgreSQL steps, --start enables the genesis timer
+icdev omarchy status [--json]        # per-step state: ok / missing / n/a
+icdev omarchy uninstall [--dry-run]  # reverse MCP, skill, guards, systemd units (never the database or .env)
+# omx-panel-01 — the ICDEV record for Omarchy's agents panel (setup's `panel` step installs it + a 5-min timer)
+python -m tools.cli.omarchy_panel             # print the record: kanban in-progress/backlog, today's spend, adapter + guard
+python -m tools.cli.omarchy_panel --write     # also write ~/.local/state/omarchy/agents/usage/icdev.json; DB down -> stale: true
 
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
@@ -7317,6 +7341,10 @@ python tools/installer/release.py --version 1.2.43 --bump-only
 
 # Machine-readable report
 python tools/installer/release.py --bump patch --json
+
+# Re-render the AUR package (deploy/aur/PKGBUILD + .SRCINFO) from a built wheel (omx-dist-01).
+# A full release run renders these automatically after the wheel verifies.
+python tools/installer/release.py --aur-from-wheel dist/icdev-1.2.43-py3-none-any.whl
 ```
 
 Credentials are read from `.env` (`TWINE_USERNAME`/`TWINE_PASSWORD`, or
@@ -7941,6 +7969,20 @@ python tools/agents/capability_matrix.py --capability sandbox_passthrough
 # Exit 1 when a capability is DECLARED but measured absent (opt-in; wired to
 # no pipeline — it is a report you can run, not a gate that runs itself)
 python tools/agents/capability_matrix.py --gate
+```
+
+### Guard parity gate (omx-guard-02)
+
+The kanban runner refuses to AUTONOMOUSLY spawn an adapter whose PreToolUse
+guard is not verified (`claude_cli`: an un-neutralised all-tools hook in
+`.claude/settings.json`; every other adapter: `guard_wired` measured `present`).
+`ICDEV_GUARD_PARITY_GATE=enforce` (default) falls back to the next guarded
+adapter and records the refusal in `last_failure_reason`; `=report` logs only.
+Interactive use is unaffected.
+
+```bash
+python -m tools.agents.guard_parity --survey
+python -m tools.agents.guard_parity --survey --json
 ```
 
 Each cell reports `declared` (the hand-written claim in

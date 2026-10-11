@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""omx-guard-01: a non-Claude harness's tool call -> ICDEV's PreToolUse guard.
+"""omx-guard-01/03: a non-Claude harness's tool call -> ICDEV's PreToolUse guard.
 
 The thin Python half of the opencode ``tool.execute.before`` plugin
-(``icdev/data/harness_plugins/opencode/icdev-guard.ts``). It owns NO check: it
+(``icdev/data/harness_plugins/opencode/icdev-guard.ts``) and the Pi
+``tool_call`` extension (``icdev/data/harness_plugins/pi/icdev-guard.ts``,
+omx-guard-03). It owns NO check: it
 maps the harness's tool call onto Claude Code's ``{tool_name, tool_input}``
 shape and asks :func:`tools.airgap.hook_compat.run_pre_tool_check`, which runs
 the ONE copy of the checks in ``tools/hooks/shared_checks.py``.
@@ -38,6 +40,8 @@ Usage::
 
     echo '{"tool":"bash","args":{"command":"rm -rf /"}}' | \
         python -m tools.hooks.harness_guard --harness opencode
+    echo '{"tool":"bash","args":{"command":"rm -rf /"}}' | \
+        python -m tools.hooks.harness_guard --harness pi
 """
 from __future__ import annotations
 
@@ -73,6 +77,21 @@ TOOL_NAMES: Dict[str, Dict[str, str]] = {
         "list": "LS",
         "webfetch": "WebFetch",
     },
+    # omx-guard-03. Pi 1.1.0's built-in tools (findings.md, "Pi" table).
+    # `powershell` is Pi's Windows shell tool and takes Bash's input shape; it
+    # maps to Bash so every shell check sees it, but the rm check parses POSIX
+    # syntax only, so a PowerShell-dialect delete is NOT caught (spike gap 7,
+    # recorded in docs/features/phase-omx-guard.md).
+    "pi": {
+        "bash": "Bash",
+        "powershell": "Bash",
+        "write": "Write",
+        "edit": "Edit",
+        "read": "Read",
+        "grep": "Grep",
+        "find": "Glob",
+        "ls": "LS",
+    },
 }
 
 #: harness arg key -> ICDEV arg key (opencode's args are camelCase).
@@ -82,6 +101,9 @@ ARG_KEYS: Dict[str, Dict[str, str]] = {
         "oldString": "old_string",
         "newString": "new_string",
         "replaceAll": "replace_all",
+    },
+    "pi": {
+        "path": "file_path",
     },
 }
 
@@ -107,7 +129,23 @@ def to_icdev(harness: str, tool: str, args: Optional[Dict[str, Any]]
     keys = ARG_KEYS.get(harness, {})
     name = names.get(str(tool).lower(), str(tool))
     mapped = {keys.get(k, k): v for k, v in (args or {}).items()}
+    if harness == "pi" and isinstance(mapped.get("edits"), list):
+        mapped.update(_join_pi_edits(mapped["edits"]))
     return name, mapped
+
+
+def _join_pi_edits(edits: list) -> Dict[str, str]:
+    """Pi's ``edits[{oldText,newText}]`` -> one ``old_string``/``new_string``.
+
+    EVERY edit's text is joined, not just the first: a content check
+    (``check_direct_sqlite_usage`` reads ``new_string``) must not be stepped
+    around by putting the offending text in the second edit.
+    """
+    parts = [e for e in edits if isinstance(e, dict)]
+    return {
+        "old_string": "\n".join(str(e.get("oldText") or "") for e in parts),
+        "new_string": "\n".join(str(e.get("newText") or "") for e in parts),
+    }
 
 
 def kill_switches(hook_path: Optional[Path] = None) -> Dict[str, str]:
@@ -174,6 +212,7 @@ def decide(harness: str, tool: str, args: Optional[Dict[str, Any]]) -> Dict[str,
 #: under ``BASE_DIR/icdev`` in a checkout, ``BASE_DIR`` itself in the wheel.
 PLUGIN_SOURCES: Dict[str, Path] = {
     "opencode": Path("harness_plugins") / "opencode" / "icdev-guard.ts",
+    "pi": Path("harness_plugins") / "pi" / "icdev-guard.ts",
 }
 
 
@@ -191,10 +230,21 @@ def plugin_dir(harness: str, project: Optional[Path] = None,
                global_: bool = False) -> Path:
     """Where the harness loads plugins from (opencode: measured in omx-spike-01).
 
-    Project: ``<DIR>/.opencode/plugin/``. Global: ``$XDG_CONFIG_HOME/opencode/
-    plugin/``, defaulting to ``~/.config`` -- opencode uses that path on every
-    OS, Windows included.
+    opencode -- project: ``<DIR>/.opencode/plugin/``. Global:
+    ``$XDG_CONFIG_HOME/opencode/plugin/``, defaulting to ``~/.config`` --
+    opencode uses that path on every OS, Windows included.
+
+    pi (Pi 1.1.0 ``docs/configuration.md``) -- project: ``<DIR>/.pi/extensions/``
+    (loaded only once the project is trusted, which is why ``pi_cli`` ALSO
+    passes the file with an explicit ``-e``). Global: ``$PI_CODING_AGENT_DIR/
+    extensions/``, defaulting to ``~/.pi/agent/extensions/``.
     """
+    if harness == "pi":
+        if global_:
+            agent = os.environ.get("PI_CODING_AGENT_DIR") or str(
+                Path.home() / ".pi" / "agent")
+            return Path(agent) / "extensions"
+        return Path(project or Path.cwd()) / ".pi" / "extensions"
     if harness != "opencode":
         raise ValueError(f"no plugin location known for harness {harness!r}")
     if global_:
@@ -234,6 +284,37 @@ def install_guard(harness: str, project: Optional[Path] = None,
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(text.encode("utf-8"))
     return {"harness": harness, "path": str(target), "changed": not unchanged}
+
+
+def live_probe(harness: str, tool: str, args: Dict[str, Any]) -> Dict[str, Any]:
+    """An adapter's ``verify_guard()`` body: is the guard wired, MEASURED live.
+
+    Renders the packaged plugin, then runs the exact process it spawns on a
+    known-bad call in *harness*'s own spelling and requires a refusal. ``wired``
+    is never inferred from a file existing.
+    """
+    import subprocess
+
+    try:
+        render_plugin(harness)
+    except Exception as exc:  # noqa: BLE001
+        return {"wired": False, "reason": f"guard plugin source unavailable: {exc}"}
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", guard_module(), "--harness", harness],
+            input=json.dumps({"tool": tool, "args": args}), capture_output=True,
+            text=True, encoding="utf-8", errors="replace", cwd=str(BASE_DIR),
+            timeout=120, shell=False,
+        )
+        verdict = json.loads((proc.stdout or "").strip().splitlines()[-1])
+    except Exception as exc:  # noqa: BLE001
+        return {"wired": False,
+                "reason": f"guard bridge did not answer: {type(exc).__name__}: {exc}"}
+    if verdict.get("allowed") is False:
+        return {"wired": True,
+                "reason": f"bridge refused a known-bad {tool} call: {verdict.get('reason')}"}
+    return {"wired": False,
+            "reason": f"bridge ALLOWED a known-bad {tool} call: {verdict.get('reason')}"}
 
 
 def main(argv: Optional[list] = None) -> int:

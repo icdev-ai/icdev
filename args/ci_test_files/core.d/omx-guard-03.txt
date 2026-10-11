@@ -1,0 +1,2 @@
+# omx-guard-03 -- Pi guard extension through the shared harness_guard bridge
+tests/hooks/test_harness_guard_pi.py
