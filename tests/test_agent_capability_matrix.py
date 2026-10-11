@@ -109,11 +109,11 @@ def _register(monkeypatch, **adapters):
 # ── 1. shape of the probe ───────────────────────────────────────────────────
 def test_every_capability_has_a_probe_and_vice_versa():
     assert set(cm.CAPABILITIES) == set(cm._PROBES)
-    assert len(cm.CAPABILITIES) == 9
+    assert len(cm.CAPABILITIES) == 10
     assert set(cm.CAPABILITIES) == {
         "streaming", "tool_calling", "sub_agents", "interruption",
         "sandbox_passthrough", "context_budget", "structured_output",
-        "guard_wired", "guard_shell",
+        "guard_wired", "guard_shell", "claude_route",
     }
 
 

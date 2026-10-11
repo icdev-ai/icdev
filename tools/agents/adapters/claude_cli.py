@@ -297,7 +297,10 @@ class ClaudeCliAdapter:
             env["ICDEV_DISPATCH_TASK_ID"] = str(session.task_id)
         for key, value in (meta.get("env") or {}).items():
             env[str(key)] = str(value)
-        return env
+        # omx-adapt-04: Claude is paid by the claude.ai subscription, never a
+        # metered key -- not even one a caller passes in metadata['env'].
+        from tools.llm.cli_bridge.subprocess_backend import scrubbed_env
+        return scrubbed_env(env)
 
     def _write_stdin(self, session: AgentSession) -> str:
         """Write the prompt to a temp file and return its path.
