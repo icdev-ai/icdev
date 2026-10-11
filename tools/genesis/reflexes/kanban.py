@@ -8903,6 +8903,71 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
         logger.debug("kanban: kanban_verifications write skipped: %s", exc)
 
 
+#: Tasks the adoption sweep has already attempted in THIS process. A failed
+#: attempt still writes a row, so the SQL below would not pick it up again; this
+#: only stops a write that keeps failing from being retried every cycle.
+_ADOPTION_ATTEMPTED: set = set()
+
+#: Full verification runs CodeLens, coherence, conformance and maybe E2E -- tens
+#: of seconds each -- so the sweep takes a bounded bite per cycle.
+ADOPTION_VERIFY_PER_CYCLE = _int_env("KANBAN_ADOPTION_VERIFY_PER_CYCLE", 1)
+
+
+def _verify_adopted_pr_tasks(limit: Optional[int] = None) -> List[str]:
+    """Give every pr_opened task a REAL verification, whatever door it came in by.
+
+    kpr-watch-24. `_write_verification_log` -- the only writer of a dispatch
+    verdict -- runs on ONE path: this process's completion handler for a worker
+    in `_running`. Every other door into pr_opened skips it: the stale-reaper's
+    "already has an open PR" branch, startup-recovery after a re-exec orphaned
+    the worker, a timeout or token-exhausted hand-off. The enforced done-gate
+    then holds the green PR on "awaiting ICDEV done-verification" until a human
+    runs `--reverify` -- which writes a git-first verdict with NO CodeLens,
+    coherence or conformance. 10 of 16 omx tasks went that way on 2026-10-10.
+
+    Patching each door would miss the next one, so this sweeps the state they
+    all converge on: pr_opened, no `kanban_verifications` row at all, not a
+    worker this process is running. It runs the same `_run_full_verification`
+    the completion path runs (worker log as its output) and records it the same
+    way, so `review_passed` and the gate metrics are real. A task with ANY prior
+    row is left alone: a failed or conformance-failed verdict is not this
+    sweep's to overwrite.
+    """
+    cap = ADOPTION_VERIFY_PER_CYCLE if limit is None else limit
+    if cap <= 0:
+        return []
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT t.id FROM kanban_tasks t WHERE t.status = 'pr_opened' "
+            "AND NOT EXISTS (SELECT 1 FROM kanban_verifications v "
+            "                WHERE v.task_id = t.id) "
+            "ORDER BY t.updated_at",
+        ).fetchall()
+    candidates = [
+        dict(r)["id"] for r in rows
+        if dict(r)["id"] not in _running and dict(r)["id"] not in _ADOPTION_ATTEMPTED
+    ]
+    done: List[str] = []
+    for task_id in candidates[:cap]:
+        _ADOPTION_ATTEMPTED.add(task_id)
+        log_path = BASE_DIR / ".tmp" / "kanban" / f"{task_id}.log"
+        try:
+            output = log_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            output = ""
+        verified, reason, metrics = _run_full_verification(task_id, output)
+        _write_verification_log(
+            task_id, verified,
+            f"{reason} [adopted: reached pr_opened without its dispatch "
+            f"verification -- kpr-watch-24]")
+        if metrics:
+            _update_verification_metrics(task_id, metrics)
+        logger.info("adopted-PR verification: %s -> %s",
+                    task_id, "passed" if verified else "failed")
+        done.append(task_id)
+    return done
+
+
 def _tag_task_source(task_id: str, source: str) -> None:
     """Set the dispatch_source on a kanban_tasks row (guard-23)."""
     try:
@@ -13748,6 +13813,39 @@ def _run_cycle(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "telegram_commands": len(tg_results),
             },
         }
+
+    # 3b'. Verify adopted PRs (kpr-watch-24) -- a pr_opened task that reached
+    # that state by any door other than this process's completion path. Runs
+    # while draining too: it verifies, it never dispatches.
+    try:
+        _verify_adopted_pr_tasks()
+    except Exception as _va_exc:  # noqa: BLE001
+        logger.warning("adopted-PR verification sweep failed: %s", _va_exc)
+
+    # Restart drain (kpr-watch-24), BEFORE both dispatch sites -- the
+    # token-retry re-dispatch below and the due-task dispatch further down. New
+    # code is on disk and the scheduler is waiting for the workers in
+    # `_running` to finish before it re-executes; dispatching now would keep it
+    # busy and orphan the new worker. Completions above still ran, so
+    # in-flight work is verified in-process.
+    try:
+        from tools.genesis import code_reload as _code_reload
+
+        if _code_reload.is_draining():
+            logger.info(
+                "kanban: draining for a scheduler restart -- %d worker(s) in "
+                "flight, no new dispatch this cycle", len(_running))
+            return {
+                "success": True,
+                "metric_value": len(completed),
+                "details": {
+                    "status": "draining_for_restart",
+                    "in_flight": sorted(_running),
+                    "completed_this_cycle": completed,
+                },
+            }
+    except Exception as _drain_exc:  # noqa: BLE001
+        logger.debug("restart-drain check failed (continuing): %s", _drain_exc)
 
     # 3c. Check for token-exhausted tasks ready for retry.
     # We retry ONE task here, but we do NOT return — the function continues

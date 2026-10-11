@@ -1,0 +1,1 @@
+tests/genesis/test_kpr_watch_24_verification_survives_restart.py

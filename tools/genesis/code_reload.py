@@ -72,7 +72,7 @@ import subprocess  # nosec B404 — git only, fixed argv, shell=False
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from tools.logging.icdev_logger import get_logger
 
@@ -83,6 +83,11 @@ logger = get_logger(__name__)
 #: like a fresh start in the log so the loop itself is hard to see. Editors write
 #: files in stages, so a save can briefly change an mtime twice.
 MIN_UPTIME_SECONDS = 120
+
+#: When a restart was first deferred because the caller was BUSY (kpr-watch-24),
+#: or None. Module state rather than a return value so the bound below holds
+#: across the many poll cycles one deferral spans.
+_busy_since: Optional[float] = None
 
 
 def _repo_root() -> Path:
@@ -362,6 +367,11 @@ def respawn(argv: list, *, execv=None, popen=None, exit_=None) -> None:
     os.execv(argv[0], argv)
 
 
+def is_draining() -> bool:
+    """True while a restart is pending behind in-flight work (see `busy`)."""
+    return _busy_since is not None
+
+
 def restart_if_code_changed(
     baseline: Dict[str, float],
     *,
@@ -371,6 +381,8 @@ def restart_if_code_changed(
     min_uptime: float = MIN_UPTIME_SECONDS,
     root: Optional[Path] = None,
     execv=None,
+    busy: Optional[Callable[[], bool]] = None,
+    max_defer: float = 0.0,
 ) -> list:
     """Re-exec this process when its own code has changed on disk.
 
@@ -378,9 +390,20 @@ def restart_if_code_changed(
     joins it at its current mtime (autonomy-id-06), so the watch set tracks what
     the process executes rather than what it had loaded at start.
 
+    `busy` (kpr-watch-24): while it returns True the restart is DEFERRED, for at
+    most `max_defer` seconds from the first deferral. The kanban scheduler passes
+    "workers are in flight": those workers live only in its memory, and a re-exec
+    orphans them -- their completion path, the only writer of a dispatch
+    verification, never runs, and every such task needed a human `--reverify`
+    before its green PR could merge (10 of 16 omx tasks, 2026-10-10). The caller
+    is expected to stop taking new work while deferred, or `busy` never clears;
+    `is_draining()` tells it to. A busy() that raises counts as not busy -- a
+    broken probe must not pin stale code forever.
+
     Returns the changed files when it declines to restart, so a caller can log
     them. Does not return at all when it re-execs.
     """
+    global _busy_since
     if not enabled:
         return []
     # Adopt what this cycle imported for the first time BEFORE the pull, so the
@@ -394,6 +417,7 @@ def restart_if_code_changed(
     current = snapshot(root)
     changed = changed_files(baseline, current)
     if not changed:
+        _busy_since = None
         return []
 
     uptime = time.time() - started_at
@@ -402,6 +426,27 @@ def restart_if_code_changed(
             "code changed (%d file(s)) but uptime is %.0fs — deferring restart "
             "until %.0fs to avoid a loop", len(changed), uptime, min_uptime)
         return changed
+
+    if busy is not None:
+        try:
+            is_busy = bool(busy())
+        except Exception as exc:  # noqa: BLE001 -- a broken probe must not pin stale code
+            logger.warning("code-reload busy probe failed (%s) -- treating as idle", exc)
+            is_busy = False
+        now = time.time()
+        if is_busy:
+            if _busy_since is None:
+                _busy_since = now
+            waited = now - _busy_since
+            if waited < max_defer:
+                logger.info(
+                    "code changed (%d file(s)) but work is in flight -- draining "
+                    "(%.0fs of %.0fs) before re-executing", len(changed), waited, max_defer)
+                return changed
+            logger.warning(
+                "code changed and work still in flight after %.0fs -- re-executing "
+                "anyway (max_defer reached)", waited)
+        _busy_since = None
 
     logger.warning(
         "code changed on disk (%d file(s), e.g. %s) — re-executing to pick it up",
