@@ -4661,7 +4661,11 @@ class PRWatcher:
                         reason=(
                             f"undelivered hold: {delivery.detail}; already "
                             "escalated, so no further resume is spent. Waiting "
-                            "for something to drain this task's queue."
+                            "for the scheduler's PR-repair sweep "
+                            "(kanban._dispatch_pr_repairs, kpr-watch-27) to "
+                            "drain this task's queue -- a hold that persists "
+                            "means that sweep is skipping it (claimed, paused, "
+                            "cooldown, no capacity) or not running."
                         )[:500],
                         resume_cycle=cycle,
                         delivery=delivery.verdict,

@@ -8653,6 +8653,9 @@ python -m tools.ci.merge_stall --survey --survey-limit 300 --json
 python -m tools.ci.merge_stall --stall-after 30              # one-run override
 python -m tools.ci.merge_stall --no-record                   # every age -> ci_estimate
 python -m tools.ci.merge_stall --from-json prs.json --default-branch main
+# A red PR whose worker exited: which ones got a repair session? (kpr-watch-27)
+python -m tools.kanban.repair_dispatch                      # repairs per task, cooldown
+python -m tools.kanban.repair_dispatch --json
 # Did that resume REACH anything, or was a line just written? (kpr-watch-13)
 python -m tools.ci.resume_delivery --survey
 python -m tools.ci.resume_delivery --survey --json
