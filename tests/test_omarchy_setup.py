@@ -86,6 +86,11 @@ class FakeWorld:
 
 @pytest.fixture
 def make_host(tmp_path, monkeypatch):
+    return host_factory(tmp_path, monkeypatch)
+
+
+def host_factory(tmp_path, monkeypatch):
+    """The ``make_host`` fixture's body, importable by sibling test modules."""
     home = tmp_path / "home"
     root = tmp_path / "root"
     home.mkdir()

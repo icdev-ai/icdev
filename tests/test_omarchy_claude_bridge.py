@@ -9,9 +9,16 @@ from __future__ import annotations
 
 import json
 
-from tests.test_omarchy_setup import FakeWorld, _states, make_host  # noqa: F401 -- fixture
+import pytest
+
+from tests.test_omarchy_setup import FakeWorld, _states, host_factory
 from tools.cli import omarchy
 from tools.llm.cli_bridge import http_bridge as hb
+
+
+@pytest.fixture
+def make_host(tmp_path, monkeypatch):
+    return host_factory(tmp_path, monkeypatch)
 
 
 def _bridge(report):
