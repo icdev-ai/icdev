@@ -44,8 +44,13 @@ def test_force_push_force_with_lease_allowed():
     ``_GIT_FORCE_WITH_LEASE_RE`` in tools/hooks/shared_checks.py. This test
     pinned the pre-exa-bench-05 verdict and was red from 2026-08-12 until
     task-det-ea73602df5 (born_red_survey finding ea73602df5798228).
+
+    The push targets a ``kanban/*`` branch, the form the corpus measured: since
+    omx-guard-08 a push to the DEFAULT branch is refused by
+    ``check_default_branch_push`` whatever its flags, so ``origin main`` would
+    test that check instead of this exemption.
     """
-    r = _bash("git push --force-with-lease origin main")
+    r = _bash("git push --force-with-lease origin kanban/omx-guard-08")
     assert r["allowed"] is True
 
 
@@ -58,7 +63,9 @@ def test_force_with_lease_exemption_is_per_segment():
 
 
 def test_normal_push_allowed():
-    r = _bash("git push origin main")
+    # A feature branch: a push to the default branch is refused by
+    # check_default_branch_push since omx-guard-08 (tests/hooks/test_default_branch_push.py).
+    r = _bash("git push origin kanban/omx-guard-08")
     assert r["allowed"] is True
 
 

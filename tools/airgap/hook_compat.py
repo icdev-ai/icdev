@@ -239,6 +239,9 @@ HEADLESS_CHECKS = (
     "check_env_file_access",
     "check_dangerous_rm",
     "check_git_danger",
+    # omx-guard-08: a push whose destination is the repo's default branch. The
+    # directory is the shell's -- this process's own, or tool_input['cwd'].
+    "check_default_branch_push",
     "check_append_only_write",
     "check_direct_sqlite_usage",
     "check_file_access_tiers",

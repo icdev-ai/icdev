@@ -352,6 +352,153 @@ text **wrapped exactly as Claude Code sends it to `$SHELL`**
 * A command split across lines **inside quotes** on a persistent stdin shell
   is checked line by line; only backslash continuations are joined.
 
+## Default-branch push guard (omx-guard-08)
+
+**Measured 2026-10-11** on the Omarchy laptop (omx-smoke-03: opencode_cli on
+ollama-cloud/kimi-k3, external scratch repo). After committing on
+`kanban/omx-smoke-03`, the agent ran `git push origin kanban/omx-smoke-03:main`
+and then `git push origin main`. Its work landed on the default branch with no
+PR. Nothing refused it. `check_git_danger` refuses a *force* push and
+`check_branch_deletion` a *delete*, and a fast-forward push to main is neither.
+GitHub branch protection would have stopped it, but a local or bare remote, a
+Gitea, or an unprotected repo does not. Operator approved the guard the same day.
+
+| Piece | Path | Role |
+|---|---|---|
+| Check | `tools/hooks/shared_checks.py::check_default_branch_push` (mirrored, and in the bootstrap payload) | refuses a `git push` whose destination is the repo's default branch. One copy, which every path runs |
+| L1 Claude Code | `.claude/hooks/pre_tool_use.py` | runs it fourth, after `git_danger`, with the hook payload's `cwd` |
+| L1 opencode / Pi | `harness_guard.decide(..., cwd=)` + both plugins | the plugins now send `cwd: directory`. The bridge runs from the ICDEV root, so without this it would have read ICDEV's branches instead of the run's |
+| Headless / L2 | `hook_compat.HEADLESS_CHECKS` | `run_pre_tool_check` covers `guard_shell` too. The shim runs **in** the shell's directory, so git sees the right repo with nothing passed |
+| Survey | `fire_rate_survey.py` check `default_branch_push` | replayed, anchored on each transcript's checkout |
+
+### What is refused
+
+The destination is parsed from the push's own argv. Refused: `<remote> main`,
+`HEAD:main` / `@:main`, `<src>:main`, `<src>:refs/heads/main`, `+<src>:main`,
+`:main` and `--delete main`, the matching spec `:`, a glob that covers the
+default branch, and `--all` / `--branches` / `--mirror`. Every form is refused
+with `git -C <dir>` too, after a `cd <dir> &&`, inside `( … )`, behind
+`VAR=x` / `env` / `sudo` prefixes, and inside the L2 shim's `eval '…'` unwrap.
+
+A **bare** `git push` / `git push <remote>` goes where git would send it:
+
+* `remote.<remote>.push` set: those refspecs are judged.
+* `push.default=simple` (git's default) or `current`: refused when the
+  **current** branch is the default branch.
+* `upstream` / `tracking`: refused when the branch **tracks** the default
+  branch.
+* `matching`: always refused. `nothing`: never refused.
+
+The task text said "is (or tracks)". Under `simple`, "tracks" alone is not a
+push to main. A `kanban/x` worktree created from `origin/main` records
+`origin/main` as its upstream, and git **itself** refuses that bare push
+because the names differ. Refusing it here would refuse nothing git lets
+through. It would also be a false positive on every worktree made the way
+CLAUDE.md prescribes. `tests/hooks/test_default_branch_push.py` pins all four
+modes.
+
+Allowed: any feature/kanban branch (`-u origin kanban/x`, `HEAD:kanban/x`,
+`--force-with-lease` on it), deleting a non-default branch, tags (`v1.0`,
+`refs/tags/…`, `--tags`), `--dry-run` / `-n`. Prose (`echo …`, a commit
+message, a grep pattern) is also allowed: only a segment whose command word is
+`git` with subcommand `push` is parsed.
+
+### The default branch is resolved per repository, never assumed
+
+In order:
+
+1. `git symbolic-ref refs/remotes/<remote>/HEAD`, which clone records.
+2. The remote's own `HEAD` when its URL is a local path. A bare scratch remote
+   added with `git remote add` has no remote HEAD ref.
+3. A remote-tracking, then a local, `main` / `master`.
+4. When git cannot answer at all (a directory it cannot read), **both** `main`
+   and `master`. An explicit `git push origin master` is still refused there.
+   A bare push, which needs branch state, fails open.
+
+The directory is, in order: the caller's `cwd` (the Claude hook payload), then
+`tool_input['cwd']` / `['workdir']`, then whatever `cd` / `pushd` / `git -C`
+the command applies, then the process's own directory (the L2 shim's). Nothing
+reads `os.getcwd()`, and `test_no_check_reads_cwd` still holds. The check
+fails open on any error.
+
+### Fire-rate survey (before arming)
+
+`python tools/hooks/fire_rate_survey.py --json --check default_branch_push`,
+run 2026-10-11 against this branch: Claude Code transcripts, 30-day window,
+**4,297 transcripts, 580 sessions, 26,199 tool calls (20,952 Bash), 636 of
+them `push` calls**.
+
+| Verdict | Fired | Rate | Sessions |
+|---|---:|---:|---:|
+| Survey (argv + today's branch state of each call's checkout) | 31 | 0.118% | 21 |
+| argv alone (no branch state) | 1 | 0.004% | 1 |
+| **True positives after classifying every fire** | **0** | **0.000%** | 0 |
+
+All 31 fires were classified by hand from their recorded `cwd`. Every one is a
+replay artifact, not a push to main. Each ran from a kanban worktree that has
+since been removed: 30 under `C:\AI\ICDev\.tmp\worktrees\…`, 1 under
+`icdev_ft`. The survey's anchor therefore walked up to the enclosing **main
+checkout**, which is on `main` today, so the call's `git push -u origin HEAD`
+(10) or bare `git push` (21) was judged as if it ran on `main`. When those
+commands ran, they pushed the worktree's own kanban branch. The one argv-only
+fire is the same artifact: its `cd` names a worktree husk, which git resolves
+to the enclosing checkout. **No session in the window pushed to a default
+branch**, so the guard is armed at its default (on). The survey row is
+labelled an upper bound for this reason.
+
+### Standing it down
+
+* **One check, one harness session:** start the agent with
+  `ICDEV_DEFAULT_BRANCH_PUSH_GUARD=0` in its environment. This is the
+  `CHECK_KILL_SWITCHES` entry `default_branch_push`, honoured by the Claude
+  hook, `harness_guard` (opencode/Pi) and `guard_shell` alike. For Claude
+  Code, adding it to `.claude/settings.local.json` `env` takes effect on the
+  next tool call. Remove it after the one push.
+* **Human-approved hotfix, one command:** the human runs that one
+  `git push origin main` in their own terminal. The guard sits in front of
+  agents only, so nothing outside a harness is intercepted.
+* **Not a switch:** writing `ICDEV_DEFAULT_BRANCH_PUSH_GUARD=0 git push origin
+  main` *inside the command*. The agent writes the command, so a switch it can
+  type is no switch. This is pinned by a test.
+* `ICDEV_PRETOOLUSE_ENFORCE=0` still turns every refusal into an advisory, as
+  for every other check.
+
+### Verification
+
+* `tests/hooks/test_default_branch_push.py` (69 tests, gated in
+  `args/ci_test_files/core.d/omx-guard-08.txt`) builds real throwaway repos: a
+  bare remote plus a clone, one with default `main` and one with default
+  `master`. It covers:
+  * every refspec form refused in **both** repos;
+  * `git -C` and `cd` resolved against the named directory;
+  * 16 allowed forms;
+  * `master` resolved from the repo, so `git push origin main` is allowed
+    there;
+  * a `git remote add` remote with no HEAD ref asked directly;
+  * the unreadable-directory fallback;
+  * bare push on the default branch refused, and on a tracking feature branch
+    under all four `push.default` modes;
+  * configured `remote.origin.push`;
+  * the kill switch, and the inline assignment that is **not** one;
+  * end to end through the Claude hook subprocess (exit 2, using the payload
+    `cwd`), `run_pre_tool_check`, `harness_guard.decide` for opencode and Pi,
+    and `guard_shell.decide_text`, including the `eval '…'` wrapper.
+* Red-first: `red_first_gate.py --gate` reports it **discriminating**. It
+  fails to collect against the merge base and passes here. `isolation_run.py`
+  passes it alone.
+* `tests/hooks/` plus the bootstrap-payload, AGOV, branch-deletion and
+  capability-matrix suites: 624 passed.
+
+### Residual gaps
+
+* Codex and Pi's RPC shell exec `/bin/bash` by absolute path, so L2 does not
+  see them (see the L2 matrix above). Pi's L1 extension does see its `bash`
+  tool. Codex has neither layer.
+* A push spelled through a git alias (`git p`) or a script file the agent
+  writes and runs is not parsed. `git_danger` has the same limit.
+* `push.default=matching` refuses even when the remote has no default branch
+  yet. That is conservative, and the setting is rare.
+
 ## Write sandbox -- layer 3 (omx-guard-05)
 
 L1 and L2 judge a tool call by **reading** it. Neither sees a harness's

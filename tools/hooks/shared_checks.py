@@ -46,7 +46,7 @@ import sys
 import tempfile
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 __all__ = [
     "default_repo_root",
@@ -87,6 +87,12 @@ __all__ = [
     "GIT_DANGER_PATTERNS",
     "git_danger_reason",
     "check_git_danger",
+    # 9b — push to the repo's default branch (omx-guard-08)
+    "check_default_branch_push",
+    "default_branch_push_reason",
+    "resolve_default_branches",
+    "DEFAULT_BRANCH_PUSH_GUARD_ENV",
+    "FALLBACK_DEFAULT_BRANCHES",
     # 10 — AGOV declarative agent rules, monitor-only by default (agov-det-06)
     "check_agent_rules",
     "reset_agent_gate",
@@ -1558,6 +1564,314 @@ def check_git_danger(tool_name: str, tool_input: dict) -> Optional[str]:
         return None
     reason = git_danger_reason(tool_input.get("command", "") or "")
     return f"BLOCKED: {reason}" if reason else None
+
+
+# ── 9b. Push to the repository's default branch (omx-guard-08) ────────────
+#
+# MEASURED 2026-10-11 (omx-smoke-03, opencode on kimi-k3, an external scratch
+# repo): having committed on its kanban branch the agent ran
+# `git push origin kanban/omx-smoke-03:main` and then `git push origin main`,
+# and its work landed on the default branch with no PR. Nothing here refused
+# it: git_danger stops a FORCE push and branch_deletion a DELETE, and a plain
+# fast-forward push is neither. GitHub branch protection would have stopped
+# it; a local or bare remote, a Gitea, or an unprotected repo does not, and
+# "never commit directly to main" is a rule for every harness, not for GitHub.
+#
+# The destination is read from the push's own argv, and the default branch is
+# resolved per repository -- never assumed to be `main`. The directory the push
+# runs in is the shell's: the caller's ``cwd``, then ``tool_input['cwd']`` /
+# ``['workdir']``, then whatever ``cd`` / ``pushd`` / ``git -C`` the command
+# itself applies. With none of those, git inherits this process's directory,
+# which IS the shell's for the guarded shell (L2); nothing here reads cwd.
+
+DEFAULT_BRANCH_PUSH_GUARD_ENV = "ICDEV_DEFAULT_BRANCH_PUSH_GUARD"
+
+#: What a repo's default branch is taken to be when git cannot say: an explicit
+#: `git push origin master` is still refused in a directory git cannot read.
+FALLBACK_DEFAULT_BRANCHES: Tuple[str, ...] = ("main", "master")
+
+#: git options before the subcommand that consume the NEXT token.
+_GIT_GLOBAL_VALUE_OPTS = frozenset({
+    "-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env",
+})
+
+#: `git push` long options that consume the next token when written without `=`.
+_PUSH_VALUE_OPTS = frozenset({"--push-option", "--repo", "--receive-pack", "--exec"})
+
+#: Push every local branch (`--branches` is git 2.46's name for `--all`).
+_PUSH_EVERYTHING_OPTS = frozenset({"--all", "--branches", "--mirror"})
+
+_TRANSPARENT_PREFIXES = frozenset({"sudo", "command", "exec", "time", "env", "nohup"})
+_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])(/|$)")
+
+#: A directory the command moved to that cannot be followed (``cd -``,
+#: ``cd $WT``): git state is then unknown, so only the argv is judged.
+_UNKNOWN_DIR = object()
+
+_DEFAULT_PUSH_REMEDY = (
+    "  Land work through a pull request: push a feature branch\n"
+    "  (`git push -u origin <branch>`) and open a PR.\n"
+    "  Human-approved hotfix: run that one push yourself, outside the agent,\n"
+    f"  or start the agent with {DEFAULT_BRANCH_PUSH_GUARD_ENV}=0 for it\n"
+    "  (docs/features/phase-omx-guard.md, 'Standing it down')."
+)
+
+
+def _native_dir(path: str) -> str:
+    """``/c/AI/x`` (Git Bash) -> ``C:/AI/x`` on Windows; anything else as is."""
+    if os.name == "nt":
+        return _MSYS_DRIVE_RE.sub(lambda m: f"{m.group(1).upper()}:/", path, count=1)
+    return path
+
+
+def _join_dir(base: Any, path: str) -> Any:
+    """*base* after ``cd path``. Relative stays relative; never resolved here."""
+    if base is _UNKNOWN_DIR or not path or path == "-" or _UNEXPANDED_RE.search(path):
+        return _UNKNOWN_DIR
+    path = _native_dir(os.path.expanduser(path))
+    if os.path.isabs(path) or base is None:
+        return path
+    return os.path.join(base, path)
+
+
+def _git_out(args: Sequence[str], cwd: Any) -> Optional[str]:
+    """stdout of ``git <args>`` in *cwd*, or None on any failure."""
+    if cwd is _UNKNOWN_DIR:
+        return None
+    try:
+        res = subprocess.run(
+            ["git", *args], cwd=cwd or None, capture_output=True, text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return res.stdout.strip() if res.returncode == 0 else None
+
+
+def resolve_default_branches(remote: str = "origin", cwd: Any = None) -> Tuple[str, ...]:
+    """The default branch of *remote* as the repository in *cwd* knows it.
+
+    In order: ``refs/remotes/<remote>/HEAD`` (what clone records); the HEAD of
+    the remote itself when its URL is a local path (a bare scratch remote added
+    with ``git remote add`` has no remote HEAD ref); a remote-tracking, then a
+    local, ``main`` / ``master``. When none of those answers,
+    :data:`FALLBACK_DEFAULT_BRANCHES` -- both of them.
+    """
+    name = remote or "origin"
+    out = _git_out(["symbolic-ref", "--quiet", "--short", f"refs/remotes/{name}/HEAD"], cwd)
+    if out and "/" in out:
+        return (out.split("/", 1)[1],)
+    if cwd is not _UNKNOWN_DIR:
+        url = _git_out(["remote", "get-url", name], cwd) or name
+        local = _native_dir(url[7:] if url.startswith("file://") else url)
+        if cwd and not os.path.isabs(local):
+            local = os.path.join(cwd, local)
+        if os.path.isdir(local):
+            head = _git_out(["symbolic-ref", "--quiet", "--short", "HEAD"], local)
+            if head:
+                return (head,)
+    for prefix in (f"refs/remotes/{name}/", "refs/heads/"):
+        for branch in FALLBACK_DEFAULT_BRANCHES:
+            if _git_out(["rev-parse", "--verify", "--quiet", prefix + branch], cwd) is not None:
+                return (branch,)
+    return FALLBACK_DEFAULT_BRANCHES
+
+
+def _push_invocation(segment: str, base: Any) -> Optional[Tuple[Any, List[str]]]:
+    """``(directory, push args)`` when *segment* runs ``git push``, else None."""
+    tokens = shell_tokens(segment.strip().lstrip("({").rstrip(")}").strip())
+    i = 0
+    while i < len(tokens) and (
+        _ASSIGNMENT_RE.match(tokens[i]) or tokens[i] in _TRANSPARENT_PREFIXES
+    ):
+        i += 1
+    if i >= len(tokens) or os.path.basename(tokens[i]).lower() not in ("git", "git.exe"):
+        return None
+    i += 1
+    directory = base
+    while i < len(tokens) and tokens[i].startswith("-"):
+        opt = tokens[i]
+        if opt == "-C" and i + 1 < len(tokens):
+            directory = _join_dir(directory, tokens[i + 1])
+        if opt in _GIT_GLOBAL_VALUE_OPTS:
+            i += 1
+        i += 1
+    if i >= len(tokens) or tokens[i] != "push":
+        return None
+    return directory, tokens[i + 1:]
+
+
+def _refspec_destination(spec: str, current: Optional[str]) -> Optional[str]:
+    """The branch (or glob) a refspec writes; None when it writes no branch.
+
+    ``":"`` is git's "matching branches" spec and is returned as ``"*"``.
+    ``""`` means the destination is the current branch and it is unknown.
+    """
+    spec = spec[1:] if spec.startswith("+") else spec
+    if spec == ":":
+        return "*"
+    src, _, dst = spec.partition(":")
+    dst = dst or src
+    if dst in ("HEAD", "@"):
+        return current or ""
+    if dst.startswith("refs/heads/"):
+        return dst[len("refs/heads/"):]
+    if dst.startswith("refs/"):
+        return None  # a tag, a note, refs/for/... -- not a branch
+    return dst
+
+
+def default_branch_push_reason(command: str, cwd: Optional[str] = None) -> Optional[str]:
+    """Why *command* pushes to its repository's default branch, else None.
+
+    Refused: ``<remote> main``, ``HEAD:main``, ``<src>:main``,
+    ``<src>:refs/heads/main``, ``+<src>:main``, ``:main`` / ``--delete main``,
+    the matching spec ``:``, a glob that covers it, ``--all`` / ``--branches``
+    / ``--mirror``, and a bare ``git push`` / ``git push <remote>`` while the
+    current branch is, or tracks, the default branch. ``--dry-run`` and
+    ``--tags`` alone write no branch and pass. Every form also with ``git -C``.
+    """
+    directory: Any = cwd
+    for segment in command_segments(command):
+        if command_word(segment) in ("cd", "pushd"):
+            args = shell_tokens(segment)[1:]
+            directory = _join_dir(directory, args[0] if args else "")
+            continue
+        found = _push_invocation(segment, directory)
+        if found is None:
+            continue
+        reason = _push_reason(*found)
+        if reason:
+            return reason
+    return None
+
+
+def _push_reason(directory: Any, args: List[str]) -> Optional[str]:
+    """The refusal for one ``git push <args>`` run in *directory*, or None."""
+    positional: List[str] = []
+    flags: set = set()
+    repo_opt = ""
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        if tok == "--":
+            positional += args[i + 1:]
+            break
+        if tok.startswith("--"):
+            name, _, value = tok.partition("=")
+            if name in _PUSH_VALUE_OPTS and not value and i + 1 < len(args):
+                value = args[i + 1]
+                i += 1
+            if name == "--repo":
+                repo_opt = value
+            flags.add(name)
+        elif tok.startswith("-") and len(tok) > 1:
+            if tok == "-o":
+                i += 1  # -o <push-option>
+            else:
+                flags.update(f"-{ch}" for ch in tok[1:])
+        else:
+            positional.append(tok)
+        i += 1
+
+    if flags & {"-n", "--dry-run"}:
+        return None
+    if flags & _PUSH_EVERYTHING_OPTS:
+        mode = sorted(flags & _PUSH_EVERYTHING_OPTS)[0]
+        return (
+            f"BLOCKED: `git push {mode}` pushes every local branch, the "
+            "repository's default branch included.\n" + _DEFAULT_PUSH_REMEDY
+        )
+    remote = positional[0] if positional else repo_opt
+    specs = positional[1:]
+    if not specs and "--tags" in flags:
+        return None
+    deleting = bool(flags & {"-d", "--delete"})
+
+    defaults = resolve_default_branches(remote or "origin", directory)
+    current = _git_out(["symbolic-ref", "--quiet", "--short", "HEAD"], directory)
+
+    if not specs and not deleting:
+        configured = _git_out(["config", "--get-all", f"remote.{remote or 'origin'}.push"],
+                              directory)
+        if configured:
+            specs = configured.split()  # remote.<name>.push replaces push.default
+        else:
+            return _bare_push_reason(directory, defaults, current)
+
+    for spec in specs:
+        as_delete = deleting or (spec.lstrip("+").startswith(":") and spec != ":")
+        dst = _refspec_destination(f":{spec}" if deleting else spec, current)
+        if not dst:
+            continue
+        hit = next((d for d in defaults if d == dst or ("*" in dst and fnmatch(d, dst))), None)
+        if hit:
+            return (
+                f"BLOCKED: refusing to {'delete' if as_delete else 'push to'} the "
+                f"repository's default branch `{hit}` (refspec `{spec}`).\n"
+                + _DEFAULT_PUSH_REMEDY
+            )
+    return None
+
+
+def _bare_push_reason(directory: Any, defaults: Tuple[str, ...],
+                      current: Optional[str]) -> Optional[str]:
+    """A bare ``git push`` / ``git push <remote>``: where ``push.default`` sends it.
+
+    ``simple`` (git's default) and ``current`` write the CURRENT branch's own
+    name -- under ``simple`` a branch whose upstream has a different name is
+    refused by git itself, so a ``kanban/x`` branch created from
+    ``origin/main`` (which records ``origin/main`` as its upstream) pushes
+    nothing to main and is not refused here. ``upstream`` writes the tracked
+    branch, ``matching`` every same-named branch, ``nothing`` nothing.
+    """
+    mode = (_git_out(["config", "push.default"], directory) or "simple").lower()
+    if mode == "nothing":
+        return None
+    upstream = None
+    if mode == "matching":
+        hit: Optional[str] = defaults[0]
+    elif mode in ("upstream", "tracking"):
+        upstream = _git_out(
+            ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], directory)
+        tracked = upstream.split("/", 1)[1] if upstream and "/" in upstream else None
+        hit = tracked if tracked in defaults else None
+    else:
+        hit = current if current in defaults else None
+    if not hit:
+        return None  # a feature branch, or no branch state to read: fail open
+    how = (f"tracks `{upstream}`, which is" if upstream
+           else "matches" if mode == "matching" else "is")
+    return (
+        f"BLOCKED: refusing a bare `git push` (push.default={mode}): the current "
+        f"branch `{current}` {how} the repository's default branch `{hit}`.\n"
+        + _DEFAULT_PUSH_REMEDY
+    )
+
+
+def check_default_branch_push(
+    tool_name: str, tool_input: dict, cwd: Optional[str] = None
+) -> Optional[str]:
+    """Refuse a ``git push`` whose destination is the repo's default branch.
+
+    *cwd* is the directory the shell runs in when the caller knows it (the
+    Claude Code hook passes its payload's ``cwd``); otherwise
+    ``tool_input['cwd']`` / ``['workdir']``, then this process's own directory.
+    Kill switch: ``ICDEV_DEFAULT_BRANCH_PUSH_GUARD=0``. Fails OPEN on error.
+    """
+    if tool_name not in ("Bash", "bash", "shell"):
+        return None
+    if _off(DEFAULT_BRANCH_PUSH_GUARD_ENV):
+        return None
+    command = tool_input.get("command", "") or ""
+    if "push" not in command:
+        return None
+    base = cwd or tool_input.get("cwd") or tool_input.get("workdir") or None
+    try:
+        return default_branch_push_reason(command, base)
+    except Exception:  # noqa: BLE001 -- never block on a broken guard
+        return None
 
 
 # ── 10. AGOV declarative agent rules (agov-det-06) ────────────────────────
