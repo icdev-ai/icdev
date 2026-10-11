@@ -52,12 +52,22 @@ lock, reused pid) — never a clean answer.
 
 ## Workflow
 
+> **Interpreter (omx-linux-02):** never run bare `python` — on a PEP 668 host it
+> is the system interpreter, without the project's packages. Every block first
+> resolves the project interpreter with `tools/dx/project_python.py` (active venv
+> → `.venv/bin/python` / `.venv\Scripts\python.exe` → the interpreter that ran
+> it) and calls it as `& $PY` (PowerShell) or `"$PY"` (bash). A `bash` block
+> marked "same command on every OS" runs in PowerShell as
+> `$PY = python tools/dx/project_python.py` then `& $PY <args>`. A `python ...` in
+> prose below means `$PY ...`.
+>
 > **Windows PowerShell note:** set `$env:PYTHONPATH = "C:\AI\ICDev"` before any
-> `python` call.
+> `$PY` call.
 >
 > **Linux / macOS note:** every step below has a POSIX form. From the checkout
-> root run `export PYTHONPATH="$PWD"` once; the `python` commands are identical
-> (use `python3` if that is your interpreter's name). Where a step shows a
+> root run `export PYTHONPATH="$PWD"` and
+> `PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"`
+> in each block. Where a step shows a
 > PowerShell block, its `bash` block follows it. There is no `taskkill` and no
 > `pkill` anywhere in this procedure on any OS — every stop is by verified pid. Run from the checkout that STARTED the stack — a worktree's
 > `.tmp/` is empty and reads as "already down" while 5050 is still served. From
@@ -68,11 +78,13 @@ lock, reused pid) — never a clean answer.
    and the current listeners, and acts on none of it:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python tools/genesis/shutdown_dashboard.py --dry-run
+   $PY = python tools/dx/project_python.py
+   & $PY tools/genesis/shutdown_dashboard.py --dry-run
    ```
    ```bash
    export PYTHONPATH="$PWD"
-   python tools/genesis/shutdown_dashboard.py --dry-run
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" tools/genesis/shutdown_dashboard.py --dry-run
    ```
    If it lists a worker under **LEFT RUNNING**, decide now: let it finish (the
    default) or stop it with `--include-workers` in step 1b.
@@ -107,12 +119,14 @@ lock, reused pid) — never a clean answer.
    leave ICDEV[RT] serving:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python tools/genesis/shutdown_dashboard.py --pause --keep-ft
+   $PY = python tools/dx/project_python.py
+   & $PY tools/genesis/shutdown_dashboard.py --pause --keep-ft
    echo "exit: $LASTEXITCODE"
    ```
    ```bash
    export PYTHONPATH="$PWD"
-   python tools/genesis/shutdown_dashboard.py --pause; echo "exit: $?"
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" tools/genesis/shutdown_dashboard.py --pause; echo "exit: $?"
    ```
    - exit **1**: read the `SURVIVORS:` / `LISTENER REMAINS:` lines — each names
      a pid. Confirm its command line with
@@ -132,22 +146,25 @@ lock, reused pid) — never a clean answer.
    qualify — for a service started before pidfiles existed. Same command on
    every OS:
    ```bash
-   python -m tools.genesis.unsupervised_services --stop --dry-run   # review the pids
-   python -m tools.genesis.unsupervised_services --stop             # exit 0 stopped · 1 survivor · 2 no psutil
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" -m tools.genesis.unsupervised_services --stop --dry-run   # review the pids
+   "$PY" -m tools.genesis.unsupervised_services --stop             # exit 0 stopped · 1 survivor · 2 no psutil
    ```
 
 3. **Prove it from the record.** The supervisor must read DOWN with no lock,
    and no listener may remain on the four ports:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python tools/genesis/supervisor_status.py
+   $PY = python tools/dx/project_python.py
+   & $PY tools/genesis/supervisor_status.py
    Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
      Where-Object { $_.LocalPort -in 5050, 5200, 5300, 8443 } |
      Format-Table LocalPort, OwningProcess -AutoSize
    ```
    ```bash
    export PYTHONPATH="$PWD"
-   python tools/genesis/supervisor_status.py
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" tools/genesis/supervisor_status.py
    ss -ltnp '( sport = :5050 or sport = :5200 or sport = :5300 or sport = :8443 )'   # Linux
    lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(5050|5200|5300|8443) '                   # macOS
    ```

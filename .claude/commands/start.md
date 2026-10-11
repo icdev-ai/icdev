@@ -15,21 +15,34 @@ PORTAL_PORT: 8443
 
 ## Workflow
 
-> **Windows PowerShell note:** All commands below use PowerShell syntax. Set `$env:PYTHONPATH = "C:\AI\ICDev"` before any `python` call that imports `tools.*` or `icdev.*`. Use `2>$null` (not `2>/dev/null`), `Start-Sleep -Seconds N` (not `sleep N`), `Start-Process` (not `nohup`), and `Stop-Process` (not `pkill`).
+> **Interpreter (omx-linux-02):** never run bare `python` — on a PEP 668 host
+> (Arch, Debian, Fedora) that is the SYSTEM interpreter, which has none of the
+> project's packages (`dotenv` and `icdev.core.paths` fail to import). Every block
+> first resolves the project interpreter with `tools/dx/project_python.py` —
+> active venv (`$VIRTUAL_ENV`) → `.venv/bin/python` (`.venv\Scripts\python.exe`
+> on Windows) → the interpreter that ran it — and calls THAT: `& $PY` in
+> PowerShell, `"$PY"` in bash. Each block resolves it again because shell state
+> does not persist between tool calls. A `python ...` in prose below means `$PY ...`.
+
+> **Windows PowerShell note:** All commands below use PowerShell syntax. Set `$env:PYTHONPATH = "C:\AI\ICDev"` before any `$PY` call that imports `tools.*` or `icdev.*`. Use `2>$null` (not `2>/dev/null`), `Start-Sleep -Seconds N` (not `sleep N`), `Start-Process` (not `nohup`), and `Stop-Process` (not `pkill`).
 
 > **Linux / macOS note:** run from the checkout root with `export PYTHONPATH="$PWD"`.
-> The `python` commands are the same on every OS (use `python3` if that is your
-> interpreter's name). Where a step shows a PowerShell block, its `bash` block
+> Resolve the interpreter with
+> `PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"`
+> and call `"$PY"` wherever a PowerShell block says `& $PY`. A `bash` block marked
+> "same command on every OS" runs in PowerShell as `$PY = python tools/dx/project_python.py`
+> then `& $PY <args>`. Where a step shows a PowerShell block, its `bash` block
 > follows it; a PowerShell here-string (`@'...'@ | Set-Content x.py`) becomes
 > `python - <<'EOF' ... EOF` with the same body. `2>$null` is `2>/dev/null`.
 > Background starts use `nohup ... &` and RECORD the pid; stops are by that
-> verified pid (`kill <pid>`), never `pkill`/`killall` by name. To start the
-> supervisor at logon, see `python -m tools.genesis.install_units --platform linux`.
+> verified pid (`kill <pid>`), never `pkill`/`killall` by name. Whether the
+> supervisor survives logout/reboot is step 8's `install_units --status`.
 
 0. **Check what is already running before killing anything** (autonomy-id-03):
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python tools/genesis/supervisor_status.py
+   $PY = python tools/dx/project_python.py
+   & $PY tools/genesis/supervisor_status.py
    ```
    If the supervisor is **UP**, skip the teardown entirely and go to step 1 — its
    children are healthy and step 8 will defer to it.
@@ -47,14 +60,16 @@ PORTAL_PORT: 8443
    Only if the supervisor is **DOWN** and you need a clean slate, stop its
    children by verified PID:
    ```powershell
-   python tools/genesis/supervisor_status.py --json | ConvertFrom-Json |
+   $PY = python tools/dx/project_python.py
+   & $PY tools/genesis/supervisor_status.py --json | ConvertFrom-Json |
      ForEach-Object { $_.children } | ForEach-Object { $_.pids } |
      ForEach-Object { Get-CimInstance Win32_Process -Filter "ProcessId=$_" } |
      Format-Table ProcessId, CommandLine -AutoSize
    ```
    ```bash
-   python tools/genesis/supervisor_status.py --json |
-     python -c "import json,sys; [print(p) for c in json.load(sys.stdin).get('children', []) for p in c.get('pids', [])]" |
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" tools/genesis/supervisor_status.py --json |
+     "$PY" -c "import json,sys; [print(p) for c in json.load(sys.stdin).get('children', []) for p in c.get('pids', [])]" |
      xargs -r -n1 ps -o pid=,args= -p
    ```
    Review that list, then stop only the PIDs you intend to.
@@ -63,6 +78,7 @@ PORTAL_PORT: 8443
    Write and run a temp script:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
+   $PY = python tools/dx/project_python.py
    @'
 import os
 from dotenv import load_dotenv
@@ -113,39 +129,53 @@ try:
 except Exception as e:
     print(f"PG cleanup skipped ({e})")
 '@ | Set-Content .tmp\pg_cleanup.py
-   python .tmp\pg_cleanup.py
+   & $PY .tmp\pg_cleanup.py
    ```
 
 0. Reset any stuck IN PROGRESS tasks back to backlog (orphaned by a previous
    unclean shutdown). Skip this if the supervisor was UP in step 0 — those
    tasks have live workers, and resetting them re-dispatches work already in
    flight.
-   Write a temp script then run it (avoids PowerShell quote-escaping issues with `python -c`):
+
+   Use `tools.kanban.startup_recovery` — the same sweep the scheduler runs on
+   restart — never a hand-written `UPDATE`. The one this step used to carry wrote
+   a SQLite-only timestamp function that PostgreSQL (the primary backend)
+   rejects, and it reset EVERY `in_progress` row: measured 2026-10-11 it sent the
+   verified-and-landed `omx-smoke-04` back to backlog and the runner scheduled it
+   again. The module binds the timestamp as a parameter (valid on PostgreSQL and
+   SQLite), HOLDS a task with any evidence of a live worker, HOLDS a task whose
+   `kanban/<id>` work is already on the default branch (`tools/kanban/landed_check.py`,
+   merge-ref or subject evidence only), and stands down if another live
+   scheduler owns the runner. Dry-run first, then sweep:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   @'
-from tools.db.storage import get_connection
-with get_connection() as conn:
-    cur = conn.cursor()
-    sql = "UPDATE kanban_tasks SET status='backlog', updated_at=datetime('now') WHERE status='in_progress'"
-    cur.execute(sql)
-    n = cur.rowcount
-    conn.commit()
-    print(f"Reset {n} stuck in_progress task(s) to backlog")
-'@ | Set-Content .tmp\reset_tasks.py
-   python .tmp\reset_tasks.py
+   $PY = python tools/dx/project_python.py
+   & $PY -m tools.kanban.startup_recovery --dry-run     # WOULD RESET / HELD, with the reason
+   & $PY -m tools.kanban.startup_recovery
    ```
+   ```bash
+   export PYTHONPATH="$PWD"
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" -m tools.kanban.startup_recovery --dry-run
+   "$PY" -m tools.kanban.startup_recovery
+   ```
+   A task `HELD` with `work already on the default branch` is finished, not
+   stuck: do not reset it by hand — confirm with
+   `python -m tools.kanban.landed_check --task <task-id>`, then let the done-gate
+   settle it from git state: `python tools/kanban/cli.py --reverify <task-id>`.
 
 0. Read the dashboard port from `.env` (uses `ICDEV_DASHBOARD_PORT`, defaults to 5050):
    ```powershell
-   $DASHBOARD_PORT = python -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('ICDEV_DASHBOARD_PORT', '5050'))"
+   $PY = python tools/dx/project_python.py
+   $DASHBOARD_PORT = & $PY -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('ICDEV_DASHBOARD_PORT', '5050'))"
    ```
    Use `$DASHBOARD_PORT` for all subsequent dashboard URL references.
 
 1. Check if the dashboard is already running on port `$DASHBOARD_PORT`:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   $dashStatus = python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import urllib.request; urllib.request.urlopen(f'http://localhost:{p}/health', timeout=2); print('RUNNING')" 2>$null
+   $PY = python tools/dx/project_python.py
+   $dashStatus = & $PY -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import urllib.request; urllib.request.urlopen(f'http://localhost:{p}/health', timeout=2); print('RUNNING')" 2>$null
    if (-not $dashStatus) { $dashStatus = "NOT_RUNNING" }
    echo $dashStatus
    ```
@@ -153,38 +183,44 @@ with get_connection() as conn:
 2. If **RUNNING**: Open it in the browser and report status.
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
+   $PY = python tools/dx/project_python.py
+   & $PY -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
    ```
 
 3. If **NOT_RUNNING**: Initialize the database if needed, start the dashboard, and open the browser:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python tools/db/init_icdev_db.py 2>$null
+   $PY = python tools/dx/project_python.py
+   & $PY tools/db/init_icdev_db.py 2>$null
    ```
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   $proc = Start-Process python -ArgumentList "tools/dashboard/app.py" -RedirectStandardOutput ".tmp/dashboard.log" -RedirectStandardError ".tmp/dashboard_err.log" -WindowStyle Hidden -PassThru
+   $PY = python tools/dx/project_python.py
+   $proc = Start-Process $PY -ArgumentList "tools/dashboard/app.py" -RedirectStandardOutput ".tmp/dashboard.log" -RedirectStandardError ".tmp/dashboard_err.log" -WindowStyle Hidden -PassThru
    echo "Dashboard PID: $($proc.Id)"
    ```
    ```bash
    export PYTHONPATH="$PWD"
-   python tools/db/init_icdev_db.py 2>/dev/null
-   nohup python tools/dashboard/app.py > .tmp/dashboard.log 2> .tmp/dashboard_err.log < /dev/null &
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" tools/db/init_icdev_db.py 2>/dev/null
+   nohup "$PY" tools/dashboard/app.py > .tmp/dashboard.log 2> .tmp/dashboard_err.log < /dev/null &
    echo "Dashboard PID: $!"
    sleep 3
-   python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
+   "$PY" -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
    ```
    ```powershell
    Start-Sleep -Seconds 3
    ```
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
+   $PY = python tools/dx/project_python.py
+   & $PY -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
    ```
 
 4. Check if the SaaS API Gateway / Portal is already running on port `PORTAL_PORT`:
    ```powershell
-   $portalStatus = python -c "import urllib.request; urllib.request.urlopen('http://localhost:8443/health', timeout=2); print('RUNNING')" 2>$null
+   $PY = python tools/dx/project_python.py
+   $portalStatus = & $PY -c "import urllib.request; urllib.request.urlopen('http://localhost:8443/health', timeout=2); print('RUNNING')" 2>$null
    if (-not $portalStatus) { $portalStatus = "NOT_RUNNING" }
    echo $portalStatus
    ```
@@ -192,7 +228,8 @@ with get_connection() as conn:
 5. If **NOT_RUNNING**: Initialize the platform database if needed, start the API gateway, and open the portal:
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python tools/saas/platform_db.py --init 2>$null
+   $PY = python tools/dx/project_python.py
+   & $PY tools/saas/platform_db.py --init 2>$null
    ```
    Start it through the pidfile helper — the same command on every OS. It
    launches `tools/saas/api_gateway.py --port 8443 --debug` detached, logs to
@@ -200,17 +237,20 @@ with get_connection() as conn:
    `/stop` verifies before stopping), and ADOPTS an instance already running
    instead of starting a second:
    ```bash
-   python -m tools.genesis.unsupervised_services --start --only portal
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" -m tools.genesis.unsupervised_services --start --only portal
    ```
 
 6. Open the portal in the browser:
    ```bash
-   python -c "import webbrowser; webbrowser.open('http://localhost:8443/portal/')"
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" -c "import webbrowser; webbrowser.open('http://localhost:8443/portal/')"
    ```
 
 7. Start the CI/CD poll trigger (polls GitHub/GitLab issues every 20s for ICDEV™-BOT automation):
    ```bash
-   python -m tools.genesis.unsupervised_services --start --only poll_trigger
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" -m tools.genesis.unsupervised_services --start --only poll_trigger
    ```
    (Logs to `.tmp/poll_trigger.log`; pid in `.tmp/services/poll_trigger.pid`.)
 
@@ -227,8 +267,9 @@ with get_connection() as conn:
 
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python tools/genesis/supervisor_status.py --ensure
-   python tools/genesis/supervisor_status.py
+   $PY = python tools/dx/project_python.py
+   & $PY tools/genesis/supervisor_status.py --ensure
+   & $PY tools/genesis/supervisor_status.py
    ```
 
    `--ensure` starts **the supervisor** when none is running, and **defers**
@@ -238,6 +279,30 @@ with get_connection() as conn:
    > **Never `Stop-Process` these by name or `Where-Object` filter.** That is what
    > produced three concurrent `pr_watcher` processes racing on auto-merge. Let
    > the supervisor own its children; it stops them by verified PID.
+
+   **Does it survive logout / reboot?** (omx-linux-02) On Linux `--ensure`
+   starts the supervisor DETACHED — its own session, reparented to
+   `systemd --user` — so it outlives this agent session; do not report that it
+   dies with the session. It does NOT survive a logout or a reboot unless the
+   systemd user timer is enabled (and, past logout, lingering is on). Ask, never
+   guess:
+   ```bash
+   export PYTHONPATH="$PWD"
+   PY="$(python3 tools/dx/project_python.py 2>/dev/null || python tools/dx/project_python.py)"
+   "$PY" -m tools.genesis.install_units --status
+   ```
+   It prints `units installed`, `timer enabled`, `linger`, and
+   `survives reboot / logout`, each `yes`, `no` or `unknown`, followed by the
+   commands that would close any `no`. **Offer** those to the operator — they
+   change the login session, so do not run them unasked:
+   ```bash
+   "$PY" -m tools.genesis.install_units --platform linux   # renders the units with THIS interpreter
+   systemctl --user enable --now icdev-genesis.timer
+   loginctl enable-linger "$USER"                          # keep it running after logout
+   ```
+   Run the installer with `"$PY"`, not bare `python`: it writes the interpreter
+   that runs it into `ExecStart`. On Windows `--status` prints the Task Scheduler
+   registration instead (ICDEV-Genesis-Daemon), unchanged.
 
 8b. **ICDEV[FT] and ICDEV[RT] — each under ITS OWN supervisor, never beside a live one.**
 
@@ -283,9 +348,10 @@ with get_connection() as conn:
 
    ```powershell
    $env:PYTHONPATH = "C:\AI\ICDev"
-   python tools/genesis/supervisor_status.py          # supervisor + children + code identity
-   python -m tools.coordination.code_identity         # which code each process is running
-   python tools/awareness/code_staleness.py           # is any of it superseded?
+   $PY = python tools/dx/project_python.py
+   & $PY tools/genesis/supervisor_status.py          # supervisor + children + code identity
+   & $PY -m tools.coordination.code_identity         # which code each process is running
+   & $PY tools/awareness/code_staleness.py           # is any of it superseded?
    ```
 
    Reflex liveness comes from `genesis_reflex_state.last_run_at`, not from a log
@@ -295,6 +361,8 @@ with get_connection() as conn:
 10. Report to the user:
    > **Note:** The Kanban Scheduler is always explicitly restarted by `/start` using `python -m tools.genesis.kanban_scheduler`.
    > **Note:** The Genesis supervisor auto-starts at logon via Windows Task Scheduler (ICDEV-Genesis-Daemon task) or, on Linux, the systemd `--user` timer written by `python -m tools.genesis.install_units --platform linux` (`systemctl --user enable --now icdev-genesis.timer`). Manual override: `python tools/genesis/daemon.py`
+   - **Persistence** (Linux): the `survives reboot / logout` and `linger` lines
+     from step 8's `install_units --status`, verbatim.
    - **Dashboard**: `http://localhost:DASHBOARD_PORT`
 <!-- Derived from the app url_map by tools/dashboard/nav_paths.py.
      Regenerate: python tools/dashboard/nav_paths.py --write  (mfx-sib-02) -->
