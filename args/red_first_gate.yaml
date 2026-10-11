@@ -718,3 +718,16 @@ exemptions:
       above; scoped to this ONE file. Remove this exemption if a future change
       to this file adds a test that is not a cross-file consistency guard of
       this shape.
+  - pattern: "tests/genesis/test_kanban_phantom_guard.py"
+    reason: >-
+      kpr-watch-25 RE-SCOPES an existing test; it adds no new assertion. That
+      test faked EVERY git call as "has commits" and asserted `git log` never
+      ran -- true only because it set no dispatch baseline, which used to skip
+      the git-first arm. kpr-watch-25 runs that arm without a baseline (the
+      in-memory `_dispatch_main_heads` is empty after every scheduler re-exec),
+      so the fake now has the branch carry NO commits and the assertion stays
+      on the PHANTOM verdict. That passes at the merge base exactly as it
+      passes here, because the phantom guard itself did not change. The
+      discriminating proof for this PR is
+      tests/genesis/test_kpr_watch_25_git_first_without_baseline.py. Remove
+      this exemption if a later change to this file adds a new assertion.
