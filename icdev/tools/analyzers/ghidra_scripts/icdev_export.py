@@ -146,18 +146,22 @@ def _imports(program):
 def _strings(program, limit):
     """Defined strings in address order, capped. Returns ``(list, truncated)``.
 
-    ``DefinedDataIterator`` is imported HERE rather than at module level
-    because its package moved between Ghidra 9.x and 10.x; a module-level
-    import that raises would take the whole export down, and the caller would
-    lose the functions and imports it could otherwise have had. This is the one
-    place a narrow guard is correct, and the failure is still RECORDED rather
-    than swallowed -- it propagates to the section's own ``null``.
+    ``DefinedStringIterator`` is imported HERE rather than at module level
+    because this is the API that keeps moving: Ghidra 12 has no
+    ``DefinedDataIterator.definedStrings`` any more (measured on 12.1.4, the
+    run reported ``AttributeError`` for it), and a module-level import that
+    raises would take the whole export down, losing the functions and imports
+    it could otherwise have had. This is the one place a narrow guard is
+    correct, and the failure is still RECORDED rather than swallowed -- it
+    propagates to the section's own ``null``.
     """
-    from ghidra.program.util import DefinedDataIterator
+    from ghidra.program.util import DefinedStringIterator
 
     out = []
     truncated = False
-    for data in DefinedDataIterator.definedStrings(program):
+    iterator = DefinedStringIterator.forProgram(program)
+    while iterator.hasNext():
+        data = iterator.next()
         if len(out) >= limit:
             truncated = True
             break

@@ -77,6 +77,17 @@ Other distributions: unpack the release zip, install a JDK 21, set
    python -m pip install --no-index -f C:\Tools\ghidra_12.1.4_PUBLIC\Ghidra\Features\PyGhidra\pypkg\dist pyghidra
    ```
 
+   **Check the Python version first.** The bundled JPype wheels cover CPython
+   **3.9 through 3.13** (measured in the 12.1.4 zip: `cp39` to `cp313`
+   `win_amd64`). On a newer Python, the offline install falls back to
+   building JPype from source. In that case, create a 3.12 or 3.13 venv just
+   for pyghidra and point `ICDEV_GHIDRA_PYTHON` at it:
+
+   ```powershell
+   py -3.12 -m venv C:\Tools\pyghidra-venv
+   C:\Tools\pyghidra-venv\Scripts\python.exe -m pip install --no-index -f C:\Tools\ghidra_12.1.4_PUBLIC\Ghidra\Features\PyGhidra\pypkg\dist pyghidra
+   ```
+
 4. Set the environment in ICDEV's `.env`, or in the shell:
 
    ```
@@ -90,6 +101,11 @@ Other distributions: unpack the release zip, install a JDK 21, set
    ```powershell
    python -m tools.analyzers.ghidra_headless C:\path\to\your\own.exe --authorization-basis owned
    ```
+
+   Measured on Windows 11 on 2026-10-11 with Ghidra 12.1.4, Temurin 21.0.12
+   and pyghidra 3.1.0 in a Python 3.12 venv, against an MSVC-built fixture
+   (123,904 bytes): `ok`, 427 functions, 68 imports, 223 strings, entry
+   decompiled, 27 s. The JVM heap was capped with `_JAVA_OPTIONS=-Xmx1536m`.
 
 ## Environment
 

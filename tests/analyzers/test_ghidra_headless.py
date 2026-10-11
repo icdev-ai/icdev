@@ -50,6 +50,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: The real package-manager roots, captured before the autouse fixture empties
 #: them, so the live test can probe the host the way production does.
 REAL_WELL_KNOWN_HOMES = gh.WELL_KNOWN_HOMES
+#: Likewise the operator's own pyghidra interpreter, if one is declared.
+REAL_GHIDRA_PYTHON = os.environ.get(gh.ENV_PYTHON)
 
 
 # ---------------------------------------------------------------------------
@@ -670,7 +672,10 @@ def test_the_live_backend_matches_this_hosts_actual_ghidra_state(artifact, monke
     assertion; with a runnable Ghidra 12 + pyghidra, a real run happens.
     """
     monkeypatch.setattr(gh, "WELL_KNOWN_HOMES", REAL_WELL_KNOWN_HOMES)
-    monkeypatch.delenv(gh.ENV_PYTHON, raising=False)
+    if REAL_GHIDRA_PYTHON:
+        monkeypatch.setenv(gh.ENV_PYTHON, REAL_GHIDRA_PYTHON)
+    else:
+        monkeypatch.delenv(gh.ENV_PYTHON, raising=False)
     located = gh.locate_ghidra()
     report = gh.decompile(str(artifact), timeout_s=900)
 
