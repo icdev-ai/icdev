@@ -121,8 +121,11 @@ def compute_health_score() -> Dict[str, Any]:
         # Cap penalty at 80 (minimum score = 20)
         total_penalty = min(total_penalty, 80.0)
 
-        # 3. Per-persona health scores
+        # 3. Per-persona health scores. A persona that has never run has no
+        # score: None, not 100 -- "no runs" is "no data", not "no failures"
+        # (rem-hyg-22, the rem-hyg-13 defect).
         persona_scores = {}
+        reviews_run = 0
         try:
             reflex_rows = conn.execute(
                 "SELECT reflex_name, total_runs, total_successes, total_failures FROM review_board_reflex_state"
@@ -131,12 +134,30 @@ def compute_health_score() -> Dict[str, Any]:
                 name = r[0]
                 total = r[1] or 0
                 successes = r[2] or 0
+                reviews_run += total
                 if total > 0:
                     persona_scores[name] = round((successes / total) * 100, 1)
                 else:
-                    persona_scores[name] = 100.0  # No runs = no failures
+                    persona_scores[name] = None
         except Exception:
             pass
+
+        # Empty denominator: no review has ever executed, so there is nothing
+        # to score. Report UNMEASURED and append no history row -- a stored
+        # 100 is what compliance_bridge would later register as cATO evidence.
+        if reviews_run == 0:
+            return {
+                "score": None,
+                "grade": "N/A",
+                "trend": "unknown",
+                "status": "unmeasured",
+                "reason": "no Review Board reflex has run (review_board_reflex_state.total_runs is 0 for every persona)",
+                "breakdown": {
+                    "severity_counts": severity_counts,
+                    "persona_scores": persona_scores,
+                    "reviews_run": 0,
+                },
+            }
 
         # 4. Remediation success rate bonus (up to +10)
         fix_bonus = 0.0
@@ -180,12 +201,14 @@ def compute_health_score() -> Dict[str, Any]:
             "persona_scores": persona_scores,
             "fix_bonus": round(fix_bonus, 1),
             "finding_count_unfixed": sum(severity_counts.values()),
+            "reviews_run": reviews_run,
         }
 
         result = {
             "score": round(score, 1),
             "grade": grade,
             "trend": trend,
+            "status": "measured",
             "breakdown": breakdown,
         }
 
@@ -275,7 +298,10 @@ def main():
         if args.json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"Health Score: {result['score']}/100 ({result['grade']}) — {result['trend']}")
+            if result["score"] is None:
+                print(f"Health Score: UNMEASURED — {result['reason']}")
+            else:
+                print(f"Health Score: {result['score']}/100 ({result['grade']}) — {result['trend']}")
     elif args.trend:
         trend = get_trend(limit=args.limit)
         if args.json:
