@@ -5734,6 +5734,9 @@ def _claude_code_available() -> bool:
 _ADAPTER_TIERS: Dict[str, str] = {
     "claude_cli": "claude_cli",
     "local_agent": "local_agent",
+    # omx-select-02: the Omarchy harnesses are nameable chain entries too.
+    "opencode_cli": "opencode_cli",
+    "pi_cli": "pi_cli",
 }
 
 
@@ -5758,6 +5761,14 @@ def _pick_chain_adapter(chain: list, task_type: Optional[str] = None):
     claude_cli is still picked for every task type, including the ``chore``
     tasks the adapter config would otherwise route to ``local_llm_router``.
 
+    omx-select-02: the Omarchy desktop default (``omarchy default agent``) sits
+    between the env override and the chain, exactly as in ``select_adapter``.
+    Only the ONE mapped adapter the desktop names is enabled beyond the chain,
+    so an unusable default falls through to today's chain result; off Omarchy
+    the config is byte-identical to before. An adapter picked off-chain runs at
+    the first adapter position (see ``_dispatch_to_claude``), and the omx-guard-02
+    screen applies to it like any other pick.
+
     Returns None when no adapter is available; the caller then walks on to the
     non-adapter tiers exactly as before.
     """
@@ -5767,14 +5778,20 @@ def _pick_chain_adapter(chain: list, task_type: Optional[str] = None):
     try:
         from tools.agents import registry as _agent_registry  # noqa: PLC0415
 
-        return _agent_registry.pick_default(
-            task_type,
-            config={
-                "enabled_adapters": names,
-                "per_task_type_preference": {},
-                "fallback_order": names,
-            },
-        )
+        config = {
+            "enabled_adapters": names,
+            "per_task_type_preference": {},
+            "fallback_order": names,
+        }
+        desktop = _agent_registry._omarchy_default_agent()  # noqa: SLF001
+        if desktop:
+            omarchy_map = _agent_registry._load_config().get("omarchy_agent_map") or {}  # noqa: SLF001
+            candidate = omarchy_map.get(desktop)
+            if candidate:
+                config["omarchy_agent_map"] = {desktop: candidate}
+                if candidate not in names:
+                    config["enabled_adapters"] = names + [candidate]
+        return _agent_registry.pick_default(task_type, config=config)
     except Exception as exc:  # noqa: BLE001 — falling through the chain is the fallback
         if _agent_adapter_override():
             # A typo'd override that silently changed nothing is exactly the
@@ -7841,6 +7858,12 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     # verified — it would run with no ICDEV control over its tool calls.
     chain_adapter = _guard_parity_screen(chain_adapter, effective_chain,
                                          task_id, tier_outcomes)
+    # omx-select-02: an adapter that is no tier of this chain was chosen by a
+    # rung ABOVE the chain (the Omarchy desktop default, or the override) — it
+    # runs at the first adapter position, like a forced one.
+    if chain_adapter is not None and chain_adapter.name not in {
+            _ADAPTER_TIERS[t] for t in effective_chain if t in _ADAPTER_TIERS}:
+        adapter_forced = True
     for tier in effective_chain:
         if tier in _ADAPTER_TIERS:
             if chain_adapter is None:
