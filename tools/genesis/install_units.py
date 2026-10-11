@@ -27,6 +27,14 @@ Usage:
     python -m tools.genesis.install_units --platform linux --enable   # + systemctl --user enable --now
     python -m tools.genesis.install_units --platform linux --production   # also icdev.service
     python -m tools.genesis.install_units --platform linux --uninstall
+    python -m tools.genesis.install_units --status     # survives logout/reboot? (omx-linux-02)
+
+``--status`` answers the question ``/start`` must not guess at. A supervisor
+started by ``supervisor_status.py --ensure`` is detached (its own session,
+reparented to ``systemd --user``), so it outlives the agent that started it --
+but NOT a logout or a reboot. Only the timer does that, and only past logout
+when lingering is on (``loginctl enable-linger``). The report says which of the
+three is true rather than claiming the supervisor dies with the session.
 """
 
 from __future__ import annotations
@@ -160,6 +168,60 @@ def run(platform: str, unit_dir: Path, root: Path, python: str, *, dry_run: bool
     return report
 
 
+def _capture(argv: List[str]) -> Optional[str]:
+    """stdout of a fixed argv, stripped; None when the tool is absent or fails to run."""
+    if not shutil.which(argv[0]):
+        return None
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, encoding="utf-8",  # nosec B603
+                           errors="replace", timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return (r.stdout or "").strip()
+
+
+def linger_enabled(user: Optional[str] = None) -> Optional[bool]:
+    """True/False from ``loginctl``; None when it cannot be determined (no logind)."""
+    user = user or os.environ.get("USER") or os.environ.get("LOGNAME") or ""
+    if not user:
+        return None
+    out = _capture(["loginctl", "show-user", user, "--property=Linger", "--value"])
+    if out in ("yes", "no"):
+        return out == "yes"
+    return None
+
+
+def persistence_status(platform: str, unit_dir: Path) -> Dict[str, Any]:
+    """Will the supervisor come back after a logout or a reboot? Reads; changes nothing.
+
+    ``survives_reboot`` is True only when the timer is enabled; ``survives_logout``
+    additionally needs lingering. Each unknown stays None -- never read as False.
+    """
+    report: Dict[str, Any] = {"platform": platform, "unit_dir": str(unit_dir)}
+    if platform != "linux":
+        report["message"] = (WINDOWS_INSTRUCTIONS if platform == "windows"
+                             else f"no {platform} scheduler unit is provided")
+        return report
+    report["units_installed"] = all((unit_dir / n).is_file() for _, n in GENESIS_UNITS)
+    enabled = _capture(["systemctl", "--user", "is-enabled", "icdev-genesis.timer"])
+    active = _capture(["systemctl", "--user", "is-active", "icdev-genesis.timer"])
+    report["timer_enabled"] = None if enabled is None else enabled == "enabled"
+    report["timer_active"] = None if active is None else active == "active"
+    report["linger"] = linger_enabled()
+    report["survives_reboot"] = report["timer_enabled"]
+    report["survives_logout"] = (None if report["timer_enabled"] is None or report["linger"] is None
+                                 else bool(report["timer_enabled"] and report["linger"]))
+    advice = []
+    if not report["units_installed"]:
+        advice.append("python -m tools.genesis.install_units --platform linux")
+    if report["timer_enabled"] is not True:
+        advice.append("systemctl --user enable --now icdev-genesis.timer")
+    if report["linger"] is not True:
+        advice.append('loginctl enable-linger "$USER"   # keep it running after logout')
+    report["advice"] = advice
+    return report
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Install the Genesis supervisor's logon units")
     ap.add_argument("--platform", choices=["auto", "linux", "windows", "macos"], default="auto")
@@ -170,10 +232,28 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--enable", action="store_true", help="systemctl --user enable --now the timer")
     ap.add_argument("--uninstall", action="store_true")
     ap.add_argument("--dry-run", action="store_true", help="plan only; write nothing")
+    ap.add_argument("--status", action="store_true",
+                    help="report whether the supervisor survives logout/reboot; change nothing")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
     platform = host_platform() if args.platform == "auto" else args.platform
+    if args.status:
+        st = persistence_status(platform, args.unit_dir or default_unit_dir())
+        if args.json:
+            print(json.dumps(st, indent=2))
+        elif "message" in st:
+            print(st["message"])
+        else:
+            def _yn(v):
+                return "unknown" if v is None else ("yes" if v else "no")
+            print(f"units installed : {_yn(st['units_installed'])}  ({st['unit_dir']})")
+            print(f"timer enabled   : {_yn(st['timer_enabled'])}  active: {_yn(st['timer_active'])}")
+            print(f"linger          : {_yn(st['linger'])}")
+            print(f"survives reboot : {_yn(st['survives_reboot'])}  logout: {_yn(st['survives_logout'])}")
+            for a in st["advice"]:
+                print(f"  -> {a}")
+        return 0
     report = run(platform, args.unit_dir or default_unit_dir(), (args.root or repo_root()).resolve(),
                  args.python or sys.executable, dry_run=args.dry_run, enable=args.enable,
                  uninstall=args.uninstall, production=args.production)

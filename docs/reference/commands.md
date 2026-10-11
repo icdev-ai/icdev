@@ -2502,6 +2502,8 @@ python -m tools.genesis.unsupervised_services --stop --dry-run        # pids it 
 python -m tools.genesis.install_units --platform linux --dry-run
 python -m tools.genesis.install_units --platform linux --enable       # write units + systemctl --user enable --now icdev-genesis.timer
 python -m tools.genesis.install_units --platform linux --uninstall
+python -m tools.genesis.install_units --status                       # survives logout/reboot? units, timer, linger (omx-linux-02)
+python tools/dx/project_python.py                                     # the interpreter /start and /stop run (venv first; stdlib-only)
 python tools/genesis/daemon.py --reflex audit --json          # Self-scan (code quality + SAST)
 python tools/genesis/daemon.py --reflex comply --json         # cATO evidence + crosswalk + SbD
 python tools/genesis/daemon.py --reflex ingest --json         # RSS → innovation_signals

@@ -3148,10 +3148,15 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     return pr_url
 
 
-def _cleanup_worktree(task_id: str):
+def _cleanup_worktree(task_id: str) -> bool:
     """Merge the kanban task branch to main (fast-forward) then remove
     the worktree. If merge fails, the branch is preserved for manual
     review and the worktree is still cleaned up (disk hygiene).
+
+    Returns the landing outcome: in direct-merge mode True iff the merge
+    reached origin (``_merge_worktree_to_main`` -> ``_push_main``, fail-closed);
+    in PR flow True iff the PR was opened. The verified-completion path needs it
+    to move a direct-merged task to done AFTER the merge (omx-adapt-05).
     """
     # Repo-aware (ked-core-01/03): an EXTERNAL task's git/gh state lives in ITS repo,
     # not ICDev's. Asking ICDev whether compass's work landed always answers 'no'.
@@ -3264,6 +3269,7 @@ def _cleanup_worktree(task_id: str):
             )
     except Exception as exc:
         logger.warning("Branch cleanup failed for %s: %s", task_id, exc)
+    return merged_ok
 
 
 def _pr_flow_enabled() -> bool:
@@ -3271,6 +3277,72 @@ def _pr_flow_enabled() -> bool:
     import os as _os
 
     return _os.environ.get("ICDEV_KANBAN_PR_FLOW", "").lower() in ("1", "true", "yes")
+
+
+def _task_status(task_id: str) -> str | None:
+    """The task's current board status, or None when it cannot be read."""
+    try:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,),
+            ).fetchone()
+        return dict(row)["status"] if row else None
+    except Exception as exc:  # noqa: BLE001 — a status read must not wedge completion
+        logger.warning("kanban: could not read status of %s: %s", task_id, exc)
+        return None
+
+
+def _complete_direct_merge(task_id: str, merged_ok: bool, reason: str = "") -> bool:
+    """Move a verified, direct-merged task to done once its merge has LANDED.
+
+    THE HOLE (omx-adapt-05). MEASURED 2026-10-11 on omx-smoke-04 (pi_cli,
+    external scratch repo, no PR flow): the completion path tried ``done`` at
+    the verification second, BEFORE ``_cleanup_worktree`` merged the branch, so
+    the merge-verify gate correctly wrote ``REFUSED_done_unmerged``. The runner
+    then merged and pushed to main in the same second -- and nothing asked for
+    ``done`` again. The task sat ``in_progress`` with its work on main. The
+    control, omx-smoke-03, reached done only because its AGENT had already
+    pushed to main, so the early attempt passed the gate.
+
+    So the done move for a runner-landed task belongs AFTER the merge, and goes
+    through ``_move_task`` like every other completion (transition row, every
+    guard). FAIL-CLOSED: ``merged_ok`` False -- the merge or ``_push_main``
+    failed -- never moves to done; the task stays where it is with the reason
+    recorded. Every failure here logs at WARNING with the task id, because the
+    scheduler's file log carries WARNING+ only and a print() is lost.
+
+    Returns True iff the task is ``done`` afterwards.
+    """
+    if not merged_ok:
+        _why = ("direct merge of kanban/%s to main did not land (merge or push "
+                "failed) — branch preserved, task left not-done" % task_id)
+        logger.warning("kanban: %s: %s", task_id, _why)
+        try:
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE kanban_tasks SET last_failure_reason = %s, "
+                    "last_failure_at = %s, updated_at = %s WHERE id = %s",
+                    (_why, _utcnow_iso(), _utcnow_iso(), task_id),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("kanban: could not record merge failure for %s: %s",
+                           task_id, exc)
+        return False
+    try:
+        _move_task(task_id, "done", actor="scheduler",
+                   reason=f"verified + direct-merged to main: {reason[:80]}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("kanban: %s merged to main but _move_task(done) raised: %s",
+                       task_id, exc)
+        return False
+    status = _task_status(task_id)
+    if status != "done":
+        logger.warning(
+            "kanban: %s merged to main but is still %r after _move_task(done) — "
+            "see its kanban_status_transitions REFUSED_* row", task_id, status,
+        )
+        return False
+    return True
 
 
 def _check_worktree_commits(task_id: str) -> bool:
@@ -12579,6 +12651,7 @@ def _check_completed():
                 # state-change. If _move_task raises, we DO NOT swallow the
                 # exception silently — that was the class of bug where a
                 # verified task could stay in_progress after DB glitches.
+                _defer_done_to_merge = False
                 verified, reason = _verify_task_completed(task_id, claude_output)
 
                 if verified:
@@ -12634,7 +12707,21 @@ def _check_completed():
                         and task_id in _worktrees
                         and _check_worktree_commits(task_id)
                     )
-                    if not _will_open_pr:
+                    # Direct-merge mode, and the work is NOT on main yet: the
+                    # RUNNER lands it in _cleanup_worktree below. Asking for
+                    # done now is refused by the merge-verify gate and nothing
+                    # asks again (omx-adapt-05) — defer to after the merge. Same
+                    # predicate the gate uses, so a task whose agent already
+                    # pushed to main (omx-smoke-03) still completes right here.
+                    _defer_done_to_merge = (
+                        not _will_open_pr
+                        and not _pr_flow_enabled()
+                        and task_id in _worktrees
+                        and _branch_has_unmerged_commits(task_id)
+                    )
+                    if _defer_done_to_merge:
+                        pass  # moved to done after _cleanup_worktree lands it
+                    elif not _will_open_pr:
                         try:
                             _move_task(task_id, "done",
                                        actor="scheduler",
@@ -12758,8 +12845,10 @@ def _check_completed():
                     has_commits = _check_worktree_commits(task_id)
                     if has_commits:
                         print(f"  Kanban: worktree kanban/{task_id} has new commits (review before merging)")
-                    _cleanup_worktree(task_id)
+                    _landed = _cleanup_worktree(task_id)
                     del _worktrees[task_id]
+                    if _defer_done_to_merge:
+                        _complete_direct_merge(task_id, _landed, reason)
 
                     # _cleanup_worktree pushed the branch and opened the PR.
                     # Reflect that on the board: the task is awaiting merge, not
