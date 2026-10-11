@@ -10,8 +10,15 @@ lands in the directory regardless of who wrote it" (omarchy
 ``name``, ``updatedAt``, ``ready``, ``tierLabel``, ``usageStatusText``,
 ``authHelpText``, ``limits`` and the local-stats block -- copied here from the
 upstream ``fireworks`` collector, the one that, like ICDEV, has no rate-limit
-windows. The panel shows a record once ``ready`` is true and ``tierLabel`` is
-non-empty.
+windows.
+
+WHEN THE PANEL SHOWS IT. ``ready`` and ``tierLabel`` are NOT enough (omx-panel-04,
+measured on Omarchy 4): ``shell/plugins/agents/Main.qml`` admits a record only
+when ``providerHasData`` holds -- ``totalPrompts``, ``totalSessions``,
+``activeDays``, ``todayPrompts`` or ``todaySessions`` above zero, or a non-empty
+``limits``, or a ``balance``. ICDEV has no limits and no balance and invents
+neither, so its tab appears once this machine has DISPATCHED at least once. A
+machine that never has stays hidden: that is Omarchy's design, not a bug.
 
 WHAT IT REPORTS, AND WHERE EACH FIGURE COMES FROM -- nothing is recomputed:
 
@@ -24,13 +31,23 @@ WHAT IT REPORTS, AND WHERE EACH FIGURE COMES FROM -- nothing is recomputed:
 * the active adapter -- ``tools.agents.registry.pick_default()`` (which follows
   ``omarchy default agent``), and whether its guard is wired --
   ``tools.agents.guard_parity.verdict_for()``, MEASURED, not declared.
+* the contract's local-stats block -- ``tools.cost.task_attribution.attributed_rows``,
+  the same ledger, all time. A SESSION is one kanban dispatch (one attributed
+  row, written at reap); ``todaySessions``/``totalSessions``/``activeDays``/
+  ``activeDates``/``recentDays``/``todayTotalTokens``/``todayTokensByModel``/
+  ``modelUsage`` are shaped like the upstream ``claude``/``codex`` collectors'
+  (``recentDays`` is seven ``{date, messageCount}`` entries, oldest first, and
+  ``messageCount`` is a TOKEN total there too). The ledger holds one row per
+  dispatch, not one per LLM call, so prompts stay 0 with ``hasPromptStats:
+  false``; its ``input_tokens`` already includes cache reads and writes (no
+  split), so the cache fields of a ``modelUsage`` bucket are 0.
 
 UNREACHABLE IS NOT ZERO. When the board or the ledger cannot be read the
 record says ``stale: true``, its counts are ``null`` and ``usageStatusText``
 names the outage. A ``0 in progress`` the database never said would read as an
-idle board. (The contract's local-stats block -- prompts/sessions/tokens -- is
-carried with ``hasLocalStats: false``, the upstream way of saying "this agent
-has no such stats", exactly as the fireworks collector does without a key.)
+idle board. An unreadable ledger likewise nulls the local-stats block with
+``hasLocalStats: false``; an EMPTY ledger is real zeros with ``hasLocalStats:
+true``.
 
 Omarchy's ``omarchy-agent-usage-update`` only runs collectors from
 ``$OMARCHY_PATH/bin``, so ``icdev omarchy setup`` installs this one into
@@ -48,7 +65,7 @@ import json
 import os
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Mapping, Optional
 
@@ -148,6 +165,88 @@ def adapter_status(pick_fn: Optional[Callable[[], Any]] = None,
         return {"name": name, "guard_wired": None, "reason": f"guard probe failed: {exc}"}
 
 
+def _row_local_date(created_at: Any, tz) -> Optional[str]:
+    """``YYYY-MM-DD`` in *tz* for a ledger timestamp; naive means UTC (both spellings)."""
+    if isinstance(created_at, datetime):
+        stamp = created_at
+    else:
+        try:
+            stamp = datetime.fromisoformat(str(created_at or "").strip().replace(" ", "T", 1))
+        except ValueError:
+            return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp.astimezone(tz).strftime("%Y-%m-%d")
+
+
+def _empty_bucket() -> Dict[str, int]:
+    return {"inputTokens": 0, "outputTokens": 0,
+            "cacheReadInputTokens": 0, "cacheCreationInputTokens": 0}
+
+
+def dispatch_history(now: datetime,
+                     rows_fn: Optional[Callable[[], Optional[list]]] = None,
+                     tz=None) -> Optional[Dict[str, Any]]:
+    """The upstream local-stats block from every reaped dispatch; None when unreadable.
+
+    One attributed ``agent_token_usage`` row is one dispatch -- one session.
+    *tz* is the zone "today" is counted in: the machine's local zone by default,
+    as the upstream collectors count it.
+    """
+    if rows_fn is None:
+        from icdev.tools.cost.task_attribution import attributed_rows as rows_fn
+    try:
+        rows = rows_fn()
+    except Exception:  # noqa: BLE001 -- unreadable is None, never zeros
+        return None
+    if rows is None:
+        return None
+    local_now = now.astimezone(tz) if tz is not None else now.astimezone()
+    tz = local_now.tzinfo
+    today = local_now.strftime("%Y-%m-%d")
+    recent_dates = [(local_now - timedelta(days=offset)).strftime("%Y-%m-%d")
+                    for offset in range(6, -1, -1)]
+    recent = {day: {"date": day, "messageCount": 0} for day in recent_dates}
+    model_usage: Dict[str, Dict[str, int]] = {}
+    today_tokens: Dict[str, int] = {}
+    active_days = set()
+    sessions = today_sessions = 0
+    for row in rows:
+        day = _row_local_date(row.get("created_at"), tz)
+        if day is None:
+            continue
+        inp, out = int(row.get("input_tokens") or 0), int(row.get("output_tokens") or 0)
+        model = str(row.get("model_id") or "").strip() or "unknown"
+        sessions += 1
+        active_days.add(day)
+        bucket = model_usage.setdefault(model, _empty_bucket())
+        bucket["inputTokens"] += inp
+        bucket["outputTokens"] += out
+        if day in recent:
+            # A token total despite the name -- upstream's legacy key, kept.
+            recent[day]["messageCount"] += inp + out
+        if day == today:
+            today_sessions += 1
+            today_tokens[model] = today_tokens.get(model, 0) + inp + out
+    return {
+        "todayPrompts": 0, "todaySessions": today_sessions,
+        "todayTotalTokens": sum(today_tokens.values()),
+        "todayTokensByModel": today_tokens,
+        "recentDays": [recent[day] for day in recent_dates],
+        "totalPrompts": 0, "totalSessions": sessions,
+        "activeDays": len(active_days), "activeDates": sorted(active_days),
+        "modelUsage": model_usage,
+    }
+
+
+#: The local-stats block when the ledger could not be read: null, never 0.
+UNREADABLE_LOCAL_STATS = {
+    "todayPrompts": None, "todaySessions": None, "todayTotalTokens": None,
+    "todayTokensByModel": None, "recentDays": None, "totalPrompts": None,
+    "totalSessions": None, "activeDays": None, "activeDates": None, "modelUsage": None,
+}
+
+
 # --------------------------------------------------------------------------- #
 # The record -- pure.
 # --------------------------------------------------------------------------- #
@@ -175,10 +274,11 @@ def _status_text(kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, Any
 
 
 def build_record(*, kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, Any]],
-                 adapter: Dict[str, Any], now: datetime) -> Dict[str, Any]:
+                 adapter: Dict[str, Any], now: datetime,
+                 history: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The contract-shaped record. ``stale`` is true when any DB figure is missing."""
-    stale = kanban is None or spend is None
-    return {
+    stale = kanban is None or spend is None or history is None
+    record = {
         "schemaVersion": SCHEMA_VERSION,
         "id": AGENT_ID,
         "name": AGENT_NAME,
@@ -186,19 +286,15 @@ def build_record(*, kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, 
         # ICDEV is installed and ran: the panel shows the record, stale or not,
         # so an outage has somewhere to say so.
         "ready": True,
-        "hasLocalStats": False,
+        "hasLocalStats": history is not None,
         "scope": "machine",
         "hasPromptStats": False,
         "tierLabel": _tier_label(adapter),
-        "usageStatusText": _status_text(kanban, spend),
+        "usageStatusText": STALE_TEXT if stale else _status_text(kanban, spend),
         "authHelpText": AUTH_HELP_STALE if stale else "",
         "limits": [],
         "stale": stale,
         "limitsStale": stale,
-        # The upstream local-stats block, empty: hasLocalStats=false says so.
-        "todayPrompts": 0, "todaySessions": 0, "todayTotalTokens": 0,
-        "todayTokensByModel": {}, "recentDays": [], "totalPrompts": 0,
-        "totalSessions": 0, "activeDays": 0, "activeDates": [], "modelUsage": {},
         # ICDEV's own figures. null = could not be read, never 0.
         "icdev": {
             "kanban": kanban or {"in_progress": None, "backlog": None, "total": None},
@@ -207,14 +303,18 @@ def build_record(*, kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, 
             "adapter": adapter,
         },
     }
+    # The upstream local-stats block -- what the panel's providerHasData reads.
+    record.update(history if history is not None else UNREADABLE_LOCAL_STATS)
+    return record
 
 
 def collect(now: Optional[datetime] = None, *, summary_fn=None, totals_fn=None,
-            pick_fn=None, verdict_fn=None) -> Dict[str, Any]:
+            pick_fn=None, verdict_fn=None, rows_fn=None, tz=None) -> Dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     return build_record(kanban=kanban_counts(summary_fn),
                         spend=today_spend(now, totals_fn),
-                        adapter=adapter_status(pick_fn, verdict_fn), now=now)
+                        adapter=adapter_status(pick_fn, verdict_fn), now=now,
+                        history=dispatch_history(now, rows_fn, tz))
 
 
 def write_record(record: Dict[str, Any], directory: Path) -> Path:
