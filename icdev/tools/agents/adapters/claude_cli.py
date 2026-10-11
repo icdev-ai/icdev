@@ -279,7 +279,10 @@ class ClaudeCliAdapter:
         model_id = (session.metadata or {}).get("model_id")
         if model_id:
             argv += ["--model", str(model_id)]
-        return argv
+        # omx-guard-05 (L3): inside the write sandbox when the runner asked.
+        from tools.hooks.write_sandbox import wrap_argv  # noqa: PLC0415
+
+        return wrap_argv(argv, session, self.name)
 
     def build_env(self, session: AgentSession) -> Dict[str, str]:
         """Inherited environment plus the dispatch tags.

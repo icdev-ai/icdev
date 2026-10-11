@@ -6409,6 +6409,23 @@ def _agent_session(task: dict, instruction: str, work_dir: str,
         logger.warning("kanban: guarded shell (L2) wiring failed for %s (%s: %s); "
                        "dispatching WITHOUT it", task_id, type(exc).__name__, exc)
 
+    # omx-guard-05 (L3): ask for the OS write sandbox -- every CLI adapter's
+    # build_argv wraps itself in it, with its own declared state dirs. Where
+    # there is none (Windows, no bwrap/Landlock, a kill switch), the reason is
+    # logged on every dispatch: never a silent pass.
+    try:
+        from tools.hooks import write_sandbox as _write_sandbox  # noqa: PLC0415
+
+        _sandbox = _write_sandbox.status()
+        if _sandbox["supported"]:
+            metadata[_write_sandbox.META_KEY] = True
+        else:
+            logger.warning("kanban: write sandbox (L3) NOT applied for %s: %s",
+                           task_id, _sandbox["reason"])
+    except Exception as exc:  # noqa: BLE001 -- a broken L3 must not stop a dispatch
+        logger.warning("kanban: write sandbox (L3) check failed for %s (%s: %s); "
+                       "dispatching WITHOUT it", task_id, type(exc).__name__, exc)
+
     # The SAME budget the reaper uses to kill this task, so a blocking adapter
     # stops itself just before the kill timer rather than being killed from
     # outside with no result. An unreachable board must not stop a dispatch.

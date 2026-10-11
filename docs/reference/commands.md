@@ -4258,6 +4258,9 @@ python -m tools.hooks.harness_guard --harness pi < call.json         # Pi spelli
 python -m tools.hooks.guard_shell --wiring           # install the shims, print the spawn env (exit 1 + reason where unsupported, e.g. Windows)
 python -m tools.hooks.guard_shell --measure -- opencode run "Use your shell tool to run exactly: echo {marker}"   # how a harness finds its shell
 python tools/agents/capability_matrix.py --capability guard_shell --json   # per-adapter guard_shell, probe-measured
+python -m tools.hooks.write_sandbox --status          # L3 write sandbox backend on this host (bwrap / Landlock; exit 1 + reason where unsupported, e.g. Windows)
+python -m tools.hooks.write_sandbox --self-test --adapter codex_cli --json   # real writes: inside + state land, outside refused
+python tools/agents/capability_matrix.py --capability sandboxed --json   # per-adapter sandboxed, probe-measured
 
 # omx-setup-01 — fresh Omarchy / plain Arch host to a running ICDEV, idempotent
 icdev omarchy setup --dry-run        # print the step plan; change nothing
