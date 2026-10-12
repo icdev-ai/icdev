@@ -1,0 +1,23 @@
+# CUI // SP-CTI — ICDEV's own PostgreSQL + pgvector container (omx-host-02)
+#
+# Read by `icdev omarchy setup --postgres docker` (tools/cli/omarchy.py). The
+# image ref lives HERE, never as a literal in Python.
+#
+# A DIGEST, NEVER A TAG (xrv-route-03). This is the multi-arch INDEX digest of
+# pgvector/pgvector:pg16 -- the same tag docker-compose.yml and
+# deploy/helm/values.yaml name -- resolved 2026-10-11 with
+# `docker buildx imagetools inspect pgvector/pgvector:pg16` (a registry
+# manifest read, no pull). tools/airgap/image_vendor.parse_pin refuses a tag,
+# and setup refuses to run from one. To move the pin: resolve the new digest
+# the same way and edit `image`; a container already running the OLD digest is
+# REPORTED by setup, never silently replaced (its volume holds your data).
+image: pgvector/pgvector@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+tag: pg16          # documentary only -- `image` is what runs
+container: icdev-postgres
+volume: icdev-postgres-data
+# Published on the loopback interface ONLY. Setup refuses any other bind
+# address: a database with a generated password is still not a public service.
+bind: 127.0.0.1
+port: 5432
+# Seconds to wait for the server to accept connections after run/start.
+ready_timeout: 90
