@@ -412,7 +412,10 @@ class GooseCliAdapter:
             env["ICDEV_DISPATCH_TASK_ID"] = str(session.task_id)
         for key, value in (meta.get("env") or {}).items():
             env[str(key)] = str(value)
-        return env
+        # omx-guard-07-d2: no harness bills a metered Anthropic key -- Claude
+        # is reached through the claude.ai subscription (omx-adapt-04).
+        from tools.llm.cli_bridge.subprocess_backend import scrubbed_env
+        return scrubbed_env(env)
 
     def _write_stdin(self, session: AgentSession) -> str:
         """Write the instructions to a temp file and return its path.

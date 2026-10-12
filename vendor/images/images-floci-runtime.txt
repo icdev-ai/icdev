@@ -50,7 +50,12 @@
 #   (517bcc7d... -> b02e44f3... -> the digest below), again with NO observed
 #   content change. floci 2.0.1 re-driven against the fresh pull. See
 #   docs/audits/artifact-fresh-7d807fd882-lambda-python-pin.md.
-public.ecr.aws/lambda/python@sha256:719d7d69d6e946b2ddd2d039723dc9415d0bcf1eecb6e12fa35dac58e23cebc6
+#   RE-VENDORED 2026-10-12 (artifact-fresh-799d481d97): rebuilt twice more
+#   (719d7d69... -> 4b4d6db4..., with the card's 14535000... an EARLIER
+#   rebuild than 719d7d69) and again NO observed content change. floci 2.0.1
+#   re-driven against the fresh pull. See
+#   docs/audits/artifact-fresh-799d481d97-lambda-python-pin.md.
+public.ecr.aws/lambda/python@sha256:4b4d6db40cb5fb98fef32bdbe534d6ca52982824314ed7d1fec3ac0d8c9dba4b
 
 # lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
 #   KEPT at 20 (artifact-fresh-333eeead1d): nothing in this tree declares a Node

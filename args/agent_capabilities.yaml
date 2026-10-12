@@ -24,6 +24,12 @@
 # The capability names are fixed by CAPABILITIES in capability_matrix.py.
 # A name not in that set is ignored — there is no probe that could measure it.
 #
+# `claude_route` (omx-adapt-04) is the one NON-boolean claim: native_subscription
+# | cli_bridge | none. The operator pays for Claude with the claude.ai
+# subscription only, so a harness without a native login reaches Claude through
+# `icdev claude-bridge serve` and a metered API key is never used. The probe
+# fails a route the adapter cannot actually take (an overclaim).
+#
 # An adapter that would rather own its claim in code can expose a `CAPABILITIES`
 # mapping on the adapter object; that wins over this file. Nothing does yet.
 
@@ -49,6 +55,7 @@ declared:
     context_budget: true       # --max-turns
     structured_output: true    # --output-format json
     guard_shell: true          # measured: Claude Code runs commands via $SHELL (omx-guard-04, Linux)
+    claude_route: native_subscription  # claude auth status -> claude.ai (omx-spike-02); build_env scrubs metered keys (omx-adapt-04)
     sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)
 
   # exa-bench-01. `codex exec --json` emits a JSONL event stream that the
@@ -66,6 +73,7 @@ declared:
     context_budget: false      # the CLI takes no turn/token flag
     structured_output: true
     guard_shell: false         # measured: codex execs its shell by absolute path, L2 cannot see it (omx-guard-04)
+    claude_route: none         # OpenAI-shaped, so the bridge SHOULD apply -- unmeasured (omx-spike-02); setup writes no codex config
     sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)
 
   # OPT-71. A single-shot router completion. It produces prose: no tools, no
@@ -79,6 +87,7 @@ declared:
     context_budget: true       # LLMRequest(max_tokens=session.max_tokens)
     structured_output: false
     guard_shell: false         # runs no commands
+    claude_route: none         # the router's own claude-cli provider is a router policy (cli_bridge.mode), not this adapter's route
     sandboxed: false           # runs in-process: no OS process to sandbox (omx-guard-05)
 
   # hgx-exec-02. The owned rubric-gated loop with the worktree toolset.
@@ -95,6 +104,7 @@ declared:
     context_budget: true       # max_iterations / max_tokens into the loop
     structured_output: true    # grades + verdict on AgentResult.structured
     guard_shell: false         # run_command is an in-process allowlist, not a shell
+    claude_route: none         # in-process loop over the router; see local_llm_router
     sandboxed: false           # runs in-process: no OS process to sandbox (omx-guard-05)
 
   # exa-bench-02 will implement this. A stub claims nothing; every row below is
@@ -108,6 +118,7 @@ declared:
     context_budget: false
     structured_output: false
     guard_shell: false         # not measured: copilot was not logged in on the probe host
+    claude_route: none         # Claude via Copilot is billed by GitHub; BYOK to the bridge unmeasured (omx-spike-02)
     sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)
 
   # omx-adapt-01. Only what omx-spike-01 measured (docs/research/omx-spike-01/
@@ -124,6 +135,7 @@ declared:
     structured_output: true    # tokens, cost, stop reason, session id
     guard_wired: true          # icdev-guard.ts plugin -> harness_guard bridge, live-probed (omx-guard-01)
     guard_shell: true          # measured: opencode runs commands via $SHELL (omx-guard-04, Linux)
+    claude_route: cli_bridge   # no Anthropic login; bridge round trip measured GO (omx-spike-02); provider icdev-claude (omx-adapt-04)
     sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)
 
   # omx-adapt-02. Only what omx-spike-01 measured for Pi (findings.md, "Pi"):
@@ -139,4 +151,5 @@ declared:
     structured_output: true    # usage, cost, stopReason, session id
     guard_wired: true          # -e icdev-guard.ts extension -> harness_guard bridge, live-probed (omx-guard-03)
     guard_shell: false         # measured: pi execs /bin/bash by absolute path (omx-guard-04)
+    claude_route: cli_bridge   # its own Anthropic OAuth is REFUSED (400 "extra usage", omx-spike-02); bridge measured GO
     sandboxed: true            # L3 write sandbox via wrap_argv; probed by real writes (omx-guard-05, Linux)

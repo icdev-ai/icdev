@@ -403,6 +403,17 @@ def load_config(path: Optional[pathlib.Path] = None) -> Dict[str, Any]:
     }
 
 
+def merge_unlinked_enabled(wcfg: Dict[str, Any]) -> bool:
+    """Is the unlinked door open? The WATCHER's rule, env override included.
+
+    ``ICDEV_PR_WATCHER_MERGE_UNLINKED`` beats the YAML (omx-host-03); reading
+    the YAML alone would report a door open that this install has shut.
+    """
+    from tools.ci.pr_watcher import merge_unlinked_enabled as _rule  # noqa: PLC0415
+
+    return _rule(wcfg)
+
+
 def watcher_config(path: Optional[pathlib.Path] = None) -> Dict[str, Any]:
     """The MERGER's own config, read from the merger's own file.
 
@@ -777,6 +788,7 @@ def eligibility_rows(
     behind_by_url: Optional[Dict[str, Optional[int]]] = None,
     max_behind_commits: int = DEFAULT_MAX_BEHIND_COMMITS,
     required_checks: Optional[Iterable[str]] = None,
+    foreign_urls: Iterable[str] = (),
 ) -> List[Dict[str, Any]]:
     """Classify every PR with the ``linked`` rung SKIPPED, carrying the door apart.
 
@@ -807,6 +819,9 @@ def eligibility_rows(
             max_behind_commits=max_behind_commits,
             changed_files=paths,
             protected_paths=guarded,
+            # Another board's kanban PR is not this merger's to stall on
+            # (omx-host-03): it reads `foreign_kanban`, never `ready`.
+            foreign_urls=foreign_urls,
         )
         green = ci_green_at(pr)
         out.append({
@@ -1225,11 +1240,13 @@ def _run_report(args, config: Dict[str, Any], now: datetime) -> int:
             return _fail(args.json, "cannot resolve the default branch: %s" % exc)
 
     try:
-        from tools.ci.merge_readiness import linked_pr_urls  # noqa: PLC0415
+        from tools.ci.merge_readiness import (  # noqa: PLC0415
+            foreign_pr_urls, linked_pr_urls)
 
         linked = linked_pr_urls()
+        foreign = foreign_pr_urls(prs)
     except Exception as exc:  # noqa: BLE001 — degraded, and it SAYS so
-        linked = frozenset()
+        linked = foreign = frozenset()
         print("warning: kanban board unreadable, every PR reads as unlinked (%s)"
               % exc, file=sys.stderr)
 
@@ -1244,6 +1261,7 @@ def _run_report(args, config: Dict[str, Any], now: datetime) -> int:
             required = None
     rows = eligibility_rows(
         prs, default_branch=default_branch, linked_urls=linked,
+        foreign_urls=foreign,
         protected_paths=wcfg.get("protected_paths") or [],
         max_behind_commits=int(wcfg.get("max_behind_commits",
                                         DEFAULT_MAX_BEHIND_COMMITS)),
@@ -1269,7 +1287,8 @@ def _run_report(args, config: Dict[str, Any], now: datetime) -> int:
         forge_detail=forge_detail,
         merger_enabled_by_door={
             DOOR_LINKED: bool(wcfg.get("auto_merge_enabled", True)),
-            DOOR_UNLINKED: bool(wcfg.get("merge_unlinked_prs", True)),
+            # The watcher's own rule, env override included (omx-host-03).
+            DOOR_UNLINKED: merge_unlinked_enabled(wcfg),
         })
     report["recording"] = recording
     report["default_branch"] = default_branch

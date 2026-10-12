@@ -86,6 +86,11 @@ class FakeWorld:
 
 @pytest.fixture
 def make_host(tmp_path, monkeypatch):
+    return host_factory(tmp_path, monkeypatch)
+
+
+def host_factory(tmp_path, monkeypatch):
+    """The ``make_host`` fixture's body, importable by sibling test modules."""
     home = tmp_path / "home"
     root = tmp_path / "root"
     home.mkdir()
@@ -152,7 +157,9 @@ def test_setup_then_second_run_is_all_skipped(make_host):
     host = make_host(world)
     first = omarchy.run("setup", host, yes=True, start=True)
     assert first["exit"] == 0, first
-    assert set(_states(first).values()) == {"done"}
+    # billing (omx-guard-07-d5) only probes, so it has nothing to do: skipped.
+    assert set(v for k, v in _states(first).items() if k != "billing") == {"done"}
+    assert _states(first)["billing"] == "skipped"
 
     env = (host.root / ".env").read_text(encoding="utf-8")
     assert f"ICDEV_DATABASE_URL={omarchy.DSN}" in env

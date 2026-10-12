@@ -31,6 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools.llm import anthropic_billing  # noqa: E402
 from tools.llm import router as router_mod  # noqa: E402
 from tools.llm.provider import LLMRequest  # noqa: E402
 from tools.llm.router import LLMRouter  # noqa: E402
@@ -64,6 +65,11 @@ def router(tmp_path, monkeypatch):
     cfg = {"providers": PROVIDERS, "models": MODELS, "routing": ROUTING, "settings": {}}
     path = tmp_path / "llm_config.yaml"
     path.write_text(yaml.dump(cfg), encoding="utf-8")
+    # These tests pin REDACTION on a metered Anthropic chain; the billing policy
+    # (omx-guard-07-d4) would otherwise strip claude-sonnet before any door runs.
+    policy = tmp_path / "guard_anthropic.yaml"
+    policy.write_text("anthropic_billing: allow_metered\n", encoding="utf-8")
+    monkeypatch.setattr(anthropic_billing, "policy_path", lambda: policy)
     r = LLMRouter(config_path=str(path))
     sent: list = []
 

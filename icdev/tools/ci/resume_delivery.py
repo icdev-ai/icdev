@@ -212,6 +212,52 @@ def record_drain(
         return {"recorded": False, "reason": str(exc), "path": str(rf)}
 
 
+def record_undrain(
+    task_id: str,
+    messages: List[dict],
+    *,
+    reader: str = "",
+    reason: str = "",
+) -> dict:
+    """Reverse an earlier :func:`record_drain` whose words never reached a reader.
+
+    kpr-watch-28: a repair session orphaned by a scheduler restart had its
+    receipt written at dispatch; when its messages are put BACK on the queue the
+    receipt must stop counting them, or the watcher reads `delivered` for words
+    that are pending again. The receipt file stays append-only -- this appends a
+    COMPENSATING row (negative counts, ``reverted: true``) that
+    :func:`receipted_count` nets out. Never raises.
+    """
+    if not task_id or not messages:
+        return {"recorded": False, "reason": "nothing to reverse"}
+    rf = receipt_file(task_id)
+    if rf is None:
+        return {"recorded": False, "reason": "receipt directory unavailable"}
+    senders: Dict[str, int] = {}
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        key = str(m.get("sender") or "unknown")
+        senders[key] = senders.get(key, 0) - 1
+    entry = {
+        "task_id": task_id,
+        "drained_at": datetime.now(timezone.utc).isoformat(),
+        "count": -len(messages),
+        "senders": senders,
+        "reader": reader or "unknown",
+        "reader_pid": os.getpid(),
+        "reverted": True,
+        "reason": reason,
+    }
+    try:
+        rf.parent.mkdir(parents=True, exist_ok=True)
+        with open(rf, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return {"recorded": True, "path": str(rf), "entry": entry}
+    except OSError as exc:
+        return {"recorded": False, "reason": str(exc), "path": str(rf)}
+
+
 def read_receipts(task_id: str) -> Optional[List[dict]]:
     """Every drain receipt for a task, oldest first. None = could not read."""
     rf = receipt_file(task_id)

@@ -4323,10 +4323,16 @@ python tools/agents/capability_matrix.py --capability sandboxed --json   # per-a
 icdev omarchy setup --dry-run        # print the step plan; change nothing
 icdev omarchy setup --yes --start    # run it: --yes allows the sudo PostgreSQL steps, --start enables the genesis timer
 icdev omarchy status [--json]        # per-step state: ok / missing / n/a
+                                     # step billing: failed if a harness auth store holds a metered (api_key) Anthropic credential (omx-guard-07-d5)
 icdev omarchy uninstall [--dry-run]  # reverse MCP, skill, guards, systemd units (never the database or .env)
 # omx-panel-01 — the ICDEV record for Omarchy's agents panel (setup's `panel` step installs it + a 5-min timer)
 python -m tools.cli.omarchy_panel             # print the record: kanban in-progress/backlog, today's spend, adapter + guard
 python -m tools.cli.omarchy_panel --write     # also write ~/.local/state/omarchy/agents/usage/icdev.json; DB down -> stale: true
+# omx-adapt-04 — the Claude bridge: harnesses without a claude.ai login reach Claude on the SUBSCRIPTION via `claude -p`
+icdev claude-bridge serve [--port 8765]      # loopback-only OpenAI /v1/chat/completions; bearer token in ~/.config/icdev/claude-bridge.token
+icdev claude-bridge status [--json]          # token, claude binary, /health (last_quota_error = credit/limit exhausted)
+icdev claude-bridge unit                     # print the systemd --user unit (Linux; `icdev omarchy setup` installs it: the `bridge` step)
+python tools/agents/capability_matrix.py --capability claude_route --gate   # per-adapter route, probe-measured; an overclaim exits 1
 
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
@@ -8056,6 +8062,19 @@ python -m tools.agents.guard_parity --survey
 python -m tools.agents.guard_parity --survey --json
 ```
 
+### Anthropic billing policy (omx-guard-07-d1)
+
+`args/guard_anthropic.yaml` declares how Claude may be paid for:
+`anthropic_billing: subscription_only` (default -- claude.ai subscription only,
+natively or via the `claude` CLI bridge; never a metered API key) or
+`allow_metered`. Any invalid or missing value resolves to `subscription_only`.
+
+```bash
+icdev config get anthropic_billing          # subscription_only
+icdev config get anthropic_billing --json   # value, source file, warnings
+icdev config list
+```
+
 Each cell reports `declared` (the hand-written claim in
 `args/agent_capabilities.yaml`) next to `actual`, which is one of three values
 and never two:
@@ -8714,6 +8733,9 @@ python -m tools.ci.merge_stall --survey --survey-limit 300 --json
 python -m tools.ci.merge_stall --stall-after 30              # one-run override
 python -m tools.ci.merge_stall --no-record                   # every age -> ci_estimate
 python -m tools.ci.merge_stall --from-json prs.json --default-branch main
+# A red PR whose worker exited: which ones got a repair session? (kpr-watch-27)
+python -m tools.kanban.repair_dispatch                      # repairs per task, cooldown
+python -m tools.kanban.repair_dispatch --json
 # Did that resume REACH anything, or was a line just written? (kpr-watch-13)
 python -m tools.ci.resume_delivery --survey
 python -m tools.ci.resume_delivery --survey --json
