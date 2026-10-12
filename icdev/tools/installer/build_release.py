@@ -95,7 +95,7 @@ def _run(cmd: list[str], cwd: Path = REPO_ROOT, timeout: int = 300) -> subproces
         return subprocess.CompletedProcess(
             cmd, returncode=127, stdout="",
             stderr=f"No such executable: {cmd[0]} ({exc})")
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         # Uncaught, this aborted the release with a traceback that the caller's
         # tail cut off at the step banner -- 1.2.44's wheel build ran ~11 min
         # against a 600s budget and reported only "failed_at: build".
