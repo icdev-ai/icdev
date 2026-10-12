@@ -2732,7 +2732,17 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
 - **Residual, named rather than implied:** REA 6.4.0's website family is not allowlisted, so a live website with `allow_execute` reports `unavailable` / `not_allowlisted` — no live capture exists yet, and adding it is a later card's allowlist decision. APK is likewise `unavailable` (JADX not allowlisted). A JS summary names no routes or channels, so without `feature_seeds` an Electron/website inventory is `None` (`not_enumerated`), not `[]`.
 - **Revisit if:** REA's website / APK / capture tools are allowlisted; this module starts reading artifact bytes directly; or observed inputs are exposed through the shared/SaaS dashboard (RE is single-operator-machine only).
 
-### Gap 75 — REA evidence feeds (`tools/analyzers/rea_feeds.py`)
+### Gap 75 — Process-Ify from an observed scenario (`tools/workflow_canvas/observed_processify.py`)
+
+**Module:** `tools/workflow_canvas/observed_processify.py` (rea-pif-01, card `rea`), reached from `POST /workflow-canvas/api/workflows/observed-draft`.
+
+**Ingress path:** an operator-chosen executable that REA `capture_process_scenario` LAUNCHES under a PTY, plus REA's evidence JSON describing what it was seen doing. Unlike every other REA path this one runs the target, so it is the riskiest REA call ICDEV makes.
+
+- **Decision:** **sandboxed-on-demand**, gated per run. Nothing is captured unless the call passes `allow_execute=True` (the literal `True`; `"true"`, `1` are refused) — checked before any registry exists. The capture tool is not on the `rea` allowlist; it is in `execute_tools:`, which only an `ExternalToolRegistry(allow_execute=True)` exposes, and that registry lives for one capture and is closed. `executable` is a `target_arguments` entry, so the launched file is hashed and must carry an operator grant (`owned` | `licensed` | `customer-authorized`), and `target_auth` writes the `re_analysis.*` audit row with its sha256. The REA process is launched under the omx-guard-05 L3 write sandbox when the host has one; `containment.write_sandbox` says when it does not (Windows, macOS, no Landlock).
+- **What is stored:** only REA's evidence, reduced to step labels (depth-1, length-capped strings); input events marked `sensitive` are `[redacted]` and environment VALUES are dropped (keys only). The draft is `basis: observed`, `review.state: pending_hitl`, and cannot be linked into a process chain until a human approves it (`chain_eligibility`, 409 on the chain route).
+- **Residual, named rather than implied:** the target runs with the operator's permissions — REA says of this tool "this is not a security sandbox", and where no L3 backend exists, nothing else confines the launched process. `capture_browser_scenario` is deliberately not wired: its target is a URL `target_auth` cannot hash, and REA 6.4.0's recorded catalog does not offer it, so `kind="browser"` is `unavailable`.
+- **Revisit if:** browser / Electron / native-UI capture is added to `execute_tools`; the capture is reachable from the shared/SaaS dashboard (RE is single-operator-machine only — `single_user_only` removes the server there today); or the draft is promoted to a chain without a review row.
+### Gap 76 — REA evidence feeds (`tools/analyzers/rea_feeds.py`)
 
 **Module:** `tools/analyzers/rea_feeds.py` (rea-sec-01, card `rea`), consumed by `tools/compliance/binary_components.py::rea_hinted_components` (and `sbom_generator --rea-report`), `tools/network/attack_surface_mapper.py::map_artifact_surface` (`--artifact-report`), `tools/supply_chain/scrm_assessor.py::assess_artifact_dependencies` (`--rea-report`) and `tools/compliance/evidence_collector.py::collect_evidence(rea_reports=)` (`--rea-report`).
 

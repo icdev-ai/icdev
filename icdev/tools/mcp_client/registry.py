@@ -194,10 +194,15 @@ def enabled_servers() -> list[dict]:
 class ExternalToolRegistry:
     """Discovers, namespaces and dispatches external MCP tools."""
 
-    def __init__(self, *, command_prefix: list[str] | None = None) -> None:
+    def __init__(self, *, command_prefix: list[str] | None = None,
+                 allow_execute: bool = False) -> None:
         #: Prepended to every stdio server command this registry spawns -- a
         #: containment wrapper. The pin is checked on the UNWRAPPED command.
         self.command_prefix = list(command_prefix or [])
+        #: Per-run opt-in (rea-pif-01). A server's ``execute_tools`` -- tools that
+        #: LAUNCH the target -- are exposed only by a registry built with this
+        #: ``True``; the shared singleton never is.
+        self.allow_execute = allow_execute is True
         self._transports: dict[str, Any] = {}
         self._tools: dict[str, ExternalTool] = {}
         self._specs: dict[str, dict] = {}
@@ -224,6 +229,8 @@ class ExternalToolRegistry:
             for spec in enabled_servers():
                 name = str(spec["name"])
                 allow = {sanitize_tool_name(t) for t in (spec.get("tools") or [])}
+                if self.allow_execute:
+                    allow |= {sanitize_tool_name(t) for t in (spec.get("execute_tools") or [])}
                 if not allow:
                     logger.info("mcp_client[%s]: no tools allowlisted — contributing none", name)
                     continue

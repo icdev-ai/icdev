@@ -28,6 +28,13 @@ def workflow_to_bpmn(wf: dict) -> str:
     })
 
     proc = ET.SubElement(root, "process", {"id": f"proc_{part_id}", "isExecutable": "false"})
+    if wf.get("basis") == "observed":
+        # rea-pif-01: an as-observed draft says so in the exported model too.
+        state = (wf.get("review") or {}).get("state")
+        ET.SubElement(proc, "documentation").text = (
+            f"AS-OBSERVED draft from an REA scenario capture (review: {state}). "
+            "Steps are what the program was seen doing, not a designed process."
+        )
 
     # Collect unique roles (preserve order)
     roles: list[str] = []
