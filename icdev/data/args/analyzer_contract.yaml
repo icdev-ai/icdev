@@ -619,6 +619,8 @@ analyzers:
       context_args:
         authorization_basis: authorization_basis
         actor: actor
+        # rea-aiify-01: [{kind, value}] -> one trace_application_feature each.
+        feature_seeds: feature_seeds
 
   - key: rea_har
     kind: analyzer
