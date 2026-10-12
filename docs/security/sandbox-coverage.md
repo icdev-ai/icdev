@@ -2720,3 +2720,18 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
   - **REA's session state is not ICDEV's.** When the REA process dies and respawns, the server-side session is gone, and the next session-scoped call fails at the server. It does not fail at the gate.
   - **HAR evidence keeps body secrets.** rea-spike-01 found a CSRF token in a response body that survived verbatim. The caller must pass `sensitive_values` (the analyzer card's job) before HAR evidence is persisted.
 - **Revisit if:** an `ext__rea__*` agent path is routed through `SandboxExecutor` too; a tool declaring `accessesNetwork`, `launchesProcess`-based capture, or `mutatesTarget` is added to the allowlist; the pin moves; or REA gains an HTTP transport.
+
+### Gap 74 — decompiled IR from compiled artifacts (`tools/translation/decompiled_extractor.py`)
+
+**Module:** `tools/translation/decompiled_extractor.py` (rea-xlate-01, card `rea`), plus the opt-in `depth="xlate"` plan in `tools/analyzers/rea_adapter.py` and `legacy_analyzer.register_binary_application`.
+
+**Ingress path:** two kinds of input. (1) A `rea_adapter` report -- REA's evidence about an operator-chosen artifact, produced inside the Gap 73 containment. The extractor parses that JSON; it never calls REA itself except through `rea_adapter.analyze` (the CLI's `--target` mode), so every Gap 73 rail applies unchanged. (2) For `js_bundle` only, the extractor READS the bundle's `.js` files and source maps (`sourcesContent`) from the authorized target directory, in-process.
+
+- **Decision:** **trusted-first-party** for the report parse (data only, nothing executed); **bypass-documented** for the JS read: an in-process, read-only text parse of attacker-chosen JavaScript and JSON, with these guardrails, all code:
+  - **Authorization first.** The report must carry the target sha256 and an operator basis (`owned` | `licensed` | `customer-authorized`), or nothing is normalized (`authorization_missing`).
+  - **The bytes are the ones REA analysed.** The target is re-digested with `target_auth.target_digest` and must match the report's sha256 before any file is read (`target_changed` otherwise).
+  - **Containment of reads.** Only `.js` / `.mjs` / `.cjs` / `.map` files inside the target are read, each at most 2 MB; `node_modules` / `.git` are skipped; a `sourceMappingURL` that leaves the target or names a URL is ignored; `sources` paths are NEVER opened -- only inline `sourcesContent` is used.
+  - **Nothing executes.** Text goes through `json.loads` and the source_extractor regexes, nothing else; nothing is uploaded.
+  - **The basis is never dropped.** Units carry `basis: decompiled`, a confidence and the REA `evidence_id`; `code_translator` copies them onto every translated / mocked / failed entry, prefixes the LLM prompt with a reconstruction notice and the written file with a `basis: decompiled` comment; `legacy_analyzer` puts them in component `properties` and the application description; `architecture_extractor.extract_call_graph` returns them per node.
+- **Residual:** the regex extractor runs on attacker-chosen text in-process; it is linear-time over bounded files but is not a sandbox. Moving the JS read into `SandboxExecutor` is the revisit if a heavier parser is ever used here.
+- **Revisit if:** the extractor gains a real JS/C parser, reads anything outside the target, or follows `sources` paths.

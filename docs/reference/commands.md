@@ -592,6 +592,15 @@ python tools/analyzers/dispatch.py --type dotnet_assembly --value <dll>         
 # missing engine is never `ok`. limitations / residual_unknowns are None -- never [] -- unless
 # REA reported them (*_basis says which). Pseudocode is basis `decompiled`, confidence low.
 # The native provider comes from the re_engines gate (`--engine`, default ghidra), never REA's `auto`.
+
+# Compiled artifacts -> source_extractor IR, basis decompiled (rea-xlate-01). depth=xlate gathers
+# get_call_graph + batch_decompile (native, needs --procedure) / inspect_managed_members (.NET).
+python -m tools.analyzers.rea_adapter <pe> --family binary --procedure 0x140001060 --depth xlate --authorization-basis owned --json
+python -m tools.translation.decompiled_extractor --report rea_report.json --output-ir ir.json --json
+python -m tools.translation.decompiled_extractor --target <Fixture.dll> --family dotnet_assembly --authorization-basis owned --output-ir ir.json
+python tools/translation/code_translator.py --ir-file ir.json --source-language csharp --target-language python --output-dir out/
+# Every unit / translated entry / legacy component keeps basis + confidence + evidence_id.
+# legacy_analyzer.register_binary_application(project_id, name, ir) is a library call (no CLI).
 ```
 
 ### The two consumers of that triage (xrv-bin-03)

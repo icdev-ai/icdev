@@ -173,6 +173,20 @@ def _complexity_bucket(v: float) -> str:
     return "very_high"
 
 
+def _basis_from_properties(raw) -> dict:
+    """``basis`` / ``confidence`` / ``evidence_id`` of a component registered from
+    decompiled IR (rea-xlate-01), parsed in Python; ``{}`` for a source component."""
+    if not raw:
+        return {}
+    try:
+        props = json.loads(raw) if isinstance(raw, str) else dict(raw)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(props, dict) or "basis" not in props:
+        return {}
+    return {k: props.get(k) for k in ("basis", "confidence", "evidence_id")}
+
+
 # -- 1. Call Graph Extraction --------------------------------------------------
 def extract_call_graph(app_id: str) -> dict:
     """Build directed graph from legacy_dependencies (method_call/import/inheritance/injection).
@@ -194,18 +208,18 @@ def extract_call_graph(app_id: str) -> dict:
         if cids:
             iph = ",".join("?" for _ in cids)
             for c in conn.execute(
-                f"SELECT id,name,component_type,loc,cyclomatic_complexity FROM legacy_components WHERE id IN ({iph})",
+                f"SELECT id,name,component_type,loc,cyclomatic_complexity,properties FROM legacy_components WHERE id IN ({iph})",
                 list(cids),
             ).fetchall():  # nosec B608 -- table/column names are internal constants, not user input
-                nodes.append(
-                    {
-                        "id": c["id"],
-                        "name": c["name"],
-                        "type": c["component_type"],
-                        "loc": c["loc"] or 0,
-                        "complexity": c["cyclomatic_complexity"] or 0.0,
-                    }
-                )
+                node = {
+                    "id": c["id"],
+                    "name": c["name"],
+                    "type": c["component_type"],
+                    "loc": c["loc"] or 0,
+                    "complexity": c["cyclomatic_complexity"] or 0.0,
+                }
+                node.update(_basis_from_properties(c["properties"]))
+                nodes.append(node)
         edges = [
             {
                 "source": r["source_component_id"],
@@ -215,7 +229,13 @@ def extract_call_graph(app_id: str) -> dict:
             }
             for r in edge_rows
         ]
-        return {"nodes": nodes, "edges": edges}
+        graph = {"nodes": nodes, "edges": edges}
+        decompiled = sum(1 for n in nodes if n.get("basis") == "decompiled")
+        if decompiled:
+            # rea-xlate-01: a graph over a binary-only app says so at the top.
+            graph["basis"] = "decompiled" if decompiled == len(nodes) else "mixed"
+            graph["decompiled_nodes"] = decompiled
+        return graph
     finally:
         conn.close()
 

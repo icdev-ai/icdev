@@ -52,6 +52,24 @@ PROVENANCE_TEMPLATES = {
     "javascript": "// Translated from {source_lang} by ICDEV™ Phase 43",
 }
 
+#: Unit keys a reconstruction carries (rea-xlate-01: tools/translation/
+#: decompiled_extractor.py). Copied onto every translated / mocked / failed
+#: entry so a translation of decompiled code never reads as one of source.
+BASIS_KEYS = ("basis", "confidence", "recovery", "evidence_id")
+
+DECOMPILED_NOTICE = (
+    "NOTE: this unit was RECONSTRUCTED from a compiled artifact (basis: decompiled, "
+    "confidence: {confidence}, recovery: {recovery}). It is not the original source: names, "
+    "types and structure may be compiler or decompiler artifacts. Translate the behaviour it "
+    "shows; do not invent what it does not show.\n\n"
+)
+
+
+def _basis_of(unit):
+    """The reconstruction keys of a unit, or ``{}`` for a unit read from source."""
+    return {k: unit[k] for k in BASIS_KEYS if k in unit}
+
+
 NAMING_CONVENTIONS = {
     "python": "snake_case",
     "java": "camelCase",
@@ -153,6 +171,8 @@ def _build_prompt(
     }
     for key, value in replacements.items():
         prompt = prompt.replace(key, str(value))
+    if unit.get("basis") == "decompiled":
+        prompt = DECOMPILED_NOTICE.format(confidence=unit.get("confidence"), recovery=unit.get("recovery")) + prompt
 
     # Replace feature rules block
     if "{% for rule in feature_rules %}" in prompt:
@@ -382,6 +402,7 @@ def translate_units(
                     "repaired": False,
                     "source_hash": unit.get("source_hash", ""),
                     "candidate_selected": k + 1,
+                    **_basis_of(unit),
                 }
             )
             translated_deps.append({"name": unit_name, "kind": unit.get("kind", "function")})
@@ -406,6 +427,7 @@ def translate_units(
                         "mock": True,
                         "repaired": False,
                         "source_hash": unit.get("source_hash", ""),
+                        **_basis_of(unit),
                     }
                 )
                 translated_deps.append({"name": unit_name, "kind": unit.get("kind", "function")})
@@ -420,6 +442,7 @@ def translate_units(
                         "source_file": unit.get("source_file", ""),
                         "status": "failed",
                         "error": "LLM returned empty response after all candidates",
+                        **_basis_of(unit),
                     }
                 )
                 if db_path and job_id:
@@ -441,6 +464,7 @@ def translate_units(
             "mock_percentage": round(mock_pct, 1),
             "mock_threshold_exceeded": mock_exceeded,
             "candidates_k": candidates_k,
+            "decompiled_count": sum(1 for u in ordered_units if u.get("basis") == "decompiled"),
         },
     }
 
@@ -576,6 +600,11 @@ def main():
                 ext = ext_map.get(args.target_language, ".txt")
                 name = Path(src_file).stem + ext
                 out_path = out_dir / name
+                if unit.get("basis") == "decompiled":
+                    mark = "#" if args.target_language == "python" else "//"
+                    code = (f"{mark} basis: decompiled (confidence: {unit.get('confidence')}, "
+                            f"evidence: {unit.get('evidence_id')}) -- translated from a "
+                            f"reconstruction, not from original source\n") + code
                 out_path.write_text(code, encoding="utf-8", newline="")
 
     # Audit trail
