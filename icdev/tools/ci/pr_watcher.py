@@ -710,12 +710,24 @@ def task_row_for_branch(get_connection, branch: str) -> Optional[dict]:
     segments, and only ever called for a PR the predicate already fired on.
     ``None`` on any failure -- a lookup that cannot be made is not a task.
     """
+    return _branch_task_lookup(get_connection, branch)[1]
+
+
+def _branch_task_lookup(get_connection, branch: str) -> Tuple[bool, Optional[dict]]:
+    """``(answered, row)`` for a ``kanban/`` branch -- see `task_row_for_branch`.
+
+    ``answered`` is False when the board could not be asked (no connection, a
+    query that raised) or the branch is not kanban-shaped. `task_row_for_branch`
+    folds that into ``None`` because for ITS callers an unknown is "no task";
+    `foreign_kanban_branch` must not, because "this board has no such task" is
+    a finding and "this board could not be read" is not.
+    """
     branch = (branch or "").strip()
     if not branch.startswith(_KANBAN_BRANCH_PREFIX):
-        return None
+        return False, None
     remainder = branch[len(_KANBAN_BRANCH_PREFIX):]
     if not remainder:
-        return None
+        return False, None
     candidates: List[str] = []
     parts = remainder.split("-")
     for n in range(len(parts), 0, -1):
@@ -723,7 +735,7 @@ def task_row_for_branch(get_connection, branch: str) -> Optional[dict]:
     try:
         conn = get_connection()
     except Exception:  # noqa: BLE001
-        return None
+        return False, None
     try:
         for cand in candidates:
             row = conn.execute(
@@ -742,16 +754,60 @@ def task_row_for_branch(get_connection, branch: str) -> Optional[dict]:
             }
             data["pr_url"] = (_parse_pr_url(data["executor_url"])
                               or _parse_pr_url(data["description"]) or "")
-            return data
-        return None
+            return True, data
+        return True, None
     except Exception as exc:  # noqa: BLE001 -- advisory lookup, never fatal
         logger.debug("pr_watcher: task lookup for %s failed: %s", branch, exc)
-        return None
+        return False, None
     finally:
         try:
             conn.close()
         except Exception:  # noqa: BLE001
             pass
+
+
+def foreign_kanban_branch(get_connection, branch: str) -> bool:
+    """Is this a ``kanban/<id>`` branch whose task is on ANOTHER board? (omx-host-03)
+
+    TWO INSTALLS, ONE REPO. A second ICDEV install (its own database, its own
+    genesis supervisor, its own copy of this watcher) opens ``kanban/<id>`` PRs
+    against the same GitHub repo. To THIS board such a PR has no task row, so
+    the unlinked sweep read it as a human's PR and merged it the moment it went
+    green -- bypassing the owning board's done-gate, sibling-conflict guard and
+    done-verification, and leaving its card un-transitioned. The kanban branch
+    shape is the claim of ownership; a board holding no such task is not the
+    owner.
+
+    True ONLY when the board was asked and answered "no row". Uses the SAME
+    matcher as `task_row_for_branch` (longest prefix at a ``-`` boundary, so a
+    ``-rN`` retry suffix and a ``kph-repark-<id>`` REPARK id both bind) -- there
+    is no second parser. An unreadable board is NOT foreign: it is an unknown,
+    and the sweep already refuses to run without the board (the linked set).
+    """
+    answered, row = _branch_task_lookup(get_connection, branch)
+    return answered and row is None
+
+
+#: Per-install override for ``merge_unlinked_prs`` (omx-host-03). Two installs
+#: share the tracked args/pr_watcher_config.yaml, so a knob only one of them
+#: should turn needs a home outside the repo: ``.env``.
+MERGE_UNLINKED_ENV = "ICDEV_PR_WATCHER_MERGE_UNLINKED"
+_ENV_TRUE = frozenset({"1", "true", "yes", "on"})
+_ENV_FALSE = frozenset({"0", "false", "no", "off"})
+
+
+def merge_unlinked_enabled(config: dict) -> bool:
+    """``ICDEV_PR_WATCHER_MERGE_UNLINKED`` (0|1) wins; otherwise the YAML.
+
+    Unset or unrecognised falls through to ``merge_unlinked_prs`` -- a typo
+    must not silently flip the sweep either way.
+    """
+    raw = (os.environ.get(MERGE_UNLINKED_ENV) or "").strip().lower()
+    if raw in _ENV_TRUE:
+        return True
+    if raw in _ENV_FALSE:
+        return False
+    return bool((config or {}).get("merge_unlinked_prs", True))
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -3401,6 +3457,8 @@ class PRWatcher:
             if not (cfg["record_observations"] and cfg["record_from_pr_watcher"]):
                 return {"ok": None, "written": 0, "error": "disabled by config"}
             prs = merge_stall.list_prs("open", runner=self._pr_list_runner)
+            from tools.ci.merge_readiness import foreign_pr_urls
+
             rows = merge_stall.eligibility_rows(
                 prs,
                 default_branch=self._default_branch(),
@@ -3412,6 +3470,7 @@ class PRWatcher:
                              for t in list_pr_tasks(self._connection())},
                 protected_paths=self._protected_paths(),
                 max_behind_commits=self._max_behind(),
+                foreign_urls=foreign_pr_urls(prs, self._connection()),
             )
             return merge_stall.record_transitions(rows, recorded_by="pr_watcher")
         except Exception as exc:  # noqa: BLE001 — never break the watch loop
@@ -4865,6 +4924,32 @@ class PRWatcher:
                 pass
         return out
 
+    def _skip_foreign_kanban(self, pr: dict, url: str) -> bool:
+        """True = another board's kanban PR: touch nothing (omx-host-03).
+
+        No merge, no ready, no comment, no close. Audited ONCE per PR
+        (``pr_watcher.foreign_kanban_pr``, kpr-watch-10's per-PR dedupe, read
+        back from the audit trail so it survives a restart): the sweep meets
+        the PR every cycle for as long as it is open, and a standing fact
+        re-recorded each poll buries the signal in its own rows.
+        """
+        branch = (pr.get("headRefName") or "").strip()
+        if not foreign_kanban_branch(self._connection(), branch):
+            return False
+        if self._count_audit_actions(
+                "", ("pr_watcher.foreign_kanban_pr",), pr_url=url) > 0:
+            logger.debug("pr_watcher: %s is another board's kanban PR "
+                         "(already audited)", url)
+            return True
+        reason = ("kanban PR not on this board: no task here matches %s -- "
+                  "another install's watcher owns it" % branch)
+        logger.warning("pr_watcher: %s -- %s", url, reason)
+        self._audit(WatcherAction(
+            task_id="", pr_url=url, classification="blocked",
+            action="foreign_kanban_pr", reason=reason[:500], resume_cycle=0,
+        ))
+        return True
+
     def _sweep_unlinked_prs(self, report: "WatcherReport") -> None:
         """Auto-merge green PRs that no kanban task points at.
 
@@ -4899,7 +4984,7 @@ class PRWatcher:
         transcription of this policy. Same table, two consumers: this one merges
         on `ready`, `python -m tools.ci.merge_readiness` only prints.
         """
-        if not self.config.get("merge_unlinked_prs", True):
+        if not merge_unlinked_enabled(self.config):
             return
         if self.dry_run:
             return
@@ -4934,6 +5019,12 @@ class PRWatcher:
         merged_index = self._sweep_merged_index()
         for pr in prs:
             url = (pr.get("url") or "").strip()
+            # ANOTHER BOARD'S PR, BEFORE EVERY OTHER RUNG (omx-host-03). A
+            # kanban/<id> branch with no task row HERE belongs to a second
+            # install sharing this repo; nothing below -- the superseded hold
+            # or close, the merge -- may act on it. Its own watcher owns it.
+            if url and url not in linked and self._skip_foreign_kanban(pr, url):
+                continue
             # SUPERSEDED, BEFORE THE LADDER DECIDES ANYTHING (mfx-mrg-06). A
             # PR whose task went terminal is not in `linked` and reaches this
             # sweep as if nobody owned it; the one question the ladder below

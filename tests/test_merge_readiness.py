@@ -130,6 +130,11 @@ def test_every_state_is_reachable_and_declared():
     seen.add(mr.classify_merge_readiness(
         _pr(), default_branch="main", changed_files=["tools/ci/pr_watcher.py"],
         protected_paths=["tools/ci/pr_watcher.py"]).state)
+    # omx-host-03. Whether a kanban/<id> branch is another board's is a board
+    # lookup, not a field of the PR json -- passed in like the two above.
+    seen.add(mr.classify_merge_readiness(
+        _pr(headRefName="kanban/laptop-01"), default_branch="main",
+        foreign_urls=[_URLS[0]]).state)
     assert seen == set(mr.MERGE_STATES), (
         "unreachable or undeclared states: %s"
         % (seen.symmetric_difference(mr.MERGE_STATES),))

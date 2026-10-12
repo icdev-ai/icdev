@@ -135,6 +135,25 @@ git clone https://github.com/icdev-ai/icdev && cd icdev
 python -m tools.cli omarchy setup --yes --start
 ```
 
+**A second board on the same repo.** This install has its own database, so its
+kanban board is separate from any other ICDEV install pointed at the same GitHub
+repo — and each install runs its own `tools/ci/pr_watcher.py`. Each watcher
+leaves alone any `kanban/<id>` PR whose task is not on its own board: no merge,
+no ready, no comment, no close, and one `pr_watcher.foreign_kanban_pr` audit row
+per PR (omx-host-03). `python -m tools.ci.merge_readiness` lists those PRs as
+`foreign_kanban` ("kanban PR not on this board"). Human branches (`feat/*`,
+`fix/*`) are still merged by the unlinked sweep on BOTH installs. To turn that
+sweep off on this install only, without editing the tracked
+`args/pr_watcher_config.yaml`, put this in `.env`:
+
+```bash
+ICDEV_PR_WATCHER_MERGE_UNLINKED=0   # 0 = off, 1 = on, unset = the YAML's merge_unlinked_prs
+```
+
+Two boards can create the same task id (e.g. `task-qa-sweep-*`). When both
+boards hold that id, `kanban/<id>` is ambiguous and each watcher treats the PR
+as its own. Ids that only one board can create avoid this.
+
 `setup` is idempotent — re-run it after every upgrade. On a host without the
 `omarchy` binary it degrades to plain-Arch behaviour and skips the
 Omarchy-only steps. To remove ICDEV, run `icdev omarchy uninstall` **first**

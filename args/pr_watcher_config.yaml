@@ -430,6 +430,11 @@ restart_on_code_change: true
 #
 # Escape hatch: any of hold / do-not-merge / wip / no-automerge / blocked as a
 # LABEL, or leave the PR as a draft. Requested changes are never merged over.
+#
+# TWO INSTALLS, ONE REPO (omx-host-03): a kanban/<id> PR whose task is not on
+# THIS board belongs to another install's watcher and is never touched here
+# (audited once as pr_watcher.foreign_kanban_pr). Per-install override without
+# editing this tracked file: ICDEV_PR_WATCHER_MERGE_UNLINKED=0|1 in .env wins.
 merge_unlinked_prs: true
 
 # ── protected_paths (kpr-watch-05) ────────────────────────────────────────────

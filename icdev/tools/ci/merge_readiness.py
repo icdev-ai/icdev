@@ -89,13 +89,14 @@ NO_CHECKS = "no_checks"
 CHANGES_REQUESTED = "changes_requested"
 BEHIND_MAIN = "behind_main"
 LINKED = "linked"
+FOREIGN_KANBAN = "foreign_kanban"
 PROTECTED_PATH = "protected_path"
 UNKNOWN = "unknown"
 
 #: Every state this table can return, in ladder order. ``unknown`` is last
 #: because it is the degenerate case (a PR record with no url), not a rung.
 MERGE_STATES: tuple = (
-    MERGED, PROTECTED_PATH, LINKED, DRAFT, HELD_LABEL, WRONG_BASE, CONFLICTING,
+    MERGED, PROTECTED_PATH, LINKED, FOREIGN_KANBAN, DRAFT, HELD_LABEL, WRONG_BASE, CONFLICTING,
     NO_CHECKS, CI_FAILED, AWAITING_CI, CHANGES_REQUESTED, BEHIND_MAIN,
     READY, UNKNOWN,
 )
@@ -115,7 +116,7 @@ MERGE_STATES: tuple = (
 ATTENTION_ORDER: tuple = (
     READY, BEHIND_MAIN, CONFLICTING, CI_FAILED, AWAITING_CI, NO_CHECKS,
     CHANGES_REQUESTED, PROTECTED_PATH, WRONG_BASE, UNKNOWN,
-    DRAFT, HELD_LABEL, LINKED, MERGED,
+    DRAFT, HELD_LABEL, LINKED, FOREIGN_KANBAN, MERGED,
 )
 
 #: States in which the pipeline is waiting on something OTHER than a human
@@ -201,6 +202,7 @@ def classify_merge_readiness(
     changed_files: Optional[Iterable[str]] = None,
     protected_paths: Iterable[str] = (),
     required_checks: Optional[Iterable[str]] = None,
+    foreign_urls: Iterable[str] = (),
 ) -> MergeReadiness:
     """Why is this PR not merging? Pure — no I/O, no clock, no LLM.
 
@@ -246,6 +248,7 @@ def classify_merge_readiness(
     ``landed_check`` already takes for the same question one layer up.
     """
     linked = {(u or "").strip() for u in linked_urls}
+    foreign = {(u or "").strip() for u in foreign_urls}
     url = (pr.get("url") or "").strip()
 
     # A terminal fact, ahead of everything. `gh pr list --state open` never
@@ -284,6 +287,18 @@ def classify_merge_readiness(
     if url in linked:
         return MergeReadiness(
             LINKED, "a kanban task points at this PR -- the task path owns it")
+
+    # ── ANOTHER BOARD'S PR (omx-host-03) ────────────────────────────────────
+    # A kanban/<id> branch no task on THIS board matches: a second install
+    # sharing the repo opened it. Unlinked by construction, so without this
+    # rung it read `ready` and the sweep merged it past its own board's gates.
+    # ``foreign_urls`` is computed by the caller (`foreign_pr_urls`) -- the
+    # table stays pure.
+    if url in foreign:
+        return MergeReadiness(
+            FOREIGN_KANBAN,
+            "kanban PR not on this board -- no task here matches %s; another "
+            "install's watcher owns it" % ((pr.get("headRefName") or "?").strip()))
 
     if pr.get("isDraft"):
         # GitHub refuses `gh pr merge` on a draft outright. An unlinked PR is
@@ -1096,6 +1111,29 @@ def linked_pr_tasks(get_connection=None) -> Dict[str, Dict[str, Any]]:
         out[url] = {"task_id": task.get("id"),
                     "task_status": task.get("status")}
     return out
+def foreign_pr_urls(prs: Iterable[Dict[str, Any]],
+                    get_connection=None) -> FrozenSet[str]:
+    """Urls of ``kanban/<id>`` PRs whose task is on ANOTHER board (omx-host-03).
+
+    The watcher's own predicate (`pr_watcher.foreign_kanban_branch`), asked
+    once per kanban-shaped head -- so the report and the merger cannot disagree
+    about which PRs belong to a second install. A board that cannot be read
+    names nothing foreign: an unknown is not a finding.
+    """
+    from tools.ci.pr_watcher import foreign_kanban_branch  # local: import cycle
+
+    if get_connection is None:
+        from tools.db.storage import get_connection as get_connection  # type: ignore
+    out = set()
+    for pr in prs:
+        url = (pr.get("url") or "").strip()
+        head = (pr.get("headRefName") or "").strip()
+        if url and head.startswith("kanban/") and foreign_kanban_branch(
+                get_connection, head):
+            out.add(url)
+    return frozenset(out)
+
+
 def load_protected_paths(config_path=None) -> List[str]:
     """`protected_paths` from args/pr_watcher_config.yaml, or [] if unreadable.
 
@@ -1142,6 +1180,7 @@ def build_report(
     now: Optional[_dt.datetime] = None,
     protected_paths: Iterable[str] = (),
     required_checks: Optional[Iterable[str]] = None,
+    foreign_urls: Iterable[str] = (),
 ) -> Dict[str, Any]:
     """Classify every PR. Pure — takes data, returns data.
 
@@ -1178,6 +1217,7 @@ def build_report(
     cannot be more optimistic than the merger either.
     """
     linked = frozenset((u or "").strip() for u in linked_urls)
+    foreign = frozenset((u or "").strip() for u in foreign_urls)
     task_map = dict(linked_tasks or {})
     behind_map = dict(behind_by_url or {})
     reference = now or _dt.datetime.now(_dt.timezone.utc)
@@ -1195,7 +1235,7 @@ def build_report(
             pr, default_branch=default_branch, linked_urls=linked,
             behind_by=behind, max_behind_commits=max_behind_commits,
             changed_files=changed, protected_paths=guarded,
-            required_checks=required)
+            required_checks=required, foreign_urls=foreign)
         # BOTH verdicts get the protected-path inputs (kpr-watch-03 x
         # kpr-watch-10). The diagnosis asks the SAME ladder "why would this not
         # merge, setting aside who owns it" — answering that without the rung
@@ -1247,6 +1287,7 @@ def build_report(
             "labels": sorted((lbl.get("name") or "").strip()
                              for lbl in (pr.get("labels") or [])),
             "linked": url in linked,
+            "foreign": url in foreign,
             "task_id": task.get("task_id"),
             "task_status": task.get("task_status"),
             # A LOWER BOUND (see ``last_activity``): None, never 0, when
@@ -1448,6 +1489,13 @@ def collect_report(
         tasks, linked_lookup_ok = {}, False
         linked_lookup_error = str(exc)[:300]
     linked = frozenset(tasks)
+    foreign: FrozenSet[str] = frozenset()
+    if linked_lookup_ok:
+        try:
+            foreign = foreign_pr_urls(
+                [pr for pr in prs if (pr.get("url") or "").strip() not in linked])
+        except Exception:  # noqa: BLE001 - unknown, never a finding
+            foreign = frozenset()
 
     if max_behind_commits is None:
         max_behind_commits = _configured_max_behind()
@@ -1494,7 +1542,8 @@ def collect_report(
         prs, default_branch=default_branch, linked_urls=linked,
         linked_lookup_ok=linked_lookup_ok, linked_tasks=tasks,
         behind_by_url=behind, max_behind_commits=max_behind_commits,
-        protected_paths=guarded, required_checks=required_checks)
+        protected_paths=guarded, required_checks=required_checks,
+        foreign_urls=foreign)
     # Why the board was unreadable, not merely that it was. A degraded report
     # that cannot say what degraded it sends the reader to the wrong fix.
     report["linked_lookup_error"] = linked_lookup_error
