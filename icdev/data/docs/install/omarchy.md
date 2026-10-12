@@ -90,6 +90,45 @@ the code in a directory you do not own, so `.env` is written to the first of:
 The `env` step names the file it used. Point ICDEV at that directory with
 `ICDEV_PROJECT_ROOT` when it is not an `icdev init` project.
 
+### PostgreSQL: native or docker (`--postgres`)
+
+```bash
+icdev omarchy setup --postgres docker   # ICDEV's own PostgreSQL + pgvector container
+icdev omarchy setup --postgres native   # pacman + sudo, as above
+icdev omarchy setup                     # --postgres auto (the default)
+```
+
+`--postgres docker` runs one container, `icdev-postgres`, from the pgvector
+image pinned **by digest** in `args/omarchy_postgres.yaml`, with a named volume
+(`icdev-postgres-data`), `--restart unless-stopped`, and its port published on
+**127.0.0.1 only**. A generated password goes into `.env` as
+`ICDEV_PG_PASSWORD` and is never printed; setup writes `ICDEV_STORAGE_BACKEND`
+and `ICDEV_PG_HOST/PORT/USER/DATABASE` (database `icdev`), waits for the
+server, creates the `vector` extension and loads the ICDEV schema. It needs no
+sudo: it uses your docker group. If the daemon refuses you (not in the `docker`
+group, or the daemon is down) the step fails with the remedy and changes
+nothing:
+
+```bash
+sudo usermod -aG docker $USER   # then log out and back in
+sudo systemctl enable --now docker
+```
+
+An `ICDEV_DATABASE_URL` already in `.env` outranks `ICDEV_PG_*`, so unless it
+already names the container, setup copies `.env` to `.env.bak-<UTC timestamp>`
+and comments the line out (`# retired by icdev omarchy setup ...`) — the value
+is never printed, `--dry-run` only lists it, and `status` reports such a line
+`failed` until it is gone.
+
+Re-running is safe: a running container is `skipped`, a stopped one is
+started, and a container running a **different** digest than the pin is
+reported, never silently replaced (its volume holds your data).
+
+`auto` never migrates a working host: the mode recorded in `.env`
+(`ICDEV_OMARCHY_POSTGRES`) wins, then a healthy native install, then docker
+when the daemon answers, else native. `status` names the mode it checked.
+Docker mode is Linux-first; on Windows the step reports `n/a`.
+
 **The genesis supervisor needs a source checkout.** `--start` enables the
 `icdev-genesis` systemd timer, which runs `tools/genesis/launch.py`. That
 supervisor writes its pid lock, logs and data under its own root, and a package
@@ -106,7 +145,7 @@ python -m tools.cli omarchy setup --yes --start
 `omarchy` binary it degrades to plain-Arch behaviour and skips the
 Omarchy-only steps. To remove ICDEV, run `icdev omarchy uninstall` **first**
 (it reverses MCP, skill, guard and systemd registrations but never touches your
-database or `.env`), then remove the package with the tool you installed it with.
+database or `.env` — nor the `icdev-postgres` container or its volume), then remove the package with the tool you installed it with.
 
 ## For maintainers: refreshing the AUR package
 

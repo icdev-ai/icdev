@@ -26,7 +26,11 @@ ONE command for the steps an operator otherwise runs by hand (omx-setup-01):
                  ``ICDEV_DATABASE_URL`` (native) or ``ICDEV_PG_*`` (docker), and
                  the chosen mode as ``ICDEV_OMARCHY_POSTGRES`` so ``status`` and
                  ``uninstall`` know which one they manage. An existing value is
-                 KEPT, never overwritten.
+                 KEPT, never overwritten -- except, in docker mode, an
+                 ``ICDEV_DATABASE_URL`` that does not name the container: it
+                 OUTRANKS ``ICDEV_PG_*``, so .env is backed up to
+                 ``.env.bak-<UTC stamp>`` and the line commented out
+                 (omx-host-04); ``status`` reports it ``failed``.
                  On a package install (pacman/pipx) that ``.env`` is NOT in the
                  root-owned package dir: see ``project_root()``.
                  LLM keys are left to the operator; the providers configured /
@@ -81,6 +85,7 @@ import subprocess  # nosec B404 -- fixed argv lists, never a shell
 import sys
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
@@ -92,6 +97,9 @@ DB_ROLE = "icdev"
 DSN = f"postgresql://{DB_ROLE}@localhost:5432/{DB_NAME}"
 PG_DATA = "/var/lib/postgres/data"
 GENESIS_TIMER = "icdev-genesis.timer"
+#: What to do about an ICDEV_DATABASE_URL that outranks the docker container (omx-host-04).
+STALE_URL_REMEDY = ("Remedy: re-run `icdev omarchy setup --postgres docker` (it backs .env up, then "
+                    "comments the line out), or comment out ICDEV_DATABASE_URL in .env yourself")
 #: Why --start refuses on a package install (omx-setup-02); deploy/aur/icdev.install says the same.
 GENESIS_NEEDS_CHECKOUT = (
     "the genesis supervisor (tools/genesis/launch.py) needs a source checkout: it writes its "
@@ -519,10 +527,41 @@ def llm_provider_report(host: Host) -> Dict[str, List[str]]:
     return out
 
 
-def plan_env(host: Host, choice: Optional[PgChoice] = None) -> Plan:
+def _url_is_the_container(url: str, cfg: Dict, password: str) -> bool:
+    """True when ``url`` already names the docker container setup manages."""
+    from urllib.parse import urlsplit
+    try:
+        u = urlsplit(url)
+        port = u.port or 5432
+    except ValueError:
+        return False
+    return (u.scheme in ("postgresql", "postgres") and u.hostname in ("127.0.0.1", "localhost", "::1")
+            and port == int(cfg["port"]) and u.path.lstrip("/") == DB_NAME
+            and u.username == DB_ROLE and bool(password) and u.password == password)
+
+
+def _backup_stamp(now: datetime) -> str:
+    return f"{now:%Y%m%dT%H%M%SZ}"
+
+
+def _retire_database_url(host: Host, now: datetime) -> None:
+    """Back up .env, then comment out ICDEV_DATABASE_URL. Never names the value."""
+    from tools.cli.setup_wizard import retire_env_key
+    try:
+        retire_env_key(host.env_file, "ICDEV_DATABASE_URL",
+                       f"retired by icdev omarchy setup {now:%Y-%m-%d} (postgres -> docker)",
+                       stamp=_backup_stamp(now))
+    except OSError as exc:
+        raise RuntimeError(f"could not retire ICDEV_DATABASE_URL in {host.env_file} "
+                           f"({type(exc).__name__}). {STALE_URL_REMEDY}") from None
+
+
+def plan_env(host: Host, choice: Optional[PgChoice] = None, *, status: bool = False) -> Plan:
+    """``status``: probe only -- a stale URL is reported ``failed``, never retired."""
     from tools.cli.setup_wizard import db_env_updates, read_env, update_env
     choice = choice or PgChoice("native", "default")
     current = read_env(host.env_file)
+    stale_url = False
     if choice.mode == "docker":
         if host.platform != "linux" or choice.docker_error:
             return Plan(done=False, state="pending",
@@ -530,6 +569,10 @@ def plan_env(host: Host, choice: Optional[PgChoice] = None) -> Plan:
         cfg = pg_docker_config(host)
         wanted = {**db_env_updates("postgresql"), "ICDEV_PG_HOST": str(cfg["bind"]),
                   "ICDEV_PG_PORT": str(cfg["port"]), "ICDEV_PG_USER": DB_ROLE, "ICDEV_PG_DATABASE": DB_NAME}
+        # ICDEV_DATABASE_URL OUTRANKS ICDEV_PG_*: left in place it points ICDEV
+        # away from the container (omx-host-04). Native mode never touches it.
+        stale_url = bool(current.get("ICDEV_DATABASE_URL")) and not _url_is_the_container(
+            current["ICDEV_DATABASE_URL"], cfg, current.get(PG_PASSWORD_ENV, ""))
     else:
         wanted = db_env_updates("postgresql", dsn=DSN)
     missing = {k: v for k, v in wanted.items() if not current.get(k)}
@@ -542,17 +585,26 @@ def plan_env(host: Host, choice: Optional[PgChoice] = None) -> Plan:
               f"missing keys: {', '.join(llm['missing']) or 'none'}")
     if kept:
         detail = f"kept existing {', '.join(kept)}; " + detail
-    if choice.mode == "docker" and current.get("ICDEV_DATABASE_URL"):
-        detail = ("ICDEV_DATABASE_URL in .env outranks ICDEV_PG_*: remove it to use the container; "
-                  + detail)
     if host.project_dir != host.root:
         detail = (f"package install: .env is {host.env_file} (set ICDEV_PROJECT_ROOT to "
                   f"{host.project_dir} so ICDEV reads it); " + detail)
-    if not missing:
+    if stale_url and status:
+        return Plan(done=False, state="failed",
+                    detail=f"ICDEV_DATABASE_URL in {host.env_file} outranks ICDEV_PG_* and does not "
+                           f"point at the container. {STALE_URL_REMEDY}; " + detail)
+    actions: List[Action] = []
+    if stale_url:
+        now = datetime.now(timezone.utc)
+        actions.append(Action(
+            f"retire ICDEV_DATABASE_URL in {host.env_file} (it outranks ICDEV_PG_*): back up to "
+            f"{host.env_file.name}.bak-{_backup_stamp(now)}, then comment the line out",
+            fn=lambda: _retire_database_url(host, now)))
+    if missing:
+        actions.append(Action(f"write {', '.join(sorted(missing))} to {host.env_file}",
+                              fn=lambda: update_env(host.env_file, missing)))
+    if not actions:
         return Plan(done=True, detail=detail)
-    return Plan(done=False, detail=detail, actions=[Action(
-        f"write {', '.join(sorted(missing))} to {host.env_file}",
-        fn=lambda: update_env(host.env_file, missing))])
+    return Plan(done=False, detail=detail, actions=actions)
 
 
 # --------------------------------------------------------------------------- #
@@ -925,7 +977,8 @@ OPTIONAL_STEPS = {"ghidra": "--ghidra: Ghidra 12 + JDK 21 + PyGhidra, the option
 
 
 def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = False,
-           ghidra: bool = False, choice: Optional[PgChoice] = None) -> Dict[str, Callable[[], Plan]]:
+           ghidra: bool = False, choice: Optional[PgChoice] = None,
+           status: bool = False) -> Dict[str, Callable[[], Plan]]:
     plans: Dict[str, Callable[[], Plan]] = {
         "mcp": lambda: plan_mcp(host, det, remove),
         "skill": lambda: plan_skill(host, det, remove),
@@ -935,7 +988,7 @@ def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = Fal
     }
     if not remove:
         plans = {"postgres": lambda: plan_postgres(host, choice),
-                 "env": lambda: plan_env(host, choice), **plans}
+                 "env": lambda: plan_env(host, choice, status=status), **plans}
         if ghidra:
             plans["ghidra"] = lambda: plan_ghidra(host)
     return plans
@@ -988,7 +1041,8 @@ def run(command: str, host: Host, *, dry_run: bool = False, yes: bool = False,
         report["kept"] = ["the database and .env: uninstall never touches them" + (
             f" (docker: container and volume from args/{PG_CONFIG} are left in place)"
             if choice.mode == "docker" else "")]
-    for name, make in _plans(host, det, start=start, remove=remove, ghidra=ghidra, choice=choice).items():
+    for name, make in _plans(host, det, start=start, remove=remove, ghidra=ghidra, choice=choice,
+                             status=mode == "status").items():
         try:
             plan = make()
         except Exception as exc:  # noqa: BLE001 -- one broken probe must not hide the others
