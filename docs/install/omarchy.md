@@ -19,6 +19,7 @@ Omarchy manages developer tools with mise; agents are mise stubs in
 `~/.local/bin`. Install ICDEV the same way:
 
 ```bash
+mise use -g uv@latest          # once: mise's pipx: backend needs uv (or pipx)
 omarchy-mise-install 'pipx:icdev[extras=postgresql]' icdev
 ```
 
@@ -27,6 +28,11 @@ is needed. The `[extras=postgresql]` tool option (quoted, so the shell leaves
 the brackets alone) installs the PostgreSQL driver that `icdev omarchy setup`
 needs; mise's syntax for extras is `[extras=...]`, not pip's `icdev[postgresql]`.
 mise installs lazily: the package is fetched on the first `icdev` run.
+
+Without uv or pipx the first run fails with `pipx is required to install
+pipx:icdev but was not found`. If an earlier `icdev` stub already installed an
+older release, the first run keeps it -- `mise upgrade pipx:icdev` moves to the
+newest one (verified on Omarchy with 1.2.44, 2026-10-11).
 
 ## 2. pipx
 
