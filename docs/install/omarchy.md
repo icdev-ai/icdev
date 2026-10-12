@@ -114,6 +114,12 @@ sudo usermod -aG docker $USER   # then log out and back in
 sudo systemctl enable --now docker
 ```
 
+An `ICDEV_DATABASE_URL` already in `.env` outranks `ICDEV_PG_*`, so unless it
+already names the container, setup copies `.env` to `.env.bak-<UTC timestamp>`
+and comments the line out (`# retired by icdev omarchy setup ...`) — the value
+is never printed, `--dry-run` only lists it, and `status` reports such a line
+`failed` until it is gone.
+
 Re-running is safe: a running container is `skipped`, a stopped one is
 started, and a container running a **different** digest than the pin is
 reported, never silently replaced (its volume holds your data).

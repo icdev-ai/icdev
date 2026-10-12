@@ -413,6 +413,33 @@ def update_env(env_file: Path, updates: dict, *, dry_run: bool = False) -> dict:
     return {"written": not dry_run, "keys": sorted(updates), "path": str(env_file)}
 
 
+def retire_env_key(env_file: Path, key: str, reason: str, *, stamp: str) -> Path | None:
+    """Comment out every active ``key=`` line as ``# <reason>: key=value``.
+
+    The file is first copied to ``<name>.bak-<stamp>`` beside it (same mode), so
+    the operator can always get the line back. Returns the backup path, or None
+    when ``key`` is not set (nothing written). The value is never returned.
+    """
+    if not env_file.is_file():
+        return None
+    with env_file.open(encoding="utf-8", errors="replace", newline="") as fh:
+        lines = fh.read().splitlines(keepends=True)   # keeps each line's own ending
+    hits = [i for i, line in enumerate(lines)
+            if not line.strip().startswith("#") and "=" in line
+            and line.split("=", 1)[0].strip() == key]
+    if not hits:
+        return None
+    backup = env_file.with_name(f"{env_file.name}.bak-{stamp}")
+    if backup.exists():
+        raise FileExistsError(f"{backup} already exists; not overwriting a backup")
+    shutil.copy2(env_file, backup)
+    for i in hits:
+        body = lines[i].rstrip("\r\n")
+        lines[i] = f"# {reason}: {body.strip()}" + lines[i][len(body):]
+    env_file.write_text("".join(lines), encoding="utf-8", newline="")
+    return backup
+
+
 def llm_env_updates(primary: str, fallback: str, keys: dict) -> dict:
     """.env keys for the chosen chain.
 
