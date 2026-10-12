@@ -141,6 +141,6 @@ def test_install_hook_points_at_omarchy_setup():
 
 def test_install_doc_covers_aur_mise_and_pipx():
     doc = (REPO_ROOT / "docs" / "install" / "omarchy.md").read_text(encoding="utf-8")
-    for needle in ("yay -S icdev", "omarchy-mise-install pipx:icdev icdev",
-                   "pipx install icdev", "icdev omarchy setup"):
+    for needle in ("makepkg -si", "omarchy-mise-install 'pipx:icdev[extras=postgresql]' icdev",
+                   "pipx install 'icdev[postgresql]'", "icdev omarchy setup"):
         assert needle in doc, needle

@@ -272,7 +272,8 @@ def plan_postgres(host: Host) -> Plan:
     if host.run([host.python, "-c", "import psycopg2"]).rc != 0:
         return Plan(done=False, state="failed",
                     detail=f"the PostgreSQL driver (psycopg2) is not installed for {host.python}: "
-                           "reinstall with the extra -- `pipx install --force 'icdev[postgresql]'` or "
+                           "reinstall with the extra -- `omarchy-mise-install 'pipx:icdev[extras=postgresql]' icdev` "
+                           "(mise), `pipx install --force 'icdev[postgresql]'` or "
                            "`pip install 'icdev[postgresql]'` -- then re-run")
 
     installed = bool(host.which("psql"))
