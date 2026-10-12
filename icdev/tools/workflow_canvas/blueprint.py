@@ -26,6 +26,8 @@ Routes:
 
   # pif-* Process-Ify Enhancement Suite
   GET  /workflow-canvas/api/workflows/<id>/bpmn              BPMN 2.0 XML (pif-bpmn-01)
+  POST /workflow-canvas/api/workflows/observed-draft          opt-in REA capture -> observed draft (rea-pif-01)
+  POST /workflow-canvas/api/workflows/<id>/observed-review    HITL approve/reject an observed draft (rea-pif-01)
   POST /workflow-canvas/api/workflows/diff                   Version diff (pif-diff-01)
   GET  /workflow-canvas/api/chains/<id>/roi                  ROI calc (pif-roi-01)
   GET  /workflow-canvas/api/chains/<id>/simulate             Timeline sim (pif-sim-01)
@@ -1434,6 +1436,15 @@ Process Document:
         if not workflow_id:
             return jsonify({"error": "workflow_id required — run processify first and pass the result"}), 400
 
+        # rea-pif-01: an OBSERVED draft joins a chain only after a human approves it.
+        import yaml as _yaml
+        from tools.workflow_canvas.observed_processify import chain_eligibility
+        wf_row = _get_workflow(workflow_id)
+        eligible, why = chain_eligibility(
+            _yaml.safe_load((wf_row or {}).get("template_yaml") or "{}") or {})
+        if not eligible:
+            return jsonify({"error": why, "workflow_id": workflow_id}), 409
+
         conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         try:
             ph = _ph(conn)
@@ -1565,6 +1576,42 @@ Process Document:
         except Exception as exc:
             logger.error("bpmn export error: %s", exc, exc_info=True)
             return jsonify({"error": str(exc)}), 500
+
+    # ── rea-pif-01: Process-Ify from an observed REA scenario ─────────────────
+    @bp.route("/api/workflows/observed-draft", methods=["POST"])
+    def api_observed_draft():
+        """Opt-in REA scenario capture -> observed DRAFT workflow awaiting HITL review."""
+        from tools.workflow_canvas import observed_processify as op
+        data = request.get_json(force=True) or {}
+        capture = op.capture_scenario(
+            data.get("kind") or "process", data.get("scenario") or {},
+            allow_execute=data.get("allow_execute") is True,
+            authorization_basis=data.get("authorization_basis"),
+            actor=data.get("actor"),
+        )
+        if capture["status"] != "ok":
+            code = 403 if capture["reason"] in ("allow_execute_required", "authorization_missing") else 422
+            return jsonify(capture), code
+        draft = op.build_draft(capture, name=(data.get("name") or "").strip() or None)
+        if not draft["steps"]:
+            return jsonify({"status": "partial", "reason": "no_observed_steps",
+                            "steps_basis": draft["steps_basis"], "draft": draft}), 422
+        workflow_id = op.save_draft(draft)
+        return jsonify({"status": "ok", "workflow_id": workflow_id, "review": draft["review"],
+                        "steps": len(draft["steps"]), "provenance": draft["provenance"]})
+
+    @bp.route("/api/workflows/<workflow_id>/observed-review", methods=["POST"])
+    def api_observed_review(workflow_id: str):
+        """HITL decision on an observed draft: {decision: approve|reject, reviewer, note}."""
+        from tools.workflow_canvas.observed_processify import review_draft
+        data = request.get_json(force=True) or {}
+        try:
+            review = review_draft(workflow_id, str(data.get("decision") or ""),
+                                  reviewer=str(data.get("reviewer") or ""),
+                                  note=str(data.get("note") or ""))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        return jsonify({"status": "ok", "workflow_id": workflow_id, "review": review})
 
     # ── pif-diff-01: Process Version Diff ─────────────────────────────────────
     @bp.route("/api/workflows/diff", methods=["POST"])
