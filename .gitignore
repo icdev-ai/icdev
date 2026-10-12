@@ -355,3 +355,9 @@ apps/*/data/*.db-shm
 apps/*/data/*.db-wal
 data/rag/*.db-shm
 data/rag/*.db-wal
+
+# Harness guard plugins are RENDERED per checkout by tools/hooks/harness_guard.py::install_guard, with
+# this host's Python and repo paths baked in. A committed copy names one host's paths and is rewritten
+# by every other host's dispatch (omx-host-06: PR #2471 committed the laptop's).
+.opencode/plugin/icdev-guard.ts
+.pi/extensions/icdev-guard.ts
