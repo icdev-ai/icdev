@@ -310,7 +310,8 @@ def test_translate_unit_cli_writes_the_basis_into_the_output(stub, monkeypatch, 
 
 
 _LEGACY_DDL = """
-CREATE TABLE projects (id TEXT PRIMARY KEY);
+CREATE TABLE projects (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, directory_path TEXT NOT NULL);
 CREATE TABLE legacy_applications (
     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), name TEXT NOT NULL,
     description TEXT, source_path TEXT NOT NULL, primary_language TEXT NOT NULL,
@@ -336,7 +337,8 @@ CREATE TABLE legacy_dependencies (
     target_component_id TEXT REFERENCES legacy_components(id), dependency_type TEXT NOT NULL,
     weight REAL DEFAULT 1.0, is_bidirectional INTEGER DEFAULT 0, evidence TEXT,
     UNIQUE(legacy_app_id, source_component_id, target_component_id, dependency_type));
-INSERT INTO projects (id) VALUES ('proj-rea-xlate');
+INSERT INTO projects (id, name, type, directory_path)
+    VALUES ('proj-rea-xlate', 'rea-xlate', 'modernization', '.');
 """
 
 
