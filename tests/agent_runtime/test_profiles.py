@@ -141,6 +141,13 @@ def test_overlay_load_and_apply(home, fake_db, monkeypatch):
     import os
 
     assert os.environ["ICDEV_LLM_PROVIDER"] == "ollama"
+    # apply_overlay writes os.environ directly, outside monkeypatch's tracking,
+    # so an absent-var delenv above cannot restore anything at teardown and the
+    # value leaks into every later test in the same pytest process (measured:
+    # shard 4 had tests/llm/test_router_anthropic_billing.py pick up
+    # ICDEV_LLM_PROVIDER=ollama via profile_default() and promote llama-local
+    # ahead of claude-cli in the default chain). Pop it once asserted.
+    os.environ.pop("ICDEV_LLM_PROVIDER", None)
 
 
 def test_overlay_default_profile_is_empty(home):

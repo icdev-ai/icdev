@@ -194,3 +194,31 @@ def test_valid_create_design_succeeds_end_to_end(app):
         got = client.get(f"/security/api/designs/{body['id']}")
     assert got.status_code == 200
     assert got.get_json()["id"] == body["id"]
+
+
+# ── ZIG pillar detail: unknown slug renders the shared 404 page ─────────────
+
+def test_zig_pillar_unknown_slug_renders_404_template(app, monkeypatch):
+    """Unknown pillar slug renders 404.html — never the data-dependent index.
+
+    Regression for task-coh-3a357f8a: the 404 path used to render
+    ``security_canvas/zig/index.html`` with ZERO context, so any strict
+    template usage (attribute access, iteration, non-default filter) raised
+    UndefinedError and the not-found page came back as a 500.
+    """
+    import tools.security_canvas.blueprint as bp_mod
+
+    seen = {}
+
+    def _spy(template_name, **kwargs):
+        seen["template"] = template_name
+        seen["kwargs"] = kwargs
+        return "rendered"
+
+    monkeypatch.setattr(bp_mod, "render_template", _spy)
+
+    with app.test_client() as client:
+        resp = client.get("/security/zig/pillar/__no-such-pillar__")
+
+    assert resp.status_code == 404
+    assert seen.get("template") == "404.html", seen
