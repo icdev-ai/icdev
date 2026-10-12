@@ -1,0 +1,13 @@
+{
+  "ts": "2026-10-12T10:13:30.382082+00:00",
+  "level": "INFO",
+  "component": "build_logger",
+  "event_type": "playwright_run",
+  "returncode": 0,
+  "passed": 838,
+  "failed": 0,
+  "skipped": 15,
+  "duration_s": 0.0,
+  "failures": [],
+  "build_log": ".logs\\build.ndjson"
+}
