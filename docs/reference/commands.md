@@ -4314,6 +4314,7 @@ python tools/agents/capability_matrix.py --capability sandboxed --json   # per-a
 icdev omarchy setup --dry-run        # print the step plan; change nothing
 icdev omarchy setup --yes --start    # run it: --yes allows the sudo PostgreSQL steps, --start enables the genesis timer
 icdev omarchy status [--json]        # per-step state: ok / missing / n/a
+                                     # step billing: failed if a harness auth store holds a metered (api_key) Anthropic credential (omx-guard-07-d5)
 icdev omarchy uninstall [--dry-run]  # reverse MCP, skill, guards, systemd units (never the database or .env)
 # omx-panel-01 — the ICDEV record for Omarchy's agents panel (setup's `panel` step installs it + a 5-min timer)
 python -m tools.cli.omarchy_panel             # print the record: kanban in-progress/backlog, today's spend, adapter + guard

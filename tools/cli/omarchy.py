@@ -56,6 +56,13 @@ ONE command for the steps an operator otherwise runs by hand (omx-setup-01):
                  says to run ``serve`` by hand), and an ``icdev-claude`` provider
                  in the opencode / Pi config. ``n/a`` without the ``claude`` CLI.
 
+ 10. billing  -- omx-guard-07-d5: probe only. Under ``anthropic_billing:
+                 subscription_only`` (args/guard_anthropic.yaml) an Anthropic
+                 credential of a metered type (``api`` / ``api_key``) in a
+                 harness auth store -- opencode / Pi ``auth.json``, Claude
+                 Code's ``primaryApiKey`` -- is ``failed``. Only its TYPE and
+                 where it is are reported, never the value; OAuth passes.
+
 OPTIONAL, only with ``--ghidra`` (rea-eng-02):
 
   ghidra    -- NSA Ghidra 12 (Apache-2.0) + JDK 21 from pacman, and an
@@ -1080,10 +1087,81 @@ def plan_ghidra(host: Host) -> Plan:
 
 
 # --------------------------------------------------------------------------- #
+# Step 10 -- no metered Anthropic credential in a harness auth store (omx-guard-07-d5)
+# --------------------------------------------------------------------------- #
+
+#: Credential ``type`` values that mean a metered API key. Everything else --
+#: ``oauth`` (a claude.ai subscription login), ``wellknown`` -- passes.
+METERED_AUTH_TYPES = ("api", "api_key", "apikey")
+
+
+def auth_stores(host: Host) -> Dict[str, Path]:
+    """Each harness's credential file: ``{provider: {"type": ...}}`` JSON."""
+    data_home = Path(host.environ.get("XDG_DATA_HOME") or host.home / ".local" / "share")
+    return {"opencode": data_home / "opencode" / "auth.json",
+            "pi": host.pi_agent_dir() / "auth.json"}
+
+
+def anthropic_auth_findings(host: Host) -> List[Dict[str, str]]:
+    """Anthropic credentials of a metered type: harness, path, provider and TYPE.
+
+    The credential VALUE is never read into a finding, printed or logged.
+    """
+    found: List[Dict[str, str]] = []
+    for harness, path in auth_stores(host).items():
+        if not path.is_file():
+            continue
+        try:
+            store = json.loads(path.read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError):
+            continue
+        if not isinstance(store, dict):
+            continue
+        for provider, cred in store.items():
+            if "anthropic" not in str(provider).lower() or not isinstance(cred, dict):
+                continue
+            kind = str(cred.get("type") or "").strip().lower()
+            if kind in METERED_AUTH_TYPES:
+                found.append({"harness": harness, "path": str(path),
+                              "provider": str(provider), "type": kind})
+    # Claude Code keeps an API-key login as ``primaryApiKey`` in ~/.claude.json.
+    claude_json = host.home / ".claude.json"
+    if claude_json.is_file():
+        try:
+            cfg = json.loads(claude_json.read_text(encoding="utf-8")) or {}
+        except (OSError, ValueError):
+            cfg = {}
+        if isinstance(cfg, dict) and cfg.get("primaryApiKey"):
+            found.append({"harness": "claude", "path": str(claude_json),
+                          "provider": "anthropic", "type": "api_key"})
+    return found
+
+
+def plan_billing(host: Host) -> Plan:
+    """Probe only: a metered Anthropic credential under ``subscription_only`` is ``failed``.
+
+    Never removes the credential -- it is the operator's; the detail says where it is.
+    """
+    from tools.llm import anthropic_billing as ab
+    local = host.root / ab.POLICY_RELPATH
+    mode = ab.billing_mode(local if local.is_file() else None)
+    findings = anthropic_auth_findings(host)
+    if not findings:
+        return Plan(done=True, detail=f"no metered Anthropic credential in a harness auth store ({mode})")
+    where = "; ".join(f"{f['harness']}: {f['provider']} type={f['type']} in {f['path']}" for f in findings)
+    if mode != ab.SUBSCRIPTION_ONLY:
+        return Plan(done=True, detail=f"{mode} permits it -- {where}")
+    return Plan(done=True, state="failed",
+                detail=(f"anthropic_billing=subscription_only, but metered credentials are stored -- "
+                        f"{where}. Remedy: log the harness out of that provider and back in with the "
+                        "claude.ai subscription (OAuth), or route it through `icdev claude-bridge`"))
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
 
-STEPS = ("postgres", "env", "mcp", "skill", "guard", "systemd", "panel", "bridge")
+STEPS = ("postgres", "env", "mcp", "skill", "guard", "systemd", "panel", "bridge", "billing")
 REVERSIBLE = ("mcp", "skill", "guard", "systemd", "panel", "bridge")
 #: Run only when asked for. Listed in every setup report so the offer is seen.
 OPTIONAL_STEPS = {"ghidra": "--ghidra: Ghidra 12 + JDK 21 + PyGhidra, the optional decompiler"}
@@ -1103,6 +1181,7 @@ def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = Fal
     if not remove:
         plans = {"postgres": lambda: plan_postgres(host, choice),
                  "env": lambda: plan_env(host, choice, status=status), **plans}
+        plans["billing"] = lambda: plan_billing(host)
         if ghidra:
             plans["ghidra"] = lambda: plan_ghidra(host)
     return plans
