@@ -106,9 +106,11 @@ __all__ = [
     "EVIDENCE_BINARY_STRINGS",
     "STATUSES",
     "SKIP_REASONS",
+    "EVIDENCE_REA",
     "binary_hint_properties",
     "hinted_components",
     "is_hinted_component",
+    "rea_hinted_components",
 ]
 
 # ---------------------------------------------------------------------------
@@ -119,6 +121,12 @@ __all__ = [
 #: the `icdev:sbom:binary-hint:evidence` property AND of the component dict's
 #: `binary_hint.evidence`, so a consumer filtering on either sees one set.
 EVIDENCE_BINARY_STRINGS = "binary_strings"
+
+#: A component REA OBSERVED in an artifact's structure (rea-sec-01): a .NET
+#: AssemblyRef/ModuleRef, an npm package a source map attributes code to, an
+#: APK's bundled native library. Still a hint, still ``unasserted``.
+EVIDENCE_REA = "rea_evidence"
+HINT_EVIDENCES = frozenset({EVIDENCE_BINARY_STRINGS, EVIDENCE_REA})
 
 #: A hint is never an assertion. There is deliberately no second value here and
 #: no numeric score: a confidence number computed from a string match would be a
@@ -151,6 +159,8 @@ SKIP_REASONS: Tuple[str, ...] = (
 
 VERSION_BASIS_TOKEN = "triage_token"
 VERSION_BASIS_EXTENDED = "triage_token_extended_in_string"
+VERSION_BASIS_REA = "rea_metadata"
+VERSION_BASIS_NOT_OBSERVED = "not_observed"
 
 # ---------------------------------------------------------------------------
 # Property names. One prefix, so a recipient reads every field of this element
@@ -167,6 +177,9 @@ PROPERTY_STRING = PROPERTY_PREFIX + ":evidence-string"
 PROPERTY_VERSION_TOKEN = PROPERTY_PREFIX + ":version-token"
 PROPERTY_VERSION_BASIS = PROPERTY_PREFIX + ":version-basis"
 PROPERTY_TRIAGE_STATUS = PROPERTY_PREFIX + ":triage-status"
+PROPERTY_REA_EVIDENCE_ID = PROPERTY_PREFIX + ":rea-evidence-id"
+PROPERTY_REA_KIND = PROPERTY_PREFIX + ":rea-observation-kind"
+PROPERTY_AUTHORIZATION = PROPERTY_PREFIX + ":authorization-basis"
 
 # ---------------------------------------------------------------------------
 # Bounds. Every one is reported on the result rather than quietly applied.
@@ -319,7 +332,7 @@ def is_hinted_component(component: Dict[str, Any]) -> bool:
     .endswith(".so")`` is guessing.
     """
     hint = component.get("binary_hint")
-    return isinstance(hint, dict) and hint.get("evidence") == EVIDENCE_BINARY_STRINGS
+    return isinstance(hint, dict) and hint.get("evidence") in HINT_EVIDENCES
 
 
 def binary_hint_properties(component: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -342,6 +355,9 @@ def binary_hint_properties(component: Dict[str, Any]) -> List[Dict[str, str]]:
         (PROPERTY_VERSION_TOKEN, hint.get("version_token")),
         (PROPERTY_VERSION_BASIS, hint.get("version_basis")),
         (PROPERTY_TRIAGE_STATUS, hint.get("triage_status")),
+        (PROPERTY_REA_EVIDENCE_ID, hint.get("rea_evidence_id")),
+        (PROPERTY_REA_KIND, hint.get("rea_observation_kind")),
+        (PROPERTY_AUTHORIZATION, hint.get("authorization_basis")),
     )
     return [{"name": key, "value": str(value)} for key, value in pairs if value is not None]
 
@@ -459,6 +475,73 @@ def hinted_components(
     else:
         # The file WAS read end to end and carries no usable version string.
         # A measured zero.
+        result["status"] = STATUS_NO_HINTS
+    return result
+
+
+def rea_hinted_components(report: Any) -> Dict[str, Any]:
+    """Components REA OBSERVED in an artifact, as SBOM hints (rea-sec-01). Never raises.
+
+    *report* is a ``rea_adapter.analyze`` report. The REA shape is read by
+    ``tools.analyzers.rea_feeds`` -- the one module that knows it -- and every
+    component carries ``evidence: rea_evidence``, ``confidence: unasserted``,
+    the REA evidence id, the target sha256 and the authorization basis. A
+    report without that provenance is ``refused`` with its reason, not fed.
+
+    ``version`` is ``""`` when the artifact carried none (an npm path, a
+    ModuleRef, an APK ``.so``) and ``version_basis`` says ``not_observed`` --
+    never a guessed version.
+    """
+    from tools.analyzers.rea_feeds import sbom_observations
+
+    feed = sbom_observations(report)
+    target = report.get("target") if isinstance(report, dict) else None
+    result: Dict[str, Any] = {
+        "artifact": target,
+        "status": feed["status"],
+        "reason": feed["reason"],
+        "components": [],
+        "component_count": 0,
+        "skipped": [],
+        "skipped_count": 0,
+        "unmeasured": feed["unmeasured"],
+    }
+    if feed["items"] is None:
+        return result
+    seen = set()
+    for item in feed["items"]:
+        prov = item["provenance"]
+        identity = (item["name"].lower(), item["version"] or "", item["kind"])
+        if identity in seen:
+            result["skipped"].append({"name": item["name"], "reason": SKIP_DUPLICATE})
+            continue
+        seen.add(identity)
+        result["components"].append({
+            "type": "library",
+            "name": item["name"].lower(),
+            "declared_name": item["name"],
+            "version": item["version"] or "",
+            "scope": "required",
+            "group": "",
+            "source": prov["target"],
+            "binary_hint": {
+                "evidence": EVIDENCE_REA,
+                "confidence": CONFIDENCE_UNASSERTED,
+                "source_artifact": prov["target"],
+                "source_sha256": prov["target_sha256"],
+                "source_sha256_scope": "rea_target",
+                "evidence_string": item["evidence_string"][:MAX_EVIDENCE_STRING],
+                "version_token": None,
+                "version_basis": VERSION_BASIS_REA if item["version"] else VERSION_BASIS_NOT_OBSERVED,
+                "triage_status": prov["report_status"],
+                "rea_evidence_id": prov["evidence_id"],
+                "rea_observation_kind": item["kind"],
+                "authorization_basis": prov["authorization_basis"],
+            },
+        })
+    result["component_count"] = len(result["components"])
+    result["skipped_count"] = len(result["skipped"])
+    if result["status"] == "ok" and not result["components"]:
         result["status"] = STATUS_NO_HINTS
     return result
 

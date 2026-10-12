@@ -19,6 +19,8 @@ the rea-wire-01 allowlist:
                      (+ procedure_pseudo_code when ``procedure`` is given)
     dotnet_assembly  inspect_managed_artifact          (static, no engine)
     js_bundle        analyze_javascript_application, detail=summary
+                     (+ trace_application_feature per ``feature_seeds``
+                     entry, against the retained graph -- rea-aiify-01)
     har              inspect_web_network_capture       (needs sensitive_values)
 
 ``depth="xlate"`` (rea-xlate-01) widens three of them for
@@ -416,12 +418,41 @@ def _xlate_addresses(procedure: str) -> Any:
     return build
 
 
+#: ``trace_application_feature`` seed kinds (REA 6.4.0 inputSchema).
+SEED_KINDS: Tuple[str, ...] = ("route", "string", "api", "channel", "module", "native-export")
+
+
+def _trace_args(seed: Mapping[str, Any]) -> Any:
+    """Arguments for one feature trace, bound once the graph's evidence id is known.
+
+    ``analyze_javascript_application`` with ``detail=summary`` returns a VIEW;
+    the complete graph a trace walks is its ``parent_evidence_id``, retained in
+    the same REA session. No graph -> no trace (``None``), never a guess.
+    """
+    kind = str(seed.get("kind") or "string")
+    value = str(seed.get("value") or "")
+
+    def bind(records: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        graph = next((r["normalized_result"].get("parent_evidence_id") for r in records
+                      if r["tool"] == "analyze_javascript_application"
+                      and isinstance(r.get("normalized_result"), dict)), None)
+        if not graph or kind not in SEED_KINDS or not value:
+            return None
+        return {"seed": {"kind": kind, "value": value, "match": "contains"},
+                "application": {"kind": "retained-evidence", "evidence_id": graph}}
+
+    return bind
+
+
 def _plan(family: str, path: str, *, engine: Optional[str], procedure: Optional[str],
           sensitive_values: Optional[Sequence[str]],
-          depth: str = "summary") -> List[Tuple[str, Any, bool]]:
+          depth: str = "summary",
+          feature_seeds: Optional[Sequence[Mapping[str, Any]]] = None,
+          ) -> List[Tuple[str, Any, bool]]:
     """``[(tool, arguments, required)]``. A non-required step may fail alone.
 
-    ``arguments`` may be a callable over the records gathered so far.
+    ``arguments`` may be a callable over the records gathered so far, for a
+    step that needs an earlier step's evidence id; ``None`` from it skips the step.
     """
     if family == "binary":
         steps: List[Tuple[str, Any, bool]] = [
@@ -441,8 +472,11 @@ def _plan(family: str, path: str, *, engine: Optional[str], procedure: Optional[
         return steps
     if family == "js_bundle":
         fmt = "directory" if Path(path).is_dir() else "auto"
-        return [("analyze_javascript_application",
-                 {"input_path": path, "format": fmt, "detail": "summary"}, True)]
+        steps = [("analyze_javascript_application",
+                  {"input_path": path, "format": fmt, "detail": "summary"}, True)]
+        for seed in feature_seeds or ():
+            steps.append(("trace_application_feature", _trace_args(seed), False))
+        return steps
     if family == "har":
         return [("inspect_web_network_capture",
                  {"capture_path": path, "format": "har",
@@ -460,6 +494,7 @@ def analyze(
     authorization_basis: Optional[str] = None,
     actor: Optional[str] = None,
     depth: str = "summary",
+    feature_seeds: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Analyse one authorized artifact with REA, or say exactly why not.
 
@@ -549,7 +584,9 @@ def analyze(
                               note=f"rea_adapter {family}")
         return _run(registry, tools, str(path), family,
                     _plan(family, str(path), engine=engine, procedure=procedure,
-                          sensitive_values=sensitive_values, depth=depth), common)
+                          sensitive_values=sensitive_values, depth=depth,
+                          feature_seeds=feature_seeds),
+                    common)
     finally:
         registry.close()
         _rmtree(scratch)
@@ -565,6 +602,8 @@ def _run(registry: Any, tools: set, path: str, family: str,
     for tool, args, required in plan:
         if callable(args):
             args = args(records)
+            if args is None:
+                continue
         if tool not in tools:
             step = {"kind": "error", "reason": "not_allowlisted",
                     "detail": f"{tool!r} is not on the rea allowlist", "rea_error": None}

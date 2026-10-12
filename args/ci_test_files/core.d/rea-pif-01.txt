@@ -1,0 +1,5 @@
+# rea-pif-01: Process-Ify from an observed REA scenario. Pins no capture without
+# allow_execute=True, the registry exposing execute_tools only when opted in,
+# unmeasured steps as None (never []), and the observed draft held out of a chain
+# until a human approves it.
+tests/test_observed_processify.py

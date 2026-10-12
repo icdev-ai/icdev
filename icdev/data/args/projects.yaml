@@ -10323,3 +10323,84 @@ projects:
   - {key: eng, title: "AI-ASSISTED ENGINEERING TRACK (2a-2c)", priority: high}
   - {key: gd, title: "GAMEDAY EXERCISES FOR THE SAME SKILLS", priority: medium}
   - {key: fix, title: "ACADEMY-GAMEDAY CREDIT WIRING", priority: medium}
+- key: omx
+  name: "OMX -- ICDEV on Omarchy: harness-agnostic executors, opencode as the OSS default"
+  description: >-
+    Make open-source ICDEV a first-class citizen on Omarchy (DHH's Arch/Hyprland distro,
+    v4.0.4) while staying harness- and LLM-agnostic. ICDEV is the governed control plane
+    (kanban, compliance, MCP tools, LLM routing, guard layer); harnesses are interchangeable
+    executors. Surveyed 2026-10-10: icdev-core and the LLM router are already agnostic; the
+    HARNESS layer is Claude-centric -- claude_cli is the hard default (args/agent_adapters.yaml,
+    tools/agents/registry.py pick_default), the PreToolUse guard is wired only through
+    .claude/settings.json, and there is no opencode or pi adapter. Omarchy ships 13 agent
+    CLIs as mise stubs, a default-agent setting (`omarchy default agent`), cross-harness
+    skill dirs (~/.agents/skills etc.) and an agents-panel collector contract. Decisions
+    (operator, 2026-10-10): the default must be OSS -> opencode, with Pi FULLY supported as
+    a peer (default only if opencode is NO-GO); on Omarchy ICDEV FOLLOWS `omarchy default agent`; cloud models are fine;
+    guard parity gates AUTONOMOUS dispatch only; PostgreSQL stays required; ship an AUR
+    package; design everything PR-ready for upstream Omarchy; the Omarchy box on the LAN
+    becomes the acceptance environment and later a second executor (manual, behind gate-00).
+  task_prefix: omx-
+  default_open: true
+  briefs:
+  - 'spike: prove opencode plugin tool.execute.before can BLOCK and capture `opencode run --format json` -- go/no-go for the default -- omx-spike-01'
+  - 'adapt: opencode_cli and pi_cli AgentAdapters + capability entries, probe-verified -- omx-adapt-01..02'
+  - 'guard: opencode plugin calling tools/airgap/hook_compat.run_pre_tool_check (no second copy of the checks), fire-rate surveyed; the same bridge for Pi; runner refuses autonomous dispatch to an adapter whose guard_wired is not verified -- omx-guard-01..03'
+  - 'select: pick_default follows `omarchy default agent`; opencode_cli first in fallback_order -- omx-select-01'
+  - 'dx: opencode + pi in companion_registry; AGENTS.md primary in icdev init; one cross-harness ICDEV SKILL.md symlinked into every harness skill dir -- omx-dx-01..02'
+  - 'linux: Linux equivalents for /start /stop and the genesis Task Scheduler scripts; case-sensitive path guards -- omx-linux-01'
+  - 'setup/panel/dist/ci: `icdev omarchy setup` (pacman postgresql+pgvector, MCP registration, systemd --user), agents-panel collector, AUR PKGBUILD, archlinux CI job -- omx-setup-01, omx-panel-01, omx-dist-01, omx-ci-01'
+  - 'vllm (operator requirement 2026-10-10): ONE declared locality definition (vLLM can be local for CUI/air-gap; closes prefer_local treating cloud Mistral as local); vLLM model discovery from /v1/models with context + tool-call capability; vLLM embeddings; harnesses (opencode/pi/codex) pointed at the same vLLM endpoint; a pinned serving recipe -- omx-vllm-01..05'
+  - 'up/host (MANUAL, behind omx-gate-00): upstream Omarchy PR; Omarchy box as a second LAN executor on the shared board -- omx-up-01, omx-host-01'
+  epics:
+  - {key: spike, title: "CAN OPENCODE CARRY THE GUARD", priority: critical}
+  - {key: adapt, title: "OSS HARNESS ADAPTERS", priority: high}
+  - {key: guard, title: "GUARD PARITY GATES AUTONOMOUS DISPATCH", priority: critical}
+  - {key: select, title: "FOLLOW THE DESKTOP'S DEFAULT AGENT", priority: high}
+  - {key: dx, title: "ONE SKILL, EVERY HARNESS", priority: medium}
+  - {key: linux, title: "LINUX IS A FIRST-CLASS HOST", priority: medium}
+  - {key: setup, title: "ICDEV OMARCHY SETUP", priority: high}
+  - {key: panel, title: "AGENTS-PANEL RECORD", priority: low}
+  - {key: dist, title: "AUR PACKAGE", priority: medium}
+  - {key: ci, title: "ARCH LINUX CI", priority: medium}
+  - {key: vllm, title: "VLLM IS A FIRST-CLASS, PROVABLY-LOCAL PROVIDER", priority: high}
+  - {key: up, title: "UPSTREAM OMARCHY PR (manual)", priority: low}
+  - {key: host, title: "OMARCHY BOX AS SECOND EXECUTOR (manual)", priority: low}
+  - {key: gate, title: "MANUAL GATE (sentinel only)", priority: low}
+- key: rea
+  name: "REA -- Reverse-engineering front end: understand an app WITHOUT its source"
+  description: >-
+    A 2026-10-11 evaluation of morluto/rea (MIT, TypeScript, one local stdio MCP server) and the native engines
+    behind it. MEASURED gap: every ICDEV understanding path needs SOURCE -- aiify.engine.run_scan refuses anything
+    but a source tree, translation.source_extractor parses 7 source languages, modernization.legacy_analyzer has
+    analyzers for python/java/csharp only, and analyzers/binary_triage says in writing that modernization and
+    extract_source_ir require source. REA adds evidence-backed analysis of native binaries (Ghidra/Hopper/IDA),
+    JS/Electron (modules, source maps, IPC), .NET CIL, APK, WASM, websites/HAR and process behaviour, each result
+    carrying evidence_id + limitations/residual_unknowns. It plugs into two EXISTING seams: tools/mcp_client via
+    args/external_mcp_servers.yaml, and args/analyzer_contract.yaml (zero dispatcher change). Engines: Ghidra
+    (Apache-2.0) is the default everywhere and the existing ghidra_headless stays the air-gapped Node-free path;
+    Hopper (commercial, no redistribution) and IDA (IDA Free is non-commercial only; idalib on a shared server or
+    as SaaS needs an OEM license) are bring-your-own, single-operator, local only -- the operator owns neither, and
+    RE never runs on the SaaS/shared deployment. Rails: authorized targets only (sha256 + basis in provenance);
+    analysis stays local; REA is "not a sandbox", so it runs inside ICDEV containment; process/browser capture is
+    opt-in per run; CI uses a stub MCP server, never Node or Ghidra; decompiled output keeps basis decompiled|observed.
+  task_prefix: rea-
+  default_open: true
+  briefs:
+  - 'spike: pinned rea-agents on Windows and the Omarchy laptop against ICDEV-owned fixtures; GO/NO-GO per target type with latency, egress, determinism; vs binary_triage/ghidra_headless -- rea-spike-01'
+  - 'eng: args/re_engines.yaml license gate (oss_redistributable | byo_single_user | oem_required_for_shared) + engine detection; Ghidra 12 / PyGhidra first-class with installers -- rea-eng-01..02'
+  - 'wire: external_mcp_servers.yaml entry (off by default, exact pin, read-only allowlist, ceiling) + rea_adapter analyzer entries with new observable types, None-never-[] mapping, SandboxExecutor -- rea-wire-01..02'
+  - 'xlate: compiled artifacts -> source_extractor IR (basis decompiled) -> translate_unit / legacy_analyzer / architecture_extractor -- rea-xlate-01'
+  - 'aiify: no-source input mode (website/HAR/Electron/APK) -> features -> opportunity_scorer, basis observed -- rea-aiify-01'
+  - 'pif: opt-in observed scenario -> draft workflow in the workflow canvas for HITL review -- rea-pif-01'
+  - 'sec: binary/COTS SBOM hints, attack surface from IPC/routes/HAR/APK permissions, SCRM, ATO evidence -- rea-sec-01'
+  - 'docs: feature doc with the NOT-adopted list, ADR, manifest, commands -- rea-docs-01'
+  epics:
+  - {key: spike, title: "DOES REA EARN ITS PLACE (GO/NO-GO)", priority: critical}
+  - {key: eng, title: "ENGINES AND THEIR LICENSES", priority: high}
+  - {key: wire, title: "TWO EXISTING SEAMS, NO NEW SUBSYSTEM", priority: high}
+  - {key: xlate, title: "TRANSLATE WHAT HAS NO SOURCE", priority: high}
+  - {key: aiify, title: "AI-IFY FROM OBSERVED BEHAVIOUR", priority: high}
+  - {key: pif, title: "PROCESS-IFY FROM OBSERVED BEHAVIOUR", priority: medium}
+  - {key: sec, title: "SUPPLY CHAIN AND ATTACK SURFACE FROM ARTIFACTS", priority: medium}
+  - {key: docs, title: "DOCUMENT IT", priority: low}

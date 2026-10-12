@@ -117,7 +117,7 @@ servers:
       bases: [owned, licensed, customer-authorized]
       # Arguments that name an artifact under analysis. Each is hashed at call
       # time and must match a grant.
-      target_arguments: [path, input_path, capture_path, snapshot_path]
+      target_arguments: [path, input_path, capture_path, snapshot_path, executable]
       # `export_evidence_bundle.path` is where ICDEV WRITES the bundle, not a target.
       non_target_tools: [export_evidence_bundle]
     # READ-ONLY analysis tools only, chosen by REA 6.4.0's own declared effects
@@ -127,7 +127,7 @@ servers:
     # filesystem or may discard data, except the two in `write_exceptions` below.
     # Excluded by family, whatever their effects: adb / device actions, EVM,
     # JEB, browser / Electron / process / native-UI capture and observe
-    # (these need a per-run allow_execute, a later card), setup / install /
+    # (process capture is `execute_tools:` below, per-run allow_execute only), setup / install /
     # update, annotations (set_* / annotate_*), and evidence import.
     # Scoped to the rea-spike-01 GO rows: native PE/ELF via Ghidra, .NET CIL,
     # JS bundle + source map, HAR. WASM is NO-GO (REA 6.4.0 has no WASM
@@ -191,6 +191,15 @@ servers:
     # asks (its mayDiscardData is an `overwrite: true` of that path); the HAR
     # inspector writes its own scratch copy.
     write_exceptions: [export_evidence_bundle, inspect_web_network_capture]
+    # Tools that LAUNCH the target (rea-pif-01). NEVER on `tools:` above: they
+    # are exposed only by an ExternalToolRegistry built with allow_execute=True,
+    # which tools/workflow_canvas/observed_processify.py does for ONE operator-
+    # approved capture and then closes. `executable` is a target argument, so
+    # the launched file is hashed and must carry an operator grant like any
+    # other target. capture_browser_scenario is deliberately absent: its target
+    # is a URL target_auth cannot hash, and REA 6.4.0's recorded catalog does
+    # not offer it.
+    execute_tools: [capture_process_scenario]
     enabled: false
 
 # ---------------------------------------------------------------------------

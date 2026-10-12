@@ -587,6 +587,11 @@ python -m tools.analyzers.rea_adapter <pe> --family binary --authorization-basis
 python -m tools.analyzers.rea_adapter <pe> --family binary --procedure FUN_140001060 --authorization-basis owned
 python -m tools.analyzers.rea_adapter <dist/> --family js_bundle --authorization-basis owned
 python -m tools.analyzers.rea_adapter <har> --family har --sensitive-value <token> --authorization-basis owned
+# REA evidence feeds (rea-sec-01): a saved rea_adapter --json report into supply chain + attack surface
+python tools/network/attack_surface_mapper.py --artifact-report rea_report.json --json   # IPC / routes / HAR / APK
+python tools/supply_chain/scrm_assessor.py --project-id <id> --rea-report rea_report.json --json
+python tools/compliance/sbom_generator.py --project-id <id> --rea-report rea_report.json
+python tools/compliance/evidence_collector.py --project-id <id> --rea-report rea_report.json --json
 python tools/analyzers/dispatch.py --type dotnet_assembly --value <dll>            # sandboxed fan-out
 # Statuses ok | partial | unavailable | error, lifted by the dispatcher (`status_key`), so a
 # missing engine is never `ok`. limitations / residual_unknowns are None -- never [] -- unless
@@ -601,6 +606,17 @@ python -m tools.translation.decompiled_extractor --target <Fixture.dll> --family
 python tools/translation/code_translator.py --ir-file ir.json --source-language csharp --target-language python --output-dir out/
 # Every unit / translated entry / legacy component keeps basis + confidence + evidence_id.
 # legacy_analyzer.register_binary_application(project_id, name, ir) is a library call (no CLI).
+# AI-ify from observed behaviour (rea-aiify-01): input_type har | electron_app | website | apk.
+# The dashboard route passes no basis, so set ICDEV_RE_AUTHORIZATION_BASIS before starting it.
+curl -X POST localhost:5050/ai-ify/api/scan -H 'Content-Type: application/json' \
+  -d '{"input_type": "har", "input_ref": "/path/capture.har"}'          # opportunities carry basis: observed
+# Process-Ify from an observed scenario (rea-pif-01): allow_execute must be the literal true, per run.
+curl -X POST localhost:5050/workflow-canvas/api/workflows/observed-draft -H 'Content-Type: application/json' \
+  -d '{"kind": "process", "scenario": {"executable": "/path/app.exe"}, "allow_execute": true, "authorization_basis": "owned"}'
+curl -X POST localhost:5050/workflow-canvas/api/workflows/<workflow_id>/observed-review \
+  -H 'Content-Type: application/json' -d '{"decision": "approve", "reviewer": "<name>", "note": "..."}'
+# The draft is status draft / review pending_hitl and cannot join a process chain until approved.
+# Feature doc (verdicts, license table, NOT-adopted list): docs/features/phase-rea-reverse-engineering.md
 ```
 
 ### The two consumers of that triage (xrv-bin-03)

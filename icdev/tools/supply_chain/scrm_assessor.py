@@ -16,6 +16,7 @@ CLI:
   python tools/supply_chain/scrm_assessor.py --project-id <id> --vendor-id <id> --json
   python tools/supply_chain/scrm_assessor.py --project-id <id> --aggregate --json
   python tools/supply_chain/scrm_assessor.py --project-id <id> --prohibited --json
+  python tools/supply_chain/scrm_assessor.py --project-id <id> --rea-report report.json --json
 """
 
 import argparse
@@ -542,6 +543,58 @@ def get_prohibited_vendors(project_id, db_path=None):
         conn.close()
 
 
+def assess_artifact_dependencies(project_id, reports):
+    """Dependencies a binary-only component DECLARES, as SCRM inputs (rea-sec-01).
+
+    A COTS or binary-only .NET assembly has no lockfile, so the vendor scoring
+    above never sees what it pulls in. REA reads the assembly's own metadata
+    (``tools.analyzers.rea_feeds``): every AssemblyRef and, when REA names
+    them, every ModuleRef -- the native libraries it P/Invokes. Each item
+    keeps its REA provenance and ``confidence: unasserted``.
+
+    Nothing is SCORED and nothing is written: an observed dependency is an
+    input to a vendor assessment, not one. ``publisher_identity`` is context
+    -- ``strong_name_token`` (the reference pins a publisher key token),
+    ``none_declared`` (a managed reference with no token), ``not_applicable``
+    (a native module, which has no such field). Native modules REA counted but
+    did not name are under ``unmeasured``, never an empty list.
+    """
+    from tools.analyzers.rea_feeds import dependency_observations
+
+    dependencies, refused, unmeasured = [], [], []
+    for report in reports or []:
+        if not isinstance(report, dict):
+            try:
+                report = json.loads(Path(report).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                refused.append({"target": str(report), "reason": f"unreadable: {exc}"})
+                continue
+        feed = dependency_observations(report)
+        if feed["items"] is None:
+            refused.append({"target": report.get("target"), "reason": feed["reason"]})
+            continue
+        for item in feed["items"]:
+            if item["strong_named"] is None:
+                identity = "not_applicable"
+            else:
+                identity = "strong_name_token" if item["strong_named"] else "none_declared"
+            dependencies.append(dict(item, publisher_identity=identity))
+        for kind, why in feed["unmeasured"].items():
+            unmeasured.append({"target": report.get("target"), "kind": kind, "basis": why})
+    return {
+        "project_id": project_id,
+        "source": "rea_artifacts",
+        "dependencies": dependencies,
+        "dependency_count": len(dependencies),
+        "native_dependency_count": sum(1 for d in dependencies if d["kind"] == "native_module"),
+        "unmeasured": unmeasured,
+        "refused": refused,
+        "scored": False,
+        "nist_161_controls": ["SR-4"],
+        "assessed_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -555,11 +608,18 @@ def main():
     parser.add_argument("--vendor-id", help="Assess a specific vendor")
     parser.add_argument("--aggregate", action="store_true", help="Aggregate SCRM across all vendors")
     parser.add_argument("--prohibited", action="store_true", help="Find Section 889 prohibited vendors")
+    parser.add_argument("--rea-report", action="append", default=None,
+                        help="rea_adapter report JSON: declared dependencies as SCRM inputs (repeatable)")
 
     args = parser.parse_args()
 
     try:
         result = None
+
+        if args.rea_report:
+            result = assess_artifact_dependencies(args.project_id, args.rea_report)
+            print(json.dumps(result, indent=2))
+            return
 
         if args.vendor_id:
             result = assess_vendor(args.project_id, args.vendor_id)
