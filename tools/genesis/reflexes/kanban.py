@@ -6853,8 +6853,15 @@ def _dispatch_via_agent_adapter(adapter, task: dict, prompt_path: str,
       (``local_agent``, ``local_llm_router``) runs on a thread behind
       ``_LLMTaskHandle``, which is Popen-compatible — so everything downstream
       (timeout sweeper, completion checker, verification) is unchanged.
+
+    Raises ``DispatchRefused`` before anything is spawned when the adapter's
+    ``claude_route`` is metered under ``anthropic_billing: subscription_only``
+    (omx-guard-07-d3).
     """
     task_id = task["id"]
+    from tools.agents import dispatch_policy as _dp  # noqa: PLC0415
+
+    _dp.enforce(adapter, task_id)
     if getattr(adapter, "name", "") == "claude_cli":
         _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir,
                                  task_log, adapter=adapter)
@@ -8264,6 +8271,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         return
     if _pf_switched:
         adapter_forced = True
+    from tools.agents.dispatch_policy import DispatchRefused as _DispatchRefused  # noqa: PLC0415
+
     for tier in effective_chain:
         if tier in _ADAPTER_TIERS:
             if chain_adapter is None:
@@ -8278,8 +8287,13 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                     f"{tier}=skipped (chain adapter is {chain_adapter.name})"
                 )
                 continue
-            if _dispatch_via_agent_adapter(chain_adapter, task, prompt_path,
-                                           instruction, work_dir, task_log):
+            try:
+                _adapter_ok = _dispatch_via_agent_adapter(
+                    chain_adapter, task, prompt_path, instruction, work_dir, task_log)
+            except _DispatchRefused as exc:
+                tier_outcomes.append(f"{tier}=refused ({exc})")
+                continue
+            if _adapter_ok:
                 _set_executor_type(task_id, chain_adapter.name)
                 _tiers_ever_dispatched.add(tier)
                 dispatched = True
@@ -9600,6 +9614,9 @@ def _repair_skip_reason(task_id: str) -> str:
 
 def _spawn_repair(adapter, session, task_id: str, log_path: Path):
     """(handle, log_fh) for the repair session -- spawn or threaded invoke."""
+    from tools.agents import dispatch_policy as _dp  # noqa: PLC0415
+
+    _dp.enforce(adapter, task_id)  # omx-guard-07-d3: no metered Claude route
     if callable(getattr(adapter, "spawn", None)):
         log_fh = open(log_path, "w", encoding="utf-8", errors="replace")
         try:
