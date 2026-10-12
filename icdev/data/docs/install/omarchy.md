@@ -161,3 +161,14 @@ python tools/installer/release.py --aur-from-wheel dist/icdev-1.2.44-py3-none-an
 Publishing is then a copy of `deploy/aur/` (`PKGBUILD`, `.SRCINFO`,
 `icdev.install`) into the AUR git repository for `icdev`. `release.py` never
 pushes to the AUR itself.
+
+## Keeping the host awake
+
+A laptop that suspends mid-run drops its SSH session and stalls any task in flight. For a long unattended run, hold an
+inhibitor lock for its duration:
+
+```bash
+systemd-inhibit --what=sleep:idle --why="ICDEV run" sleep 3h &
+```
+
+The lock is released when the `sleep` exits, or when you kill it.
