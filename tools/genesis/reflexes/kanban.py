@@ -6057,6 +6057,163 @@ def _handle_provider_exhaustion(task_id: str, ret: Optional[int], output: str) -
     return False
 
 
+# ── Provider AUTH failure (omx-host-05) ──────────────────────────────────────
+# A provider that answers 401/403 will answer it again on the next dispatch:
+# the credential is wrong, and only an operator can fix it. MEASURED on the
+# Omarchy board 2026-10-12: lap-e2e-01 on opencode_cli / ollama-cloud/kimi-k3
+# died in ~2s with "APIError: Unauthorized" ("statusCode":401,
+# "isRetryable":false in the stream), and the non-zero-exit branch of
+# _check_completed moved it straight back to backlog -- no failure_count, no
+# reason, nothing surfaced -- so the backlog query's 2-minute updated_at window
+# was the only brake: ~40 dispatch cycles in an hour. This seam runs first, on
+# failed runs only, and HOLDS the task in the token_exhausted lane (the one
+# lane with a durable resume_at) instead of re-queueing it.
+
+#: Prefix of every transition reason this seam writes; _lifetime_exhaustion_count
+#: excludes it, so an auth hold never pushes a task toward decomposition.
+PROVIDER_AUTH_FAILURE_REASON = "provider auth failure"
+
+#: How long an auth-failed task is held before one more attempt, and the window
+#: inside which the same (adapter, provider) is surfaced at most once.
+PROVIDER_AUTH_HOLD_SECONDS = _int_env("KANBAN_PROVIDER_AUTH_HOLD_SECONDS", 3600)
+
+#: (adapter, provider) -> epoch seconds it was last surfaced.
+_provider_auth_surfaced: Dict[Tuple[str, str], float] = {}
+#: task -> adapter name of the agent-adapter dispatch now running.
+_dispatch_adapter_name: Dict[str, str] = {}
+
+_AUTH_TAIL_CHARS = 6000
+# (pattern, label). The label -- never the matched text -- is what reaches the
+# board, so a header or key echoed into an error body cannot leak through it.
+_AUTH_PATTERNS = (
+    (re.compile(r'"?status_?code"?\s*[:=]\s*"?(401|403)\b', re.IGNORECASE), "statusCode"),
+    (re.compile(r"\b(401)\s*(?:-\s*)?Unauthori[sz]ed\b", re.IGNORECASE), "Unauthorized"),
+    (re.compile(r"\b(403)\s*(?:-\s*)?Forbidden\b", re.IGNORECASE), "Forbidden"),
+    (re.compile(r"\bAPI\s?Error\b\W{0,3}(Unauthori[sz]ed)\b", re.IGNORECASE), "Unauthorized"),
+    (re.compile(r"\bAPI\s?Error\b\W{0,3}(Forbidden)\b", re.IGNORECASE), "Forbidden"),
+    (re.compile(r"\b(authentication_error)\b", re.IGNORECASE), "authentication_error"),
+    (re.compile(r"\b(invalid[ _-]?(?:x-)?api[ _-]?key)\b", re.IGNORECASE), "invalid api key"),
+)
+_RETRYABLE_TRUE_RE = re.compile(r'"?isRetryable"?\s*[:=]\s*true\b', re.IGNORECASE)
+_RETRYABLE_FALSE_RE = re.compile(r'"?isRetryable"?\s*[:=]\s*false\b', re.IGNORECASE)
+_PROVIDER_ID_RE = re.compile(r'"providerID"\s*:\s*"([\w.\-/]{1,60})"')
+_SAFE_NAME_RE = re.compile(r"[^\w.\-/:]")
+
+
+def classify_provider_auth_failure(text: str) -> Optional[Tuple[int, str]]:
+    """``(status, label)`` when ``text`` reports a provider auth refusal, else None.
+
+    Only ever asked about a run that FAILED, so prose about "auth" in a
+    successful run is never read. A body that explicitly says
+    ``isRetryable: true`` (and nowhere ``false``) is left to the retry path.
+    The label is a fixed string, never text from the body.
+    """
+    if not text:
+        return None
+    if _RETRYABLE_TRUE_RE.search(text) and not _RETRYABLE_FALSE_RE.search(text):
+        return None
+    for pattern, label in _AUTH_PATTERNS:
+        m = pattern.search(text)
+        if not m:
+            continue
+        token = m.group(1).lower()
+        if token == "403" or token == "forbidden":
+            return 403, label
+        return 401, label
+    return None
+
+
+def _adapter_stream_raw(task_id: str) -> str:
+    import json as _json
+
+    try:
+        payload = _json.loads(_adapter_stream_path(task_id).read_text(encoding="utf-8"))
+        return str(payload.get("raw") or "")
+    except Exception:  # noqa: BLE001 -- no stream is no evidence
+        return ""
+
+
+def _safe_name(value: Any, default: str) -> str:
+    cleaned = _SAFE_NAME_RE.sub("", str(value or ""))[:80]
+    return cleaned or default
+
+
+def _handle_provider_auth_failure(task_id: str, ret: Optional[int], output: str,
+                                  task: Optional[dict] = None) -> bool:
+    """Completion seam: a provider auth refusal is held, counted and surfaced.
+
+    Returns True when the task was held; the caller then skips every other
+    failure path (none of which may re-queue it).
+    """
+    dispatched_adapter = _dispatch_adapter_name.pop(task_id, None)
+    try:
+        raw = _adapter_stream_raw(task_id)
+        tail = (output or "")[-_AUTH_TAIL_CHARS:] + "\n" + raw[-_AUTH_TAIL_CHARS:]
+        if ret == 0 and not _RUN_FAILED_RE.search(tail):
+            return False  # a run that SUCCEEDED is never an auth failure
+        hit = classify_provider_auth_failure(tail)
+        if hit is None:
+            return False
+        status, label = hit
+        info = _dispatch_provider.get(task_id)
+        adapter = (dispatched_adapter or (info[0] if info else "")
+                   or _get_executor_type(task_id) or "")
+        provider = (info[1] or info[2]) if info else None
+        if not provider:
+            from tools.llm import provider_exhaustion as _pe  # noqa: PLC0415
+
+            provider = _pe.harness_current_model(adapter) if adapter else None
+        if not provider:
+            m = _PROVIDER_ID_RE.search(raw)
+            provider = m.group(1) if m else None
+        adapter = _safe_name(adapter, "unknown-adapter")
+        provider = _safe_name(provider, "unknown-provider")
+    except Exception as exc:  # noqa: BLE001 -- fall through to the generic paths
+        logger.debug("kanban: auth failure check failed for %s: %s", task_id, exc)
+        return False
+
+    resume = datetime.now(timezone.utc) + timedelta(seconds=PROVIDER_AUTH_HOLD_SECONDS)
+    reason = (f"{PROVIDER_AUTH_FAILURE_REASON}: {adapter} -> {provider} returned "
+              f"{status} ({label}), non-retryable -- held until {resume.isoformat()}; "
+              f"fix the provider credential, this is not a task defect")
+    _move_task(task_id, "token_exhausted", actor="scheduler", reason=reason)
+    _save_resume_at(task_id, resume)
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE kanban_tasks SET "
+                "failure_count = COALESCE(failure_count, 0) + 1, "
+                "last_failure_reason = %s, last_failure_at = %s WHERE id = %s",
+                (reason[:500], _utcnow_iso(), task_id),
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("kanban: could not record auth failure for %s: %s", task_id, exc)
+    logger.error("kanban: %s %s", task_id, reason)
+    print(f"  Kanban: {task_id} {reason}")
+
+    key = (adapter, provider)
+    now = time.time()
+    if now - _provider_auth_surfaced.get(key, 0.0) < PROVIDER_AUTH_HOLD_SECONDS:
+        return True  # this (adapter, provider) was already surfaced this hour
+    _provider_auth_surfaced[key] = now
+    _audit_agent_execution(
+        "agent_execution_failed", task_id, executor=adapter, provider=provider,
+        failure_class="provider_auth", status_code=status, reason=reason,
+    )
+    try:
+        from tools.notifications.adapters.telegram import send as tg_send
+
+        tg_send(
+            f"PROVIDER AUTH FAILED: {adapter} -> {provider} ({status})",
+            f"{reason}\nFirst task affected: {task_id}. Further tasks on this "
+            f"adapter+provider are held silently for the next hour.",
+            severity="warning",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
 def _guard_parity_screen(adapter, chain: list, task_id: str,
                          tier_outcomes: List[str]):
     """Screen the chain adapter through ``tools.agents.guard_parity`` (omx-guard-02).
@@ -6902,6 +7059,7 @@ def _dispatch_via_agent_adapter(adapter, task: dict, prompt_path: str,
     handle = _LLMTaskHandle(task_id=task_id, log_path=task_log)
     handle.start(_runner)
     _running[task_id] = handle
+    _dispatch_adapter_name[task_id] = adapter_name
     _record_dispatch_pid(task_id, handle)
     _dispatch_times[task_id] = datetime.now(timezone.utc)
     _close_agent_invocation(
@@ -13035,6 +13193,15 @@ def _check_completed():
                         "cost attribution skipped for %s: %s", task_id, _cost_exc,
                     )
 
+            # ── PROVIDER AUTH FAILURE (omx-host-05) ────────────────────
+            # First: a 401/403 is not retryable by re-dispatching, and every
+            # path below would re-queue it (the non-zero-exit branch straight
+            # to backlog, ~40 dispatches an hour on the Omarchy board).
+            if _handle_provider_auth_failure(task_id, ret, claude_output, task_dict):
+                del _running[task_id]
+                _dispatch_times.pop(task_id, None)
+                continue
+
             # ── PROVIDER FAILOVER (omx-adapt-06) ───────────────────────
             # Before the generic check: an exhausted PROVIDER is not a task
             # that ran out of room, and must not count toward decomposition.
@@ -13681,12 +13848,15 @@ def _lifetime_exhaustion_count(task_id: str) -> int:
         conn = get_connection()
         try:
             # omx-adapt-06: a provider failover/hold is not evidence of task
-            # SIZE, so it never counts toward decomposition.
+            # SIZE, so it never counts toward decomposition -- nor is a
+            # provider auth hold (omx-host-05).
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM kanban_status_transitions "
                 "WHERE task_id = %s AND to_status = 'token_exhausted' "
+                "AND COALESCE(reason, '') NOT LIKE %s "
                 "AND COALESCE(reason, '') NOT LIKE %s",
-                (task_id, PROVIDER_FAILOVER_REASON + "%"),
+                (task_id, PROVIDER_FAILOVER_REASON + "%",
+                 PROVIDER_AUTH_FAILURE_REASON + "%"),
             ).fetchone()
             if not row:
                 return 0
