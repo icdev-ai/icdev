@@ -507,7 +507,9 @@ def main():
 
             code_reload.restart_if_code_changed(
                 _code_baseline, started_at=_started_at,
-                busy=lambda: bool(_kanban_mod._running),
+                # kpr-watch-27: a PR repair in flight is a worker too.
+                busy=lambda: bool(_kanban_mod._running) or bool(
+                    getattr(_kanban_mod, "_repairing", None)),
                 max_defer=float(os.environ.get(
                     "KANBAN_RESTART_MAX_DEFER_SECONDS", "7200")))
         except Exception as _cr_exc:  # noqa: BLE001 — watching must not kill it

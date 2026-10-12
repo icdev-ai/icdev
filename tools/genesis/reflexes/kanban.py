@@ -348,11 +348,13 @@ def _count_in_progress() -> int:
         rows = conn.execute(
             "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
         ).fetchall()
+        # + PR repairs (kpr-watch-27): their task stays pr_opened, but the
+        # worker holds a slot like any dispatch.
         return sum(
             1
             for r in (dict(x) for x in rows)
             if not is_manual_gate(r.get("id"), r.get("title"))
-        )
+        ) + len(_repairing)
     finally:
         conn.close()
 
@@ -7887,6 +7889,25 @@ def _task_row(task_id: str) -> Optional[dict]:
             pass
 
 
+def _configured_executor_chain() -> list:
+    """The executor fallback chain: env override, then strategos_config.yaml."""
+    try:
+        import os as _os_chain  # noqa: PLC0415
+        # Env-var override for quick mode switching (e.g. air-gap toggle).
+        _env_chain = _os_chain.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
+        if _env_chain:
+            return [x.strip() for x in _env_chain.split(",") if x.strip()]
+        import yaml as _yaml  # noqa: PLC0415
+        _cfg_path = BASE_DIR / "args" / "strategos_config.yaml"
+        with open(_cfg_path, encoding="utf-8") as _f:
+            _sc = _yaml.safe_load(_f) or {}
+        return _sc.get("executor", {}).get(
+            "fallback_chain", ["claude_cli", "gitlab", "ollama_local"]
+        )
+    except Exception:
+        return ["claude_cli", "gitlab", "ollama_local"]
+
+
 def _dispatch_to_claude(task: dict, prompt_path: str):
     """Dispatch a task to the appropriate executor.
 
@@ -8188,22 +8209,7 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     instruction = _build_instruction(task_id, title, prompt_text, prompt_path)
     task_log = PROMPT_DIR / f"{task_id}.log"
 
-    try:
-        import os as _os_chain  # noqa: PLC0415
-        # Env-var override for quick mode switching (e.g. air-gap toggle).
-        _env_chain = _os_chain.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
-        if _env_chain:
-            _fallback_chain = [x.strip() for x in _env_chain.split(",") if x.strip()]
-        else:
-            import yaml as _yaml  # noqa: PLC0415
-            _cfg_path = BASE_DIR / "args" / "strategos_config.yaml"
-            with open(_cfg_path, encoding="utf-8") as _f:
-                _sc = _yaml.safe_load(_f) or {}
-            _fallback_chain = _sc.get("executor", {}).get(
-                "fallback_chain", ["claude_cli", "gitlab", "ollama_local"]
-            )
-    except Exception:
-        _fallback_chain = ["claude_cli", "gitlab", "ollama_local"]
+    _fallback_chain = _configured_executor_chain()
 
     task_desc = task.get("description", task.get("title", ""))
     task_type = task.get("task_type", "chore")
@@ -9459,6 +9465,322 @@ def _verify_adopted_pr_tasks(limit: Optional[int] = None) -> List[str]:
                     task_id, "passed" if verified else "failed")
         done.append(task_id)
     return done
+
+
+# ── PR repair dispatch (kpr-watch-27) ─────────────────────────────────────────
+#
+# A red kanban PR whose worker has exited was never repaired: pr_watcher appends
+# a resume to the task's queue and then holds, and nothing STARTED a session to
+# read it -- every resume is post-run, and the scheduler never dispatches a
+# pr_opened task. Measured 2026-10-11: 52 "resume undelivered" escalations
+# across 26 tasks since 2026-09-05, each closed by a human. This sweep starts
+# that session: ONE repair worker per enqueued resume, detached on
+# origin/kanban/<id>, with the messages IN ITS PROMPT (so opencode / pi are
+# served too -- only claude_cli has the SessionStart inbox), counted against
+# MAX_IN_PROGRESS, and never moving the task (it stays pr_opened: kpr-watch-11).
+# The parts that are not scheduler state live in tools/kanban/repair_dispatch.py.
+
+#: task id -> {"handle", "worktree", "started", "log_fh", "adapter", "timeout",
+#: "leased"}. Separate from `_running` on purpose: `_check_completed` would treat
+#: a finished repair as a build (verify, push + open a PR, move the task).
+_repairing: Dict[str, Dict[str, Any]] = {}
+
+#: Repairs started per cycle. Capacity (MAX_IN_PROGRESS) still bounds it.
+REPAIR_DISPATCH_PER_CYCLE = _int_env("KANBAN_REPAIR_PER_CYCLE", 1)
+
+
+def _busy_slots() -> int:
+    """Workers this process holds: builds AND PR repairs (one capacity pool)."""
+    return len(_running) + len(_repairing)
+
+
+def _repair_worktree_path(task_id: str) -> Path:
+    base = _task_worktree_path(task_id)
+    return base.with_name(f"{base.name}-repair")
+
+
+def _create_repair_worktree(task_id: str) -> Optional[str]:
+    """A DETACHED checkout of origin/kanban/<id>. Never a new branch.
+
+    Detached so it cannot collide with a worktree that still holds the local
+    `kanban/<id>` branch, and so nothing here creates, deletes or moves a
+    branch ref -- the session pushes ``HEAD:refs/heads/kanban/<id>``.
+    """
+    repo = str(_task_repo_root(task_id))
+    branch = f"kanban/{task_id}"
+    rc, _ = _quiet_git(
+        ["fetch", "origin", f"+refs/heads/{branch}:refs/remotes/origin/{branch}"],
+        repo)
+    if rc != 0:
+        logger.warning("pr-repair: could not fetch origin/%s -- not repairing", branch)
+        return None
+    path = _repair_worktree_path(task_id)
+    if path.exists():
+        _quiet_git(["worktree", "remove", "--force", str(path)], repo)
+        if path.exists():
+            logger.warning("pr-repair: %s exists and could not be removed", path)
+            return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rc, _ = _quiet_git(
+        ["worktree", "add", "--detach", str(path), f"origin/{branch}"], repo)
+    if rc != 0:
+        logger.warning("pr-repair: could not add a detached checkout for %s", task_id)
+        return None
+    return str(path)
+
+
+def _remove_repair_worktree(task_id: str, path: str) -> None:
+    repo = str(_task_repo_root(task_id))
+    _quiet_git(["worktree", "remove", "--force", path], repo)
+    _quiet_git(["worktree", "prune"], repo)
+
+
+def _push_repair(task_id: str, path: str) -> str:
+    """Land what the repair session left: commit if dirty, fast-forward push.
+
+    Adapter-agnostic backstop -- the prompt asks the session to push, but an
+    opencode / pi session may only edit. NEVER forces: a branch that moved
+    under the session is reported ``diverged`` and left for pr_watcher.
+    """
+    branch = f"kanban/{task_id}"
+    rc, dirty = _quiet_git(["status", "--porcelain"], path)
+    if rc == 0 and dirty.strip():
+        _quiet_git(["add", "-A"], path)
+        rc, _ = _quiet_git(
+            ["commit", "-m",
+             f"fix({task_id}): repair red PR from pr_watcher resume (kpr-watch-27)"],
+            path)
+        if rc != 0:
+            return "commit_failed"
+    rc, head = _quiet_git(["rev-parse", "HEAD"], path)
+    if rc != 0:
+        return "no_head"
+    _quiet_git(["fetch", "origin",
+                f"+refs/heads/{branch}:refs/remotes/origin/{branch}"], path)
+    rc, remote = _quiet_git(["rev-parse", f"origin/{branch}"], path)
+    if rc == 0 and remote.strip() == head.strip():
+        return "no_change"
+    if rc == 0:
+        anc, _ = _quiet_git(["merge-base", "--is-ancestor", remote.strip(),
+                             head.strip()], path)
+        if anc != 0:
+            return "diverged"
+    rc, _ = _quiet_git(["push", "origin", f"HEAD:refs/heads/{branch}"], path)
+    return "pushed" if rc == 0 else "push_failed"
+
+
+def _release_task_lease(task_id: str) -> None:
+    try:
+        from tools.coordination import leases as _leases
+
+        _leases.release(f"kanban:task:{task_id}")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("pr-repair: lease release failed for %s: %s", task_id, exc)
+
+
+def _repair_skip_reason(task_id: str) -> str:
+    """Why this pr_opened task must NOT get a repair now, or "" to proceed.
+
+    Cheap, local checks first; the forge is asked last.
+    """
+    from tools.kanban import repair_dispatch
+
+    if task_id in _running or task_id in _repairing:
+        return "a worker for it is live in this process"
+    if not repair_dispatch.pending_resumes(task_id):
+        return "no undelivered pr_watcher resume"
+    if repair_dispatch.in_cooldown(task_id):
+        return "repaired inside the cooldown"
+    if _lease_blocks_dispatch(task_id):
+        return "claimed by a live session"
+    if _pr_open_state(task_id) != PR_OPEN:
+        return "PR not confirmed open"
+    return ""
+
+
+def _spawn_repair(adapter, session, task_id: str, log_path: Path):
+    """(handle, log_fh) for the repair session -- spawn or threaded invoke."""
+    if callable(getattr(adapter, "spawn", None)):
+        log_fh = open(log_path, "w", encoding="utf-8", errors="replace")
+        try:
+            return adapter.spawn(session, stdout=log_fh,
+                                 stderr=subprocess.STDOUT), log_fh
+        except Exception:
+            log_fh.close()
+            raise
+    name = getattr(adapter, "name", "agent-adapter")
+
+    def _runner():
+        with open(log_path, "w", encoding="utf-8", newline="",
+                  errors="replace") as fh:
+            fh.write(f"[{name} pr-repair -- task {task_id}]\n")
+            result = adapter.invoke(session)
+            fh.write(result.output or "")
+            if result.error:
+                fh.write(f"\n[error] {result.error}\n")
+            if not result.completed:
+                raise RuntimeError(f"{name} did not complete the repair")
+
+    handle = _LLMTaskHandle(task_id=task_id, log_path=log_path)
+    handle.start(_runner)
+    return handle, None
+
+
+def _dispatch_pr_repair(task: dict) -> bool:
+    """Start ONE repair session for *task*. True when a worker is running."""
+    from tools.kanban import repair_dispatch
+
+    task_id = task["id"]
+    leased = False
+    try:
+        from tools.coordination import leases as _leases
+
+        lease = _leases.acquire(
+            f"kanban:task:{task_id}", intent="kanban-pr-repair",
+            ttl_seconds=int(MAX_EXECUTION_SECONDS) + 600, block=False)
+        if lease is None:
+            logger.info("pr-repair: %s claimed by another session -- skipping", task_id)
+            return False
+        leased = True
+    except Exception as exc:  # noqa: BLE001 -- unavailable coordination never wedges
+        logger.debug("pr-repair: lease acquire failed for %s: %s", task_id, exc)
+
+    worktree = None
+    claim = None
+    started = False
+    try:
+        chain = _build_effective_executor_chain(_configured_executor_chain())
+        adapter = _pick_chain_adapter(chain, task.get("task_type"))
+        adapter = _guard_parity_screen(adapter, chain, task_id, [])
+        if adapter is None:
+            logger.warning("pr-repair: no agent adapter for %s -- not repairing", task_id)
+            return False
+        worktree = _create_repair_worktree(task_id)
+        if not worktree:
+            return False
+        claim = repair_dispatch.claim_messages(task_id)
+        if not claim.messages:
+            return False
+        pr_url = str(task.get("executor_url") or "")
+        instruction = repair_dispatch.render_prompt(
+            task_id, str(task.get("title") or task_id), claim.messages,
+            branch=f"kanban/{task_id}", pr_url=pr_url)
+        session = _agent_session(task, instruction, worktree,
+                                 dispatch_source=repair_dispatch.SOURCE)
+        _ensure_prompt_dir()
+        handle, log_fh = _spawn_repair(adapter, session, task_id,
+                                       PROMPT_DIR / f"{task_id}.repair.log")
+        started = True
+    except Exception as exc:  # noqa: BLE001 -- a failed repair must not break the cycle
+        logger.warning("pr-repair: dispatch failed for %s: %s", task_id, exc)
+        return False
+    finally:
+        if not started:
+            if claim is not None:
+                claim.release()
+            if worktree:
+                _remove_repair_worktree(task_id, worktree)
+            if leased:
+                _release_task_lease(task_id)
+
+    # The session is running: NOW the words are delivered -- receipt + ledger.
+    claim.commit()
+    adapter_name = getattr(adapter, "name", "?")
+    repair_dispatch.record_dispatch(
+        task_id, adapter=adapter_name, worktree=worktree,
+        messages=len(claim.messages), pr_url=pr_url)
+    _repairing[task_id] = {
+        "handle": handle, "worktree": worktree, "log_fh": log_fh,
+        "started": datetime.now(timezone.utc), "adapter": adapter_name,
+        "timeout": int(getattr(session, "timeout_seconds", 0) or MAX_EXECUTION_SECONDS),
+        "leased": leased,
+    }
+    _audit_agent_execution(
+        "agent_execution_started", task_id, executor=adapter_name,
+        mode="pr_repair", messages=len(claim.messages),
+        project_id=str(task.get("project_id") or ""))
+    print(f"  Kanban: PR repair session for {task_id} via {adapter_name} "
+          f"({len(claim.messages)} message(s))")
+    return True
+
+
+def _dispatch_pr_repairs(limit: Optional[int] = None) -> List[str]:
+    """Start a repair session for each red pr_opened task nobody is serving.
+
+    Eligible: pr_opened, an UNDELIVERED pr_watcher resume on its queue, no live
+    worker or claim, outside the repair cooldown, PR confirmed open, a free
+    slot, and the runner neither paused nor in Manual Build.
+    """
+    if _manual_build():
+        return []
+    try:
+        from tools.kanban import scheduler_control
+
+        if scheduler_control.is_paused():
+            return []
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("pr-repair: pause check failed (continuing): %s", exc)
+    cap = REPAIR_DISPATCH_PER_CYCLE if limit is None else limit
+    cap = min(cap, MAX_IN_PROGRESS - _busy_slots())
+    if cap <= 0:
+        return []
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, title, task_type, project_id, executor_url "
+            "FROM kanban_tasks WHERE status = 'pr_opened' ORDER BY updated_at",
+        ).fetchall()
+    started: List[str] = []
+    for row in rows:
+        task = dict(row)
+        why = _repair_skip_reason(task["id"])
+        if why:
+            continue
+        if _dispatch_pr_repair(task):
+            started.append(task["id"])
+            if len(started) >= cap:
+                break
+    return started
+
+
+def _reap_pr_repairs() -> List[str]:
+    """Finish repair sessions that exited (or timed out): push, clean up.
+
+    The task is NOT moved -- pr_watcher sees the push and the new CI run.
+    """
+    finished: List[str] = []
+    for task_id, entry in list(_repairing.items()):
+        handle = entry["handle"]
+        rc = handle.poll()
+        elapsed = (datetime.now(timezone.utc) - entry["started"]).total_seconds()
+        if rc is None:
+            if elapsed < entry.get("timeout", MAX_EXECUTION_SECONDS):
+                continue
+            try:
+                handle.kill()
+            except Exception:  # noqa: BLE001
+                pass
+            rc = "timeout"
+        fh = entry.get("log_fh")
+        if fh is not None:
+            try:
+                fh.close()
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            outcome = _push_repair(task_id, entry["worktree"])
+        except Exception as exc:  # noqa: BLE001
+            outcome = f"push_error: {exc}"
+        _remove_repair_worktree(task_id, entry["worktree"])
+        if entry.get("leased"):
+            _release_task_lease(task_id)
+        del _repairing[task_id]
+        _audit_agent_execution(
+            "agent_execution_completed", task_id, executor=entry.get("adapter"),
+            mode="pr_repair", exit_code=str(rc), outcome=outcome,
+            seconds=int(elapsed))
+        print(f"  Kanban: PR repair for {task_id} finished (exit {rc}): {outcome}")
+        finished.append(task_id)
+    return finished
 
 
 def _tag_task_source(task_id: str, source: str) -> None:
@@ -14318,13 +14640,20 @@ def _run_cycle(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             print(f"  Kanban: stale-cleanup finished ({len(stale_info)} task(s)): "
                   f"{', '.join(t for t, _ in stale_info)} — continuing this cycle")
 
+    # 3a'. Reap finished PR-repair sessions (kpr-watch-27) before the capacity
+    # gate, so a repair that exited frees its slot this cycle.
+    try:
+        _reap_pr_repairs()
+    except Exception as _rr_exc:  # noqa: BLE001
+        logger.warning("PR-repair reap failed: %s", _rr_exc)
+
     # 3b. Concurrency gate — only block when we are at MAX_IN_PROGRESS.
     # With worktree isolation, multiple Claude CLI subprocesses can run
     # concurrently (each in its own directory).  The stale-cleanup sweep
     # above already removed any entries whose DB status changed, so
-    # _running only contains genuinely live tasks.
-    if len(_running) >= MAX_IN_PROGRESS:
-        print(f"  Kanban: {len(_running)} task(s) executing (max {MAX_IN_PROGRESS}), waiting...")
+    # _running only contains genuinely live tasks. PR repairs share the pool.
+    if _busy_slots() >= MAX_IN_PROGRESS:
+        print(f"  Kanban: {_busy_slots()} task(s) executing (max {MAX_IN_PROGRESS}), waiting...")
         return {
             "success": True,
             "metric_value": len(completed),
@@ -14368,6 +14697,16 @@ def _run_cycle(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             }
     except Exception as _drain_exc:  # noqa: BLE001
         logger.debug("restart-drain check failed (continuing): %s", _drain_exc)
+
+    # 3b''. PR repair dispatch (kpr-watch-27): a red pr_opened task whose
+    # worker exited, with an undelivered pr_watcher resume, gets ONE repair
+    # session on its existing branch. After the drain check (a re-exec would
+    # orphan it) and before the token retry, so it competes for capacity like
+    # any dispatch.
+    try:
+        _dispatch_pr_repairs()
+    except Exception as _pr_exc:  # noqa: BLE001
+        logger.warning("PR-repair dispatch sweep failed: %s", _pr_exc)
 
     # 3c. Check for token-exhausted tasks ready for retry.
     # We retry ONE task here, but we do NOT return — the function continues
@@ -14415,7 +14754,7 @@ def _run_cycle(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 pass
 
     # If a token retry consumed the last available slot, skip normal promotion.
-    if len(_running) >= MAX_IN_PROGRESS:
+    if _busy_slots() >= MAX_IN_PROGRESS:
         return {
             "success": True,
             "metric_value": (1 if token_retry_dispatched else 0) + len(completed),
