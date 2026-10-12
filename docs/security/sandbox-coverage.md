@@ -2721,7 +2721,18 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
   - **HAR evidence keeps body secrets.** rea-spike-01 found a CSRF token in a response body that survived verbatim. The caller must pass `sensitive_values` (the analyzer card's job) before HAR evidence is persisted.
 - **Revisit if:** an `ext__rea__*` agent path is routed through `SandboxExecutor` too; a tool declaring `accessesNetwork`, `launchesProcess`-based capture, or `mutatesTarget` is added to the allowlist; the pin moves; or REA gains an HTTP transport.
 
-### Gap 74 — REA evidence feeds (`tools/analyzers/rea_feeds.py`)
+### Gap 74 — AI-ify observed-behaviour input mode (`tools/aiify/observed_inventory.py`, `tools/aiify/engine.py`)
+
+**Module:** `tools/aiify/observed_inventory.py` (rea-aiify-01, card `rea`), called by `tools/aiify/engine.py::_resolve_input` / `run_scan` for `input_type` `har`, `electron_app`, `website`, `apk`.
+
+**Ingress path:** an operator-chosen artifact ICDEV holds no source for — a recorded HAR, an Electron app directory or `.asar`, a locally saved website, an APK — or a website URL. The bytes are attacker-chosen in the worst case.
+
+- **Decision:** **sandboxed**, by delegation. This module parses no artifact bytes itself. It hands the artifact to REA only through `tools.analyzers.dispatch` with one declaration (`rea_har`, `rea_javascript`, `rea_website`, `rea_apk`), each `sandbox: sandboxed` (Gap 73), so REA and its parsers run inside `SandboxExecutor` and a host with no sandbox gets `sandbox_unavailable`, never an in-process run. What this module reads is REA's evidence JSON (`normalized_result`), walked depth-bounded for `method`/`url`/`route`/`channel` strings; nothing is executed or deserialised into objects.
+- **Rails, refused before a scan row exists:** no authorization basis (`owned` | `licensed` | `customer-authorized`); a local-artifact type given a URL (nothing is downloaded); a missing artifact; a HAR with no `sensitive_values`; a live website without `allow_execute: true`. The target sha256 and basis ride on the inventory's `provenance` and every opportunity's `pattern_detail`. URLs are reduced to `METHOD /path` with id segments collapsed — the query string, fragment and host are dropped before anything is stored. The ref is never sent to the NLP ref extractor (no LLM egress for an observed input).
+- **Residual, named rather than implied:** REA 6.4.0's website family is not allowlisted, so a live website with `allow_execute` reports `unavailable` / `not_allowlisted` — no live capture exists yet, and adding it is a later card's allowlist decision. APK is likewise `unavailable` (JADX not allowlisted). A JS summary names no routes or channels, so without `feature_seeds` an Electron/website inventory is `None` (`not_enumerated`), not `[]`.
+- **Revisit if:** REA's website / APK / capture tools are allowlisted; this module starts reading artifact bytes directly; or observed inputs are exposed through the shared/SaaS dashboard (RE is single-operator-machine only).
+
+### Gap 75 — REA evidence feeds (`tools/analyzers/rea_feeds.py`)
 
 **Module:** `tools/analyzers/rea_feeds.py` (rea-sec-01, card `rea`), consumed by `tools/compliance/binary_components.py::rea_hinted_components` (and `sbom_generator --rea-report`), `tools/network/attack_surface_mapper.py::map_artifact_surface` (`--artifact-report`), `tools/supply_chain/scrm_assessor.py::assess_artifact_dependencies` (`--rea-report`) and `tools/compliance/evidence_collector.py::collect_evidence(rea_reports=)` (`--rea-report`).
 
@@ -2734,13 +2745,3 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
   - **Observations only.** Every item is `basis: observed`, `confidence: unasserted`. Nothing is scored, and the ATO block refuses to overwrite an existing key. A signature verdict is never moved (the `artifact_corroboration` rule).
 - **Residual:** the APK shape, Electron `ipc.channels[]` and .NET `module_references[]` are ASSUMED, not measured (`rea_feeds.ASSUMED_SHAPES`). An APK report reaches here only from an exported REA bundle, because the adapter reports `apk` as `unavailable`.
 - **Revisit if:** a feed starts persisting rows, opening the target, or following a URL from a HAR.
-### Gap 75 — AI-ify observed-behaviour input mode (`tools/aiify/observed_inventory.py`, `tools/aiify/engine.py`)
-
-**Module:** `tools/aiify/observed_inventory.py` (rea-aiify-01, card `rea`), called by `tools/aiify/engine.py::_resolve_input` / `run_scan` for `input_type` `har`, `electron_app`, `website`, `apk`.
-
-**Ingress path:** an operator-chosen artifact ICDEV holds no source for — a recorded HAR, an Electron app directory or `.asar`, a locally saved website, an APK — or a website URL. The bytes are attacker-chosen in the worst case.
-
-- **Decision:** **sandboxed**, by delegation. This module parses no artifact bytes itself. It hands the artifact to REA only through `tools.analyzers.dispatch` with one declaration (`rea_har`, `rea_javascript`, `rea_website`, `rea_apk`), each `sandbox: sandboxed` (Gap 73), so REA and its parsers run inside `SandboxExecutor` and a host with no sandbox gets `sandbox_unavailable`, never an in-process run. What this module reads is REA's evidence JSON (`normalized_result`), walked depth-bounded for `method`/`url`/`route`/`channel` strings; nothing is executed or deserialised into objects.
-- **Rails, refused before a scan row exists:** no authorization basis (`owned` | `licensed` | `customer-authorized`); a local-artifact type given a URL (nothing is downloaded); a missing artifact; a HAR with no `sensitive_values`; a live website without `allow_execute: true`. The target sha256 and basis ride on the inventory's `provenance` and every opportunity's `pattern_detail`. URLs are reduced to `METHOD /path` with id segments collapsed — the query string, fragment and host are dropped before anything is stored. The ref is never sent to the NLP ref extractor (no LLM egress for an observed input).
-- **Residual, named rather than implied:** REA 6.4.0's website family is not allowlisted, so a live website with `allow_execute` reports `unavailable` / `not_allowlisted` — no live capture exists yet, and adding it is a later card's allowlist decision. APK is likewise `unavailable` (JADX not allowlisted). A JS summary names no routes or channels, so without `feature_seeds` an Electron/website inventory is `None` (`not_enumerated`), not `[]`.
-- **Revisit if:** REA's website / APK / capture tools are allowlisted; this module starts reading artifact bytes directly; or observed inputs are exposed through the shared/SaaS dashboard (RE is single-operator-machine only).
