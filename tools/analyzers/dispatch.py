@@ -35,6 +35,14 @@ nothing, so:
     skipped              the caller's context lacks a key the declaration maps
     rate_limited         its declared ``rate_limit`` window is full
     sandbox_unavailable  it must be sandboxed and the sandbox cannot run it
+    partial              it returned, and SAID its answer is incomplete
+
+An analyzer that declares ``status_key`` (rea-wire-02) reports its OWN outcome
+through that payload field, and the dispatcher passes it on rather than calling
+every return ``ok``: "the engine is not installed" is a return, not a clean
+run. Only ``ok``/``partial``/``unavailable``/``error``/``timeout`` can be
+lifted that way (``truncated`` reads as ``partial``); any other value is a
+declaration/reality mismatch and is reported ``misdeclared``.
 
 ``DispatchResult.partial`` is true whenever any report is not ``ok``, and
 :meth:`DispatchResult.to_dict` names the offenders under ``partial_reasons``.
@@ -156,7 +164,18 @@ REPORT_STATUSES: Tuple[str, ...] = (
     "skipped",
     "rate_limited",
     "sandbox_unavailable",
+    "partial",
 )
+
+#: Payload statuses a ``status_key`` analyzer may report, and what each becomes.
+_LIFTED_STATUSES: Dict[str, str] = {
+    "ok": "ok",
+    "partial": "partial",
+    "truncated": "partial",
+    "unavailable": "unavailable",
+    "error": "error",
+    "timeout": "timeout",
+}
 
 #: Default fan-out width. Overridable via ``ICDEV_ANALYZER_MAX_WORKERS``.
 _DEFAULT_MAX_WORKERS = 8
@@ -800,17 +819,41 @@ def _run_one(
         )
 
     tags, defects = extract_taxonomy(decl, payload)
+    status, detail = _lifted_status(decl, payload)
     return _report(
         decl,
-        "ok",
+        status,
         duration=elapsed(),
         timeout_seconds=timeout_seconds,
         data=payload,
+        detail=detail,
         taxonomy=tags,
         taxonomy_defects=defects,
         execution_mode=mode,
         queued_seconds=decision.waited_seconds,
     )
+
+
+def _lifted_status(decl: AnalyzerDeclaration, payload: Any) -> Tuple[str, Optional[str]]:
+    """``(report status, detail)`` for a returned *payload*.
+
+    ``ok`` unless the declaration names a ``status_key``; then the analyzer's
+    own outcome, with its ``reason`` / ``reason_detail`` as the detail.
+    """
+    if not decl.status_key:
+        return "ok", None
+    own = payload.get(decl.status_key) if isinstance(payload, MappingABC) else None
+    lifted = _LIFTED_STATUSES.get(str(own)) if own is not None else None
+    if lifted is None:
+        return "misdeclared", (
+            f"{decl.key!r} declares status_key {decl.status_key!r} but returned "
+            f"{own!r} there (legal: {', '.join(sorted(_LIFTED_STATUSES))})"
+        )
+    if lifted == "ok":
+        return "ok", None
+    reason = payload.get("reason")
+    detail = payload.get("reason_detail")
+    return lifted, ": ".join(str(x) for x in (reason, detail) if x) or None
 
 
 def _select(
