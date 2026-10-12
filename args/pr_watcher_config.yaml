@@ -26,6 +26,8 @@ idle_backoff_max_seconds: 480
 max_resume_cycles_per_task: 5
 
 # Auto-merge squash on CI green + review approved
+# Per host: ICDEV_PR_WATCHER_AUTO_MERGE=0|1 overrides this, and
+# ICDEV_PR_WATCHER_AUTO_READY=0|1 overrides auto_ready_draft_prs below (omx-host-07).
 auto_merge_enabled: true
 auto_merge_require_approval: false
 

@@ -810,6 +810,32 @@ def merge_unlinked_enabled(config: dict) -> bool:
     return bool((config or {}).get("merge_unlinked_prs", True))
 
 
+#: Per-HOST switches for the two unattended steps, read only by this module's
+#: own entry point (omx-host-07). The YAML is tracked and shared by every host
+#: on the repo, so a second executor (the Omarchy laptop) had no way to open its
+#: PRs for review while this host keeps landing its own. With both at 0 a kanban
+#: PR stays the draft it opened as: the watcher neither un-drafts nor merges it,
+#: and the Actions sweep skips drafts. `tools/kanban/land.py` -- a human asking
+#: for one PR -- builds its own config and is deliberately unaffected.
+HOST_OVERRIDE_ENVS = {
+    "ICDEV_PR_WATCHER_AUTO_MERGE": "auto_merge_enabled",
+    "ICDEV_PR_WATCHER_AUTO_READY": "auto_ready_draft_prs",
+}
+
+
+def apply_host_overrides(config: dict) -> dict:
+    """Each env (0|1) wins over its YAML key; unset or unrecognised falls
+    through, as for ``ICDEV_PR_WATCHER_MERGE_UNLINKED``."""
+    out = dict(config or {})
+    for env, key in HOST_OVERRIDE_ENVS.items():
+        raw = (os.environ.get(env) or "").strip().lower()
+        if raw in _ENV_TRUE:
+            out[key] = True
+        elif raw in _ENV_FALSE:
+            out[key] = False
+    return out
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # gh CLI wrappers
 # ────────────────────────────────────────────────────────────────────────────
@@ -5306,9 +5332,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.once and not args.daemon:
         args.once = True
 
-    config = load_config(
+    config = apply_host_overrides(load_config(
         pathlib.Path(args.config) if args.config else None
-    )
+    ))
     watcher = PRWatcher(config=config, dry_run=args.dry_run)
 
     if args.daemon:
