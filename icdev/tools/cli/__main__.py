@@ -62,6 +62,10 @@ Subcommands:
                            Loopback OpenAI endpoint over `claude -p`: harnesses
                            without a claude.ai login reach Claude on the
                            subscription, never a metered API key.
+  config get <key> [--json]
+                           Print a declared policy setting as the enforcing
+                           code sees it (e.g. anthropic_billing).
+  config list [--json]     List the keys `config get` understands.
   audit export             Export SOC 2 (and future framework) evidence reports.
   audit tail [--follow]    Tail the audit feed (audit_trail + hook_events), or
                            --source runtime_invocations for invocation rows.
@@ -163,6 +167,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "claude-bridge":
         from tools.llm.cli_bridge.http_bridge import main as bridge_main
         return bridge_main(rest)
+
+    if sub == "config":
+        from tools.cli.config import main as config_main
+        return config_main(rest)
 
     if sub == "audit":
         from tools.cli.audit import main as audit_main
