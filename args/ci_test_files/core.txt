@@ -2415,3 +2415,15 @@ tests/cortex/test_search_external_backend.py
 # query and 86% unrelated evidence. Gated so a config edit that widens, narrows
 # or empties the prefix list fails here instead of degrading retrieval quietly.
 tests/cortex/test_document_intelligence_lens.py
+# task-coh-3a357f8a — coherence check_template_variable_parity, the scope-aware
+# rewrite that took the check from 476 false positives to 0. Gated because the
+# extraction rules below were each a distinct FP class that the old two-regex
+# version got wrong: {% for/set/with/macro/from-import %} template-local
+# definitions, Jinja keywords and test names, guard positions that cannot
+# raise UndefinedError (|default, or-fallback, is defined, bare {% if %}),
+# context-processor injection, per-template kwargs UNION across a blueprint's
+# call sites, and that a genuinely missing STRICT var is still caught. A
+# regression here is silent by construction — templates render wrong or the
+# check goes back to noise that hides real zero-context renders like the
+# ZIG-pillar 404 it exposed. ~0.3s, pure stdlib, no DB/LLM/network.
+tests/test_coherence_template_variable_parity.py
