@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+# omx-guard-07 -- how ICDEV, and every harness it launches, may pay for Claude.
+#
+# Consumed by: tools/llm/anthropic_billing.py :: load_policy
+# Read it:     icdev config get anthropic_billing
+#
+# OPERATOR DECISION (2026-10-11): no metered Anthropic API billing. Every Claude
+# call is paid by the operator's claude.ai SUBSCRIPTION -- natively, for a
+# harness that supports a subscription login, otherwise through the local
+# `claude` CLI (tools/llm/cli_bridge/). A metered key (ANTHROPIC_API_KEY,
+# ANTHROPIC_AUTH_TOKEN, an api_key credential in a harness auth store) is never
+# used.
+#
+# Values:
+#   subscription_only  (default) Claude only via a subscription; metered keys
+#                      are stripped and metered-only routes refused.
+#   allow_metered      Metered API billing permitted. An operator decision --
+#                      say why next to it.
+#
+# A missing or unreadable file, or any other value, resolves to
+# subscription_only: the policy fails CLOSED, toward the bill nobody pays.
+
+anthropic_billing: subscription_only

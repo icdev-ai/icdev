@@ -8052,6 +8052,19 @@ python -m tools.agents.guard_parity --survey
 python -m tools.agents.guard_parity --survey --json
 ```
 
+### Anthropic billing policy (omx-guard-07-d1)
+
+`args/guard_anthropic.yaml` declares how Claude may be paid for:
+`anthropic_billing: subscription_only` (default -- claude.ai subscription only,
+natively or via the `claude` CLI bridge; never a metered API key) or
+`allow_metered`. Any invalid or missing value resolves to `subscription_only`.
+
+```bash
+icdev config get anthropic_billing          # subscription_only
+icdev config get anthropic_billing --json   # value, source file, warnings
+icdev config list
+```
+
 Each cell reports `declared` (the hand-written claim in
 `args/agent_capabilities.yaml`) next to `actual`, which is one of three values
 and never two:
