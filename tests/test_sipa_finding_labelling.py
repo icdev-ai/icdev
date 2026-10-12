@@ -331,3 +331,90 @@ def test_separator_normalisation_does_not_widen_the_match(unrelated):
     from tools.integrity.scanners import _is_safe_dynamic_import
 
     assert not _is_safe_dynamic_import(unrelated, frozenset([_DIC_SEARCH_ENGINE_SUFFIX]))
+
+
+# ---------------------------------------------------------------------------
+# assessment-2 / task-fbb6d536a4: the claude-bridge HTTP endpoint
+#
+# The finding recorded two importlib.import_module sites in
+# tools/llm/cli_bridge/http_bridge.py (`_backend()` at line 223 and
+# `record_usage()` at line 464). BOTH hand the interpreter a hardcoded string
+# literal naming a first-party sibling module in the same package — the
+# narrowest dynamic_import pattern this allowlist already covers: a test seam
+# and an advisory lazy import inside try/except, neither reachable from caller,
+# request, network or decoded input.
+# ---------------------------------------------------------------------------
+
+_CLI_BRIDGE_HTTP_BRIDGE_SUFFIX = "llm/cli_bridge/http_bridge.py"
+
+#: The form the finding recorded — a forward-slash path relative to tools/.
+_CLI_BRIDGE_HTTP_BRIDGE_RECORDED = "llm/cli_bridge/http_bridge.py"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tools/llm/cli_bridge/http_bridge.py",
+        "llm/cli_bridge/http_bridge.py",
+    ],
+)
+def test_cli_bridge_http_bridge_is_authorized(path, allowlist):
+    """Both path forms: the self-scan reports paths relative to tools/."""
+    assert path in allowlist
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        _CLI_BRIDGE_HTTP_BRIDGE_RECORDED,
+        r"llm\cli_bridge\http_bridge.py",
+        "tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
+        "icdev/tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
+    ],
+)
+def test_cli_bridge_http_bridge_finding_is_suppressed_by_the_predicate(recorded, allowlist):
+    """The entry has to fire through the predicate, not merely exist in YAML."""
+    from tools.integrity.scanners import _is_safe_dynamic_import
+
+    assert _is_safe_dynamic_import(recorded, frozenset(allowlist)), (
+        f"{recorded!r} is in known_safe_dynamic_import_modules but the scanner's "
+        "own suppression predicate does not match it"
+    )
+
+
+def test_cli_bridge_http_bridge_actually_performs_a_dynamic_import():
+    """Guard against authorizing a file that never needed it.
+
+    An allowlist entry for a module with no dynamic import is dead config that
+    silently widens the exemption surface if that file later grows one.
+    """
+    for rel in ("tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
+                "icdev/tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        assert "import_module" in text or "__import__" in text, (
+            f"{rel} is allowlisted for dynamic_import but performs none"
+        )
+
+
+def test_cli_bridge_http_bridge_entry_matches_only_the_two_mirrored_copies():
+    """Suffix matching is not segment-anchored, so state the tree fact.
+
+    ``llm/cli_bridge/http_bridge.py`` is a bare three-segment suffix. The
+    authorization is only as narrow as the set of files it can match, so assert
+    that set rather than asserting the matcher.
+    """
+    import subprocess
+
+    tracked = subprocess.run(
+        ["git", "ls-files"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout.splitlines()
+    matched = sorted(p for p in tracked if p.endswith(_CLI_BRIDGE_HTTP_BRIDGE_SUFFIX))
+    assert matched == [
+        "icdev/tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
+        "tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
+    ], f"the authorization suffix now reaches unrelated files: {matched}"
