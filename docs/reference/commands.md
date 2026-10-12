@@ -597,6 +597,17 @@ python tools/analyzers/dispatch.py --type dotnet_assembly --value <dll>         
 # missing engine is never `ok`. limitations / residual_unknowns are None -- never [] -- unless
 # REA reported them (*_basis says which). Pseudocode is basis `decompiled`, confidence low.
 # The native provider comes from the re_engines gate (`--engine`, default ghidra), never REA's `auto`.
+# AI-ify from observed behaviour (rea-aiify-01): input_type har | electron_app | website | apk.
+# The dashboard route passes no basis, so set ICDEV_RE_AUTHORIZATION_BASIS before starting it.
+curl -X POST localhost:5050/ai-ify/api/scan -H 'Content-Type: application/json' \
+  -d '{"input_type": "har", "input_ref": "/path/capture.har"}'          # opportunities carry basis: observed
+# Process-Ify from an observed scenario (rea-pif-01): allow_execute must be the literal true, per run.
+curl -X POST localhost:5050/workflow-canvas/api/workflows/observed-draft -H 'Content-Type: application/json' \
+  -d '{"kind": "process", "scenario": {"executable": "/path/app.exe"}, "allow_execute": true, "authorization_basis": "owned"}'
+curl -X POST localhost:5050/workflow-canvas/api/workflows/<workflow_id>/observed-review \
+  -H 'Content-Type: application/json' -d '{"decision": "approve", "reviewer": "<name>", "note": "..."}'
+# The draft is status draft / review pending_hitl and cannot join a process chain until approved.
+# Feature doc (verdicts, license table, NOT-adopted list): docs/features/phase-rea-reverse-engineering.md
 ```
 
 ### The two consumers of that triage (xrv-bin-03)
