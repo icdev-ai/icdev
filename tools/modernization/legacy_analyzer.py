@@ -332,6 +332,118 @@ def register_application(project_id, name, source_path, description=None):
     return result
 
 
+#: unit kind (tools/translation/decompiled_extractor.py) -> legacy_components type
+_DECOMPILED_COMPONENT_TYPES = {"function": "function", "class": "class", "module": "module"}
+
+
+def register_binary_application(project_id, name, decompiled_ir, description=None):
+    """Register a BINARY-ONLY application from decompiled IR (rea-xlate-01).
+
+    ``decompiled_ir`` is what ``tools.translation.decompiled_extractor.
+    extract_from_report`` returns. One ``legacy_components`` row per unit and one
+    ``method_call`` ``legacy_dependencies`` row per call-graph edge, so
+    ``architecture_extractor.extract_call_graph`` reads it like any analysed app.
+
+    The basis stays visible: the description starts ``[basis: decompiled]``,
+    ``source_hash`` is the artifact's sha256, and every component's
+    ``properties`` carries ``basis`` / ``confidence`` / ``recovery`` /
+    ``evidence_id``. Refused (``ValueError``) for IR that is not decompiled, has
+    no units, or carries no operator authorization basis.
+    """
+    if not isinstance(decompiled_ir, dict) or decompiled_ir.get("basis") != "decompiled":
+        raise ValueError("register_binary_application takes decompiled IR (basis: decompiled)")
+    provenance = decompiled_ir.get("provenance") or {}
+    if not provenance.get("target_sha256") or not provenance.get("authorization_basis"):
+        raise ValueError("decompiled IR carries no target sha256 / authorization basis; refused")
+    units = decompiled_ir.get("units")
+    if not units:
+        raise ValueError(f"decompiled IR has no units (status={decompiled_ir.get('status')}, "
+                         f"reason={decompiled_ir.get('reason')})")
+
+    app_id = f"lapp-{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc).isoformat()
+    loc_total = sum(u.get("line_count") or 0 for u in units)
+    recovery = ",".join(decompiled_ir.get("recovery") or [])
+    full_description = (
+        f"[basis: decompiled; recovery: {recovery}; authorization: {provenance['authorization_basis']}] "
+        f"Registered from a compiled artifact with no source -- every component is a "
+        f"reconstruction. {description or ''}"
+    ).strip()
+
+    conn = _get_db()
+    try:
+        conn.execute(
+            """INSERT INTO legacy_applications
+               (id, project_id, name, description, source_path, primary_language,
+                analysis_status, loc_total, loc_code, loc_comment, loc_blank,
+                file_count, source_hash, registered_at, analyzed_at)
+               VALUES (%s, %s, %s, %s, %s, %s, 'analyzed', %s, %s, 0, 0, 1, %s, %s, %s)""",
+            (app_id, project_id, name, full_description, str(decompiled_ir.get("source_path")),
+             decompiled_ir.get("language") or "unknown", loc_total, loc_total,
+             provenance["target_sha256"], now, now),
+        )
+        comp_ids = {}
+        parents = {}
+        for unit in units:
+            comp_id = f"lcomp-{uuid.uuid4().hex[:12]}"
+            qualified = unit.get("qualified_name") or unit.get("file_path") or unit["name"]
+            props = {k: unit.get(k) for k in ("basis", "confidence", "recovery", "evidence_id",
+                                               "address", "token", "rea_tool", "idioms")}
+            props["signature"] = {"parameters": unit.get("parameters"),
+                                  "return_type": unit.get("return_type")}
+            conn.execute(
+                """INSERT INTO legacy_components
+                   (id, legacy_app_id, name, component_type, file_path, qualified_name,
+                    loc, cyclomatic_complexity, properties)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (comp_id, app_id, unit["name"],
+                 _DECOMPILED_COMPONENT_TYPES.get(unit.get("kind"), "module"),
+                 unit.get("file_path") or "", qualified, unit.get("line_count") or 0,
+                 float(unit.get("complexity") or 0), json.dumps(props, default=str)),
+            )
+            comp_ids[unit["name"]] = comp_id
+            if unit.get("kind") == "class" and unit.get("qualified_name"):
+                parents[unit["qualified_name"]] = comp_id
+        for unit in units:
+            parent = parents.get(unit.get("parent"))
+            if parent:
+                conn.execute("UPDATE legacy_components SET parent_component_id=%s WHERE id=%s",
+                             (parent, comp_ids[unit["name"]]))
+        edges = list(((decompiled_ir.get("call_graph") or {}).get("edges")) or [])
+        for unit in units:
+            for callee in unit.get("calls") or []:
+                edges.append({"source": unit["name"], "target": callee, "type": "method_call",
+                              "basis": unit.get("basis"), "evidence_id": unit.get("evidence_id"),
+                              "via": "unit_calls"})
+        written = set()
+        for edge in edges:
+            src, dst = comp_ids.get(edge.get("source")), comp_ids.get(edge.get("target"))
+            if not src or not dst or src == dst or (src, dst) in written:
+                continue
+            written.add((src, dst))
+            evidence = (f"basis={edge.get('basis')} via={edge.get('via')} "
+                        f"evidence_id={edge.get('evidence_id')}")
+            _insert_dependency(conn, app_id, src, dst, "method_call", evidence)
+        conn.commit()
+    finally:
+        conn.close()
+    _update_dependency_counts(app_id)
+
+    return {
+        "id": app_id,
+        "project_id": project_id,
+        "name": name,
+        "description": full_description,
+        "basis": "decompiled",
+        "primary_language": decompiled_ir.get("language"),
+        "analysis_status": "analyzed",
+        "components": len(comp_ids),
+        "dependencies": len(written),
+        "source_hash": provenance["target_sha256"],
+        "registered_at": now,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Python analysis (AST-based)
 # ---------------------------------------------------------------------------

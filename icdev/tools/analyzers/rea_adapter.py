@@ -23,6 +23,13 @@ the rea-wire-01 allowlist:
                      entry, against the retained graph -- rea-aiify-01)
     har              inspect_web_network_capture       (needs sensitive_values)
 
+``depth="xlate"`` (rea-xlate-01) widens three of them for
+``tools/translation/decompiled_extractor.py``: ``binary`` needs ``procedure``
+and runs ``get_call_graph`` from it, then ``batch_decompile`` over the graph
+(at most ``MAX_XLATE_PROCEDURES``) in place of ``procedure_pseudo_code``;
+``dotnet_assembly`` adds ``inspect_managed_members``; ``js_bundle`` is unchanged
+(source-map recovery happens locally, in the extractor).
+
 and three that NEVER run, each ``unavailable`` with the measured reason rather
 than an empty success:
 
@@ -130,6 +137,12 @@ DECOMPILING_TOOLS = frozenset({"procedure_pseudo_code", "batch_decompile"})
 ENV_AUTHORIZATION = "ICDEV_RE_AUTHORIZATION_BASIS"
 AUTHORIZATION_BASES: Tuple[str, ...] = ("owned", "licensed", "customer-authorized")
 DEFAULT_ENGINE = "ghidra"
+
+#: ``summary`` is the rea-wire-02 plan; ``xlate`` also gathers what
+#: tools/translation/decompiled_extractor.py turns into IR units (rea-xlate-01).
+DEPTHS: Tuple[str, ...] = ("summary", "xlate")
+#: Procedures ``batch_decompile`` is asked for in one xlate run.
+MAX_XLATE_PROCEDURES = 64
 
 #: family -> how it is analysed. ``unavailable`` families never reach REA.
 FAMILIES: Dict[str, Dict[str, Any]] = {
@@ -388,6 +401,23 @@ def _classification() -> str:
 # The entrypoint
 # ---------------------------------------------------------------------------
 
+def _xlate_addresses(procedure: str) -> Any:
+    """``batch_decompile`` arguments from the ``get_call_graph`` record, when one arrived."""
+    def build(records: List[Dict[str, Any]]) -> Dict[str, Any]:
+        addresses: List[str] = []
+        for record in records:
+            graph = record.get("normalized_result") if record.get("tool") == "get_call_graph" else None
+            if not isinstance(graph, dict):
+                continue
+            for level in sorted(graph, key=lambda k: int(k) if str(k).isdigit() else 0):
+                for node in graph[level] or []:
+                    address = node.get("address") if isinstance(node, dict) else None
+                    if address and address not in addresses:
+                        addresses.append(address)
+        return {"addresses": (addresses or [procedure])[:MAX_XLATE_PROCEDURES]}
+    return build
+
+
 #: ``trace_application_feature`` seed kinds (REA 6.4.0 inputSchema).
 SEED_KINDS: Tuple[str, ...] = ("route", "string", "api", "channel", "module", "native-export")
 
@@ -416,6 +446,7 @@ def _trace_args(seed: Mapping[str, Any]) -> Any:
 
 def _plan(family: str, path: str, *, engine: Optional[str], procedure: Optional[str],
           sensitive_values: Optional[Sequence[str]],
+          depth: str = "summary",
           feature_seeds: Optional[Sequence[Mapping[str, Any]]] = None,
           ) -> List[Tuple[str, Any, bool]]:
     """``[(tool, arguments, required)]``. A non-required step may fail alone.
@@ -424,14 +455,21 @@ def _plan(family: str, path: str, *, engine: Optional[str], procedure: Optional[
     step that needs an earlier step's evidence id; ``None`` from it skips the step.
     """
     if family == "binary":
-        steps = [("open_binary", {"path": path, "provider_id": engine}, True),
-                 ("binary_overview", {}, True)]
-        if procedure:
+        steps: List[Tuple[str, Any, bool]] = [
+            ("open_binary", {"path": path, "provider_id": engine}, True),
+            ("binary_overview", {}, True)]
+        if depth == "xlate" and procedure:
+            steps.append(("get_call_graph", {"address": procedure, "direction": "forward"}, False))
+            steps.append(("batch_decompile", _xlate_addresses(procedure), True))
+        elif procedure:
             steps.append(("procedure_pseudo_code", {"procedure": procedure}, True))
         steps.append(("list_unknowns", {}, False))
         return steps
     if family == "dotnet_assembly":
-        return [("inspect_managed_artifact", {"path": path}, True)]
+        steps = [("inspect_managed_artifact", {"path": path}, True)]
+        if depth == "xlate":
+            steps.append(("inspect_managed_members", {"path": path}, True))
+        return steps
     if family == "js_bundle":
         fmt = "directory" if Path(path).is_dir() else "auto"
         steps = [("analyze_javascript_application",
@@ -455,6 +493,7 @@ def analyze(
     sensitive_values: Optional[List[str]] = None,
     authorization_basis: Optional[str] = None,
     actor: Optional[str] = None,
+    depth: str = "summary",
     feature_seeds: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Analyse one authorized artifact with REA, or say exactly why not.
@@ -491,6 +530,16 @@ def analyze(
                        reason_detail=("no authorization basis for this target (%s): pass "
                                       "authorization_basis= or set %s. Nothing was run."
                                       % (" | ".join(AUTHORIZATION_BASES), ENV_AUTHORIZATION)),
+                       provenance=provenance)
+
+    if depth not in DEPTHS:
+        return _report(str(path), family, STATUS_ERROR, reason="unknown_depth",
+                       reason_detail=f"depth {depth!r} is not one of {list(DEPTHS)}",
+                       provenance=provenance)
+    if depth == "xlate" and family == "binary" and not procedure:
+        return _report(str(path), family, STATUS_ERROR, reason="procedure_required",
+                       reason_detail=("depth='xlate' on a native binary needs procedure=<entry> to "
+                                      "root the call graph it decompiles. Nothing was run."),
                        provenance=provenance)
 
     if family == "har" and sensitive_values is None:
@@ -535,7 +584,8 @@ def analyze(
                               note=f"rea_adapter {family}")
         return _run(registry, tools, str(path), family,
                     _plan(family, str(path), engine=engine, procedure=procedure,
-                          sensitive_values=sensitive_values, feature_seeds=feature_seeds),
+                          sensitive_values=sensitive_values, depth=depth,
+                          feature_seeds=feature_seeds),
                     common)
     finally:
         registry.close()
@@ -619,6 +669,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--no-sensitive-values", action="store_true",
                     help="assert a HAR holds no secrets (passes [])")
     ap.add_argument("--authorization-basis", default=None, choices=AUTHORIZATION_BASES)
+    ap.add_argument("--depth", choices=DEPTHS, default="summary",
+                    help="xlate also gathers what decompiled_extractor needs (rea-xlate-01)")
     ap.add_argument("--families", action="store_true", help="list the families and exit")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
@@ -632,7 +684,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         report = analyze(args.target, family=args.family, engine=args.engine,
                          procedure=args.procedure, sensitive_values=sensitive,
-                         authorization_basis=args.authorization_basis)
+                         authorization_basis=args.authorization_basis, depth=args.depth)
     except Exception as exc:  # noqa: BLE001 -- exit 2: no report could be produced
         print(f"rea_adapter: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2

@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/checksum.js", "../src/entry.js"],
+  "sourcesContent": ["// ICDEV-owned fixture (rea-xlate-01). No third-party code.\nexport function checksum(text) {\n  let h = 2166136261;\n  for (let i = 0; i < text.length; i++) {\n    h ^= text.charCodeAt(i);\n    h = Math.imul(h, 16777619) >>> 0;\n  }\n  return h;\n}\n\nexport function classify(level) {\n  switch (level) {\n    case 4: return 40;\n    case 5: return 50;\n    case 6: return 60;\n    default: return -1;\n  }\n}\n", "// ICDEV-owned fixture (rea-xlate-01). No third-party code.\nimport { checksum, classify } from \"./checksum.js\";\n\nexport function describeRoute(path) {\n  const route = path || \"/api/icdev/fixture/route\";\n  if (route.length > 64) {\n    return null;\n  }\n  return route + \" \" + checksum(route) + \" \" + classify(route.length % 7);\n}\n\nconsole.log(describeRoute(process.argv[2]));\n"],
+  "mappings": "MACO,SAASA,EAASC,EAAM,CAC7B,IAAIC,EAAI,WACR,QAASC,EAAI,EAAGA,EAAIF,EAAK,OAAQE,IAC/BD,GAAKD,EAAK,WAAWE,CAAC,EACtBD,EAAI,KAAK,KAAKA,EAAG,QAAQ,IAAM,EAEjC,OAAOA,CACT,CAEO,SAASE,EAASC,EAAO,CAC9B,OAAQA,EAAO,CACb,IAAK,GAAG,MAAO,IACf,IAAK,GAAG,MAAO,IACf,IAAK,GAAG,MAAO,IACf,QAAS,MAAO,EAClB,CACF,CCdO,SAASC,EAAcC,EAAM,CAClC,IAAMC,EAAQD,GAAQ,2BACtB,OAAIC,EAAM,OAAS,GACV,KAEFA,EAAQ,IAAMC,EAASD,CAAK,EAAI,IAAME,EAASF,EAAM,OAAS,CAAC,CACxE,CAEA,QAAQ,IAAIF,EAAc,QAAQ,KAAK,CAAC,CAAC,CAAC",
+  "names": ["checksum", "text", "h", "i", "classify", "level", "describeRoute", "path", "route", "checksum", "classify"]
+}
