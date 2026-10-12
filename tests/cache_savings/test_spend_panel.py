@@ -314,6 +314,64 @@ def test_a_stale_payload_is_served_with_its_error_beside_it():
     assert stale["cache_age_seconds"] == 0, "the failed fetch re-stamps the clock"
 
 
+def test_a_slow_cold_survey_answers_computing_within_the_wait_never_zero():
+    """qa-fail-cf5b5d4e84be3839: the cold sweep measured 29s against a 10s
+    request timeout. A request is answered within *wait*, as unmeasurable --
+    and the one sweep in flight is joined, never started twice."""
+    import threading
+    import time as _time
+
+    release = threading.Event()
+    calls = {"n": 0}
+
+    def slow(**kw):
+        calls["n"] += 1
+        release.wait(10)
+        return _survey()
+
+    try:
+        t0 = _time.monotonic()
+        cold = sp.spend_panel(7.0, survey_fn=slow, wait=0.2)
+        assert _time.monotonic() - t0 < 2.0, "the request waited for the sweep"
+        assert cold["state"] == "unmeasurable" and cold["reason"] == sp.REASON_COMPUTING
+        assert cold["ok"] is True and cold["refreshing"] is True
+        assert cold["total_cost_usd"] is None
+        assert all(r["cost_usd"] is None for r in cold["by_verdict"])
+        assert cold["headline"] == sp.COMPUTING_HEADLINE != sp.EMPTY_HEADLINE
+        assert cold["cache_age_seconds"] == 0
+
+        sp.spend_panel(7.0, survey_fn=slow, wait=0.1)
+        assert calls["n"] == 1, "a second request started a second sweep"
+    finally:
+        release.set()
+
+    done = sp.spend_panel(7.0, survey_fn=slow, wait=5.0)
+    assert done["state"] == "measured" and done["refreshing"] is False
+    assert calls["n"] == 1
+
+
+def test_a_slow_refresh_serves_the_last_good_payload_marked_refreshing():
+    import threading
+
+    release = threading.Event()
+    state = {"slow": False}
+
+    def survey(**kw):
+        if state["slow"]:
+            release.wait(10)
+        return _survey()
+
+    sp.spend_panel(7.0, survey_fn=survey, ttl=10.0, now=1000.0)
+    state["slow"] = True
+    try:
+        stale = sp.spend_panel(7.0, survey_fn=survey, ttl=10.0, now=1020.0, wait=0.1)
+        assert stale["state"] == "measured" and stale["total_cost_usd"] == 12.5
+        assert stale["refreshing"] is True and stale["ok"] is True
+        assert stale["cache_age_seconds"] == 20, "a stale answer must carry its age"
+    finally:
+        release.set()
+
+
 # -- 4. no second reader of the ledger ---------------------------------------
 
 def test_the_panel_module_never_reaches_the_database_itself():

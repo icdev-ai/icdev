@@ -296,6 +296,9 @@
         No dispatch in the last {{ spend.window_days }} days recorded a cost envelope against a
         card. That is an absence of attribution, not an absence of spending &mdash; so this
         section reads as unmeasurable rather than as a dollar figure of zero.
+        {% elif spend.reason == "computing" %}
+        The first survey since the dashboard started is still running (it walks the default
+        branch in git). Nothing has been measured yet &mdash; reload in a few seconds.
         {% elif spend.reason == "ledger_unreadable" %}
         The <code>agent_token_usage</code> ledger could not be read, so nothing here was measured.
         {% else %}

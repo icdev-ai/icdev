@@ -15,11 +15,13 @@ panel comes to disagree with the CLI about a number neither of them changed, so
 this module holds the PRESENTATION vocabulary and the cache and nothing else --
 pinned by an AST test that refuses a database cursor here.
 
-FOUR EMPTY STATES, AND ONLY ONE OF THEM IS ABOUT SPENDING NOTHING. Each sends a
+FIVE EMPTY STATES, AND ONLY ONE OF THEM IS ABOUT SPENDING NOTHING. Each sends a
 reader somewhere different, so none of them is rendered as ``$0.00``:
 
     unavailable        the survey could not be produced -- git, the board or
                        the ledger raised. NOT a clean bill of health.
+    computing          the first survey since the process started is still
+                       running (see THE SWEEP IS OFF THE REQUEST PATH below).
     ledger_unreadable  ``agent_token_usage`` could not be read.
     no_attributed_rows nothing was dispatched in the window, or the reap never
                        recorded an envelope. The cards on the board may well
@@ -30,6 +32,16 @@ reader somewhere different, so none of them is rendered as ``$0.00``:
 reported no ``total_cost_usd`` still SHIPPED or was still ABANDONED, so folding
 it into ``unmeasurable`` would make the verdict answer a question about the
 PRICE instead of about the OUTCOME (``task_attribution.row_is_unpriced``).
+
+THE SWEEP IS OFF THE REQUEST PATH. The survey is a ``git log`` over the whole
+default branch plus one ``landed_check`` per repo: ~5s on a quiet host, and
+measured at 29.0s cold during a QA sweep (qa-fail-cf5b5d4e84be3839), against a
+10s Playwright request timeout -- so the first GET after a restart failed both
+the API and ``/cache-savings`` itself. A refresh now runs on a worker thread and
+a request waits for it at most ``REFRESH_WAIT_SECONDS``. Past that it is
+answered without it: with the last good payload and ``refreshing: true`` when
+there is one, and as ``unmeasurable`` / ``computing`` when there is not --
+never as zero dollars, and never by a second sweep (one worker per window).
 
 Usage::
 
@@ -73,6 +85,11 @@ STATE_UNMEASURABLE = "unmeasurable"
 REASON_UNAVAILABLE = "unavailable"
 REASON_NO_ROWS = "no_attributed_rows"
 REASON_LEDGER_UNREADABLE = "ledger_unreadable"
+REASON_COMPUTING = "computing"
+
+#: The longest a request waits for a refresh before answering without it. Well
+#: under the 10s E2E request timeout, with room for the rest of the page.
+REFRESH_WAIT_SECONDS = 3.0
 
 #: Verdicts in ATTENTION order -- spend that did not ship reads first. This is
 #: presentation only; it never reorders ``VERDICTS``, which is the closed set.
@@ -116,6 +133,10 @@ EMPTY_HEADLINE = "no attributed dispatches in the window"
 #: fixes. One spelling, quoted by the template and by the test.
 UNATTRIBUTED_CAPTION = "nothing in this window was attributed to a card"
 
+#: The headline while the first survey is still running. Not "no attributed
+#: dispatches" -- nobody has looked yet.
+COMPUTING_HEADLINE = "spend is still being computed - retry shortly"
+
 
 def _empty_verdicts() -> List[Dict[str, Any]]:
     """All five rows, every figure ``None``. A verdict missing from the table
@@ -156,6 +177,7 @@ def shape(survey: Dict[str, Any], *, window_days: float) -> Dict[str, Any]:
             "state": STATE_UNMEASURABLE,
             "reason": reason,
             "headline": (EMPTY_HEADLINE if reason == REASON_NO_ROWS
+                         else COMPUTING_HEADLINE if reason == REASON_COMPUTING
                          else "spend could not be measured (%s)" % reason),
             "window_days": window_days,
             "tasks": survey.get("tasks"),
@@ -263,10 +285,28 @@ def reset_cache() -> None:
         _CACHE.clear()
 
 
+def _refresh(entry: Dict[str, Any], window: float, db_path,
+             survey_fn: Optional[Callable[..., Dict[str, Any]]], clock: float) -> None:
+    """One survey, on the worker thread. Never raises."""
+    payload: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    try:
+        payload = collect(window, db_path=db_path, survey_fn=survey_fn)
+    except Exception as exc:  # noqa: BLE001 -- a panel must not 500
+        error = str(exc)[:300]
+        logger.warning("cache-savings spend panel unavailable: %s", exc)
+    with _CACHE_LOCK:
+        if payload is not None:
+            entry["payload"] = payload
+        entry["error"] = error
+        entry["at"] = clock
+        entry["worker"] = None
+
+
 def spend_panel(window_days: Optional[float] = None, *, db_path=None,
                 survey_fn: Optional[Callable[..., Dict[str, Any]]] = None,
-                ttl: float = CACHE_TTL_SECONDS, now: Optional[float] = None
-                ) -> Dict[str, Any]:
+                ttl: float = CACHE_TTL_SECONDS, now: Optional[float] = None,
+                wait: float = REFRESH_WAIT_SECONDS) -> Dict[str, Any]:
     """The panel payload, cached per window for *ttl* seconds.
 
     A FAILED fetch also stamps the clock, so a broken board is retried once per
@@ -274,30 +314,41 @@ def spend_panel(window_days: Optional[float] = None, *, db_path=None,
     with its age AND the error beside it, because a stale answer presented as
     current is the defect this surface exists to refuse (the ``merge_readiness``
     panel idiom, kpr-watch-03).
+
+    A due refresh runs on a worker thread and this call waits at most *wait*
+    seconds for it; a refresh already in flight is joined, never duplicated.
     """
     window = DEFAULT_WINDOW_DAYS if window_days is None else float(window_days)
     clock = time.time() if now is None else float(now)
     with _CACHE_LOCK:
-        entry = _CACHE.get(window) or {"payload": None, "at": 0.0, "error": None}
-        if entry["payload"] is None or (clock - entry["at"]) >= ttl:
-            try:
-                entry["payload"] = collect(window, db_path=db_path, survey_fn=survey_fn)
-                entry["error"] = None
-            except Exception as exc:  # noqa: BLE001 -- a panel must not 500
-                entry["error"] = str(exc)[:300]
-                logger.warning("cache-savings spend panel unavailable: %s", exc)
-            entry["at"] = clock
-            _CACHE[window] = entry
+        entry = _CACHE.setdefault(
+            window, {"payload": None, "at": 0.0, "error": None, "worker": None})
+        worker = entry["worker"]
+        due = entry["payload"] is None or (clock - entry["at"]) >= ttl
+        if due and worker is None:
+            worker = threading.Thread(
+                target=_refresh, args=(entry, window, db_path, survey_fn, clock),
+                name="spend-panel-refresh", daemon=True)
+            entry["worker"] = worker
+            worker.start()
+    if worker is not None:
+        worker.join(max(0.0, wait))
+    with _CACHE_LOCK:
         payload, error, cached_at = entry["payload"], entry["error"], entry["at"]
+        refreshing = entry["worker"] is not None
 
     if payload is None:
-        payload = shape({"state": STATE_UNMEASURABLE, "reason": REASON_UNAVAILABLE},
+        reason = (REASON_COMPUTING if refreshing and error is None
+                  else REASON_UNAVAILABLE)
+        payload = shape({"state": STATE_UNMEASURABLE, "reason": reason},
                         window_days=window)
     else:
         payload = dict(payload)
     payload["ok"] = error is None
     payload["error"] = error
-    payload["cache_age_seconds"] = int(max(0, clock - cached_at))
+    payload["refreshing"] = refreshing
+    # Nothing was ever fetched: there is no cache to have an age.
+    payload["cache_age_seconds"] = int(max(0, clock - cached_at)) if cached_at else 0
     payload["cache_ttl_seconds"] = int(ttl)
     return payload
 
@@ -345,7 +396,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = ap.parse_args(argv)
     if args.no_cache:
         reset_cache()
-    payload = spend_panel(args.window_days)
+    # A terminal has no request timeout: wait for the sweep, however long.
+    payload = spend_panel(args.window_days, wait=3600.0)
     print(json.dumps(payload, indent=2, default=str) if args.json else human(payload))
     # Exit 2 when the panel could not be produced -- never the same as a panel
     # that measured nothing.
