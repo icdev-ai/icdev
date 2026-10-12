@@ -1,6 +1,6 @@
 pkgbase = icdev
 	pkgdesc = ICDEV - AI-powered SDLC with NIST 800-53 RMF compliance and multi-agent orchestration
-	pkgver = 1.2.43
+	pkgver = 1.2.44
 	pkgrel = 1
 	url = https://icdev.ai/
 	install = icdev.install
@@ -14,10 +14,10 @@ pkgbase = icdev
 	optdepends = opencode: default agent harness on Omarchy
 	optdepends = ollama: local LLM inference
 	optdepends = ghidra: decompiler for tools/analyzers/ghidra_headless (Ghidra 12 + PyGhidra)
-	noextract = icdev-1.2.43-py3-none-any.whl
+	noextract = icdev-1.2.44-py3-none-any.whl
 	options = !strip
 	options = !debug
-	source = icdev-1.2.43-py3-none-any.whl::https://files.pythonhosted.org/packages/py3/i/icdev/icdev-1.2.43-py3-none-any.whl
-	sha256sums = 1388d4c0be3f3a46ac20c4801b33dfcb0493beb8c321cd7fbda12b1b43a566c9
+	source = icdev-1.2.44-py3-none-any.whl::https://files.pythonhosted.org/packages/py3/i/icdev/icdev-1.2.44-py3-none-any.whl
+	sha256sums = ba3c913b6e6d9a07a7b41e5e6ca3ba8d315bf7afedd880dc02f335c221162093
 
 pkgname = icdev

@@ -1,0 +1,6 @@
+# opencode failure (bad model) exit=1
+{"type":"error","timestamp":1791635809989,"sessionID":"ses_eda2f1aceffeqMdl3bfB4WFHYd","error":{"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_94fda59e"}}}
+# opencode success (AGENTS.md probe) exit=0
+{"type":"step_start","timestamp":1791636066602,"sessionID":"ses_eda2b3de3ffecpbICrmrAfd56X","part":{"id":"prt_125d4d121001BaPd8CCapXNkrR","messageID":"msg_125d4c447001weZnWcGyWt9O2u","sessionID":"ses_eda2b3de3ffecpbICrmrAfd56X","snapshot":"29d8e44b123dd31a949921647cc6b71a5a2c9190","type":"step-start"}}
+{"type":"text","timestamp":1791636067900,"sessionID":"ses_eda2b3de3ffecpbICrmrAfd56X","part":{"id":"prt_125d4d582001gWl4LzNDMEk3j8","messageID":"msg_125d4c447001weZnWcGyWt9O2u","sessionID":"ses_eda2b3de3ffecpbICrmrAfd56X","type":"text","text":"PERIWINKLE-42","time":{"start":1791636067714,"end":1791636067897}}}
+{"type":"step_finish","timestamp":1791636068145,"sessionID":"ses_eda2b3de3ffecpbICrmrAfd56X","part":{"id":"prt_125d4d71e001Tsopf4iA8DUV0M","reason":"stop","snapshot":"0608bef6060a7c0b2d2f4a1e9fbe1452087ff452","messageID":"msg_125d4c447001weZnWcGyWt9O2u","sessionID":"ses_eda2b3de3ffecpbICrmrAfd56X","type":"step-finish","tokens":{"total":10333,"input":10210,"output":123,"reasoning":0,"cache":{"write":0,"read":0}},"cost":0}}

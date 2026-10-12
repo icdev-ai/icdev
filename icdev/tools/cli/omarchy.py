@@ -289,7 +289,8 @@ def _driver_missing(host: Host) -> Optional[Plan]:
         return None
     return Plan(done=False, state="failed",
                 detail=f"the PostgreSQL driver (psycopg2) is not installed for {host.python}: "
-                       "reinstall with the extra -- `pipx install --force 'icdev[postgresql]'` or "
+                       "reinstall with the extra -- `omarchy-mise-install 'pipx:icdev[extras=postgresql]' icdev` "
+                       "(mise), `pipx install --force 'icdev[postgresql]'` or "
                        "`pip install 'icdev[postgresql]'` -- then re-run")
 
 

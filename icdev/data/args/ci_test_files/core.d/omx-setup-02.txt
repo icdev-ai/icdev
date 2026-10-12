@@ -1,0 +1,1 @@
+tests/db/test_fa_objective_migration_without_app.py

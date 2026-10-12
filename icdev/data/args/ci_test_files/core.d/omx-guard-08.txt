@@ -1,0 +1,2 @@
+# omx-guard-08: an agent may not push to the repository default branch
+tests/hooks/test_default_branch_push.py
