@@ -70,7 +70,7 @@ measured_against:
 # air-gapped deployment must hold in its local cache BEFORE it is disconnected.
 images:
   - ref: "public.ecr.aws/lambda/python:3.12"
-    digest: "sha256:4b4d6db40cb5fb98fef32bdbe534d6ca52982824314ed7d1fec3ac0d8c9dba4b"
+    digest: "sha256:0f717e90928485c3318cd5598d9572d504f02ae5f69a8e7292c5008269125e89"
     service: lambda
     variant: "python3.12"
     mutable_tag: true
@@ -126,6 +126,17 @@ images:
       against a live floci 2.0.1: a python3.12 function logged `skipping
       pull: public.ecr.aws/lambda/python:3.12` and reported 3.12.15. See
       docs/audits/artifact-fresh-799d481d97-lambda-python-pin.md.
+      RE-VENDORED 2026-10-12 (artifact-fresh-4f06323aec): the tag rebuilt
+      once more past sha256:4b4d6db4... to the digest above (created
+      2026-10-12T12:55Z, hours after the 799d481d97 re-vendor). This card was
+      filed against the 719d7d69 pin naming 4b4d6db4 as upstream, but
+      799d481d97 had already moved the pin there when this card was picked
+      up; the survey then reported the NEWER digest above. No observed
+      content change either side -- same Amazon Linux 2023.12.20260914, rpm
+      set, Python 3.12.15, awslambdaric 4.1.0 and boto3 1.42.97. Re-driven
+      against a live floci 2.0.1: a python3.12 function logged `skipping
+      pull: public.ecr.aws/lambda/python:3.12` and reported 3.12.15. See
+      docs/audits/artifact-fresh-4f06323aec-lambda-python-pin.md.
 
   - ref: "public.ecr.aws/lambda/nodejs:20"
     digest: "sha256:a4440274d6f0fb4e6cb92cd5f2a97254efe6612f631d9974b197ecbd4a61fcab"

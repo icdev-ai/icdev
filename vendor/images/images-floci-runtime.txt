@@ -55,7 +55,16 @@
 #   rebuild than 719d7d69) and again NO observed content change. floci 2.0.1
 #   re-driven against the fresh pull. See
 #   docs/audits/artifact-fresh-799d481d97-lambda-python-pin.md.
-public.ecr.aws/lambda/python@sha256:4b4d6db40cb5fb98fef32bdbe534d6ca52982824314ed7d1fec3ac0d8c9dba4b
+#   RE-VENDORED 2026-10-12 (artifact-fresh-4f06323aec): rebuilt once more
+#   (4b4d6db4... -> the digest below) hours after the previous re-vendor --
+#   THIS card was filed against the 719d7d69 pin naming 4b4d6db4 as upstream,
+#   but 799d481d97 had already moved the pin there by the time this card was
+#   picked up, and the survey reported a NEWER digest than the card's. Again
+#   NO observed content change: same Amazon Linux 2023.12.20260914, rpm set,
+#   Python 3.12.15, awslambdaric 4.1.0 and boto3 1.42.97 either side. floci
+#   2.0.1 re-driven against the fresh pull. See
+#   docs/audits/artifact-fresh-4f06323aec-lambda-python-pin.md.
+public.ecr.aws/lambda/python@sha256:0f717e90928485c3318cd5598d9572d504f02ae5f69a8e7292c5008269125e89
 
 # lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
 #   KEPT at 20 (artifact-fresh-333eeead1d): nothing in this tree declares a Node
