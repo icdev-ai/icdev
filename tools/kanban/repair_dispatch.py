@@ -31,6 +31,12 @@ owns the session; this module owns the parts that are not scheduler state):
   scheduler re-exec. The cooldown defaults to
   ``pr_watcher.RESUME_COOLDOWN_SECONDS``; the watcher's ``max_resume_cycles``
   still bounds how many resumes (and so repairs) a PR can ever get.
+* :func:`in_flight` / :func:`orphaned` (kpr-watch-28) -- the same ledger is the
+  durable record of a repair in flight: a ``finished`` row closes each dispatch
+  row. A scheduler killed or re-exec'd mid-repair leaves its row open; the next
+  scheduler's ``_reap_orphaned_pr_repairs`` runs the push backstop on its
+  worktree and, when nothing landed, :func:`requeue` puts the claimed words
+  back and reverses their receipt -- at most :func:`max_requeues` times a task.
 
 What it deliberately does NOT do: move the task (it stays ``pr_opened`` --
 kpr-watch-11 status churn), open a PR or a branch (the session works detached on
@@ -49,6 +55,7 @@ import argparse
 import json
 import os
 import sys
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,6 +68,9 @@ SOURCE = "repair_dispatch"
 
 #: Fallback when pr_watcher cannot be imported; mirrors its constant.
 _DEFAULT_COOLDOWN_SECONDS = 600
+
+#: Fallback when pr_watcher's config cannot be read; mirrors its default.
+_DEFAULT_MAX_REQUEUES = 5
 
 
 def cooldown_seconds() -> int:
@@ -120,17 +130,54 @@ def read_ledger(task_id: Optional[str] = None) -> List[dict]:
 
 
 def record_dispatch(task_id: str, *, adapter: str, worktree: str,
-                    messages: int, pr_url: str = "") -> dict:
-    """Append one ledger row for a repair session that STARTED. Never raises."""
+                    messages: Any, pr_url: str = "",
+                    session_pid: Optional[int] = None,
+                    base_sha: str = "") -> dict:
+    """Append one ledger row for a repair session that STARTED. Never raises.
+
+    ``messages`` is the claimed message list (an int is accepted for callers
+    that only know the count). The row is ALSO the in-flight record a restarted
+    scheduler reaps (kpr-watch-28): ``dispatch_id`` names it, ``pid`` is the
+    owning scheduler, ``session_pid`` the repair session, ``base_sha`` the
+    branch tip it started from, and ``claimed`` the words to put back if the
+    session dies having landed nothing.
+    """
+    claimed = list(messages) if isinstance(messages, (list, tuple)) else []
+    count = len(claimed) if claimed else int(messages or 0)
     entry = {
         "task_id": task_id,
+        "dispatch_id": uuid.uuid4().hex,
         "dispatched_at": datetime.now(timezone.utc).isoformat(),
         "adapter": adapter,
         "worktree": worktree,
-        "messages": int(messages),
+        "messages": count,
+        "claimed": claimed,
         "pr_url": pr_url,
         "pid": os.getpid(),
+        "session_pid": session_pid if isinstance(session_pid, int) else None,
+        "base_sha": base_sha or "",
     }
+    return _append(entry)
+
+
+def record_finished(task_id: str, dispatch_id: Optional[str], outcome: str, *,
+                    orphan: bool = False, requeued: bool = False) -> dict:
+    """Close an in-flight dispatch row. Never raises; no-op without an id."""
+    if not dispatch_id:
+        return {"recorded": False, "reason": "no dispatch_id"}
+    return _append({
+        "task_id": task_id,
+        "event": "finished",
+        "dispatch_id": dispatch_id,
+        "finished_at": datetime.now(timezone.utc).isoformat(),
+        "outcome": outcome,
+        "orphan": bool(orphan),
+        "requeued": bool(requeued),
+        "pid": os.getpid(),
+    })
+
+
+def _append(entry: dict) -> dict:
     lp = ledger_path()
     if lp is None:
         return {"recorded": False, "entry": entry}
@@ -141,6 +188,10 @@ def record_dispatch(task_id: str, *, adapter: str, worktree: str,
         return {"recorded": True, "entry": entry}
     except OSError as exc:
         return {"recorded": False, "entry": entry, "reason": str(exc)}
+
+
+def _is_dispatch(row: dict) -> bool:
+    return not row.get("event")
 
 
 def _parse(ts: Any) -> Optional[datetime]:
@@ -154,7 +205,8 @@ def _parse(ts: Any) -> Optional[datetime]:
 
 
 def last_dispatch_at(task_id: str) -> Optional[datetime]:
-    stamps = [_parse(r.get("dispatched_at")) for r in read_ledger(task_id)]
+    stamps = [_parse(r.get("dispatched_at")) for r in read_ledger(task_id)
+              if _is_dispatch(r)]
     stamps = [s for s in stamps if s is not None]
     return max(stamps) if stamps else None
 
@@ -166,6 +218,126 @@ def in_cooldown(task_id: str, now: Optional[datetime] = None) -> bool:
         return False
     now = now or datetime.now(timezone.utc)
     return (now - last).total_seconds() < cooldown_seconds()
+
+
+# -- in flight / orphaned (kpr-watch-28) -------------------------------------
+
+
+def in_flight(task_id: Optional[str] = None) -> List[dict]:
+    """Dispatch rows no ``finished`` row has closed, oldest first.
+
+    Only rows carrying a ``dispatch_id`` count: kpr-watch-27 rows predate the
+    in-flight record and every one of them was reaped (or lost) long ago.
+    """
+    rows = read_ledger(task_id)
+    closed = {r.get("dispatch_id") for r in rows if r.get("event") == "finished"}
+    return [r for r in rows if _is_dispatch(r) and r.get("dispatch_id")
+            and r["dispatch_id"] not in closed]
+
+
+def is_finished(dispatch_id: str) -> bool:
+    return any(r.get("event") == "finished" and r.get("dispatch_id") == dispatch_id
+               for r in read_ledger())
+
+
+def _pid_alive(pid: Any, since: Optional[datetime] = None) -> Optional[bool]:
+    """Is ``pid`` the process that was running at ``since``? None = cannot tell.
+
+    A pid alive now but CREATED after ``since`` is a reuse of the number, so
+    the process the ledger names is gone (the guard ``leases`` uses).
+    """
+    from tools.kanban.interactive_claim import pid_alive
+
+    alive = pid_alive(pid)
+    if not alive or since is None:
+        return alive
+    try:
+        import psutil
+
+        if psutil.Process(pid).create_time() > since.timestamp() + 1.0:
+            return False
+    except Exception:  # noqa: BLE001 -- no psutil / gone mid-check: keep "alive"
+        pass
+    return alive
+
+
+def orphaned(live_task_ids: Optional[set] = None) -> List[dict]:
+    """In-flight repairs whose scheduler AND session are both provably dead.
+
+    ``live_task_ids`` are the repairs THIS process still holds in memory --
+    never orphans, whatever the pids say. A row naming THIS pid that this
+    process does not hold was written by an earlier incarnation (a POSIX
+    re-exec keeps the pid). A pid that cannot be judged (``None``) is treated
+    as ALIVE: reaping on ignorance would push a session's half-made edit.
+    """
+    live = set(live_task_ids or ())
+    me = os.getpid()
+    out: List[dict] = []
+    for row in in_flight():
+        if row.get("task_id") in live:
+            continue
+        since = _parse(row.get("dispatched_at"))
+        owner = row.get("pid")
+        if owner != me and _pid_alive(owner, since) is not False:
+            continue
+        session = row.get("session_pid")
+        if isinstance(session, int) and session > 0 and session != owner:
+            if _pid_alive(session, since) is not False:
+                continue
+        out.append(row)
+    return out
+
+
+def max_requeues() -> int:
+    """How many times ONE task's orphaned repairs may put a resume back.
+
+    ``KANBAN_REPAIR_MAX_REQUEUES`` overrides; otherwise the watcher's own
+    ``max_resume_cycles_per_task`` -- a crash loop can never spend more
+    sessions on a PR than the watcher's resume budget allows.
+    """
+    raw = os.environ.get("KANBAN_REPAIR_MAX_REQUEUES", "").strip()
+    if raw:
+        try:
+            return max(0, int(raw))
+        except ValueError:
+            pass
+    try:
+        from tools.ci import pr_watcher
+
+        return int(pr_watcher.load_config().get("max_resume_cycles_per_task", 5))
+    except Exception:  # noqa: BLE001
+        return _DEFAULT_MAX_REQUEUES
+
+
+def requeues_spent(task_id: str) -> int:
+    return sum(1 for r in read_ledger(task_id)
+               if r.get("event") == "finished" and r.get("requeued"))
+
+
+def requeue(task_id: str, messages: List[dict], *, reason: str = "") -> bool:
+    """Put an orphaned repair's messages back and reverse their receipt."""
+    if not messages:
+        return False
+    if not _prepend_to_queue(task_id, messages):
+        return False
+    resume_delivery.record_undrain(task_id, messages, reader=SOURCE, reason=reason)
+    return True
+
+
+def _prepend_to_queue(task_id: str, messages: List[dict]) -> bool:
+    """Write ``messages`` ahead of whatever arrived since. False on failure."""
+    qf = resume_delivery.queue_file(task_id)
+    if qf is None:
+        return False
+    try:
+        arrived: List[dict] = _read_jsonl(qf) if qf.exists() else []
+        qf.parent.mkdir(parents=True, exist_ok=True)
+        with open(qf, "w", encoding="utf-8") as fh:
+            for m in list(messages) + arrived:
+                fh.write(json.dumps(m) + "\n")
+        return True
+    except OSError:
+        return False
 
 
 # -- the queue ---------------------------------------------------------------
@@ -219,23 +391,14 @@ class Claim:
         if self.settled:
             return False
         self.settled = True
-        qf = resume_delivery.queue_file(self.task_id)
-        if qf is None:
+        if not _prepend_to_queue(self.task_id, self.messages):
             return False
-        try:
-            arrived: List[dict] = _read_jsonl(qf) if qf.exists() else []
-            qf.parent.mkdir(parents=True, exist_ok=True)
-            with open(qf, "w", encoding="utf-8") as fh:
-                for m in list(self.messages) + arrived:
-                    fh.write(json.dumps(m) + "\n")
-            if self.held_path is not None:
-                try:
-                    self.held_path.unlink()
-                except OSError:
-                    pass
-            return True
-        except OSError:
-            return False
+        if self.held_path is not None:
+            try:
+                self.held_path.unlink()
+            except OSError:
+                pass
+        return True
 
 
 def claim_messages(task_id: str) -> Claim:
@@ -308,7 +471,7 @@ def render_prompt(task_id: str, title: str, messages: List[dict], *,
 
 
 def survey() -> Dict[str, Any]:
-    rows = read_ledger()
+    rows = [r for r in read_ledger() if _is_dispatch(r)]
     per_task: Dict[str, int] = {}
     for r in rows:
         tid = str(r.get("task_id") or "")
@@ -321,6 +484,7 @@ def survey() -> Dict[str, Any]:
         "per_task": dict(sorted(per_task.items())),
         "last": rows[-1] if rows else None,
         "cooldown_seconds": cooldown_seconds(),
+        "in_flight": len(in_flight()),
     }
 
 
