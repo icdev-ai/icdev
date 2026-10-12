@@ -113,6 +113,9 @@ def generate_roadmap(scan_id: str, opportunities: list[dict], scores: list[dict]
             "module_path": opp.get("module_path", ""),
             "function_name": opp.get("function_name", ""),
             "pattern_type": pattern_type,
+            # rea-aiify-01: an observed-behaviour opportunity says so, so it
+            # is never read as a source code-pattern hit.
+            "basis": opp.get("basis") or "code_pattern",
             "ai_paradigm": paradigm,
             "il_recommended_model": opp.get("il_recommended_model", ""),
             "effort_days": _effort_days(cat),

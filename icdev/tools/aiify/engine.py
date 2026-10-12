@@ -14,6 +14,10 @@ Orchestrates the full AI-ify pipeline:
   7. promote top-5 opportunities -> kanban_tasks + aiify_audit_log
   8. aiify_scans UPDATE  — status='completed'
   9. aiify_audit_log     — scan_started / scan_completed events
+
+Observed (no-source) inputs — input_type har | electron_app | website | apk
+(rea-aiify-01): step 3 is replaced by an REA feature inventory
+(tools/aiify/observed_inventory.py); its opportunities carry basis: observed.
 """
 from __future__ import annotations
 
@@ -31,6 +35,7 @@ from typing import Any
 
 import yaml
 
+from tools.aiify import observed_inventory
 from tools.aiify.agent_readiness import run_readiness_check
 from tools.aiify.db.init_db import get_connection, init_db
 from tools.aiify.opportunity_scorer import (
@@ -795,7 +800,8 @@ def _fetch_s3(ref: str) -> str:
     return dest
 
 
-def _resolve_input(input_type: str, input_ref: str) -> tuple[str, str | None]:
+def _resolve_input(input_type: str, input_ref: str,
+                   scan_context: dict | None = None) -> tuple[str, str | None]:
     r"""Resolve an input reference to a local filesystem path to scan.
 
     Returns ``(scan_path, cleanup_path)``; ``cleanup_path`` is a temp directory
@@ -805,10 +811,19 @@ def _resolve_input(input_type: str, input_ref: str) -> tuple[str, str | None]:
     and s3:// (requires boto3). Unsupported schemes (smb://, ftp://, bare
     http(s) non-repo) raise a clear RuntimeError telling the user to mount/sync
     locally — we don't pretend to support transports the environment can't reach.
+
+    Observed input types (har / electron_app / website / apk) are resolved by
+    ``observed_inventory.check_observed_input``, which applies the REA rails
+    (authorization basis, local artifact, sensitive_values, allow_execute) and
+    raises ``ObservedInputRefused`` — a RuntimeError — before anything runs.
     """
     ref = (input_ref or "").strip()
     if not ref:
         raise RuntimeError("Empty input reference")
+
+    if observed_inventory.is_observed_input(input_type):
+        plan = observed_inventory.check_observed_input(input_type, ref, scan_context)
+        return plan["target"], None
 
     if (input_type == "git_url" or _is_git_url(ref)
             or ref.startswith(("git+ssh://", "git+https://", "git+http://"))):
@@ -880,36 +895,52 @@ def run_scan(
     init_db()
 
     # ── Input resolution (local / UNC / git / file:// / s3://) ──────────────────
-    scan_path, cloned_path = _resolve_input(input_type, input_ref)
+    scan_path, cloned_path = _resolve_input(input_type, input_ref, scan_context)
+    observed = observed_inventory.is_observed_input(input_type)
 
     try:
-        total_files, total_loc = _count_source(scan_path)
-
-        # 1a. Agent Readiness check (runs before Semgrep scan)
-        try:
-            readiness_result = run_readiness_check(scan_path)
-        except Exception as exc:  # noqa: BLE001
+        inventory: dict | None = None
+        if observed:
+            # No source: no LOC, no agent-readiness pillars, and the ref is
+            # never sent to an LLM (analysis stays local). REA runs here,
+            # before the scan row, so the row records what it measured.
+            inventory = observed_inventory.build_inventory(input_type, input_ref, scan_context)
+            total_files, total_loc = None, None
             readiness_result = {
                 "pillar_scores": {},
-                "overall_readiness_score": 0.0,
+                "overall_readiness_score": None,
                 "icdev_checks": {},
-                "error": str(exc),
+                "skipped": "observed input: agent readiness reads source, and there is none",
             }
+            language_profile: dict = {"observed_inventory": inventory}
+        else:
+            total_files, total_loc = _count_source(scan_path)
 
-        # Optional NLP extraction: classify the scan target ref for richer metadata.
-        # Falls back silently to empty dict when disabled or LLM unavailable.
-        nlp_ref_info = _nlp_extract_ref_info(input_ref, input_type)
+            # 1a. Agent Readiness check (runs before Semgrep scan)
+            try:
+                readiness_result = run_readiness_check(scan_path)
+            except Exception as exc:  # noqa: BLE001
+                readiness_result = {
+                    "pillar_scores": {},
+                    "overall_readiness_score": 0.0,
+                    "icdev_checks": {},
+                    "error": str(exc),
+                }
 
-        language_profile: dict = {
-            "python": total_files,
-            "agent_readiness_summary": {
-                "pillar_scores": readiness_result["pillar_scores"],
-                "overall_readiness_score": readiness_result["overall_readiness_score"],
-                "icdev_checks": readiness_result["icdev_checks"],
-            },
-        }
-        if nlp_ref_info:
-            language_profile["nlp_ref_extraction"] = nlp_ref_info
+            # Optional NLP extraction: classify the scan target ref for richer metadata.
+            # Falls back silently to empty dict when disabled or LLM unavailable.
+            nlp_ref_info = _nlp_extract_ref_info(input_ref, input_type)
+
+            language_profile = {
+                "python": total_files,
+                "agent_readiness_summary": {
+                    "pillar_scores": readiness_result["pillar_scores"],
+                    "overall_readiness_score": readiness_result["overall_readiness_score"],
+                    "icdev_checks": readiness_result["icdev_checks"],
+                },
+            }
+            if nlp_ref_info:
+                language_profile["nlp_ref_extraction"] = nlp_ref_info
 
         # 1b. Insert scan record
         conn = get_connection()
@@ -931,8 +962,12 @@ def run_scan(
         finally:
             conn.close()
 
-        # 2. Detect patterns (Semgrep or AST fallback)
-        patterns = detect_patterns(scan_path)
+        # 2. Detect patterns (Semgrep or AST fallback) — or, for an observed
+        #    input, the inventory's mapped features (basis: observed).
+        if observed:
+            patterns = observed_inventory.features_to_patterns(inventory)
+        else:
+            patterns = detect_patterns(scan_path)
 
         # 3. Insert opportunities + scores
         opp_rows: list[dict] = []
@@ -1011,6 +1046,16 @@ def run_scan(
         # 4a. Build and store deterministic project summary
         project_summary = _build_summary(input_ref, opp_rows)
         overall = roll_up_scan_verdict(score_rows)
+        if observed and inventory["features"] is None:
+            # Nothing was measured: "no AI-augmentable patterns" would be a
+            # finding nobody made. Say not-measured, and why.
+            overall = {
+                "overall_ai_readiness": None,
+                "overall_verdict": "Not measured",
+                "overall_rationale": (f"Observed-behaviour inventory not measured "
+                                      f"({inventory['features_basis']}): {inventory['reason_detail']}"),
+            }
+            project_summary = f"{project_summary.split(' — ')[0]} — not measured: {inventory['features_basis']}."
         conn = get_connection()
         try:
             conn.execute(
@@ -1065,6 +1110,9 @@ def run_scan(
             "overall_readiness_score": readiness_result["overall_readiness_score"],
             "icdev_checks": readiness_result["icdev_checks"],
         }
+        if observed:
+            scan_result["basis"] = observed_inventory.BASIS_OBSERVED
+            scan_result["observed_inventory"] = inventory
 
         # DIC Canvas Synergy — emit canvas_scored event (dsyn-emit-08)
         try:
