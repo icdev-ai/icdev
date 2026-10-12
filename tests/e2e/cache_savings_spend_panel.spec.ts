@@ -128,7 +128,14 @@ test.describe('Cache Savings — Spend panel', () => {
     if (payload.state === 'unmeasurable') {
       expect(payload.total_cost_usd).toBeNull();
       expect(payload.shipped_cost_share_pct).toBeNull();
-      expect(payload.headline).toContain('no attributed dispatches');
+      // The headline names WHY. Only an empty ledger may say "no attributed
+      // dispatches"; a survey still running on a cold dashboard (`computing`)
+      // or one that could not run says so instead (qa-fail-cf5b5d4e84be3839).
+      if (payload.reason === 'no_attributed_rows') {
+        expect(payload.headline).toContain('no attributed dispatches');
+      } else {
+        expect(payload.headline).not.toContain('no attributed dispatches');
+      }
     }
     for (const row of payload.by_verdict) {
       if (row.tasks === 0) {
