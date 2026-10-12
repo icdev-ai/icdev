@@ -185,6 +185,16 @@ CAPABILITIES: Dict[str, str] = {
         "through the guarded shell the runner puts in front of $SHELL / PATH "
         "(tools/hooks/guard_shell.py)."
     ),
+    # omx-adapt-04. DECLARED as a route, not a boolean:
+    # native_subscription | cli_bridge | none. Present means the declared route
+    # was measured: the adapter is a native claude.ai login, or ICDEV can point
+    # its harness at the loopback claude-bridge -- AND no metered Anthropic key
+    # survives the adapter's spawn env.
+    "claude_route": (
+        "Claude is reached on the operator's claude.ai subscription by the route "
+        "declared (native_subscription | cli_bridge), and a metered Anthropic API "
+        "key never reaches the backend's environment."
+    ),
     # omx-guard-05 (L3). Measured by real writes: the sandbox is taken from the
     # adapter's OWN build_argv, then a write inside the worktree and into the
     # adapter's declared state dir must land and one outside must not.
@@ -194,6 +204,9 @@ CAPABILITIES: Dict[str, str] = {
         "for wraps the adapter's command line (tools/hooks/write_sandbox.py)."
     ),
 }
+
+#: Capabilities declared as an enum rather than a boolean; "none" means false.
+ROUTE_CAPABILITIES = {"claude_route"}
 
 # ── probe fixtures ──────────────────────────────────────────────────────────
 # Every fixture is fed to every adapter and the best result wins: an adapter is
@@ -354,6 +367,24 @@ def load_declarations(path: Optional[pathlib.Path] = None) -> Dict[str, Any]:
         return {}
 
 
+def _as_claim(capability: str, value: Any) -> bool:
+    """A declared value as the boolean the verdict table compares.
+
+    A route capability is claimed unless it says ``none`` -- ``bool("none")``
+    would be True, which is how a route-shaped claim would silently overclaim.
+    """
+    if capability in ROUTE_CAPABILITIES:
+        return str(value or "none").strip().lower() != "none"
+    return bool(value)
+
+
+def declared_route(adapter_name: str, config: Optional[Dict[str, Any]] = None) -> str:
+    """The raw ``claude_route`` claim for one adapter (``none`` when absent)."""
+    cfg = config if config is not None else load_declarations()
+    raw = (((cfg.get("declared") or {}).get(adapter_name) or {}).get("claude_route"))
+    return str(raw or "none").strip().lower()
+
+
 def declared_for(adapter_name: str, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Declared capabilities for one adapter, plus where the claim came from.
 
@@ -371,11 +402,11 @@ def declared_for(adapter_name: str, config: Optional[Dict[str, Any]] = None) -> 
     if isinstance(own, dict):
         return {
             "source": f"{adapter_name}.CAPABILITIES",
-            "values": {k: bool(v) for k, v in own.items() if k in CAPABILITIES},
+            "values": {k: _as_claim(k, v) for k, v in own.items() if k in CAPABILITIES},
         }
 
     declared = ((cfg.get("declared") or {}).get(adapter_name) or {})
-    values = {k: bool(v) for k, v in declared.items() if k in CAPABILITIES}
+    values = {k: _as_claim(k, v) for k, v in declared.items() if k in CAPABILITIES}
     return {
         "source": str(CONFIG_PATH.relative_to(ROOT)).replace("\\", "/") if values else "none",
         "values": values,
@@ -806,6 +837,63 @@ def _probe_guard_shell(adapter: Any) -> ProbeOutcome:
     )
 
 
+_METERED_SENTINEL = "icdev-capability-probe-metered-key"
+
+
+def _probe_claude_route(adapter: Any, config: Optional[Dict[str, Any]] = None) -> ProbeOutcome:
+    """Measure the route this adapter reaches Claude by, against its claim.
+
+    Two facts are measured. (1) The route: a native claude.ai login
+    (``http_bridge.NATIVE_SUBSCRIPTION_ADAPTERS``, from omx-spike-02's
+    ``claude auth status``) or a harness ``icdev omarchy setup`` can point at
+    the bridge -- its config is RENDERED here and must target the loopback
+    URL. (2) The spawn env: a metered key planted in ``metadata['env']`` must
+    not survive ``build_env()``; if it does, no route is subscription-only.
+    """
+    from tools.llm.cli_bridge import http_bridge  # noqa: PLC0415
+
+    name = getattr(adapter, "name", "")
+    declared = declared_route(name, config)
+    leaks: Optional[bool] = None
+    if _public_callable(adapter, "build_env"):
+        planted = {var: _METERED_SENTINEL for var in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+        env = adapter.build_env(_session(metadata={"env": planted}))
+        leaks = any(env.get(var) == _METERED_SENTINEL for var in planted)
+
+    measured, how = "none", "no native claude.ai login and no bridge harness config"
+    if name in http_bridge.NATIVE_SUBSCRIPTION_ADAPTERS:
+        measured, how = "native_subscription", "the backend is Claude Code under its own claude.ai login"
+    elif name in http_bridge.BRIDGE_HARNESSES:
+        harness = http_bridge.BRIDGE_HARNESSES[name]
+        url = http_bridge.bridge_url(http_bridge.DEFAULT_PORT)
+        rendered = http_bridge.render_harness_config(
+            harness, {}, url=url, token_file=pathlib.Path("probe.token"), token="probe",
+            models=list(http_bridge.DEFAULT_MODELS))
+        text = json.dumps(rendered)
+        if http_bridge.PROVIDER_ID in text and url in text:
+            measured, how = "cli_bridge", f"rendered {harness} config targets {url}"
+        else:
+            how = f"rendered {harness} config does not target {url}"
+
+    detail = {"declared_route": declared, "measured_route": measured,
+              "metered_key_reaches_backend": leaks}
+    if measured == "none":
+        # A backend with no Claude route cannot bill Claude, metered key or not.
+        return ProbeOutcome(ABSENT, BEHAVIORAL, f"measured route none: {how}", detail)
+    if leaks:
+        return ProbeOutcome(ABSENT, BEHAVIORAL,
+                            "a metered Anthropic key planted in metadata['env'] survives "
+                            "build_env(): the backend could bill the API", detail)
+    if leaks is None:
+        return _unconfirmed(f"{how}, but the adapter has no build_env() to check for a "
+                            "metered key", method=BEHAVIORAL, **detail)
+    if declared == "none":
+        return ProbeOutcome(PRESENT, BEHAVIORAL, f"measured route {measured}: {how}", detail)
+    status = PRESENT if measured == declared else ABSENT
+    return ProbeOutcome(status, BEHAVIORAL,
+                        f"declared {declared}, measured {measured}: {how}", detail)
+
+
 def _probe_sandboxed(adapter: Any) -> ProbeOutcome:
     """L3: does the adapter's own command line confine its writes?
 
@@ -846,8 +934,11 @@ _PROBES = {
     "structured_output": _probe_structured_output,
     "guard_wired": _probe_guard_wired,
     "guard_shell": _probe_guard_shell,
+    "claude_route": _probe_claude_route,
     "sandboxed": _probe_sandboxed,
 }
+#: Probes that need the declarations, not just the adapter.
+_CONFIG_PROBES = {"claude_route"}
 
 
 def _redact_exe(argv: Sequence[str]) -> List[str]:
@@ -889,7 +980,7 @@ def probe_adapter(
         if cap not in wanted:
             continue
         try:
-            outcome = probe(adapter)
+            outcome = probe(adapter, config) if cap in _CONFIG_PROBES else probe(adapter)
         except Exception as exc:  # noqa: BLE001 — one broken probe is not a crash
             logger.warning("probe %s failed for %s: %s", cap, adapter_name, exc)
             outcome = _unconfirmed(

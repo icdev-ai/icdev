@@ -362,7 +362,10 @@ class PiCliAdapter:
             env["PI_CODING_AGENT_DIR"] = str(Path(meta["agent_dir"]))
         for key, value in (meta.get("env") or {}).items():
             env[str(key)] = str(value)
-        return env
+        # omx-adapt-04: Claude is paid by the claude.ai subscription, never a
+        # metered key -- not even one a caller passes in metadata['env'].
+        from tools.llm.cli_bridge.subprocess_backend import scrubbed_env
+        return scrubbed_env(env)
 
     # ── execution ────────────────────────────────────────────────────────────
     def invoke(self, session: AgentSession) -> AgentResult:

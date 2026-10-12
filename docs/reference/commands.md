@@ -4318,6 +4318,11 @@ icdev omarchy uninstall [--dry-run]  # reverse MCP, skill, guards, systemd units
 # omx-panel-01 — the ICDEV record for Omarchy's agents panel (setup's `panel` step installs it + a 5-min timer)
 python -m tools.cli.omarchy_panel             # print the record: kanban in-progress/backlog, today's spend, adapter + guard
 python -m tools.cli.omarchy_panel --write     # also write ~/.local/state/omarchy/agents/usage/icdev.json; DB down -> stale: true
+# omx-adapt-04 — the Claude bridge: harnesses without a claude.ai login reach Claude on the SUBSCRIPTION via `claude -p`
+icdev claude-bridge serve [--port 8765]      # loopback-only OpenAI /v1/chat/completions; bearer token in ~/.config/icdev/claude-bridge.token
+icdev claude-bridge status [--json]          # token, claude binary, /health (last_quota_error = credit/limit exhausted)
+icdev claude-bridge unit                     # print the systemd --user unit (Linux; `icdev omarchy setup` installs it: the `bridge` step)
+python tools/agents/capability_matrix.py --capability claude_route --gate   # per-adapter route, probe-measured; an overclaim exits 1
 
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)

@@ -49,6 +49,13 @@ ONE command for the steps an operator otherwise runs by hand (omx-setup-01):
                  agents plugin's ``assets/``, and a ``systemd --user`` timer that
                  refreshes the record. Read-only, so enabled without ``--start``.
 
+  9. bridge   -- omx-adapt-04: the loopback Claude bridge (``icdev claude-bridge
+                 serve``) for every harness whose ``claude_route`` is
+                 ``cli_bridge`` (args/agent_capabilities.yaml): a per-host
+                 token, a ``systemd --user`` unit (Linux; elsewhere the detail
+                 says to run ``serve`` by hand), and an ``icdev-claude`` provider
+                 in the opencode / Pi config. ``n/a`` without the ``claude`` CLI.
+
 OPTIONAL, only with ``--ghidra`` (rea-eng-02):
 
   ghidra    -- NSA Ghidra 12 (Apache-2.0) + JDK 21 from pacman, and an
@@ -61,7 +68,7 @@ OPTIONAL, only with ``--ghidra`` (rea-eng-02):
 
 Every step probes first and reports ``skipped`` when already in place, so a
 second run changes nothing. ``--dry-run`` prints the plan and writes nothing.
-``status`` probes only. ``uninstall`` reverses 4-8 and NEVER touches the
+``status`` probes only. ``uninstall`` reverses 4-9 and NEVER touches the
 database or ``.env`` -- nor the ``icdev-postgres`` container or its volume.
 
 Every external command goes through one injectable runner (``Host``), which is
@@ -902,6 +909,112 @@ def plan_panel(host: Host, det: Detected, remove: bool = False) -> Plan:
 
 
 # --------------------------------------------------------------------------- #
+# Step 9 -- the Claude bridge (omx-adapt-04)
+# --------------------------------------------------------------------------- #
+
+def bridge_harnesses(det: Detected) -> List[str]:
+    """Installed harnesses whose DECLARED claude_route is cli_bridge."""
+    from tools.agents.capability_matrix import declared_route
+    from tools.llm.cli_bridge.http_bridge import BRIDGE_HARNESSES
+    return [h for adapter, h in BRIDGE_HARNESSES.items()
+            if h in det.harnesses and declared_route(adapter) == "cli_bridge"]
+
+
+def _bridge_key(harness: str) -> str:
+    return "provider" if harness == "opencode" else "providers"
+
+
+def plan_bridge(host: Host, det: Detected, remove: bool = False) -> Plan:
+    from tools.llm.cli_bridge import http_bridge as hb
+    token_file = hb.token_path(host.environ, host.home)
+    unit = host.unit_dir() / hb.UNIT_NAME
+    systemctl = host.platform == "linux" and bool(host.which("systemctl"))
+    actions: List[Action] = []
+
+    if remove:
+        if unit.is_file():
+            if systemctl:
+                actions.append(Action(f"disable {hb.UNIT_NAME}",
+                                      ["systemctl", "--user", "disable", "--now", hb.UNIT_NAME]))
+            actions.append(Action(f"remove {unit}", fn=unit.unlink))
+            if systemctl:
+                actions.append(Action("systemctl --user daemon-reload",
+                                      ["systemctl", "--user", "daemon-reload"]))
+        for h in ("opencode", "pi"):
+            path, key = hb.harness_config_path(h, host.environ, host.home), _bridge_key(h)
+            if hb.PROVIDER_ID in (_read_json(path).get(key) or {}):
+                def _rm(path=path, key=key):
+                    d = _read_json(path)
+                    d.get(key, {}).pop(hb.PROVIDER_ID, None)
+                    _write_json(path, d)
+                actions.append(Action(f"{h}: remove provider {hb.PROVIDER_ID} from {path}", fn=_rm))
+        if token_file.is_file():
+            actions.append(Action(f"remove {token_file}", fn=token_file.unlink))
+        return Plan(done=not actions, actions=actions)
+
+    targets = bridge_harnesses(det)
+    if not targets:
+        return Plan(done=True, state="n/a",
+                    detail="no installed harness declares claude_route: cli_bridge")
+    if not host.which("claude"):
+        return Plan(done=True, state="n/a",
+                    detail="the claude CLI is not installed: no subscription login to bridge to")
+    port = hb.configured_port(host.environ)
+    url = hb.bridge_url(port)
+    models = hb.configured_models(host.environ)
+    try:
+        token = token_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        token = ""
+    if not token:
+        actions.append(Action(f"create bridge token {token_file}",
+                              fn=lambda: hb.ensure_token(token_file)))
+
+    if host.platform == "linux":
+        content = hb.render_unit(host.python, host.root, port=port,
+                                 source_checkout=is_source_checkout(host.root))
+        if not (unit.is_file() and unit.read_text(encoding="utf-8") == content):
+            def _unit(content=content):
+                unit.parent.mkdir(parents=True, exist_ok=True)
+                # newline="\n": systemd reads LF; Windows text mode would emit CRLF.
+                with open(unit, "w", encoding="utf-8", newline="\n") as fh:
+                    fh.write(content)
+            actions.append(Action(f"write {unit}", fn=_unit))
+            if systemctl:
+                actions.append(Action("systemctl --user daemon-reload",
+                                      ["systemctl", "--user", "daemon-reload"]))
+        # Enabled without --start, like the panel: the harness configs below
+        # point at it, and it spends nothing until a harness calls it.
+        if systemctl and not (host.ok(["systemctl", "--user", "is-enabled", "--quiet", hb.UNIT_NAME])
+                              and host.ok(["systemctl", "--user", "is-active", "--quiet", hb.UNIT_NAME])):
+            actions.append(Action(f"enable + start {hb.UNIT_NAME}",
+                                  ["systemctl", "--user", "enable", "--now", hb.UNIT_NAME]))
+        detail = f"{url} for {', '.join(targets)}"
+        if not systemctl:
+            detail += "; no systemd --user: run `icdev claude-bridge serve` yourself"
+    else:
+        detail = (f"{url} for {', '.join(targets)}; a service unit is unsupported on "
+                  f"{host.platform}: run `icdev claude-bridge serve` in a terminal")
+
+    for h in targets:
+        path, key = hb.harness_config_path(h, host.environ, host.home), _bridge_key(h)
+        existing = _read_json(path)
+        wanted = hb.render_harness_config(h, existing, url=url, token_file=token_file,
+                                          token=token, models=models)
+        if token and (existing.get(key) or {}).get(hb.PROVIDER_ID) == wanted[key][hb.PROVIDER_ID]:
+            continue
+
+        def _cfg(h=h, path=path):
+            data = hb.render_harness_config(h, _read_json(path), url=url, token_file=token_file,
+                                            token=hb.ensure_token(token_file), models=models)
+            _write_json(path, data)
+            if h == "pi":
+                path.chmod(0o600)  # Pi's models.json carries the token itself
+        actions.append(Action(f"{h}: provider {hb.PROVIDER_ID} -> {url} in {path}", fn=_cfg))
+    return Plan(done=not actions, actions=actions, detail=detail)
+
+
+# --------------------------------------------------------------------------- #
 # Optional -- Ghidra 12 + PyGhidra (rea-eng-02)
 # --------------------------------------------------------------------------- #
 
@@ -970,8 +1083,8 @@ def plan_ghidra(host: Host) -> Plan:
 # Orchestration
 # --------------------------------------------------------------------------- #
 
-STEPS = ("postgres", "env", "mcp", "skill", "guard", "systemd", "panel")
-REVERSIBLE = ("mcp", "skill", "guard", "systemd", "panel")
+STEPS = ("postgres", "env", "mcp", "skill", "guard", "systemd", "panel", "bridge")
+REVERSIBLE = ("mcp", "skill", "guard", "systemd", "panel", "bridge")
 #: Run only when asked for. Listed in every setup report so the offer is seen.
 OPTIONAL_STEPS = {"ghidra": "--ghidra: Ghidra 12 + JDK 21 + PyGhidra, the optional decompiler"}
 
@@ -985,6 +1098,7 @@ def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = Fal
         "guard": lambda: plan_guard(host, det, remove),
         "systemd": lambda: plan_systemd(host, start, remove),
         "panel": lambda: plan_panel(host, det, remove),
+        "bridge": lambda: plan_bridge(host, det, remove),
     }
     if not remove:
         plans = {"postgres": lambda: plan_postgres(host, choice),
@@ -1093,7 +1207,7 @@ def main(argv: Optional[List[str]] = None, host: Optional[Host] = None) -> int:
     st = sub.add_parser("status", help="Report each step's state.")
     st.add_argument("--ghidra", action="store_true", help="also probe the optional Ghidra step")
     st.add_argument("--json", action="store_true")
-    up = sub.add_parser("uninstall", help="Reverse steps 4-8 (never drops the database).")
+    up = sub.add_parser("uninstall", help="Reverse steps 4-9 (never drops the database).")
     up.add_argument("--dry-run", action="store_true")
     up.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)

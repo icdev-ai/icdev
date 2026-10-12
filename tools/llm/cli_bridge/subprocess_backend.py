@@ -47,6 +47,14 @@ reads (see e8a7daa40 — same false positive in
 applied to ``cli_bridge/capability.py``); this block exists to make the
 separation auditable and prevent recurrence. The allowlist is enforced by
 ``test_no_unauthorized_env_secret_reads`` in ``tests/llm/test_cli_backends.py``.
+
+Metered keys are REMOVED, never read (omx-adapt-04)
+---------------------------------------------------
+The ``claude`` CLI bills the metered API instead of the operator's claude.ai
+subscription whenever ``ANTHROPIC_API_KEY`` is in its environment. Every
+``claude`` this module starts therefore gets :func:`scrubbed_env` -- the
+inherited environment minus :data:`METERED_ENV_VARS` -- and nothing here reads
+their values.
 """
 
 import importlib
@@ -55,7 +63,8 @@ import os
 import shutil
 import subprocess
 import threading
-from typing import Any, Dict, Optional, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 from tools.logging.icdev_logger import get_logger
 
@@ -76,6 +85,18 @@ DEFAULT_MAX_CONCURRENT = 3
 # NOTE: ICDEV_CLI_BRIDGE_BINARY is a documented ICDEV_* routing override, NOT a
 # credential. See module docstring "Env-var scope (auditable)".
 CLI_BINARY_DEFAULT = "claude"
+
+
+#: Variables that make ``claude`` (or a harness) bill a metered API key instead
+#: of the claude.ai subscription. ``ANTHROPIC_BASE_URL`` goes too: with the key
+#: gone, a base URL could only redirect the subscription login somewhere else.
+METERED_ENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")
+
+
+def scrubbed_env(base: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
+    """``base`` (default: this process's environment) minus :data:`METERED_ENV_VARS`."""
+    source = os.environ if base is None else base
+    return {k: v for k, v in source.items() if k not in METERED_ENV_VARS}
 
 
 def _cli_binary() -> str:
@@ -160,6 +181,90 @@ def _job_store():
 # --------------------------------------------------------------------------- #
 
 
+@dataclass
+class ClaudeRun:
+    """One finished ``claude --output-format json`` invocation.
+
+    ``ok`` False means ``error`` says why. ``envelope`` is the parsed JSON
+    (empty when stdout was not JSON; ``text`` is then the raw stdout).
+    """
+
+    ok: bool
+    text: str = ""
+    error: str = ""
+    returncode: int = 0
+    envelope: Dict[str, Any] = field(default_factory=dict)
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+    missing_binary: bool = False
+
+
+def run_claude(args: Sequence[str], *, input_text: Optional[str] = None,
+               timeout: Optional[int] = None) -> ClaudeRun:
+    """Run ``<claude> --output-format json <args...>`` once, metered keys scrubbed.
+
+    The ONE place a ``claude`` subprocess is started for the bridge: the job
+    worker below and the loopback endpoint (``http_bridge``) both call it, so
+    the env scrub and the prompt-cache counter parsing cannot drift apart.
+    Never raises: every failure is a ``ClaudeRun(ok=False)``.
+    """
+    binary = _cli_binary()
+    if not shutil.which(binary):
+        return ClaudeRun(ok=False, missing_binary=True,
+                         error=f"claude binary '{binary}' not found on PATH")
+    cmd: List[str] = [binary, "--output-format", "json", *args]
+    limit = timeout or _max_seconds()
+    try:
+        result = subprocess.run(  # nosec B603 -- fixed argv list, never a shell
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=limit, input=input_text, env=scrubbed_env(),
+        )
+    except subprocess.TimeoutExpired:
+        return ClaudeRun(ok=False, error=f"claude hit the {limit}s ceiling")
+    except Exception as exc:  # noqa: BLE001 -- reported, never raised
+        return ClaudeRun(ok=False, error=str(exc))
+
+    stdout = (result.stdout or "").strip()
+    try:
+        data = json.loads(stdout)
+        if not isinstance(data, dict):
+            data = {}
+    except (json.JSONDecodeError, ValueError, TypeError):
+        data = {}
+    if result.returncode != 0:
+        detail = (data.get("result") if data else "") or (result.stderr or "").strip() or stdout
+        return ClaudeRun(ok=False, returncode=result.returncode, envelope=data,
+                         error=f"claude exited {result.returncode}: {str(detail)[:500]}")
+    if not data:
+        # Not JSON: best effort, the raw stdout is the answer.
+        return ClaudeRun(ok=True, text=stdout)
+    usage = data.get("usage") or {}
+    # THE PROMPT-CACHE COUNTERS, which this parser used to drop on the floor
+    # (cch-obs-04). Claude Code reports both; taking only input/output meant
+    # `ai_telemetry.cache_read_input_tokens` was 0 for all 626 claude-cli calls,
+    # and the cache dashboard classified the provider `unreported` — "the
+    # transport reports no counters". The transport reports them fine.
+    #
+    # `input_tokens` is left RAW. Anthropic's accounting is DISJOINT: it
+    # already excludes both cache reads and writes, and
+    # `by_provider._split_tokens` adds them back itself. Summing here and
+    # declaring `disjoint` would count every cached token twice.
+    result_text = data.get("result")
+    run = ClaudeRun(
+        ok=not data.get("is_error"), envelope=data,
+        text=stdout if result_text is None else str(result_text),
+        input_tokens=int(usage.get("input_tokens") or 0),
+        output_tokens=int(usage.get("output_tokens") or 0),
+        cache_read_input_tokens=int(usage.get("cache_read_input_tokens") or 0),
+        cache_creation_input_tokens=int(usage.get("cache_creation_input_tokens") or 0),
+    )
+    if not run.ok:
+        run.error = run.text or "claude reported is_error"
+    return run
+
+
 def _run_job(job_id: str) -> None:
     """Synchronous worker: run the claude CLI for *job_id* and persist results.
 
@@ -174,81 +279,30 @@ def _run_job(job_id: str) -> None:
         logger.debug("_run_job: job %s not found", job_id)
         return
 
-    binary = _cli_binary()
-    if not shutil.which(binary):
-        js.fail_job(job_id, f"claude binary '{binary}' not found on PATH")
-        _emit_progress(phase="done", status="error",
-                       operation_type="cli_synthesis", operation_id=job_id)
-        return
-
     # Duplicate-dispatch guard is in dispatch() via _inflight; we don't need a
     # DB-level claim here.  Emit running and proceed directly.
     _emit_progress(phase="running", operation_type="cli_synthesis", operation_id=job_id)
 
     prompt = job.get("prompt", "")
-    cmd = [binary, "--output-format", "json"]
-
+    args: List[str] = []
     # When images are referenced in the prompt, allow Claude Code to read them
     # via its built-in Read tool (dangerously-skip-permissions bypasses dialogs).
     if "[IMAGES FOR ANALYSIS]" in prompt:
-        cmd += ["--dangerously-skip-permissions", "--allowedTools", "Read"]
+        args += ["--dangerously-skip-permissions", "--allowedTools", "Read"]
+    args += ["-p", prompt]
 
-    cmd += ["-p", prompt]
-
-    try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=_max_seconds()
-        )
-        if result.returncode != 0:
-            js.fail_job(job_id, f"claude exited {result.returncode}: {(result.stderr or '').strip()[:200]}")
-            _emit_progress(phase="done", status="failed",
-                           operation_type="cli_synthesis", operation_id=job_id)
-            return
-
-        stdout = (result.stdout or "").strip()
-        try:
-            data = json.loads(stdout)
-            text_result = data.get("result", stdout)
-            usage = data.get("usage") or {}
-            input_tokens = int(usage.get("input_tokens") or 0)
-            output_tokens = int(usage.get("output_tokens") or 0)
-            # THE PROMPT-CACHE COUNTERS, which this parser used to drop on the floor
-            # (cch-obs-04). Claude Code reports both; taking only input/output meant
-            # `ai_telemetry.cache_read_input_tokens` was 0 for all 626 claude-cli calls,
-            # and the cache dashboard classified the provider `unreported` — "the
-            # transport reports no counters". The transport reports them fine.
-            #
-            # `input_tokens` above is left RAW. Anthropic's accounting is DISJOINT: it
-            # already excludes both cache reads and writes, and
-            # `by_provider._split_tokens` adds them back itself. Summing here and
-            # declaring `disjoint` would count every cached token twice.
-            cache_read_tokens = int(usage.get("cache_read_input_tokens") or 0)
-            cache_creation_tokens = int(usage.get("cache_creation_input_tokens") or 0)
-            if data.get("is_error"):
-                js.fail_job(job_id, text_result)
-                _emit_progress(phase="done", status="failed",
-                               operation_type="cli_synthesis", operation_id=job_id)
-                return
-        except (json.JSONDecodeError, ValueError, TypeError):
-            text_result = stdout
-            input_tokens = output_tokens = 0
-            cache_read_tokens = cache_creation_tokens = 0
-
-        js.complete_job(job_id, text_result,
-                        input_tokens=input_tokens, output_tokens=output_tokens,
-                        cache_read_input_tokens=cache_read_tokens,
-                        cache_creation_input_tokens=cache_creation_tokens)
-        _emit_progress(phase="done", status="completed",
+    run = run_claude(args)
+    if not run.ok:
+        js.fail_job(job_id, run.error)
+        _emit_progress(phase="done", status="error" if run.missing_binary else "failed",
                        operation_type="cli_synthesis", operation_id=job_id)
-
-    except subprocess.TimeoutExpired:
-        js.fail_job(job_id, f"claude hit the {_max_seconds()}s ceiling")
-        _emit_progress(phase="done", status="failed",
-                       operation_type="cli_synthesis", operation_id=job_id)
-    except Exception as exc:
-        js.fail_job(job_id, str(exc))
-        _emit_progress(phase="done", status="failed",
-                       operation_type="cli_synthesis", operation_id=job_id)
+        return
+    js.complete_job(job_id, run.text,
+                    input_tokens=run.input_tokens, output_tokens=run.output_tokens,
+                    cache_read_input_tokens=run.cache_read_input_tokens,
+                    cache_creation_input_tokens=run.cache_creation_input_tokens)
+    _emit_progress(phase="done", status="completed",
+                   operation_type="cli_synthesis", operation_id=job_id)
 
 
 # --------------------------------------------------------------------------- #
