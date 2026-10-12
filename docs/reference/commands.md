@@ -579,6 +579,19 @@ python -m tools.analyzers.re_engines --template                # a license decla
 # YOU maintain your own Hopper/IDA license: declare edition/use in ~/.config/icdev/re_licenses.yaml
 # (or $ICDEV_RE_LICENSES). ICDEV reads no keys and never downloads or installs a commercial engine.
 # IDA Free + use=commercial, and Hopper / non-OEM IDA on ICDEV_SAAS_MODE / ICDEV_MULTI_TENANT, are refused.
+
+# REA analyzers on the contract (rea-wire-02) -- binary | dotnet_assembly | js_bundle | har run;
+# wasm | apk | website report `unavailable` with the measured reason
+python -m tools.analyzers.rea_adapter --families                                   # which families run
+python -m tools.analyzers.rea_adapter <pe> --family binary --authorization-basis owned --json
+python -m tools.analyzers.rea_adapter <pe> --family binary --procedure FUN_140001060 --authorization-basis owned
+python -m tools.analyzers.rea_adapter <dist/> --family js_bundle --authorization-basis owned
+python -m tools.analyzers.rea_adapter <har> --family har --sensitive-value <token> --authorization-basis owned
+python tools/analyzers/dispatch.py --type dotnet_assembly --value <dll>            # sandboxed fan-out
+# Statuses ok | partial | unavailable | error, lifted by the dispatcher (`status_key`), so a
+# missing engine is never `ok`. limitations / residual_unknowns are None -- never [] -- unless
+# REA reported them (*_basis says which). Pseudocode is basis `decompiled`, confidence low.
+# The native provider comes from the re_engines gate (`--engine`, default ghidra), never REA's `auto`.
 ```
 
 ### The two consumers of that triage (xrv-bin-03)

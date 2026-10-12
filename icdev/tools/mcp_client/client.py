@@ -325,8 +325,13 @@ def resolve_command(spec: dict) -> list[str] | None:
     return out or None
 
 
-def build_transport(spec: dict) -> Any:
-    """Construct the transport described by a registry entry, or None."""
+def build_transport(spec: dict, *, command_prefix: list[str] | None = None) -> Any:
+    """Construct the transport described by a registry entry, or None.
+
+    *command_prefix* is prepended to a stdio command -- the argv of a
+    containment wrapper (the L3 write sandbox, rea-wire-02). It never applies
+    to an http server, which has no local process to contain.
+    """
     name = str(spec.get("name") or "")
     kind = str(spec.get("transport") or "stdio").lower()
     timeout = float(spec.get("timeout_seconds") or 30.0)
@@ -336,7 +341,7 @@ def build_transport(spec: dict) -> Any:
         if not command:
             logger.warning("mcp_client[%s]: stdio server has no resolvable command", name)
             return None
-        return StdioTransport(name, command, spec.get("env"), timeout)
+        return StdioTransport(name, list(command_prefix or []) + command, spec.get("env"), timeout)
 
     if kind == "http":
         url = str(spec.get("url") or "")

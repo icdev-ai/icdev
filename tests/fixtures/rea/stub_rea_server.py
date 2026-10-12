@@ -7,6 +7,11 @@ REA's structured error shape, so a test can never mistake a replay gap for an
 analysis result. Every ``tools/call`` is appended to the file named by
 ``STUB_REA_CALL_LOG`` (when set), which lets a test prove a refused call never
 reached the server.
+
+``STUB_REA_RESPONSES`` (rea-wire-02) names a JSON file mapping tool name to a
+recorded MCP result; it OVERRIDES the default replay for those tools, so a test
+can compose a scenario (a PE that opens, a WASM REA cannot read) from the
+recordings in ``rea_6.4.0_adapter_responses.json``.
 """
 import json
 import os
@@ -16,6 +21,11 @@ from pathlib import Path
 RECORDED = json.loads(
     (Path(__file__).resolve().parent / "rea_6.4.0_recorded.json").read_text(encoding="utf-8")
 )
+if os.environ.get("STUB_REA_RESPONSES"):
+    RECORDED["responses"] = {
+        **RECORDED["responses"],
+        **json.loads(Path(os.environ["STUB_REA_RESPONSES"]).read_text(encoding="utf-8")),
+    }
 
 
 def _answer(method, params):
