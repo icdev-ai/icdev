@@ -953,6 +953,7 @@ class LLMRouter:
         routing = self._config.get("routing", {})
         route = routing.get(function, routing.get("default", {}))
         chain = self._apply_provider_failover(route.get("chain", []), function)
+        chain = self._apply_anthropic_billing(chain, function)
 
         if not chain:
             logger.warning("No routing chain for function '%s'", function)
@@ -1038,6 +1039,8 @@ class LLMRouter:
         # omx-adapt-06: AFTER the bridge override (which may prepend claude-cli)
         # and BEFORE force_local (which then drops any cloud failover model).
         chain = self._apply_provider_failover(chain, function)
+        # omx-guard-07-d4: a metered Anthropic entry becomes claude-cli.
+        chain = self._apply_anthropic_billing(chain, function)
 
         if not (route or {}).get("force_local", False):
             return chain
@@ -1103,6 +1106,71 @@ class LLMRouter:
         except Exception as exc:  # noqa: BLE001
             logger.debug("provider failover skipped: %s", exc)
             return list(chain)
+
+    def _is_metered_anthropic_model(self, model_name: str) -> bool:
+        """True when *model_name* is served by a direct (metered) Anthropic API provider."""
+        provider_name = self._get_model_config(model_name).get("provider", "")
+        provider_cfg = self._config.get("providers", {}).get(provider_name, {}) or {}
+        return provider_cfg.get("type", "") == "anthropic"
+
+    def _apply_anthropic_billing(self, chain: list, function: str = "") -> list:
+        """Under ``anthropic_billing: subscription_only``, route Claude to claude-cli.
+
+        omx-guard-07-d4. Every chain entry served by a direct Anthropic API
+        provider (``type: anthropic`` -- billed per token against an API key) is
+        skipped, and the CLI bridge model takes the position of the first one,
+        so a Claude request is answered by the subscription-backed ``claude``
+        binary instead of falling through to some other vendor. Each skip is
+        logged with its reason. ``allow_metered`` returns the chain unchanged.
+
+        Fails CLOSED: the policy reader already resolves a broken policy file
+        to subscription_only, and a failure here does not leave the metered
+        entries in place.
+        """
+        from tools.llm import anthropic_billing as _ab
+
+        if not _ab.subscription_only():
+            return list(chain)
+
+        from tools.llm.cli_bridge.activate import CLI_MODEL_NAME
+
+        cli_declared = bool(self._get_model_config(CLI_MODEL_NAME))
+        out: list = []
+        skipped: list = []
+        for model_name in chain:
+            if not self._is_metered_anthropic_model(model_name):
+                if model_name not in out:
+                    out.append(model_name)
+                continue
+            skipped.append(model_name)
+            if cli_declared and CLI_MODEL_NAME not in out:
+                out.append(CLI_MODEL_NAME)
+        # A claude-cli entry later in the YAML chain is already placed; drop the repeat.
+        if skipped:
+            logger.warning(
+                "anthropic billing[%s]: skipped metered Anthropic API model(s) %s "
+                "-- anthropic_billing=subscription_only; resolved via %s",
+                function or "?", skipped,
+                CLI_MODEL_NAME if cli_declared else "nothing (claude-cli not declared)",
+            )
+        return out
+
+    def resolve_model(self, model_name: str) -> Tuple[Optional[LLMProvider], str, dict]:
+        """Resolve one logical model name to (provider, model_id, model_config).
+
+        The billing policy applies: under subscription_only a model on a direct
+        Anthropic API provider resolves to the claude-cli bridge.
+        """
+        resolved = self._apply_anthropic_billing([model_name])
+        if not resolved:
+            return None, "", {}
+        model_cfg = self._get_model_config(resolved[0])
+        if not model_cfg:
+            return None, "", {}
+        provider = self._get_provider(model_cfg.get("provider", ""))
+        if provider is None:
+            return None, "", {}
+        return provider, model_cfg.get("model_id", ""), model_cfg
 
     def _log_telemetry(
         self,
@@ -1584,6 +1652,10 @@ class LLMRouter:
             _direct_session = self._pre_invoke_redaction(
                 function or telemetry_function, request, egress_chain=[model_name]
             )
+        _billed = self._apply_anthropic_billing([model_name], function or telemetry_function)
+        if not _billed:
+            return None
+        model_name = _billed[0]
         model_cfg = self._get_model_config(model_name)
         if not model_cfg:
             logger.warning("Two-tier: model '%s' not found in config", model_name)
