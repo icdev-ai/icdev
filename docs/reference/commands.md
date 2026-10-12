@@ -587,6 +587,11 @@ python -m tools.analyzers.rea_adapter <pe> --family binary --authorization-basis
 python -m tools.analyzers.rea_adapter <pe> --family binary --procedure FUN_140001060 --authorization-basis owned
 python -m tools.analyzers.rea_adapter <dist/> --family js_bundle --authorization-basis owned
 python -m tools.analyzers.rea_adapter <har> --family har --sensitive-value <token> --authorization-basis owned
+# REA evidence feeds (rea-sec-01): a saved rea_adapter --json report into supply chain + attack surface
+python tools/network/attack_surface_mapper.py --artifact-report rea_report.json --json   # IPC / routes / HAR / APK
+python tools/supply_chain/scrm_assessor.py --project-id <id> --rea-report rea_report.json --json
+python tools/compliance/sbom_generator.py --project-id <id> --rea-report rea_report.json
+python tools/compliance/evidence_collector.py --project-id <id> --rea-report rea_report.json --json
 python tools/analyzers/dispatch.py --type dotnet_assembly --value <dll>            # sandboxed fan-out
 # Statuses ok | partial | unavailable | error, lifted by the dispatcher (`status_key`), so a
 # missing engine is never `ok`. limitations / residual_unknowns are None -- never [] -- unless

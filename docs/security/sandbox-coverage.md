@@ -2731,3 +2731,17 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
 - **Rails, refused before a scan row exists:** no authorization basis (`owned` | `licensed` | `customer-authorized`); a local-artifact type given a URL (nothing is downloaded); a missing artifact; a HAR with no `sensitive_values`; a live website without `allow_execute: true`. The target sha256 and basis ride on the inventory's `provenance` and every opportunity's `pattern_detail`. URLs are reduced to `METHOD /path` with id segments collapsed — the query string, fragment and host are dropped before anything is stored. The ref is never sent to the NLP ref extractor (no LLM egress for an observed input).
 - **Residual, named rather than implied:** REA 6.4.0's website family is not allowlisted, so a live website with `allow_execute` reports `unavailable` / `not_allowlisted` — no live capture exists yet, and adding it is a later card's allowlist decision. APK is likewise `unavailable` (JADX not allowlisted). A JS summary names no routes or channels, so without `feature_seeds` an Electron/website inventory is `None` (`not_enumerated`), not `[]`.
 - **Revisit if:** REA's website / APK / capture tools are allowlisted; this module starts reading artifact bytes directly; or observed inputs are exposed through the shared/SaaS dashboard (RE is single-operator-machine only).
+
+### Gap 75 — REA evidence feeds (`tools/analyzers/rea_feeds.py`)
+
+**Module:** `tools/analyzers/rea_feeds.py` (rea-sec-01, card `rea`), consumed by `tools/compliance/binary_components.py::rea_hinted_components` (and `sbom_generator --rea-report`), `tools/network/attack_surface_mapper.py::map_artifact_surface` (`--artifact-report`), `tools/supply_chain/scrm_assessor.py::assess_artifact_dependencies` (`--rea-report`) and `tools/compliance/evidence_collector.py::collect_evidence(rea_reports=)` (`--rea-report`).
+
+**Ingress path:** a `rea_adapter` report -- in-process, or a JSON file an operator passes by path. The report is REA's OBSERVATION of an artifact. The artifact itself is never opened here, REA is never started, and nothing reaches the network.
+
+- **Decision:** **trusted-first-party.** The input is structured JSON produced by the already-`sandboxed` REA adapter (Gap 73). It is read with `json.loads` only. Nothing in it is executed, imported, rendered or used as a path to open. Every field is read through `isinstance` checks, so a malformed report yields `unmeasured` entries or a refusal and never an exception.
+- **Guardrails (code, pinned by `tests/analyzers/test_rea_feeds.py`):**
+  - **No provenance, no feed.** A report without a target sha256 or an `owned | licensed | customer-authorized` basis is `refused` by all four consumers. So is a report whose status is not `ok`/`partial`.
+  - **HAR query strings are dropped** before an endpoint enters the attack-surface map. REA redacts only known credential names, so an unknown query parameter may still be a secret.
+  - **Observations only.** Every item is `basis: observed`, `confidence: unasserted`. Nothing is scored, and the ATO block refuses to overwrite an existing key. A signature verdict is never moved (the `artifact_corroboration` rule).
+- **Residual:** the APK shape, Electron `ipc.channels[]` and .NET `module_references[]` are ASSUMED, not measured (`rea_feeds.ASSUMED_SHAPES`). An APK report reaches here only from an exported REA bundle, because the adapter reports `apk` as `unavailable`.
+- **Revisit if:** a feed starts persisting rows, opening the target, or following a URL from a HAR.

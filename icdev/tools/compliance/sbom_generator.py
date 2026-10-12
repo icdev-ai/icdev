@@ -70,6 +70,7 @@ if str(_REPO_ROOT) not in sys.path:
 from tools.compliance.binary_components import (
     binary_hint_properties,
     hinted_components,
+    rea_hinted_components,
 )
 from tools.compliance.component_licenser import (
     PROPERTY_LICENSE,
@@ -1751,6 +1752,7 @@ def generate_sbom(
     build_id=None,
     sbom_author=None,
     binary_paths=None,
+    rea_reports=None,
 ):
     """Generate a Software Bill of Materials for a project.
 
@@ -1779,6 +1781,11 @@ def generate_sbom(
             is as consistent with a string constant naming somebody else's
             requirement as it is with a vendored copy. Passing none is the
             default and leaves the document byte-identical to before.
+        rea_reports: ``rea_adapter`` reports (dicts or JSON file paths) whose
+            OBSERVED components join the document as hints (rea-sec-01) --
+            `evidence: rea_evidence`, `confidence: unasserted`, the REA
+            evidence id and the authorization basis. A report without that
+            provenance is refused and contributes nothing.
 
     Returns:
         Path to the generated SBOM file
@@ -1839,6 +1846,18 @@ def generate_sbom(
             )
             for skipped in hinted["skipped"]:
                 print(f"      skipped {skipped['version_token']}: {skipped['reason']}")
+        for rea_report in rea_reports or []:
+            if not isinstance(rea_report, dict):
+                with open(rea_report, encoding="utf-8") as fh:
+                    rea_report = json.load(fh)
+            hinted = rea_hinted_components(rea_report)
+            binary_reports.append(hinted)
+            all_components.extend(hinted["components"])
+            print(
+                f"  [observed:rea] {hinted['artifact']}: {hinted['status']}"
+                f"{' (' + hinted['reason'] + ')' if hinted['reason'] else ''}, "
+                f"{hinted['component_count']} hinted component(s)"
+            )
 
         for eco in resolution["ecosystems"]:
             flag = "resolved" if eco["complete"] else "DECLARED ONLY"
@@ -2130,6 +2149,18 @@ def main():
             "as something a manifest declared."
         ),
     )
+    parser.add_argument(
+        "--rea-report",
+        dest="rea_reports",
+        action="append",
+        default=None,
+        metavar="JSON",
+        help=(
+            "rea_adapter report (JSON file) whose OBSERVED components join the SBOM as hints "
+            "(rea-sec-01). Repeatable. Each carries evidence 'rea_evidence', confidence "
+            "'unasserted', its REA evidence id and the authorization basis."
+        ),
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
@@ -2144,6 +2175,7 @@ def main():
             build_id=args.build_id,
             sbom_author=args.sbom_author,
             binary_paths=args.binary_paths,
+            rea_reports=args.rea_reports,
         )
         print(f"\nSBOM path: {path}")
     except (FileNotFoundError, ValueError) as e:
