@@ -26,7 +26,7 @@ install=icdev.install
 _whl="${pkgname}-${pkgver}-py3-none-any.whl"
 source=("${_whl}::https://files.pythonhosted.org/packages/py3/i/${pkgname}/${_whl}")
 noextract=("${_whl}")
-sha256sums=('ba3c913b6e6d9a07a7b41e5e6ca3ba8d315bf7afedd880dc02f335c221162093')
+sha256sums=('25624ab4026e68c893c94d62603a748dce786fbe9393d522fa42c658459016ca')
 
 package() {
   local _venv="${pkgdir}/opt/${pkgname}"
