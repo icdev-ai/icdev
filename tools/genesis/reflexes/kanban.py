@@ -9684,16 +9684,22 @@ def _dispatch_pr_repair(task: dict) -> bool:
                 _release_task_lease(task_id)
 
     # The session is running: NOW the words are delivered -- receipt + ledger.
+    # The ledger row is also the in-flight record a restarted scheduler reaps
+    # (kpr-watch-28), so it carries the words, the session pid and the base.
     claim.commit()
     adapter_name = getattr(adapter, "name", "?")
-    repair_dispatch.record_dispatch(
+    session_pid = getattr(handle, "pid", None)
+    rc, base_sha = _quiet_git(["rev-parse", "HEAD"], worktree)
+    row = repair_dispatch.record_dispatch(
         task_id, adapter=adapter_name, worktree=worktree,
-        messages=len(claim.messages), pr_url=pr_url)
+        messages=claim.messages, pr_url=pr_url,
+        session_pid=session_pid if isinstance(session_pid, int) else None,
+        base_sha=base_sha.strip() if rc == 0 else "")
     _repairing[task_id] = {
         "handle": handle, "worktree": worktree, "log_fh": log_fh,
         "started": datetime.now(timezone.utc), "adapter": adapter_name,
         "timeout": int(getattr(session, "timeout_seconds", 0) or MAX_EXECUTION_SECONDS),
-        "leased": leased,
+        "leased": leased, "dispatch_id": row["entry"].get("dispatch_id"),
     }
     _audit_agent_execution(
         "agent_execution_started", task_id, executor=adapter_name,
@@ -9771,6 +9777,9 @@ def _reap_pr_repairs() -> List[str]:
         except Exception as exc:  # noqa: BLE001
             outcome = f"push_error: {exc}"
         _remove_repair_worktree(task_id, entry["worktree"])
+        from tools.kanban import repair_dispatch
+
+        repair_dispatch.record_finished(task_id, entry.get("dispatch_id"), outcome)
         if entry.get("leased"):
             _release_task_lease(task_id)
         del _repairing[task_id]
@@ -9781,6 +9790,102 @@ def _reap_pr_repairs() -> List[str]:
         print(f"  Kanban: PR repair for {task_id} finished (exit {rc}): {outcome}")
         finished.append(task_id)
     return finished
+
+
+def _repair_remote_head(task_id: str, path: str) -> Optional[str]:
+    """origin/kanban/<id> as the repair checkout last fetched it, or None."""
+    rc, out = _quiet_git(["rev-parse", f"origin/kanban/{task_id}"], path)
+    return out.strip() if rc == 0 and out.strip() else None
+
+
+def _reap_orphaned_pr_repairs() -> List[str]:
+    """Finish repairs a DEAD scheduler started (kpr-watch-28).
+
+    ``_repairing`` lives in memory, so a scheduler killed or re-exec'd
+    mid-repair never reaped its sessions: the receipt was written and the queue
+    claimed (nothing re-dispatched), ``_push_repair`` never ran (an opencode /
+    pi session that only EDITED lost its fix), and the worktree lingered. The
+    dispatch ledger is the durable record; every in-flight row whose scheduler
+    AND session are provably dead is finished here, under the task's
+    ``kanban:task:<id>`` lease so two schedulers starting together reap it once:
+
+      * the backstop push runs on its worktree -- never forced; ``diverged``
+        is reported and left for pr_watcher, exactly as the live reap does;
+      * the worktree is removed;
+      * if nothing landed (no push, and the remote is still the dispatch base)
+        the claimed messages go back on the queue and the receipt is reversed,
+        so the next cycle redispatches -- after the cooldown the ledger row
+        still enforces, and at most ``max_requeues()`` times per task.
+
+    A live owner or live session is left alone; it is looked at again next
+    cycle, so a session that outlived its scheduler is reaped once it exits.
+    """
+    from tools.kanban import repair_dispatch
+
+    try:
+        from tools.coordination import leases as _leases
+    except Exception as exc:  # noqa: BLE001 -- no coordination: no safe reap
+        logger.debug("pr-repair orphan reap: leases unavailable: %s", exc)
+        return []
+
+    reaped: List[str] = []
+    for row in repair_dispatch.orphaned(set(_repairing)):
+        task_id = str(row.get("task_id") or "")
+        dispatch_id = row.get("dispatch_id")
+        resource = f"kanban:task:{task_id}"
+        try:
+            _leases.release_stale(resource)  # the dead scheduler's own lease
+            lease = _leases.acquire(resource, intent="kanban-pr-repair-reap",
+                                    ttl_seconds=600, block=False)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pr-repair orphan reap: lease failed for %s: %s",
+                         task_id, exc)
+            continue
+        if lease is None:
+            continue  # another scheduler is reaping it, or a live session owns it
+        try:
+            if repair_dispatch.is_finished(dispatch_id):
+                continue  # reaped by the other scheduler before we got the lease
+            worktree = str(row.get("worktree") or "")
+            remote = None
+            if worktree and Path(worktree).exists():
+                try:
+                    outcome = _push_repair(task_id, worktree)
+                except Exception as exc:  # noqa: BLE001
+                    outcome = f"push_error: {exc}"
+                remote = _repair_remote_head(task_id, worktree)
+                _remove_repair_worktree(task_id, worktree)
+            else:
+                outcome = "worktree_missing"
+            base = str(row.get("base_sha") or "")
+            landed = outcome in ("pushed", "diverged") or bool(
+                base and remote and remote != base)
+            requeued = False
+            if not landed:
+                if repair_dispatch.requeues_spent(task_id) < repair_dispatch.max_requeues():
+                    requeued = repair_dispatch.requeue(
+                        task_id, list(row.get("claimed") or []),
+                        reason=f"orphaned repair {dispatch_id}: {outcome}")
+                else:
+                    logger.warning(
+                        "pr-repair orphan reap: %s spent its re-queue budget -- "
+                        "the resume is NOT put back (pr_watcher re-resumes)", task_id)
+            repair_dispatch.record_finished(task_id, dispatch_id, outcome,
+                                            orphan=True, requeued=requeued)
+            _audit_agent_execution(
+                "agent_execution_completed", task_id,
+                executor=row.get("adapter"), mode="pr_repair_orphan",
+                outcome=outcome, requeued=requeued,
+                owner_pid=str(row.get("pid")))
+            print(f"  Kanban: orphaned PR repair for {task_id} reaped: {outcome}"
+                  f"{' (resume re-queued)' if requeued else ''}")
+            reaped.append(task_id)
+        finally:
+            try:
+                _leases.release(resource)
+            except Exception:  # noqa: BLE001
+                pass
+    return reaped
 
 
 def _tag_task_source(task_id: str, source: str) -> None:
@@ -14641,7 +14746,14 @@ def _run_cycle(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                   f"{', '.join(t for t, _ in stale_info)} — continuing this cycle")
 
     # 3a'. Reap finished PR-repair sessions (kpr-watch-27) before the capacity
-    # gate, so a repair that exited frees its slot this cycle.
+    # gate, so a repair that exited frees its slot this cycle. Repairs a DEAD
+    # scheduler started are reaped from the ledger first (kpr-watch-28) -- on
+    # the first cycle after a restart, and on any later cycle once a session
+    # that outlived its scheduler exits.
+    try:
+        _reap_orphaned_pr_repairs()
+    except Exception as _or_exc:  # noqa: BLE001
+        logger.warning("PR-repair orphan reap failed: %s", _or_exc)
     try:
         _reap_pr_repairs()
     except Exception as _rr_exc:  # noqa: BLE001
