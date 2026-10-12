@@ -418,3 +418,99 @@ def test_cli_bridge_http_bridge_entry_matches_only_the_two_mirrored_copies():
         "icdev/tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
         "tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
     ], f"the authorization suffix now reaches unrelated files: {matched}"
+
+
+# ---------------------------------------------------------------------------
+# assessment-2 / task-150fd6bd26: the claude-bridge bearer-token bootstrap
+#
+# The finding recorded two filesystem sites in ensure_token() in
+# tools/llm/cli_bridge/http_bridge.py: read_text on the per-host bearer-token
+# file (line 188, mode 'r') and os.mkdir on its parent directory (line 194).
+# The companion write goes through os.open(..., O_WRONLY|O_CREAT|O_TRUNC, 0o600)
+# with a chmod(0o600) pass; the path is computed by token_path() from the
+# user-owned config dir, overridable only by an operator env var — never from
+# caller, request, network or decoded input. The bridge binds loopback-only.
+# Same reviewed feature as the dynamic_import case above (f04831658,
+# omx-adapt-04); these call sites are unchanged since introduction.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def fs_allowlist() -> list:
+    cfg = yaml.safe_load(
+        (REPO_ROOT / "args" / "integrity_config.yaml").read_text(encoding="utf-8")
+    )
+    return cfg.get("known_safe_filesystem_modules") or []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "tools/llm/cli_bridge/http_bridge.py",
+        "llm/cli_bridge/http_bridge.py",
+    ],
+)
+def test_cli_bridge_http_bridge_is_fs_authorized(path, fs_allowlist):
+    """Both path forms: the self-scan reports paths relative to tools/."""
+    assert path in fs_allowlist
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        "llm/cli_bridge/http_bridge.py",
+        r"llm\cli_bridge\http_bridge.py",
+        "tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
+        r"tools\llm\cli_bridge\http_bridge.py",
+        "icdev/tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
+    ],
+)
+def test_cli_bridge_http_bridge_fs_finding_is_suppressed_by_the_predicate(
+    recorded, fs_allowlist, monkeypatch
+):
+    """The entry has to fire through the predicate, not merely exist in YAML."""
+    from tools.integrity import intent_reconciler
+
+    monkeypatch.setattr(
+        intent_reconciler, "_SAFE_FS_MODULES", frozenset(fs_allowlist)
+    )
+    assert intent_reconciler._is_safe_filesystem_module(recorded), (
+        f"{recorded!r} is in known_safe_filesystem_modules but the reconciler's "
+        "own suppression predicate does not match it"
+    )
+
+
+def test_cli_bridge_http_bridge_actually_uses_the_filesystem():
+    """Guard against authorizing a file that never needed it.
+
+    An allowlist entry for a module with no filesystem use is dead config that
+    silently widens the exemption surface if that file later grows one. Both
+    recorded sites must still be present in both mirrored copies.
+    """
+    for rel in ("tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX,
+                "icdev/tools/" + _CLI_BRIDGE_HTTP_BRIDGE_SUFFIX):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8", errors="replace")
+        assert "read_text(" in text, (
+            f"{rel} no longer reads the token file the entry documents"
+        )
+        assert "mkdir(parents=True" in text, (
+            f"{rel} no longer creates the config dir the entry documents"
+        )
+
+
+@pytest.mark.parametrize(
+    "unrelated",
+    [
+        "tools/llm/cli_bridge/subprocess_backend.py",
+        "tools/other/http_bridge.py",
+        r"tools\other\http_bridge.py",
+    ],
+)
+def test_http_bridge_fs_entry_does_not_match_unrelated_modules(unrelated, fs_allowlist, monkeypatch):
+    """Suffix matching is not segment-anchored; assert it stays narrow."""
+    from tools.integrity import intent_reconciler
+
+    monkeypatch.setattr(
+        intent_reconciler, "_SAFE_FS_MODULES", frozenset(fs_allowlist)
+    )
+    assert not intent_reconciler._is_safe_filesystem_module(unrelated)
