@@ -55,13 +55,18 @@ selenium>=4.15.0
 # import with pytest.importorskip — so a deployment that skips this line loses
 # the docker suite and nothing else.
 #
-# Floor raised 0.1.1 -> 0.2.0 on 2026-10-07 (artifact-fresh-8af83a800b). 0.2.0 is
-# additive for this consumer: new service configs, access/secret-key and log-level
-# setters, and container port exposure split out of apply_to(). FlociContainer(image=),
-# with_region, get_endpoint and get_region are unchanged, and DEFAULT_TAG is still
-# `latest`, so the explicit seam.IMAGE pin still decides the image and no runtime
-# digest moved. Verified by running that docker suite against 0.2.0 (9 passed).
-testcontainers-floci>=0.2.0
+# Floor raised 0.1.1 -> 0.2.0 on 2026-10-07 (artifact-fresh-8af83a800b), then
+# 0.2.0 -> 0.3.0 on 2026-10-12 (artifact-fresh-a5337bde76). 0.3.0 is a package
+# RESTRUCTURE, additive for this consumer: the AWS container moved to
+# floci.aws.container over a new floci.core base, and floci.container is kept as
+# an alias re-exporting DEFAULT_IMAGE, DEFAULT_TAG and FlociContainer.
+# FlociContainer(image=), with_region, get_endpoint and get_region are unchanged,
+# and DEFAULT_TAG is still `latest` (asserted by the suite itself against the
+# installed 0.3.0), so the explicit seam.IMAGE pin still decides the image and no
+# runtime digest moved. Verified by running that docker suite against 0.3.0 with
+# the cached pinned floci/floci:2.0.1 (5 passed, 4 skipped on undeclared boto3 —
+# a gap that predates 0.3.0 and is unrelated to this library).
+testcontainers-floci>=0.3.0
 
 # === Compliance ===
 # cyclonedx-bom>=4.0     # SBOM generation (install when needed)
