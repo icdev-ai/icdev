@@ -13,8 +13,24 @@ ONE command for the steps an operator otherwise runs by hand (omx-setup-01):
                  finished schema, so a failed load is retried, never `skipped`.
                  Needs root, so it RUNS only with ``--yes``; without it the
                  commands are printed.
-  3. env      -- ``ICDEV_DATABASE_URL`` + ``ICDEV_STORAGE_BACKEND=postgresql``
-                 in ``.env``. An existing value is KEPT, never overwritten.
+                 ``--postgres docker`` (omx-host-02) instead runs ICDEV's own
+                 ``icdev-postgres`` container: the pgvector image pinned BY
+                 DIGEST in ``args/omarchy_postgres.yaml``, a named volume,
+                 ``--restart unless-stopped``, published on 127.0.0.1 only, a
+                 generated password written to ``.env`` (never printed). No
+                 sudo: a daemon that refuses the user is ``failed`` with the
+                 remedy. ``auto`` (the default) never migrates a working host:
+                 the mode recorded in ``.env`` wins, then a healthy native
+                 install, then docker when the daemon answers, else native.
+  3. env      -- ``ICDEV_STORAGE_BACKEND=postgresql`` plus
+                 ``ICDEV_DATABASE_URL`` (native) or ``ICDEV_PG_*`` (docker), and
+                 the chosen mode as ``ICDEV_OMARCHY_POSTGRES`` so ``status`` and
+                 ``uninstall`` know which one they manage. An existing value is
+                 KEPT, never overwritten -- except, in docker mode, an
+                 ``ICDEV_DATABASE_URL`` that does not name the container: it
+                 OUTRANKS ``ICDEV_PG_*``, so .env is backed up to
+                 ``.env.bak-<UTC stamp>`` and the line commented out
+                 (omx-host-04); ``status`` reports it ``failed``.
                  On a package install (pacman/pipx) that ``.env`` is NOT in the
                  root-owned package dir: see ``project_root()``.
                  LLM keys are left to the operator; the providers configured /
@@ -40,17 +56,28 @@ ONE command for the steps an operator otherwise runs by hand (omx-setup-01):
                  says to run ``serve`` by hand), and an ``icdev-claude`` provider
                  in the opencode / Pi config. ``n/a`` without the ``claude`` CLI.
 
+OPTIONAL, only with ``--ghidra`` (rea-eng-02):
+
+  ghidra    -- NSA Ghidra 12 (Apache-2.0) + JDK 21 from pacman, and an
+               interpreter that can ``import pyghidra`` -- what
+               ``tools/analyzers/ghidra_headless.py`` needs to decompile. Opt-in
+               because it is a ~1 GB install most hosts never use; the pacman
+               half needs root, so it RUNS only with ``--yes``. Not reversed by
+               ``uninstall``: it is a system package. Windows: see
+               docs/install/ghidra.md.
+
 Every step probes first and reports ``skipped`` when already in place, so a
 second run changes nothing. ``--dry-run`` prints the plan and writes nothing.
 ``status`` probes only. ``uninstall`` reverses 4-9 and NEVER touches the
-database or ``.env``.
+database or ``.env`` -- nor the ``icdev-postgres`` container or its volume.
 
 Every external command goes through one injectable runner (``Host``), which is
-how the tests fake pacman / psql / systemctl / the harness CLIs.
+how the tests fake pacman / psql / docker / systemctl / the harness CLIs.
 
 Usage:
-    icdev omarchy setup [--dry-run] [--yes] [--start] [--json]
-    icdev omarchy status [--json]
+    icdev omarchy setup [--dry-run] [--yes] [--start] [--ghidra]
+                        [--postgres {native,docker,auto}] [--json]
+    icdev omarchy status [--ghidra] [--json]
     icdev omarchy uninstall [--dry-run] [--json]
 """
 
@@ -59,10 +86,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import secrets
 import shutil
 import subprocess  # nosec B404 -- fixed argv lists, never a shell
 import sys
+import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
@@ -74,6 +104,9 @@ DB_ROLE = "icdev"
 DSN = f"postgresql://{DB_ROLE}@localhost:5432/{DB_NAME}"
 PG_DATA = "/var/lib/postgres/data"
 GENESIS_TIMER = "icdev-genesis.timer"
+#: What to do about an ICDEV_DATABASE_URL that outranks the docker container (omx-host-04).
+STALE_URL_REMEDY = ("Remedy: re-run `icdev omarchy setup --postgres docker` (it backs .env up, then "
+                    "comments the line out), or comment out ICDEV_DATABASE_URL in .env yourself")
 #: Why --start refuses on a package install (omx-setup-02); deploy/aur/icdev.install says the same.
 GENESIS_NEEDS_CHECKOUT = (
     "the genesis supervisor (tools/genesis/launch.py) needs a source checkout: it writes its "
@@ -259,18 +292,37 @@ READY_SQL = ("SELECT 1 FROM pg_extension WHERE extname = 'vector' "
              "AND to_regclass('public.schema_bootstrap_partial') IS NULL")
 
 
-def plan_postgres(host: Host) -> Plan:
-    _check_db_name()
+def _native_ready(host: Host) -> bool:
     ready = host.run(["psql", "-h", "localhost", "-U", DB_ROLE, "-d", DB_NAME, "-tAc", READY_SQL])
-    if ready.rc == 0 and ready.stdout.strip() == "1":
+    return ready.rc == 0 and ready.stdout.strip() == "1"
+
+
+def _driver_missing(host: Host) -> Optional[Plan]:
+    """The schema load (and ICDEV itself, once .env says postgresql) needs the
+    driver IN THIS interpreter -- the [postgresql] extra, not a base dependency."""
+    if host.run([host.python, "-c", "import psycopg2"]).rc == 0:
+        return None
+    return Plan(done=False, state="failed",
+                detail=f"the PostgreSQL driver (psycopg2) is not installed for {host.python}: "
+                       "reinstall with the extra -- `omarchy-mise-install 'pipx:icdev[extras=postgresql]' icdev` "
+                       "(mise), `pipx install --force 'icdev[postgresql]'` or "
+                       "`pip install 'icdev[postgresql]'` -- then re-run")
+
+
+def plan_postgres(host: Host, choice: Optional["PgChoice"] = None) -> Plan:
+    choice = choice or PgChoice("native", "default")
+    plan = plan_postgres_docker(host, choice) if choice.mode == "docker" else plan_postgres_native(host)
+    plan.detail = f"{choice.mode}: {plan.detail}"
+    return plan
+
+
+def plan_postgres_native(host: Host) -> Plan:
+    _check_db_name()
+    if _native_ready(host):
         return Plan(done=True, detail=f"database {DB_NAME} reachable with pgvector and the ICDEV schema")
-    # The schema load (and ICDEV itself, once .env says postgresql) needs the
-    # driver IN THIS interpreter -- the [postgresql] extra, not a base dependency.
-    if host.run([host.python, "-c", "import psycopg2"]).rc != 0:
-        return Plan(done=False, state="failed",
-                    detail=f"the PostgreSQL driver (psycopg2) is not installed for {host.python}: "
-                           "reinstall with the extra -- `pipx install --force 'icdev[postgresql]'` or "
-                           "`pip install 'icdev[postgresql]'` -- then re-run")
+    missing_driver = _driver_missing(host)
+    if missing_driver:
+        return missing_driver
 
     installed = bool(host.which("psql"))
     if not installed and not host.which("pacman"):
@@ -309,6 +361,159 @@ def plan_postgres(host: Host) -> Plan:
 
 
 # --------------------------------------------------------------------------- #
+# Step 2, docker mode -- ICDEV's own PostgreSQL + pgvector container (omx-host-02)
+# --------------------------------------------------------------------------- #
+
+PG_MODES = ("native", "docker", "auto")
+#: Which PostgreSQL this host's setup manages, recorded in .env by the env step.
+PG_MODE_ENV = "ICDEV_OMARCHY_POSTGRES"
+PG_CONFIG = "omarchy_postgres.yaml"
+PG_PASSWORD_ENV = "ICDEV_PG_PASSWORD"
+DOCKER_REMEDY = ("add yourself to the docker group (`sudo usermod -aG docker $USER`, then log out and "
+                 "back in) and make sure the daemon runs (`sudo systemctl enable --now docker`), then "
+                 "re-run -- or choose `--postgres native`. Nothing was changed")
+#: Patched by the tests; the readiness wait is the only sleep in this module.
+_sleep = time.sleep
+
+
+@dataclass
+class PgChoice:
+    mode: str                 # "native" | "docker"
+    reason: str
+    docker_error: str = ""    # non-empty: docker mode was chosen and the daemon refused
+
+
+def pg_docker_config(host: Host) -> Dict:
+    """``args/omarchy_postgres.yaml``, in a checkout or the wheel. Refuses a tag
+    and any bind address other than loopback."""
+    import yaml
+    from tools.airgap.image_vendor import parse_pin
+    for base in (host.root / "args", host.root / "icdev" / "data" / "args", host.root / "data" / "args"):
+        if (base / PG_CONFIG).is_file():
+            cfg = yaml.safe_load((base / PG_CONFIG).read_text(encoding="utf-8")) or {}
+            break
+    else:
+        raise FileNotFoundError(f"args/{PG_CONFIG} not found under {host.root}")
+    parse_pin(str(cfg.get("image", "")))  # ValueError on a tag: never run what a digest does not name
+    if cfg.get("bind") not in ("127.0.0.1", "::1"):
+        raise ValueError(f"args/{PG_CONFIG}: bind must be loopback, got {cfg.get('bind')!r}")
+    return cfg
+
+
+def docker_access(host: Host) -> str:
+    """Empty when the docker daemon answers THIS user; else why not."""
+    if not host.which("docker"):
+        return "docker is not on PATH"
+    r = host.run(["docker", "info", "--format", "{{.ServerVersion}}"])
+    if r.rc == 0:
+        return ""
+    msg = (r.stderr or r.stdout).strip()
+    return msg.splitlines()[-1] if msg else f"docker info -> rc {r.rc}"
+
+
+def resolve_pg_mode(host: Host, requested: str = "auto", *, probe: bool = True) -> PgChoice:
+    """native or docker. ``auto`` never migrates a working host implicitly."""
+    from tools.cli.setup_wizard import read_env
+    if requested in ("native", "docker"):
+        choice = PgChoice(requested, f"--postgres {requested}")
+    else:
+        recorded = read_env(host.env_file).get(PG_MODE_ENV, "")
+        if recorded in ("native", "docker"):
+            choice = PgChoice(recorded, f"recorded in .env ({PG_MODE_ENV}={recorded})")
+        elif not probe:
+            return PgChoice("native", "nothing recorded")
+        elif _native_ready(host):
+            return PgChoice("native", "an existing healthy native install keeps working")
+        elif host.platform == "linux" and host.which("docker") and not docker_access(host):
+            return PgChoice("docker", "no native install is ready and the docker daemon answers")
+        else:
+            return PgChoice("native", "no native install is ready and docker does not answer")
+    if choice.mode == "docker" and probe and host.platform == "linux":
+        choice.docker_error = docker_access(host)
+    return choice
+
+
+def _wait_ready(host: Host, name: str, timeout: float) -> None:
+    deadline = time.monotonic() + timeout
+    argv = ["docker", "exec", name, "pg_isready", "-q", "-h", "127.0.0.1", "-U", DB_ROLE, "-d", DB_NAME]
+    while True:
+        # -h 127.0.0.1: the image's first-boot init server listens on the socket
+        # only, so a TCP answer means the REAL server is up.
+        if host.ok(argv):
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"{name} did not accept connections within {timeout:.0f}s "
+                               f"(`docker logs {name}` says why)")
+        _sleep(1)
+
+
+def plan_postgres_docker(host: Host, choice: PgChoice) -> Plan:
+    from tools.cli.setup_wizard import read_env, update_env
+    if host.platform != "linux":
+        return Plan(done=True, state="n/a",
+                    detail=f"docker mode is Linux-first (host: {host.platform}); use --postgres native "
+                           "or point ICDEV_DATABASE_URL at your own PostgreSQL")
+    if choice.docker_error:
+        return Plan(done=False, state="failed",
+                    detail=f"the docker daemon refused: {choice.docker_error}. Remedy: {DOCKER_REMEDY}")
+    _check_db_name()
+    cfg = pg_docker_config(host)
+    name, image, port = cfg["container"], cfg["image"], int(cfg["port"])
+    insp = host.run(["docker", "inspect", "--format", "{{.State.Status}}|{{.Config.Image}}", name])
+    exists = insp.rc == 0
+    status, _, running_image = insp.stdout.strip().partition("|") if exists else ("", "", "")
+    drift = (f"; container runs {running_image}, args pins {image} -- NOT replaced (its volume holds "
+             f"your data): `docker rm -f {name}` and re-run to move to the pin"
+             if exists and running_image and running_image != image else "")
+    password = read_env(host.env_file).get(PG_PASSWORD_ENV, "")
+    exec_psql = ["docker", "exec", name, "psql", "-v", "ON_ERROR_STOP=1", "-U", DB_ROLE, "-d", DB_NAME, "-tAc"]
+
+    if exists and status == "running":
+        ready = host.run([*exec_psql, READY_SQL])
+        if ready.rc == 0 and ready.stdout.strip() == "1" and password:
+            return Plan(done=True, detail=f"container {name} up on {cfg['bind']}:{port} with pgvector "
+                                          f"and the ICDEV schema{drift}")
+    if exists and not password:
+        return Plan(done=False, state="failed",
+                    detail=f"container {name} exists but {host.env_file} has no {PG_PASSWORD_ENV}, so "
+                           f"nothing can log in to it: restore the password to .env, or remove the "
+                           f"container AND volume yourself (`docker rm -f {name}; docker volume rm "
+                           f"{cfg['volume']}` -- this deletes its data) and re-run")
+    missing_driver = _driver_missing(host)
+    if missing_driver:
+        return missing_driver
+
+    actions: List[Action] = []
+    if not password:
+        # Generated now, written by the first action, handed to docker through the
+        # ENVIRONMENT (`-e NAME` with no value): never in an argv, never printed.
+        password = secrets.token_hex(24)
+        actions.append(Action(f"generate a database password into {host.env_file} (not printed)",
+                              fn=lambda pw=password: update_env(host.env_file, {PG_PASSWORD_ENV: pw})))
+    if not exists:
+        actions.append(Action(
+            f"run container {name} ({image}) on {cfg['bind']}:{port}",
+            ["docker", "run", "-d", "--name", name, "--restart", "unless-stopped",
+             "-e", f"POSTGRES_USER={DB_ROLE}", "-e", f"POSTGRES_DB={DB_NAME}", "-e", "POSTGRES_PASSWORD",
+             "-v", f"{cfg['volume']}:/var/lib/postgresql/data",
+             "-p", f"{cfg['bind']}:{port}:5432", image],
+            env={"POSTGRES_PASSWORD": password}))
+    elif status != "running":
+        actions.append(Action(f"start stopped container {name}", ["docker", "start", name]))
+    actions += [
+        Action(f"wait for {name} to accept connections",
+               fn=lambda: _wait_ready(host, name, float(cfg.get("ready_timeout", 90)))),
+        Action("create extension vector", [*exec_psql, "CREATE EXTENSION IF NOT EXISTS vector"]),
+        Action("load the ICDEV schema (bootstrap_pg)",
+               [host.python, "-m", "icdev.tools.db.bootstrap_pg"],
+               env={"ICDEV_DATABASE_URL": f"postgresql://{DB_ROLE}:{password}@{cfg['bind']}:{port}/{DB_NAME}",
+                    "ICDEV_STORAGE_BACKEND": "postgresql"}),
+    ]
+    state = "absent" if not exists else ("not ready" if status == "running" else status or "stopped")
+    return Plan(done=False, actions=actions, detail=f"container {name} {state}{drift}")
+
+
+# --------------------------------------------------------------------------- #
 # Step 3 -- .env
 # --------------------------------------------------------------------------- #
 
@@ -329,12 +534,59 @@ def llm_provider_report(host: Host) -> Dict[str, List[str]]:
     return out
 
 
-def plan_env(host: Host) -> Plan:
+def _url_is_the_container(url: str, cfg: Dict, password: str) -> bool:
+    """True when ``url`` already names the docker container setup manages."""
+    from urllib.parse import urlsplit
+    try:
+        u = urlsplit(url)
+        port = u.port or 5432
+    except ValueError:
+        return False
+    return (u.scheme in ("postgresql", "postgres") and u.hostname in ("127.0.0.1", "localhost", "::1")
+            and port == int(cfg["port"]) and u.path.lstrip("/") == DB_NAME
+            and u.username == DB_ROLE and bool(password) and u.password == password)
+
+
+def _backup_stamp(now: datetime) -> str:
+    return f"{now:%Y%m%dT%H%M%SZ}"
+
+
+def _retire_database_url(host: Host, now: datetime) -> None:
+    """Back up .env, then comment out ICDEV_DATABASE_URL. Never names the value."""
+    from tools.cli.setup_wizard import retire_env_key
+    try:
+        retire_env_key(host.env_file, "ICDEV_DATABASE_URL",
+                       f"retired by icdev omarchy setup {now:%Y-%m-%d} (postgres -> docker)",
+                       stamp=_backup_stamp(now))
+    except OSError as exc:
+        raise RuntimeError(f"could not retire ICDEV_DATABASE_URL in {host.env_file} "
+                           f"({type(exc).__name__}). {STALE_URL_REMEDY}") from None
+
+
+def plan_env(host: Host, choice: Optional[PgChoice] = None, *, status: bool = False) -> Plan:
+    """``status``: probe only -- a stale URL is reported ``failed``, never retired."""
     from tools.cli.setup_wizard import db_env_updates, read_env, update_env
+    choice = choice or PgChoice("native", "default")
     current = read_env(host.env_file)
-    wanted = db_env_updates("postgresql", dsn=DSN)
+    stale_url = False
+    if choice.mode == "docker":
+        if host.platform != "linux" or choice.docker_error:
+            return Plan(done=False, state="pending",
+                        detail="waits for the postgres step: docker mode is not available here")
+        cfg = pg_docker_config(host)
+        wanted = {**db_env_updates("postgresql"), "ICDEV_PG_HOST": str(cfg["bind"]),
+                  "ICDEV_PG_PORT": str(cfg["port"]), "ICDEV_PG_USER": DB_ROLE, "ICDEV_PG_DATABASE": DB_NAME}
+        # ICDEV_DATABASE_URL OUTRANKS ICDEV_PG_*: left in place it points ICDEV
+        # away from the container (omx-host-04). Native mode never touches it.
+        stale_url = bool(current.get("ICDEV_DATABASE_URL")) and not _url_is_the_container(
+            current["ICDEV_DATABASE_URL"], cfg, current.get(PG_PASSWORD_ENV, ""))
+    else:
+        wanted = db_env_updates("postgresql", dsn=DSN)
     missing = {k: v for k, v in wanted.items() if not current.get(k)}
     kept = [k for k in wanted if current.get(k) and current[k] != wanted[k]]
+    # The mode is OURS, not the operator's: it always says what setup now manages.
+    if current.get(PG_MODE_ENV) != choice.mode:
+        missing[PG_MODE_ENV] = choice.mode
     llm = llm_provider_report(host)
     detail = (f"LLM providers configured: {', '.join(llm['configured']) or 'none'}; "
               f"missing keys: {', '.join(llm['missing']) or 'none'}")
@@ -343,11 +595,23 @@ def plan_env(host: Host) -> Plan:
     if host.project_dir != host.root:
         detail = (f"package install: .env is {host.env_file} (set ICDEV_PROJECT_ROOT to "
                   f"{host.project_dir} so ICDEV reads it); " + detail)
-    if not missing:
+    if stale_url and status:
+        return Plan(done=False, state="failed",
+                    detail=f"ICDEV_DATABASE_URL in {host.env_file} outranks ICDEV_PG_* and does not "
+                           f"point at the container. {STALE_URL_REMEDY}; " + detail)
+    actions: List[Action] = []
+    if stale_url:
+        now = datetime.now(timezone.utc)
+        actions.append(Action(
+            f"retire ICDEV_DATABASE_URL in {host.env_file} (it outranks ICDEV_PG_*): back up to "
+            f"{host.env_file.name}.bak-{_backup_stamp(now)}, then comment the line out",
+            fn=lambda: _retire_database_url(host, now)))
+    if missing:
+        actions.append(Action(f"write {', '.join(sorted(missing))} to {host.env_file}",
+                              fn=lambda: update_env(host.env_file, missing)))
+    if not actions:
         return Plan(done=True, detail=detail)
-    return Plan(done=False, detail=detail, actions=[Action(
-        f"write {', '.join(sorted(missing))} to {host.env_file}",
-        fn=lambda: update_env(host.env_file, missing))])
+    return Plan(done=False, detail=detail, actions=actions)
 
 
 # --------------------------------------------------------------------------- #
@@ -751,14 +1015,83 @@ def plan_bridge(host: Host, det: Detected, remove: bool = False) -> Plan:
 
 
 # --------------------------------------------------------------------------- #
+# Optional -- Ghidra 12 + PyGhidra (rea-eng-02)
+# --------------------------------------------------------------------------- #
+
+GHIDRA_PACKAGES = ("ghidra", "jdk21-openjdk")
+#: Where Arch's ``ghidra`` package installs. ICDEV_GHIDRA_HOME outranks it.
+GHIDRA_DEFAULT_HOME = "/opt/ghidra"
+#: PyPI fallback when the install carries no bundled wheel. 3.x is the line
+#: that matches Ghidra 12 ("PyGhidra 3.0.0 (compatible with Ghidra 12.0 and later)").
+PYGHIDRA_REQUIREMENT = "pyghidra>=3.0"
+
+
+def _pyghidra_python(host: Host) -> Optional[str]:
+    """The first interpreter that can ``import pyghidra``: ICDEV_GHIDRA_PYTHON,
+    this ICDEV's own, then ``python3`` on PATH (Arch's ``ghidra`` package puts
+    ``pyghidra`` in the system python)."""
+    from tools.analyzers.ghidra_headless import ENV_PYTHON
+    seen: List[str] = []
+    for cand in (host.environ.get(ENV_PYTHON), host.python, host.which("python3")):
+        if not cand or cand in seen:
+            continue
+        seen.append(cand)
+        if host.ok([cand, "-c", "import pyghidra"]):
+            return cand
+    return None
+
+
+def plan_ghidra(host: Host) -> Plan:
+    from tools.analyzers.ghidra_headless import (
+        ENV_GHIDRA_HOME, MIN_GHIDRA_VERSION, _version_tuple, ghidra_version)
+    home = host.environ.get(ENV_GHIDRA_HOME) or GHIDRA_DEFAULT_HOME
+    version = ghidra_version(home)
+    parsed = _version_tuple(version)
+    current = parsed is not None and parsed[:2] >= MIN_GHIDRA_VERSION
+    python = _pyghidra_python(host)
+    want = "%s.%s" % MIN_GHIDRA_VERSION
+    if current and python:
+        return Plan(done=True, detail=f"Ghidra {version} at {home}; pyghidra via {python}")
+
+    actions: List[Action] = []
+    needs_yes = False
+    if not current:
+        if host.platform != "linux" or not host.which("pacman"):
+            return Plan(done=False, state="pending",
+                        detail=(f"Ghidra {version or 'not found'} at {home}; {want}+ is required. "
+                                "No pacman here: install the release zip + a JDK 21 and set "
+                                f"{ENV_GHIDRA_HOME} -- docs/install/ghidra.md"))
+        actions.append(Action(f"install {' + '.join(GHIDRA_PACKAGES)}",
+                              ["sudo", "pacman", "-S", "--needed", "--noconfirm", *GHIDRA_PACKAGES]))
+        needs_yes = True
+    if not python:
+        dist = Path(home) / "Ghidra" / "Features" / "PyGhidra" / "pypkg" / "dist"
+        source = (["--no-index", "-f", str(dist), "pyghidra"] if dist.is_dir()
+                  else [PYGHIDRA_REQUIREMENT])
+        # Skipped when the pacman step just put pyghidra into the system python.
+        probe = host.which("python3") or "python3"
+        actions.append(Action(f"install pyghidra into {host.python}",
+                              [host.python, "-m", "pip", "install", *source],
+                              unless=[probe, "-c", "import pyghidra"], unless_output=False))
+    detail = (f"Ghidra {version} at {home}" if current
+              else f"Ghidra {version or 'not found'} at {home}; {want}+ is required")
+    detail += "; pyghidra " + ("ok" if python else "not importable")
+    return Plan(done=False, actions=actions, needs_yes=needs_yes, detail=detail)
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
 
 STEPS = ("postgres", "env", "mcp", "skill", "guard", "systemd", "panel", "bridge")
 REVERSIBLE = ("mcp", "skill", "guard", "systemd", "panel", "bridge")
+#: Run only when asked for. Listed in every setup report so the offer is seen.
+OPTIONAL_STEPS = {"ghidra": "--ghidra: Ghidra 12 + JDK 21 + PyGhidra, the optional decompiler"}
 
 
-def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = False) -> Dict[str, Callable[[], Plan]]:
+def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = False,
+           ghidra: bool = False, choice: Optional[PgChoice] = None,
+           status: bool = False) -> Dict[str, Callable[[], Plan]]:
     plans: Dict[str, Callable[[], Plan]] = {
         "mcp": lambda: plan_mcp(host, det, remove),
         "skill": lambda: plan_skill(host, det, remove),
@@ -768,7 +1101,10 @@ def _plans(host: Host, det: Detected, *, start: bool = False, remove: bool = Fal
         "bridge": lambda: plan_bridge(host, det, remove),
     }
     if not remove:
-        plans = {"postgres": lambda: plan_postgres(host), "env": lambda: plan_env(host), **plans}
+        plans = {"postgres": lambda: plan_postgres(host, choice),
+                 "env": lambda: plan_env(host, choice, status=status), **plans}
+        if ghidra:
+            plans["ghidra"] = lambda: plan_ghidra(host)
     return plans
 
 
@@ -803,15 +1139,24 @@ def _execute(host: Host, name: str, plan: Plan, *, mode: str, yes: bool) -> Dict
 
 
 def run(command: str, host: Host, *, dry_run: bool = False, yes: bool = False,
-        start: bool = False) -> Dict:
+        start: bool = False, ghidra: bool = False, postgres: str = "auto") -> Dict:
     det = detect(host)
     remove = command == "uninstall"
     mode = "status" if command == "status" else ("dry-run" if dry_run else "apply")
+    # uninstall only needs to KNOW the mode (to say what it leaves): no probes.
+    choice = resolve_pg_mode(host, postgres if command == "setup" else "auto", probe=not remove)
     report = {"command": command, "mode": mode, "omarchy": det.omarchy, "harnesses": det.harnesses,
               "host": ("Omarchy" if det.omarchy else
                        "not on Omarchy: plain Arch/Linux, Omarchy desktop bits skipped"),
-              "steps": []}
-    for name, make in _plans(host, det, start=start, remove=remove).items():
+              "postgres": {"mode": choice.mode, "reason": choice.reason},
+              "steps": [],
+              "optional": [] if remove or ghidra else list(OPTIONAL_STEPS.values())}
+    if remove:
+        report["kept"] = ["the database and .env: uninstall never touches them" + (
+            f" (docker: container and volume from args/{PG_CONFIG} are left in place)"
+            if choice.mode == "docker" else "")]
+    for name, make in _plans(host, det, start=start, remove=remove, ghidra=ghidra, choice=choice,
+                             status=mode == "status").items():
         try:
             plan = make()
         except Exception as exc:  # noqa: BLE001 -- one broken probe must not hide the others
@@ -827,6 +1172,7 @@ def _print(report: Dict) -> None:
     print(f"icdev omarchy {report['command']} ({report['mode']})")
     print(f"  host: {report['host']}")
     print(f"  harnesses: {', '.join(report['harnesses']) or 'none found'}")
+    print(f"  postgres: {report['postgres']['mode']} ({report['postgres']['reason']})")
     for s in report["steps"]:
         line = f"  [{s['state']:<8}] {s['step']}"
         if s.get("detail"):
@@ -839,6 +1185,10 @@ def _print(report: Dict) -> None:
             print(f"      $ {c}")
         if s.get("error"):
             print(f"      error: {s['error']}")
+    for kept in report.get("kept", []):
+        print(f"  kept: {kept}")
+    for offer in report.get("optional", []):
+        print(f"  optional: {offer}")
 
 
 def main(argv: Optional[List[str]] = None, host: Optional[Host] = None) -> int:
@@ -848,8 +1198,14 @@ def main(argv: Optional[List[str]] = None, host: Optional[Host] = None) -> int:
     sp.add_argument("--dry-run", action="store_true", help="print the plan; change nothing")
     sp.add_argument("--yes", action="store_true", help="run the root (sudo) PostgreSQL steps")
     sp.add_argument("--start", action="store_true", help="enable + start the genesis systemd timer")
+    sp.add_argument("--ghidra", action="store_true",
+                    help="also install Ghidra 12 + JDK 21 + PyGhidra (optional decompiler)")
+    sp.add_argument("--postgres", choices=PG_MODES, default="auto",
+                    help="native (pacman + sudo), docker (ICDEV's own icdev-postgres container on "
+                         "127.0.0.1, no sudo) or auto (default: never migrates a working install)")
     sp.add_argument("--json", action="store_true")
     st = sub.add_parser("status", help="Report each step's state.")
+    st.add_argument("--ghidra", action="store_true", help="also probe the optional Ghidra step")
     st.add_argument("--json", action="store_true")
     up = sub.add_parser("uninstall", help="Reverse steps 4-9 (never drops the database).")
     up.add_argument("--dry-run", action="store_true")
@@ -857,7 +1213,8 @@ def main(argv: Optional[List[str]] = None, host: Optional[Host] = None) -> int:
     args = ap.parse_args(argv)
 
     report = run(args.cmd, host or Host.real(), dry_run=getattr(args, "dry_run", False),
-                 yes=getattr(args, "yes", False), start=getattr(args, "start", False))
+                 yes=getattr(args, "yes", False), start=getattr(args, "start", False),
+                 ghidra=getattr(args, "ghidra", False), postgres=getattr(args, "postgres", "auto"))
     if args.json:
         print(json.dumps(report, indent=2))
     else:

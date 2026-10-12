@@ -95,6 +95,19 @@ def _run(cmd: list[str], cwd: Path = REPO_ROOT, timeout: int = 300) -> subproces
         return subprocess.CompletedProcess(
             cmd, returncode=127, stdout="",
             stderr=f"No such executable: {cmd[0]} ({exc})")
+    except subprocess.TimeoutExpired:
+        # Uncaught, this aborted the release with a traceback that the caller's
+        # tail cut off at the step banner -- 1.2.44's wheel build ran ~11 min
+        # against a 600s budget and reported only "failed_at: build".
+        return subprocess.CompletedProcess(
+            cmd, returncode=124, stdout="",
+            stderr=f"Timed out after {timeout}s: {' '.join(map(str, cmd))}")
+    except OSError as exc:
+        # e.g. NotADirectoryError when a probe's cwd was never created because
+        # an earlier step (icdev init) failed -- report it, don't abort.
+        return subprocess.CompletedProcess(
+            cmd, returncode=126, stdout="",
+            stderr=f"Could not start {cmd[0]} in {cwd}: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +148,9 @@ def step_build() -> dict:
     # Clean dist first
     if DIST_DIR.exists():
         shutil.rmtree(DIST_DIR)
-    r = _run([sys.executable, "-m", "build"], timeout=600)
+    # Measured ~11 min on the release host (8.5k-file wheel + sdist); 600s
+    # was too tight.
+    r = _run([sys.executable, "-m", "build"], timeout=1800)
     ok = r.returncode == 0
     artifacts: list = []
     if DIST_DIR.exists():

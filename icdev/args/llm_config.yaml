@@ -2112,6 +2112,64 @@ architectures:
 cli_bridge:
   mode: auto
 
+# -----------------------------------------------------------------------
+# Provider failover (omx-adapt-06)
+# -----------------------------------------------------------------------
+# OPERATOR DECISION 2026-10-11: "If Claude exhausts its tokens, we have Ollama
+# Cloud and vice versa." Claude is reached only through the claude.ai
+# subscription (claude CLI / CLI bridge; omx-guard-07 forbids metered keys),
+# and its programmatic credit fails CLOSED when spent (omx-spike-02).
+#
+# ONE classifier (tools/llm/provider_exhaustion.py) reads provider error BODIES
+# -- Pi exits 0 on a provider 400/404 -- and records {provider, kind,
+# resume_at} as `provider:<family>` entries in the router's existing
+# D-AUTO-DEGRADE state (data/llm_degraded_tier2.json), so every process agrees.
+#   * router: chains skip an exhausted family's models and splice in that
+#     family's `router_failover_models` until the resume time.
+#   * kanban: a harness run that failed on an exhausted provider is re-dispatched
+#     on the other family (same harness on `harnesses.<h>.models.<family>`, else
+#     `failover_adapter`) without a failure count; both exhausted -> held in
+#     token_exhausted until the EARLIER resume time.
+# Model ids live HERE and in .env, never in Python (test_no_hardcoded_model_ids).
+provider_failover:
+  enabled: ${ICDEV_PROVIDER_FAILOVER:-true}
+  # Hold used when an exhaustion body states no resume time.
+  hold_seconds:
+    exhausted: 3600
+    rate_limited: 300
+  providers:
+    claude:
+      # anthropic is listed so an exhausted subscription never falls through
+      # to a metered key (omx-guard-07).
+      router_providers: [claude-cli, cli, anthropic]
+      # Harness models that reach Claude: the omx-adapt-04 bridge's provider
+      # name in opencode.json / Pi models.json, and Pi's native anthropic.
+      harness_model_prefixes: ["${ICDEV_CLAUDE_BRIDGE_PROVIDER:-icdev-claude}/", "anthropic/"]
+      failover_to: ollama_cloud
+      router_failover_models: [kimi-cloud, deepseek-cloud]
+    ollama_cloud:
+      router_providers: [ollama_cloud]
+      harness_model_prefixes: [ollama-cloud/]
+      failover_to: claude
+      router_failover_models: [claude-cli]
+  harnesses:
+    claude_cli:
+      family: claude
+      # claude_cli speaks only Claude: its Ollama Cloud route is the OSS harness.
+      failover_adapter: {ollama_cloud: opencode_cli}
+    opencode_cli:
+      model_env: ICDEV_OPENCODE_MODEL
+      models:
+        claude: ${ICDEV_OPENCODE_CLAUDE_MODEL:-}
+        ollama_cloud: ${ICDEV_OPENCODE_OLLAMA_CLOUD_MODEL:-}
+      failover_adapter: {claude: claude_cli}
+    pi_cli:
+      model_env: ICDEV_PI_MODEL
+      models:
+        claude: ${ICDEV_PI_CLAUDE_MODEL:-}
+        ollama_cloud: ${ICDEV_PI_OLLAMA_CLOUD_MODEL:-}
+      failover_adapter: {claude: claude_cli}
+
 response_cache:
   enabled: true
   backend: postgresql

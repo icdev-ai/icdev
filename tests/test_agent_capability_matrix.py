@@ -109,11 +109,11 @@ def _register(monkeypatch, **adapters):
 # ── 1. shape of the probe ───────────────────────────────────────────────────
 def test_every_capability_has_a_probe_and_vice_versa():
     assert set(cm.CAPABILITIES) == set(cm._PROBES)
-    assert len(cm.CAPABILITIES) == 10
+    assert len(cm.CAPABILITIES) == 11
     assert set(cm.CAPABILITIES) == {
         "streaming", "tool_calling", "sub_agents", "interruption",
         "sandbox_passthrough", "context_budget", "structured_output",
-        "guard_wired", "guard_shell", "claude_route",
+        "guard_wired", "guard_shell", "claude_route", "sandboxed",
     }
 
 
@@ -262,9 +262,19 @@ def test_claude_cli_permission_posture_is_fixed_by_the_adapter():
 
 
 def test_the_stub_adapter_measures_capable_of_nothing():
-    """A stub must never read as capable — copilot_cli is unimplemented."""
+    """A stub must never read as capable — copilot_cli is unimplemented.
+
+    Except ``sandboxed`` (omx-guard-05): L3 is supplied by the RUNNER, which
+    wraps any adapter's argv, and the probe measures it behaviourally by running
+    a write test through that wrapper -- it never runs the harness binary. On a
+    host with a sandbox backend (CI's Linux runners have bwrap) it is therefore
+    present for every CLI adapter, copilot included, and must say BEHAVIORAL.
+    """
     caps = cm.probe_adapter("copilot_cli")["capabilities"]
-    assert all(c["actual"] != cm.PRESENT for c in caps.values())
+    own = {k: c for k, c in caps.items() if k != "sandboxed"}
+    assert all(c["actual"] != cm.PRESENT for c in own.values())
+    if caps["sandboxed"]["actual"] == cm.PRESENT:
+        assert caps["sandboxed"]["method"] == cm.BEHAVIORAL
 
 
 # ── 5. consumable by pick_default ───────────────────────────────────────────

@@ -539,7 +539,16 @@ python tools/analyzers/dispatch.py --type binary --value <path>   # through the 
 python -m tools.analyzers.ghidra_headless <path> --json         # functions, imports, strings, entry C
 python -m tools.analyzers.ghidra_headless <path>                # human report
 python -m tools.analyzers.ghidra_headless <path> --timeout 900 --max-cpu 4
-python -m tools.analyzers.ghidra_headless <path> --ghidra-home /opt/ghidra_11.1.2_PUBLIC
+python -m tools.analyzers.ghidra_headless <path> --ghidra-home /opt/ghidra --authorization-basis owned
+python -m tools.analyzers.ghidra_headless <path> --ghidra-python /usr/bin/python3   # the python that imports pyghidra
+icdev omarchy setup --ghidra --yes                               # Arch/Omarchy: ghidra + jdk21 + pyghidra (rea-eng-02)
+icdev omarchy status --ghidra
+# GHIDRA 12+ VIA PYGHIDRA (rea-eng-02): the run is `<python> -m pyghidra.ghidra_launch
+# --install-dir <home> ghidra.app.util.headless.AnalyzeHeadless ...`; an older Ghidra is
+# `unavailable` / ghidra_version_unsupported. A run needs an authorization basis
+# (owned | licensed | customer-authorized; --authorization-basis or
+# ICDEV_RE_AUTHORIZATION_BASIS) or it is refused before the JVM; `provenance` records the
+# target sha256 + basis. Install, Windows included: docs/install/ghidra.md.
 python -m tools.dx.tool_index --name analyzeHeadless --json     # is Ghidra on this host at all?
 # ON A DEFAULT INSTALL THIS REPORTS `unavailable`, and that IS the correct reading.
 # Ghidra needs a JDK 21+ and a ~400 MB install, so it is deliberately NOT in
@@ -562,6 +571,43 @@ python -m tools.dx.tool_index --name analyzeHeadless --json     # is Ghidra on t
 # analyzeHeadless has no version flag. The version is read from
 # <home>/Ghidra/application.properties and is on every report.
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
+
+# RE engine registry + license gate (rea-eng-01) -- Ghidra always; Hopper/IDA bring-your-own
+python -m tools.analyzers.re_engines --json                    # allow/refuse + named reason, every engine
+python -m tools.analyzers.re_engines --engine ida --json       # one engine's decision + provenance
+python -m tools.analyzers.re_engines --template                # a license declaration to copy to ~/.config/icdev/
+# YOU maintain your own Hopper/IDA license: declare edition/use in ~/.config/icdev/re_licenses.yaml
+# (or $ICDEV_RE_LICENSES). ICDEV reads no keys and never downloads or installs a commercial engine.
+# IDA Free + use=commercial, and Hopper / non-OEM IDA on ICDEV_SAAS_MODE / ICDEV_MULTI_TENANT, are refused.
+
+# REA analyzers on the contract (rea-wire-02) -- binary | dotnet_assembly | js_bundle | har run;
+# wasm | apk | website report `unavailable` with the measured reason
+python -m tools.analyzers.rea_adapter --families                                   # which families run
+python -m tools.analyzers.rea_adapter <pe> --family binary --authorization-basis owned --json
+python -m tools.analyzers.rea_adapter <pe> --family binary --procedure FUN_140001060 --authorization-basis owned
+python -m tools.analyzers.rea_adapter <dist/> --family js_bundle --authorization-basis owned
+python -m tools.analyzers.rea_adapter <har> --family har --sensitive-value <token> --authorization-basis owned
+# REA evidence feeds (rea-sec-01): a saved rea_adapter --json report into supply chain + attack surface
+python tools/network/attack_surface_mapper.py --artifact-report rea_report.json --json   # IPC / routes / HAR / APK
+python tools/supply_chain/scrm_assessor.py --project-id <id> --rea-report rea_report.json --json
+python tools/compliance/sbom_generator.py --project-id <id> --rea-report rea_report.json
+python tools/compliance/evidence_collector.py --project-id <id> --rea-report rea_report.json --json
+python tools/analyzers/dispatch.py --type dotnet_assembly --value <dll>            # sandboxed fan-out
+# Statuses ok | partial | unavailable | error, lifted by the dispatcher (`status_key`), so a
+# missing engine is never `ok`. limitations / residual_unknowns are None -- never [] -- unless
+# REA reported them (*_basis says which). Pseudocode is basis `decompiled`, confidence low.
+# The native provider comes from the re_engines gate (`--engine`, default ghidra), never REA's `auto`.
+# AI-ify from observed behaviour (rea-aiify-01): input_type har | electron_app | website | apk.
+# The dashboard route passes no basis, so set ICDEV_RE_AUTHORIZATION_BASIS before starting it.
+curl -X POST localhost:5050/ai-ify/api/scan -H 'Content-Type: application/json' \
+  -d '{"input_type": "har", "input_ref": "/path/capture.har"}'          # opportunities carry basis: observed
+# Process-Ify from an observed scenario (rea-pif-01): allow_execute must be the literal true, per run.
+curl -X POST localhost:5050/workflow-canvas/api/workflows/observed-draft -H 'Content-Type: application/json' \
+  -d '{"kind": "process", "scenario": {"executable": "/path/app.exe"}, "allow_execute": true, "authorization_basis": "owned"}'
+curl -X POST localhost:5050/workflow-canvas/api/workflows/<workflow_id>/observed-review \
+  -H 'Content-Type: application/json' -d '{"decision": "approve", "reviewer": "<name>", "note": "..."}'
+# The draft is status draft / review pending_hitl and cannot join a process chain until approved.
+# Feature doc (verdicts, license table, NOT-adopted list): docs/features/phase-rea-reverse-engineering.md
 ```
 
 ### The two consumers of that triage (xrv-bin-03)
@@ -4260,6 +4306,9 @@ python -m tools.hooks.harness_guard --harness pi < call.json         # Pi spelli
 python -m tools.hooks.guard_shell --wiring           # install the shims, print the spawn env (exit 1 + reason where unsupported, e.g. Windows)
 python -m tools.hooks.guard_shell --measure -- opencode run "Use your shell tool to run exactly: echo {marker}"   # how a harness finds its shell
 python tools/agents/capability_matrix.py --capability guard_shell --json   # per-adapter guard_shell, probe-measured
+python -m tools.hooks.write_sandbox --status          # L3 write sandbox backend on this host (bwrap / Landlock; exit 1 + reason where unsupported, e.g. Windows)
+python -m tools.hooks.write_sandbox --self-test --adapter codex_cli --json   # real writes: inside + state land, outside refused
+python tools/agents/capability_matrix.py --capability sandboxed --json   # per-adapter sandboxed, probe-measured
 
 # omx-setup-01 — fresh Omarchy / plain Arch host to a running ICDEV, idempotent
 icdev omarchy setup --dry-run        # print the step plan; change nothing
@@ -7991,6 +8040,9 @@ python tools/agents/capability_matrix.py --gate
 The kanban runner refuses to AUTONOMOUSLY spawn an adapter whose PreToolUse
 guard is not verified (`claude_cli`: an un-neutralised all-tools hook in
 `.claude/settings.json`; every other adapter: `guard_wired` measured `present`).
+Since omx-guard-06 "verified" is guard COVERAGE from `args/guard_coverage.yaml`:
+L1 native hook, or L2 guarded shell + L3 write sandbox (L2 alone only with
+`l2_only_opt_in: true`); the survey names each adapter's live layers.
 `ICDEV_GUARD_PARITY_GATE=enforce` (default) falls back to the next guarded
 adapter and records the refusal in `last_failure_reason`; `=report` logs only.
 Interactive use is unaffected.

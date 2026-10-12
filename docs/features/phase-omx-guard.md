@@ -340,7 +340,7 @@ text **wrapped exactly as Claude Code sends it to `$SHELL`**
 
 ### Not changed, and residual gaps
 
-* **`guard_parity` is unchanged.** It still requires `guard_wired` (L1) for
+* **`guard_parity` was unchanged by this card** (see omx-guard-06 below). It still required `guard_wired` (L1) for
   autonomous dispatch. L2 sees shell commands only, not a harness's file
   edits (L3, omx-guard-05). Of the adapters guard_parity refuses, L2 measured
   codex as **not coverable** and could not measure copilot or goose, so
@@ -351,3 +351,334 @@ text **wrapped exactly as Claude Code sends it to `$SHELL`**
   call.
 * A command split across lines **inside quotes** on a persistent stdin shell
   is checked line by line; only backslash continuations are joined.
+
+## Default-branch push guard (omx-guard-08)
+
+**Measured 2026-10-11** on the Omarchy laptop (omx-smoke-03: opencode_cli on
+ollama-cloud/kimi-k3, external scratch repo). After committing on
+`kanban/omx-smoke-03`, the agent ran `git push origin kanban/omx-smoke-03:main`
+and then `git push origin main`. Its work landed on the default branch with no
+PR. Nothing refused it. `check_git_danger` refuses a *force* push and
+`check_branch_deletion` a *delete*, and a fast-forward push to main is neither.
+GitHub branch protection would have stopped it, but a local or bare remote, a
+Gitea, or an unprotected repo does not. Operator approved the guard the same day.
+
+| Piece | Path | Role |
+|---|---|---|
+| Check | `tools/hooks/shared_checks.py::check_default_branch_push` (mirrored, and in the bootstrap payload) | refuses a `git push` whose destination is the repo's default branch. One copy, which every path runs |
+| L1 Claude Code | `.claude/hooks/pre_tool_use.py` | runs it fourth, after `git_danger`, with the hook payload's `cwd` |
+| L1 opencode / Pi | `harness_guard.decide(..., cwd=)` + both plugins | the plugins now send `cwd: directory`. The bridge runs from the ICDEV root, so without this it would have read ICDEV's branches instead of the run's |
+| Headless / L2 | `hook_compat.HEADLESS_CHECKS` | `run_pre_tool_check` covers `guard_shell` too. The shim runs **in** the shell's directory, so git sees the right repo with nothing passed |
+| Survey | `fire_rate_survey.py` check `default_branch_push` | replayed, anchored on each transcript's checkout |
+
+### What is refused
+
+The destination is parsed from the push's own argv. Refused: `<remote> main`,
+`HEAD:main` / `@:main`, `<src>:main`, `<src>:refs/heads/main`, `+<src>:main`,
+`:main` and `--delete main`, the matching spec `:`, a glob that covers the
+default branch, and `--all` / `--branches` / `--mirror`. Every form is refused
+with `git -C <dir>` too, after a `cd <dir> &&`, inside `( … )`, behind
+`VAR=x` / `env` / `sudo` prefixes, and inside the L2 shim's `eval '…'` unwrap.
+
+A **bare** `git push` / `git push <remote>` goes where git would send it:
+
+* `remote.<remote>.push` set: those refspecs are judged.
+* `push.default=simple` (git's default) or `current`: refused when the
+  **current** branch is the default branch.
+* `upstream` / `tracking`: refused when the branch **tracks** the default
+  branch.
+* `matching`: always refused. `nothing`: never refused.
+
+The task text said "is (or tracks)". Under `simple`, "tracks" alone is not a
+push to main. A `kanban/x` worktree created from `origin/main` records
+`origin/main` as its upstream, and git **itself** refuses that bare push
+because the names differ. Refusing it here would refuse nothing git lets
+through. It would also be a false positive on every worktree made the way
+CLAUDE.md prescribes. `tests/hooks/test_default_branch_push.py` pins all four
+modes.
+
+Allowed: any feature/kanban branch (`-u origin kanban/x`, `HEAD:kanban/x`,
+`--force-with-lease` on it), deleting a non-default branch, tags (`v1.0`,
+`refs/tags/…`, `--tags`), `--dry-run` / `-n`. Prose (`echo …`, a commit
+message, a grep pattern) is also allowed: only a segment whose command word is
+`git` with subcommand `push` is parsed.
+
+### The default branch is resolved per repository, never assumed
+
+In order:
+
+1. `git symbolic-ref refs/remotes/<remote>/HEAD`, which clone records.
+2. The remote's own `HEAD` when its URL is a local path. A bare scratch remote
+   added with `git remote add` has no remote HEAD ref.
+3. A remote-tracking, then a local, `main` / `master`.
+4. When git cannot answer at all (a directory it cannot read), **both** `main`
+   and `master`. An explicit `git push origin master` is still refused there.
+   A bare push, which needs branch state, fails open.
+
+The directory is, in order: the caller's `cwd` (the Claude hook payload), then
+`tool_input['cwd']` / `['workdir']`, then whatever `cd` / `pushd` / `git -C`
+the command applies, then the process's own directory (the L2 shim's). Nothing
+reads `os.getcwd()`, and `test_no_check_reads_cwd` still holds. The check
+fails open on any error.
+
+### Fire-rate survey (before arming)
+
+`python tools/hooks/fire_rate_survey.py --json --check default_branch_push`,
+run 2026-10-11 against this branch: Claude Code transcripts, 30-day window,
+**4,297 transcripts, 580 sessions, 26,199 tool calls (20,952 Bash), 636 of
+them `push` calls**.
+
+| Verdict | Fired | Rate | Sessions |
+|---|---:|---:|---:|
+| Survey (argv + today's branch state of each call's checkout) | 31 | 0.118% | 21 |
+| argv alone (no branch state) | 1 | 0.004% | 1 |
+| **True positives after classifying every fire** | **0** | **0.000%** | 0 |
+
+All 31 fires were classified by hand from their recorded `cwd`. Every one is a
+replay artifact, not a push to main. Each ran from a kanban worktree that has
+since been removed: 30 under `C:\AI\ICDev\.tmp\worktrees\…`, 1 under
+`icdev_ft`. The survey's anchor therefore walked up to the enclosing **main
+checkout**, which is on `main` today, so the call's `git push -u origin HEAD`
+(10) or bare `git push` (21) was judged as if it ran on `main`. When those
+commands ran, they pushed the worktree's own kanban branch. The one argv-only
+fire is the same artifact: its `cd` names a worktree husk, which git resolves
+to the enclosing checkout. **No session in the window pushed to a default
+branch**, so the guard is armed at its default (on). The survey row is
+labelled an upper bound for this reason.
+
+### Standing it down
+
+* **One check, one harness session:** start the agent with
+  `ICDEV_DEFAULT_BRANCH_PUSH_GUARD=0` in its environment. This is the
+  `CHECK_KILL_SWITCHES` entry `default_branch_push`, honoured by the Claude
+  hook, `harness_guard` (opencode/Pi) and `guard_shell` alike. For Claude
+  Code, adding it to `.claude/settings.local.json` `env` takes effect on the
+  next tool call. Remove it after the one push.
+* **Human-approved hotfix, one command:** the human runs that one
+  `git push origin main` in their own terminal. The guard sits in front of
+  agents only, so nothing outside a harness is intercepted.
+* **Not a switch:** writing `ICDEV_DEFAULT_BRANCH_PUSH_GUARD=0 git push origin
+  main` *inside the command*. The agent writes the command, so a switch it can
+  type is no switch. This is pinned by a test.
+* `ICDEV_PRETOOLUSE_ENFORCE=0` still turns every refusal into an advisory, as
+  for every other check.
+
+### Verification
+
+* `tests/hooks/test_default_branch_push.py` (69 tests, gated in
+  `args/ci_test_files/core.d/omx-guard-08.txt`) builds real throwaway repos: a
+  bare remote plus a clone, one with default `main` and one with default
+  `master`. It covers:
+  * every refspec form refused in **both** repos;
+  * `git -C` and `cd` resolved against the named directory;
+  * 16 allowed forms;
+  * `master` resolved from the repo, so `git push origin main` is allowed
+    there;
+  * a `git remote add` remote with no HEAD ref asked directly;
+  * the unreadable-directory fallback;
+  * bare push on the default branch refused, and on a tracking feature branch
+    under all four `push.default` modes;
+  * configured `remote.origin.push`;
+  * the kill switch, and the inline assignment that is **not** one;
+  * end to end through the Claude hook subprocess (exit 2, using the payload
+    `cwd`), `run_pre_tool_check`, `harness_guard.decide` for opencode and Pi,
+    and `guard_shell.decide_text`, including the `eval '…'` wrapper.
+* Red-first: `red_first_gate.py --gate` reports it **discriminating**. It
+  fails to collect against the merge base and passes here. `isolation_run.py`
+  passes it alone.
+* `tests/hooks/` plus the bootstrap-payload, AGOV, branch-deletion and
+  capability-matrix suites: 624 passed.
+
+### Residual gaps
+
+* Codex and Pi's RPC shell exec `/bin/bash` by absolute path, so L2 does not
+  see them (see the L2 matrix above). Pi's L1 extension does see its `bash`
+  tool. Codex has neither layer.
+* A push spelled through a git alias (`git p`) or a script file the agent
+  writes and runs is not parsed. `git_danger` has the same limit.
+* `push.default=matching` refuses even when the remote has no default branch
+  yet. That is conservative, and the setting is rare.
+
+## Write sandbox -- layer 3 (omx-guard-05)
+
+L1 and L2 judge a tool call by **reading** it. Neither sees a harness's
+built-in file-edit tool when the harness has no hook (codex, copilot, goose).
+Those writes go straight to disk. L3 reads nothing. It starts the harness
+inside an OS sandbox where only the task's writable set is writable.
+
+### What shipped
+
+| Piece | Path | Role |
+|---|---|---|
+| Sandbox | `tools/hooks/write_sandbox.py` | `status()` (backend + mode, measured), `prefix()` (the sandbox argv), `wrap_argv()` (what adapters call), `probe()` (real writes) |
+| Landlock helper | `tools/hooks/landlock_exec.py` | stdlib-only, run as `python -I`: confines itself (every write right handled, `--rw` trees get them back), then `execvp`s the harness. **Fails closed**: if confinement fails, the harness does not run (exit 125) |
+| Declared state | `args/write_sandbox.yaml` | per adapter, the config/session/cache dirs and files the harness needs |
+| Adapters | `tools/agents/adapters/{claude,codex,copilot,goose,opencode,pi}_cli.py` | `build_argv` ends in `wrap_argv(argv, session, self.name)`: a no-op unless the runner asked |
+| Runner | `tools/genesis/reflexes/kanban.py::_agent_session` | sets `metadata["write_sandbox"]` when `status()` is supported, otherwise logs the reason on **every** dispatch |
+| Capability | `capability_matrix` `sandboxed` | measured, not declared: see below |
+
+**The writable set is not a second definition.** It is
+`shared_checks.sanctioned_write_roots(<worktree>)`, the exact roots L1's
+`check_write_outside_worktree` enforces: the worktree, the main checkout it is
+linked to (git writes the objects and refs of a commit there), the temp dirs,
+the `~/.claude` session dirs, `$ICDEV_WORKTREE_ROOT` and
+`$ICDEV_WRITE_BOUNDARY_EXTRA_ROOTS`. Only the spawned adapter's declared state
+is added. Everything else is read-only. Reads, execution and the network are
+untouched, because LLM providers are remote.
+
+### Per OS
+
+* **Linux, bubblewrap** is used when `bwrap` is installed and can actually
+  create its namespace. An AppArmor userns restriction makes an installed
+  bwrap fail, so it is probed with a real run. The argv is
+  `--ro-bind / / --dev-bind /dev /dev --die-with-parent` plus
+  `--bind-try <root> <root>` for each root. No `--unshare-*`.
+* **Linux, Landlock** is the fallback (kernel 5.13 or later). Rights follow the
+  ABI: `REFER` from 2, `TRUNCATE` from 3. `/dev` is added for `/dev/null` and
+  ttys.
+* **Linux with neither** reports `no Linux write sandbox available: … writes
+  are NOT confined`.
+* **Windows is explicitly unsupported, after evaluation:**
+  * AppContainer also denies **reads** outside its ACL'd paths, so the harness
+    could not load its own install or the repo without re-ACLing the user's
+    tree.
+  * A low-integrity token needs the worktree, the main checkout and every state
+    dir relabelled low. That is a persistent host change that lets *every*
+    low-IL process write them.
+  * Windows Sandbox is a VM that cannot see the host worktree, and it is absent
+    on Home editions.
+
+  `status()` gives that reason and the runner logs it on every dispatch.
+* **Any other OS (macOS)** is explicitly unsupported and reported.
+
+Kill switches are the existing ones for this boundary.
+`ICDEV_WRITE_BOUNDARY_GUARD=0` turns L3 off. `=monitor` also leaves the harness
+unsandboxed and says so, because an OS sandbox cannot merely record.
+`ICDEV_PRETOOLUSE_ENFORCE=0` also turns it off. A sandbox that cannot be
+*built* is logged and the dispatch runs unconfined, like a broken L2 bridge. A
+Landlock confinement that fails at exec time refuses to run.
+
+### The `sandboxed` capability
+
+The probe takes the sandbox from the **adapter's own** `build_argv`, so an
+adapter that forgot `wrap_argv` measures `absent`. It then makes real writes,
+each by `sh -c` inside that sandbox:
+
+* into the worktree, which must land;
+* into the adapter's first declared state dir, which must land;
+* into `<worktree>-outside`, which must not land.
+
+The worktree and the outside target are siblings under
+`~/.cache/icdev/l3-probe/`. That puts them outside every shared root, and the
+`-outside` name also catches a containment check done by string prefix.
+In-process adapters (`local_agent`, `local_llm_router`) are `absent`, because
+there is no OS process to wrap. On Windows the cell is `unconfirmed`, with the
+reason.
+
+### Verification
+
+* `tests/hooks/test_write_sandbox.py`, gated in
+  `args/ci_test_files/core.d/omx-guard-05.txt`, covers:
+  * the writable set is shared roots plus declared state;
+  * the bwrap and Landlock argv shapes, with the network open;
+  * per-OS reporting (Windows, macOS, Linux with neither), backend preference
+    and override;
+  * the three kill switches;
+  * `wrap_argv` is a no-op without the runner's key, and a sandbox that cannot
+    be built fails open and is logged;
+  * all six CLI adapters apply it;
+  * the Landlock helper refuses to run unconfined;
+  * the runner sets the key or logs why not;
+  * the capability mapping;
+  * **live writes on Linux**: inside and state land, outside is refused,
+    through the host's backend and through Landlock explicitly, with a control
+    showing the same write *does* land without the prefix;
+  * the live `sandboxed` probe through `codex_cli`'s own argv.
+* Linux (WSL2 Ubuntu, kernel 6.6, Landlock ABI 3, Python 3.12): 33 passed with
+  Landlock only, and 33 passed again with bubblewrap 0.9 on `PATH` (unprivileged
+  userns). `capability_matrix --capability sandboxed`: `claude_cli`,
+  `codex_cli`, `copilot_cli`, `opencode_cli` and `pi_cli` are `confirmed`;
+  `goose_cli` is present but has no declaration block; both in-process adapters
+  are `agreed_absent`. Windows: 33 passed, and `--gate` reports 0 overclaimed.
+
+### Fire-rate survey (before arming)
+
+`python tools/hooks/fire_rate_survey.py --check write_outside_worktree
+--since-days 7 --samples 8` was run on 2026-10-11. That check enforces the
+**same roots** L3 now enforces in the OS. It fired 16 times in about 6,790
+tool calls (0.236%), across 8 sessions. Every sample was an **interactive**
+session writing into a sibling repo (`C:\AI\icdev_ft_ew15\…`, `../omarchy.new`)
+or a heredoc body naming `/etc/sudoers.d/…` or `~/.config/opencode/plugin/`.
+None was a kanban worker writing its own task.
+
+What the survey **cannot** see: writes that never appear in tool-call text,
+which is the whole reason L3 exists. Examples are a harness's built-in edit
+tool, `pip install --user`, `npm i -g` and `git config --global`. Under L3 these
+now fail with EROFS or EACCES instead of changing the host. That change is
+intended for an autonomous worker. A harness that needs one more state path
+fails **loudly**, on that path; the fix is to declare it in
+`args/write_sandbox.yaml`, with its reason.
+
+### Not changed, and residual gaps
+
+* **No real harness was run end to end under L3**, because none was installed
+  on the Linux probe host and the Omarchy laptop was offline. The mechanism is
+  measured; harness tolerance is not. The known risk is `claude_cli`, which
+  rewrites `~/.claude.json` through a temp file plus rename in `$HOME`, and a
+  file bind cannot permit that. If that is fatal, the dispatch fails visibly.
+  Stand it down with `ICDEV_WRITE_BOUNDARY_GUARD=0`.
+* **The main checkout is writable**, because the shared roots sanction it (L1
+  allows it too, and git needs its common dir). That includes its `.git/hooks`
+  and `.claude/`. Narrowing it is a change to `sanctioned_write_roots`, for L1
+  and L3 together, not an L3-only carve-out.
+* **`guard_parity` was unchanged by this card** -- omx-guard-06 below made it coverage-based.
+* Landlock cannot carve a read-only hole inside a writable tree; bubblewrap
+  could. The two backends deliberately share one writable set.
+
+## The gate admits by coverage (omx-guard-06)
+
+`tools/agents/guard_parity.py` used to admit an adapter for AUTONOMOUS dispatch
+only when `guard_wired` (L1) was probe-verified, so any harness without a native
+hook was refused even when L2 and L3 covered it. It now reads the three layer
+cells and admits when the layers measured `present` satisfy an entry of
+`args/guard_coverage.yaml`:
+
+| Default entry | Meaning |
+|---|---|
+| `[L1]` | native hook: commands AND built-in file edits |
+| `[L2, L3]` | guarded shell for every command + write sandbox for every write |
+| `[L2]` | refused unless `l2_only_opt_in: true` -- L2 cannot see a built-in file edit |
+
+The loader drops an entry with neither L1 nor L2 (it checks no command), and
+`[L2]` listed without the opt-in flag. An unreadable file falls back to the
+default and logs that it did. `unconfirmed` is never `present`, so an OS where a
+layer is unsupported (Windows: L2 and L3) is reported in the verdict, not passed.
+
+The verdict names the live layers per adapter:
+
+* `python -m tools.agents.guard_parity --survey`: `ADMITTED`/`REFUSED`, `live=`, and
+  each layer's evidence;
+* `python tools/agents/capability_matrix.py --json`: `guard_coverage` per adapter
+  (`layers`, `live`, `admitted`, `reason`), and one line per adapter in text mode;
+* the Omarchy agents-panel record: `icdev.adapter.coverage` and a `tierLabel` such
+  as `codex_cli · guard wired (L2+L3)`.
+
+### Survey (2026-10-11, Windows host)
+
+Admitted set unchanged: `claude_cli`, `opencode_cli` and `pi_cli` via L1. Codex is
+still REFUSED: its L2 is measured **absent** (`codex-cli 0.162.1` execs
+`/bin/bash` by absolute path), so it has L3 at most. The gate admits codex as soon
+as both layers measure `present`, and the runner then dispatches it with no
+code change. `copilot_cli` and `goose_cli` have L2 unmeasured.
+
+This card only widens admission: an adapter admitted before (L1) is still
+admitted. No refusal is newly armed, so no hook fire-rate survey applies. The
+survey above is the before/after measurement.
+
+### Verification
+
+`tests/agents/test_guard_coverage.py` (gated via `core.d/omx-guard-06.txt`):
+codex-shaped L2+L3 is admitted and dispatched by `_guard_parity_screen`; L2-only
+is refused by default (and when `[L2]` is listed without the opt-in) and
+admitted with `l2_only_opt_in`; L1 alone is unchanged; L3 alone is refused; a failed probe
+admits nothing; the matrix and panel show the live layers.

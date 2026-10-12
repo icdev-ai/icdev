@@ -1,0 +1,29 @@
+# CUI // SP-CTI
+# omx-guard-06 -- which guard COVERAGE admits a harness for AUTONOMOUS dispatch.
+#
+# Consumed by: tools/agents/guard_parity.py :: load_policy
+#
+# The shared checks (tools/hooks/shared_checks.py) reach a harness through
+# three layers, each MEASURED by its own capability-matrix cell -- never by a
+# declaration in args/agent_capabilities.yaml:
+#
+#   L1  native pre-tool hook  guard_wired  commands AND built-in file edits
+#   L2  guarded shell         guard_shell  every shell command, any harness
+#   L3  write sandbox         sandboxed    writes outside the task worktree
+#
+# An adapter is admitted when the layers measured `present` include every
+# layer of at least ONE entry under `admit`. Check what the runner would do:
+#   python -m tools.agents.guard_parity --survey
+#
+# Rules the loader enforces (a violating entry is dropped with a warning):
+#   * an entry with neither L1 nor L2 checks no shell command -- refused;
+#   * [L2] alone is refused unless l2_only_opt_in is true: L2 cannot see a
+#     harness's built-in file-edit tool, so without L3 such an edit is
+#     unchecked. Opting in is an operator decision -- say why next to it.
+# An unreadable file, or no valid entry, falls back to the default below.
+
+admit:
+  - [L1]
+  - [L2, L3]
+
+l2_only_opt_in: false

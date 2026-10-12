@@ -287,6 +287,11 @@ class AnalyzerDeclaration:
     timeout_seconds: int
     enabled: bool
     binding: ArgumentBinding = ArgumentBinding()
+    #: Key of the payload field carrying the analyzer's OWN outcome
+    #: (rea-wire-02). When set, the dispatcher reports that outcome instead of
+    #: ``ok`` -- an analyzer that returned "the engine is missing" did return,
+    #: and reporting it ``ok`` folds an absence into a clean run.
+    status_key: Optional[str] = None
 
     def accepts_observable(self, observable_type: str) -> bool:
         """True when this analyzer declared *observable_type* as an input."""
@@ -307,6 +312,7 @@ class AnalyzerDeclaration:
             "timeout_seconds": self.timeout_seconds,
             "enabled": self.enabled,
             "binding": self.binding.to_dict(),
+            "status_key": self.status_key,
         }
 
 
@@ -728,6 +734,12 @@ def _parse_analyzer(
     if not isinstance(enabled, bool):
         raise InvalidDeclaration(f"analyzer {key!r} `enabled` must be a boolean, got {enabled!r}")
 
+    status_key = block.get("status_key")
+    if status_key is not None and not (isinstance(status_key, str) and _IDENTIFIER.match(status_key)):
+        raise InvalidDeclaration(
+            f"analyzer {key!r} `status_key` must be a payload key (identifier), got {status_key!r}"
+        )
+
     return AnalyzerDeclaration(
         key=key,
         kind=kind,
@@ -749,6 +761,7 @@ def _parse_analyzer(
         timeout_seconds=timeout_seconds,
         enabled=enabled,
         binding=_parse_binding(block.get("binding"), analyzer_key=key),
+        status_key=status_key,
     )
 
 

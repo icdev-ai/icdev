@@ -29,8 +29,10 @@ WHAT IT REPORTS, AND WHERE EACH FIGURE COMES FROM -- nothing is recomputed:
   ``/cache-savings`` spend panel and ``session_cost --by-verdict`` read, with
   its unpriced-is-not-zero rule (a task with no priced row has NO cost).
 * the active adapter -- ``tools.agents.registry.pick_default()`` (which follows
-  ``omarchy default agent``), and whether its guard is wired --
-  ``tools.agents.guard_parity.verdict_for()``, MEASURED, not declared.
+  ``omarchy default agent``), and whether its guard COVERAGE admits it --
+  ``tools.agents.guard_parity.verdict_for()``, MEASURED, not declared. The
+  live layers (L1 hook, L2 guarded shell, L3 write sandbox) are named
+  (omx-guard-06).
 * the contract's local-stats block -- ``tools.cost.task_attribution.attributed_rows``,
   the same ledger, all time. A SESSION is one kanban dispatch (one attributed
   row, written at reap); ``todaySessions``/``totalSessions``/``activeDays``/
@@ -157,12 +159,18 @@ def adapter_status(pick_fn: Optional[Callable[[], Any]] = None,
         adapter = pick_fn()
         name = str(getattr(adapter, "name", "") or adapter)
     except Exception as exc:  # noqa: BLE001 -- NotInstalledError and friends
-        return {"name": None, "guard_wired": None, "reason": f"{type(exc).__name__}: {exc}"}
+        return {"name": None, "guard_wired": None, "coverage": None,
+                "reason": f"{type(exc).__name__}: {exc}"}
     try:
         verdict = verdict_fn(name)
-        return {"name": name, "guard_wired": bool(verdict.guarded), "reason": str(verdict.reason)}
+        live = getattr(verdict, "live", None)
+        # guard_wired is the gate's verdict: ADMITTED by the coverage policy.
+        return {"name": name, "guard_wired": bool(verdict.guarded),
+                "coverage": list(live) if live is not None else None,
+                "reason": str(verdict.reason)}
     except Exception as exc:  # noqa: BLE001 -- an unprobed guard is not a wired one
-        return {"name": name, "guard_wired": None, "reason": f"guard probe failed: {exc}"}
+        return {"name": name, "guard_wired": None, "coverage": None,
+                "reason": f"guard probe failed: {exc}"}
 
 
 def _row_local_date(created_at: Any, tz) -> Optional[str]:
@@ -256,6 +264,9 @@ def _tier_label(adapter: Dict[str, Any]) -> str:
         return "no harness"
     guard = {True: "guard wired", False: "guard NOT wired"}.get(adapter.get("guard_wired"),
                                                                 "guard unverified")
+    live = adapter.get("coverage")
+    if live is not None and adapter.get("guard_wired") is not None:
+        guard += f" ({'+'.join(live) or 'no layer live'})"
     return f"{adapter['name']} · {guard}"
 
 
@@ -275,7 +286,8 @@ def _status_text(kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, Any
 
 def build_record(*, kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, Any]],
                  adapter: Dict[str, Any], now: datetime,
-                 history: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                 history: Optional[Dict[str, Any]] = None,
+                 exhaustion: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """The contract-shaped record. ``stale`` is true when any DB figure is missing."""
     stale = kanban is None or spend is None or history is None
     record = {
@@ -301,6 +313,9 @@ def build_record(*, kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, 
             "spendToday": spend or {"cost_usd": None, "tasks": None, "dispatches": None,
                                     "unpriced_dispatches": None, "tokens": None},
             "adapter": adapter,
+            # omx-adapt-06: provider families exhausted now, and their resume
+            # times. null = could not be read.
+            "providerExhaustion": exhaustion,
         },
     }
     # The upstream local-stats block -- what the panel's providerHasData reads.
@@ -308,13 +323,26 @@ def build_record(*, kanban: Optional[Dict[str, int]], spend: Optional[Dict[str, 
     return record
 
 
+def provider_exhaustion(snapshot_fn: Optional[Callable[[], Dict[str, Any]]] = None
+                        ) -> Optional[Dict[str, Any]]:
+    """omx-adapt-06 state per provider family; None when it cannot be read."""
+    if snapshot_fn is None:
+        from icdev.tools.llm.provider_exhaustion import snapshot as snapshot_fn
+    try:
+        return snapshot_fn()
+    except Exception:  # noqa: BLE001 -- null, never a guess
+        return None
+
+
 def collect(now: Optional[datetime] = None, *, summary_fn=None, totals_fn=None,
-            pick_fn=None, verdict_fn=None, rows_fn=None, tz=None) -> Dict[str, Any]:
+            pick_fn=None, verdict_fn=None, rows_fn=None, tz=None,
+            exhaustion_fn=None) -> Dict[str, Any]:
     now = now or datetime.now(timezone.utc)
     return build_record(kanban=kanban_counts(summary_fn),
                         spend=today_spend(now, totals_fn),
                         adapter=adapter_status(pick_fn, verdict_fn), now=now,
-                        history=dispatch_history(now, rows_fn, tz))
+                        history=dispatch_history(now, rows_fn, tz),
+                        exhaustion=provider_exhaustion(exhaustion_fn))
 
 
 def write_record(record: Dict[str, Any], directory: Path) -> Path:

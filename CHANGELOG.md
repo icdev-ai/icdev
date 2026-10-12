@@ -8,6 +8,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.44] - 2026-10-11
+
+### Added
+- **ICDEV runs on Omarchy (Arch Linux).** `icdev omarchy setup|status|uninstall` configures PostgreSQL (`--postgres native|docker|auto`; `docker` runs ICDEV's own pinned PostgreSQL+pgvector container bound to 127.0.0.1), links the cross-harness ICDEV skill into every harness skill directory, and registers ICDEV's record in Omarchy's agents panel. Every Omarchy call degrades to "not on Omarchy" when the `omarchy` binary is absent. Linux is a first-class host: `/start` and `/stop` use the project interpreter, the stuck-task reset is portable SQL, and the systemd user units are offered for persistence.
+- **opencode and Pi are fully supported agent harnesses**, peers of Claude Code. The kanban runner follows `omarchy default agent`, and opencode leads the fallback order. Both carry ICDEV's PreToolUse guard; dispatches are verified git-first.
+- **Guard coverage gates autonomous dispatch.** The runner admits an agent only with the guard in-process (L1) or a guarded shell (L2) plus a write sandbox (L3) that confines writes to the task worktree. An agent may not push to the repository's default branch.
+- **vLLM as a local provider**: discovery from `/v1/models`, embeddings with dimension safety, a digest-pinned compose recipe, and opencode/Pi/Codex on the same endpoint as the router.
+- **Provider failover between a Claude subscription (through the `claude-cli` bridge) and Ollama Cloud**, both ways, for router calls and kanban dispatch.
+- **Reverse-engineering engine registry with a license gate (preview, off by default).** Ghidra 12 / PyGhidra is the default engine; Hopper and IDA are bring-your-own-license, single operator, and never downloaded or installed by ICDEV. REA is registered as an external MCP server, disabled, pinned and read-only.
+- **AUR package recipe** (`deploy/aur/PKGBUILD`, rendered by `release.py`). It is not yet published on the AUR; build it with `makepkg -si` from `deploy/aur`.
+
+### Fixed
+- **A `pr_opened` task now always gets a real verification**, including across a scheduler restart, and `--release` restores the status `--claim` took the task from.
+- **A red or protected sibling PR no longer holds every PR that shares its files.**
+- **The Review Board** no longer reports a score over zero reviews, and its scheduled task finds the right `pythonw`.
+- `release.py --publish` surfaces the publish error and finds `.env` from a worktree.
+
 ## [1.2.43] - 2026-10-08
 
 ### Changed

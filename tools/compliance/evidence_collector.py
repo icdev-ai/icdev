@@ -221,6 +221,7 @@ def collect_evidence(
     project_dir: Optional[Path] = None,
     framework: Optional[str] = None,
     db_path: Optional[Path] = None,
+    rea_reports: Optional[List[Any]] = None,
 ) -> Dict[str, Any]:
     """Collect compliance evidence across all frameworks.
 
@@ -229,6 +230,10 @@ def collect_evidence(
         project_dir: Optional project directory for file scanning.
         framework: Optional specific framework to collect for.
         db_path: Override database path.
+        rea_reports: ``rea_adapter`` reports (dicts or JSON paths) whose
+            evidence bundles ride on the manifest as ``rea_provenance``
+            (rea-sec-01) -- target sha256, authorization basis, REA evidence
+            ids and a bundle digest. Omitted, the manifest is unchanged.
 
     Returns:
         Evidence collection manifest with coverage metrics.
@@ -312,7 +317,7 @@ def collect_evidence(
         )
     except Exception:
         pass
-    return {
+    manifest = {
         "project_id": project_id,
         "collected_at": datetime.now(timezone.utc).isoformat(),
         "frameworks": results,
@@ -327,6 +332,20 @@ def collect_evidence(
             "total_file_artifacts": total_files,
         },
     }
+    if rea_reports is None:
+        return manifest
+    from tools.analyzers.rea_feeds import attach_ato_provenance, ato_provenance
+
+    blocks = []
+    for report in rea_reports:
+        if not isinstance(report, dict):
+            try:
+                report = json.loads(Path(report).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                blocks.append({"status": "refused", "reason": f"unreadable: {exc}"})
+                continue
+        blocks.append(ato_provenance(report))
+    return attach_ato_provenance(manifest, blocks)
 
 
 def check_freshness(
@@ -438,6 +457,8 @@ def run_cli():
     parser.add_argument("--freshness", action="store_true", help="Check evidence freshness")
     parser.add_argument("--max-age-hours", type=float, default=48.0, help="Max acceptable age (hours)")
     parser.add_argument("--list-frameworks", action="store_true", help="List supported frameworks")
+    parser.add_argument("--rea-report", action="append", default=None,
+                        help="rea_adapter report JSON attached as evidence provenance (repeatable)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
     args = parser.parse_args()
@@ -462,6 +483,7 @@ def run_cli():
             project_id=args.project_id,
             project_dir=Path(args.project_dir) if args.project_dir else None,
             framework=args.framework,
+            rea_reports=args.rea_report,
         )
 
     if args.json:

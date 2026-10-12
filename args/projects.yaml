@@ -10367,3 +10367,40 @@ projects:
   - {key: up, title: "UPSTREAM OMARCHY PR (manual)", priority: low}
   - {key: host, title: "OMARCHY BOX AS SECOND EXECUTOR (manual)", priority: low}
   - {key: gate, title: "MANUAL GATE (sentinel only)", priority: low}
+- key: rea
+  name: "REA -- Reverse-engineering front end: understand an app WITHOUT its source"
+  description: >-
+    A 2026-10-11 evaluation of morluto/rea (MIT, TypeScript, one local stdio MCP server) and the native engines
+    behind it. MEASURED gap: every ICDEV understanding path needs SOURCE -- aiify.engine.run_scan refuses anything
+    but a source tree, translation.source_extractor parses 7 source languages, modernization.legacy_analyzer has
+    analyzers for python/java/csharp only, and analyzers/binary_triage says in writing that modernization and
+    extract_source_ir require source. REA adds evidence-backed analysis of native binaries (Ghidra/Hopper/IDA),
+    JS/Electron (modules, source maps, IPC), .NET CIL, APK, WASM, websites/HAR and process behaviour, each result
+    carrying evidence_id + limitations/residual_unknowns. It plugs into two EXISTING seams: tools/mcp_client via
+    args/external_mcp_servers.yaml, and args/analyzer_contract.yaml (zero dispatcher change). Engines: Ghidra
+    (Apache-2.0) is the default everywhere and the existing ghidra_headless stays the air-gapped Node-free path;
+    Hopper (commercial, no redistribution) and IDA (IDA Free is non-commercial only; idalib on a shared server or
+    as SaaS needs an OEM license) are bring-your-own, single-operator, local only -- the operator owns neither, and
+    RE never runs on the SaaS/shared deployment. Rails: authorized targets only (sha256 + basis in provenance);
+    analysis stays local; REA is "not a sandbox", so it runs inside ICDEV containment; process/browser capture is
+    opt-in per run; CI uses a stub MCP server, never Node or Ghidra; decompiled output keeps basis decompiled|observed.
+  task_prefix: rea-
+  default_open: true
+  briefs:
+  - 'spike: pinned rea-agents on Windows and the Omarchy laptop against ICDEV-owned fixtures; GO/NO-GO per target type with latency, egress, determinism; vs binary_triage/ghidra_headless -- rea-spike-01'
+  - 'eng: args/re_engines.yaml license gate (oss_redistributable | byo_single_user | oem_required_for_shared) + engine detection; Ghidra 12 / PyGhidra first-class with installers -- rea-eng-01..02'
+  - 'wire: external_mcp_servers.yaml entry (off by default, exact pin, read-only allowlist, ceiling) + rea_adapter analyzer entries with new observable types, None-never-[] mapping, SandboxExecutor -- rea-wire-01..02'
+  - 'xlate: compiled artifacts -> source_extractor IR (basis decompiled) -> translate_unit / legacy_analyzer / architecture_extractor -- rea-xlate-01'
+  - 'aiify: no-source input mode (website/HAR/Electron/APK) -> features -> opportunity_scorer, basis observed -- rea-aiify-01'
+  - 'pif: opt-in observed scenario -> draft workflow in the workflow canvas for HITL review -- rea-pif-01'
+  - 'sec: binary/COTS SBOM hints, attack surface from IPC/routes/HAR/APK permissions, SCRM, ATO evidence -- rea-sec-01'
+  - 'docs: feature doc with the NOT-adopted list, ADR, manifest, commands -- rea-docs-01'
+  epics:
+  - {key: spike, title: "DOES REA EARN ITS PLACE (GO/NO-GO)", priority: critical}
+  - {key: eng, title: "ENGINES AND THEIR LICENSES", priority: high}
+  - {key: wire, title: "TWO EXISTING SEAMS, NO NEW SUBSYSTEM", priority: high}
+  - {key: xlate, title: "TRANSLATE WHAT HAS NO SOURCE", priority: high}
+  - {key: aiify, title: "AI-IFY FROM OBSERVED BEHAVIOUR", priority: high}
+  - {key: pif, title: "PROCESS-IFY FROM OBSERVED BEHAVIOUR", priority: medium}
+  - {key: sec, title: "SUPPLY CHAIN AND ATTACK SURFACE FROM ARTIFACTS", priority: medium}
+  - {key: docs, title: "DOCUMENT IT", priority: low}

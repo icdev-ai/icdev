@@ -44,7 +44,7 @@ function failOpen(directory: string, why: string): Verdict {
 function verdict(directory: string, tool: string, args: unknown): Verdict {
   const r = spawnSync(PYTHON, ["-m", "tools.hooks.harness_guard", "--harness", "opencode"], {
     cwd: ROOT,
-    input: JSON.stringify({ tool, args }),
+    input: JSON.stringify({ tool, args, cwd: directory }),
     encoding: "utf-8",
     timeout: TIMEOUT_MS,
     env: { ...process.env, PYTHONPATH: [ROOT, process.env.PYTHONPATH].filter(Boolean).join(process.platform === "win32" ? ";" : ":") },

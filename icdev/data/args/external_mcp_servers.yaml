@@ -70,7 +70,137 @@ defaults:
   max_retries: 0
   classification_ceiling: UNCLASSIFIED
 
-servers: []
+servers:
+  # -------------------------------------------------------------------------
+  # REA: reverse-engineering front end (rea-wire-01, project card `rea`).
+  # morluto/rea, MIT, npm `rea-agents`. ONE local stdio MCP server that analyses
+  # artifacts ICDEV has no source for: native PE/ELF via Ghidra, .NET CIL, JS
+  # bundles + source maps, HAR captures. Its own SECURITY.md says "This is not a
+  # sandbox", so this entry is shipped OFF and carries every rail below.
+  #
+  # Turning it on is THREE acts, on ONE operator's own machine:
+  #   1. Install the pinned version OUTSIDE the repo, exact, from the lockfile:
+  #        npm install --save-exact rea-agents@6.4.0     (in e.g. ~/.local/share/icdev/rea)
+  #      and point ICDEV_REA_ENTRY at <that dir>/node_modules/rea-agents/scripts/rea.mjs.
+  #      Never `npx` and never `@latest`: the registry checks the package.json
+  #      beside that path and refuses the server when the version is not 6.4.0.
+  #   2. Set `enabled: true` here AND the master switch at the top of this file.
+  #   3. Grant each target before analysing it, as the operator:
+  #        get_external_registry().grant_target("rea", path, basis="owned")
+  #      basis is one of owned | licensed | customer-authorized. A call naming an
+  #      ungranted file is refused, and every call writes an audit_trail row
+  #      (re_analysis.authorized / re_analysis.refused) with the target sha256.
+  #
+  # Air-gap mode removes it like every other entry here. `single_user_only` also
+  # removes it on a shared / SaaS deployment (ICDEV_SAAS_MODE /
+  # ICDEV_MULTI_TENANT): RE runs only on a single operator's own machine.
+  - name: rea
+    transport: stdio
+    # `rea.mjs mcp` serves the stdio tool catalog (scripts/rea.mjs, 6.4.0).
+    command: ["node", "env:ICDEV_REA_ENTRY", "mcp"]
+    package:
+      manager: npm
+      name: rea-agents
+      version: 6.4.0
+      # Measured by rea-spike-01 (docs/cards/rea-spike-01.md), npm `dist.integrity`.
+      integrity: "sha512-Vj1zWfSlna5bphGoaoI/TcVBuYvze9u+OyPC3Shz8YkBqaCTqB4COnnRoX7XDwMpwI24ZlFEel2yEj0k8LTWEQ=="
+      tarball: https://registry.npmjs.org/rea-agents/-/rea-agents-6.4.0.tgz
+    # Ghidra auto-analysis is 16-30 s cold (rea-spike-01). `binary_overview` is
+    # the first call that pays it.
+    timeout_seconds: 120.0
+    # Analysis stays on this machine, so the server may see what the operator
+    # may see. The target is the operator's own artifact.
+    classification_ceiling: CUI
+    single_user_only: true
+    authorization:
+      required: true
+      bases: [owned, licensed, customer-authorized]
+      # Arguments that name an artifact under analysis. Each is hashed at call
+      # time and must match a grant.
+      target_arguments: [path, input_path, capture_path, snapshot_path, executable]
+      # `export_evidence_bundle.path` is where ICDEV WRITES the bundle, not a target.
+      non_target_tools: [export_evidence_bundle]
+    # READ-ONLY analysis tools only, chosen by REA 6.4.0's own declared effects
+    # (dist/contracts/toolEffects.js, recorded in
+    # tests/fixtures/rea/rea_6.4.0_recorded.json, `effects`). Each one declares
+    # NONE of mutatesTarget, accessesNetwork, changesUiState; none writes the
+    # filesystem or may discard data, except the two in `write_exceptions` below.
+    # Excluded by family, whatever their effects: adb / device actions, EVM,
+    # JEB, browser / Electron / process / native-UI capture and observe
+    # (process capture is `execute_tools:` below, per-run allow_execute only), setup / install /
+    # update, annotations (set_* / annotate_*), and evidence import.
+    # Scoped to the rea-spike-01 GO rows: native PE/ELF via Ghidra, .NET CIL,
+    # JS bundle + source map, HAR. WASM is NO-GO (REA 6.4.0 has no WASM
+    # analysis). Apple/Swift/ObjC (macOS + Hopper) and compare_* are left out
+    # until a card measures them.
+    tools:
+      # session + evidence
+      - binary_session
+      - list_documents
+      - current_document
+      - get_evidence_bundle
+      - export_evidence_bundle
+      - list_unknowns
+      # native (Ghidra)
+      - open_binary
+      - binary_overview
+      - list_procedures
+      - list_segments
+      - list_strings
+      - list_names
+      - search_procedures
+      - search_strings
+      - procedure_info
+      - procedure_address
+      - procedure_assembly
+      - procedure_callers
+      - procedure_callees
+      - procedure_references
+      - procedure_pseudo_code
+      - analyze_function
+      - batch_decompile
+      - read_function_instructions
+      - read_bytes
+      - address_name
+      - address_to_file_offset
+      - resolve_containing_procedure
+      - resolve_native_call_targets
+      - inspect_address_context
+      - inspect_native_instruction
+      - inspect_native_data_type
+      - inspect_native_load_image
+      - inspect_native_api
+      - inspect_pe_resources
+      - xrefs
+      - find_xrefs_to_name
+      - get_call_graph
+      - trace_feature
+      - trace_call_path
+      # .NET CIL (static, no engine)
+      - inspect_managed_artifact
+      - inspect_managed_members
+      - inspect_managed_native_boundaries
+      # JS bundle + source map
+      - analyze_javascript_application
+      - trace_application_feature
+      - trace_javascript_semantics
+      # HAR (export it; pass sensitive_values, a body CSRF token survives)
+      - inspect_web_network_capture
+    # Allowlisted tools that write files, and why each is still read-only
+    # with respect to the TARGET: export writes the evidence bundle where ICDEV
+    # asks (its mayDiscardData is an `overwrite: true` of that path); the HAR
+    # inspector writes its own scratch copy.
+    write_exceptions: [export_evidence_bundle, inspect_web_network_capture]
+    # Tools that LAUNCH the target (rea-pif-01). NEVER on `tools:` above: they
+    # are exposed only by an ExternalToolRegistry built with allow_execute=True,
+    # which tools/workflow_canvas/observed_processify.py does for ONE operator-
+    # approved capture and then closes. `executable` is a target argument, so
+    # the launched file is hashed and must carry an operator grant like any
+    # other target. capture_browser_scenario is deliberately absent: its target
+    # is a URL target_auth cannot hash, and REA 6.4.0's recorded catalog does
+    # not offer it.
+    execute_tools: [capture_process_scenario]
+    enabled: false
 
 # ---------------------------------------------------------------------------
 # Example entries. Left commented rather than shipped enabled — a registry file

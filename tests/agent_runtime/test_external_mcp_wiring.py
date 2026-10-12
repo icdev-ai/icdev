@@ -404,12 +404,27 @@ def test_an_enabled_server_is_not_automatically_in_every_bundle(stub_server, tmp
     assert not [n for n in registry if n.startswith(reg.NAMESPACE_PREFIX)]
 
 
-def test_shipped_bundles_name_no_external_tool():
-    """No live ext__ entry ships: args/external_mcp_servers.yaml has no servers."""
+def test_shipped_bundles_name_no_external_tool_that_cannot_exist():
+    """A shipped ext__ name must be a REGISTERED server's ALLOWLISTED tool.
+
+    rea-wire-01 ships the first one (`reverse_engineering` -> the `rea` server,
+    itself `enabled: false`), so "no ext__ name at all" became "no ext__ name
+    that no registry entry could ever surface".
+    """
+    servers = {s["name"]: set(s.get("tools") or []) for s in reg.load_config()["servers"]}
+    named = []
     for bundle in toolsets.list_bundles():
-        assert not [t for t in bundle["tools"] if t.startswith(reg.NAMESPACE_PREFIX)], (
-            f"bundle {bundle['name']!r} names an external tool that cannot exist"
-        )
+        for tool in bundle["tools"]:
+            if not tool.startswith(reg.NAMESPACE_PREFIX):
+                continue
+            named.append(tool)
+            server, _, remote = tool[len(reg.NAMESPACE_PREFIX):].partition("__")
+            assert remote in servers.get(server, set()), (
+                f"bundle {bundle['name']!r} names an external tool that cannot exist: {tool}"
+            )
+    # Without one shipped ext__ name the loop above checks nothing. If the
+    # reverse_engineering bundle is ever removed, point this at another.
+    assert named, "no shipped bundle names an external tool; this check is vacuous"
 
 
 def test_default_gate_still_fails_closed_for_mutating_tools():

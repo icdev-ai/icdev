@@ -1,0 +1,106 @@
+# CUI // SP-CTI
+# Reverse-engineering engine registry + license terms (rea-eng-01, project card `rea`).
+#
+# Read by tools/analyzers/re_engines.py. This file declares WHAT EACH ENGINE IS
+# and WHAT ITS VENDOR'S PUBLISHED TERMS SAY. It holds no license key, serial or
+# entitlement of any kind, and it never will: ICDEV is Apache-2.0 integration
+# code and never grants or checks rights to a commercial engine.
+#
+# OPERATOR DECISION 2026-10-11: "let users maintain their own license". Each
+# user declares their own edition/use in a USER-OWNED file outside the repo
+# (default ~/.config/icdev/re_licenses.yaml, overridable by ICDEV_RE_LICENSES).
+# The gate enforces that declaration's CONSISTENCY with the terms quoted below;
+# it does not, and cannot, verify that the user actually holds the license.
+#
+# Never add a download URL, installer or package name for a commercial engine
+# here. tests/analyzers/test_re_engines.py asserts no code path downloads or
+# installs Hopper or IDA.
+
+declaration:
+  env_path: ICDEV_RE_LICENSES
+  default_path: ~/.config/icdev/re_licenses.yaml
+  # The ONLY per-engine fields read from a declaration. Anything else (a key, a
+  # serial, a license file path) is ignored, reported by NAME only, and never
+  # copied into a decision or a provenance record.
+  engine_fields: [edition, use, user, host]
+
+# The existing deployment/tenancy signals (not new ones). Truthy on either means
+# the deployment is shared/SaaS/multi-tenant.
+#   ICDEV_SAAS_MODE    -- set by deploy/helm/templates/deployment.yaml, read by
+#                         tools/saas/db/db_compat.py
+#   ICDEV_MULTI_TENANT -- read by tools/rag/retriever.py
+shared_deployment_signals: [ICDEV_SAAS_MODE, ICDEV_MULTI_TENANT]
+
+uses: [commercial, non_commercial]
+
+engines:
+  ghidra:
+    display_name: NSA Ghidra
+    license: Apache-2.0
+    license_class: oss_redistributable
+    platforms: [windows, linux, macos]
+    default: true
+    needs_declaration: false
+    terms:
+      text: "Ghidra is released under the Apache License 2.0."
+      url: https://github.com/NationalSecurityAgency/ghidra/blob/master/LICENSE
+
+  hopper:
+    display_name: Hopper Disassembler
+    license: commercial
+    license_class: byo_single_user
+    platforms: [macos, linux]
+    default: false
+    needs_declaration: true
+    editions:
+      personal:
+        binds: user
+        term: "A Personal license is issued to a named user, for that user on their own machines."
+      computer:
+        binds: host
+        term: "A Computer license is bound to one computer."
+      demo:
+        binds: none
+        # ICDEV's conservative reading, NOT a quoted vendor term: the demo is an
+        # evaluation build, so it is accepted for non-commercial use only.
+        non_commercial_only: true
+        term: "The demo is an evaluation build (ICDEV's reading: non-commercial evaluation only)."
+    shared_deployment: refuse
+    shared_term: "Hopper licenses are per named user or per computer and may not be redistributed or served to others."
+    terms:
+      url: https://www.hopperapp.com/
+
+  ida:
+    display_name: Hex-Rays IDA
+    license: commercial
+    license_class: oem_required_for_shared
+    platforms: [windows, linux, macos]
+    default: false
+    needs_declaration: true
+    editions:
+      free:
+        binds: none
+        non_commercial_only: true
+        term: "IDA Free is licensed for non-commercial use only."
+        url: https://hex-rays.com/ida-free
+      home:
+        binds: none
+        term: "IDA Home is a single-user license for the licensee's own use."
+        url: https://hex-rays.com/pricing
+      pro:
+        binds: none
+        term: "IDA Pro is licensed per user."
+        url: https://hex-rays.com/pricing
+      classroom:
+        binds: none
+        term: "IDA Classroom is licensed for teaching."
+        url: https://hex-rays.com/pricing
+      oem:
+        binds: none
+        shared_ok: true
+        term: "Embedding idalib, offering IDA as a service engine or on a shared server requires an OEM license."
+        url: https://hex-rays.com/pricing
+    shared_deployment: refuse_unless_oem
+    shared_term: "Embedding idalib, offering IDA as a service engine or on a shared server requires an OEM license."
+    terms:
+      url: https://hex-rays.com/pricing

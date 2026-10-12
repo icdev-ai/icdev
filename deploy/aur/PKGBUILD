@@ -9,7 +9,7 @@
 # the wheel's Python dependencies from PyPI inside package().
 
 pkgname=icdev
-pkgver=1.2.43
+pkgver=1.2.44
 pkgrel=1
 pkgdesc="ICDEV - AI-powered SDLC with NIST 800-53 RMF compliance and multi-agent orchestration"
 arch=('x86_64' 'aarch64')
@@ -19,13 +19,14 @@ depends=('python' 'git')
 optdepends=('postgresql: primary storage backend (SQLite is the fallback)'
             'pgvector: vector search on PostgreSQL'
             'opencode: default agent harness on Omarchy'
-            'ollama: local LLM inference')
+            'ollama: local LLM inference'
+            'ghidra: decompiler for tools/analyzers/ghidra_headless (Ghidra 12 + PyGhidra)')
 options=('!strip' '!debug')
 install=icdev.install
 _whl="${pkgname}-${pkgver}-py3-none-any.whl"
 source=("${_whl}::https://files.pythonhosted.org/packages/py3/i/${pkgname}/${_whl}")
 noextract=("${_whl}")
-sha256sums=('1388d4c0be3f3a46ac20c4801b33dfcb0493beb8c321cd7fbda12b1b43a566c9')
+sha256sums=('25624ab4026e68c893c94d62603a748dce786fbe9393d522fa42c658459016ca')
 
 package() {
   local _venv="${pkgdir}/opt/${pkgname}"

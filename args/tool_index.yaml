@@ -208,6 +208,12 @@ tools:
     # tools/analyzers/ghidra_headless.py::ghidra_version, a file read that
     # costs no JVM start, and it is on every report that module produces.
     #
+    # Since rea-eng-02 the RUN does not use this launcher: Ghidra 12 runs
+    # Python scripts only under PyGhidra, so ghidra_headless starts
+    # `<python> -m pyghidra.ghidra_launch`. This entry stays the probe for
+    # WHERE the install is (<home>/support/analyzeHeadless); Arch puts it in
+    # /opt/ghidra, off PATH, which ghidra_headless.WELL_KNOWN_HOMES covers.
+    #
     # `absent` on a host WITHOUT Ghidra is still exact -- shutil.which answers
     # before the version command is ever run -- so the one signal an operator
     # needs from this entry (is it installed?) is not degraded.

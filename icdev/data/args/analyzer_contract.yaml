@@ -133,7 +133,29 @@ observable_types:
     consumers: [tools/network/attack_surface_mapper.py]
   binary:
     description: A compiled executable, shared library or firmware image on disk.
-    consumers: [tools/analyzers/binary_triage.py]
+    consumers: [tools/analyzers/binary_triage.py, tools/analyzers/rea_adapter.py]
+  # rea-wire-02: artifacts ICDEV holds no source for, analysed through REA.
+  # wasm / apk / website are declared so a submission is REPORTED (unavailable,
+  # with the measured reason) instead of fanning out to nothing and reading as
+  # "nothing applies"; see rea_adapter.FAMILIES.
+  dotnet_assembly:
+    description: A .NET (CIL) assembly on disk, analysed statically -- never loaded into a CLR.
+    consumers: [tools/analyzers/rea_adapter.py]
+  js_bundle:
+    description: A built JavaScript bundle (file or dist/ directory, with its source maps).
+    consumers: [tools/analyzers/rea_adapter.py]
+  apk:
+    description: An Android package (.apk) on disk.
+    consumers: [tools/analyzers/rea_adapter.py]
+  wasm:
+    description: A WebAssembly module (.wasm) on disk.
+    consumers: [tools/analyzers/rea_adapter.py]
+  har:
+    description: A recorded HTTP archive (HAR) of a web session.
+    consumers: [tools/analyzers/rea_adapter.py]
+  website:
+    description: A web application identified by its origin URL, analysed as a whole site.
+    consumers: [tools/analyzers/rea_adapter.py]
 
 # ---------------------------------------------------------------------------
 # Closed vocabulary: output taxonomy
@@ -497,10 +519,188 @@ analyzers:
       max_calls: 10
       per_seconds: 3600
     # decompile(path, *, timeout_s=None, max_cpu=None, ghidra_home=None,
-    #           max_functions=None, max_strings=None)
+    #           max_functions=None, max_strings=None, ghidra_python=None,
+    #           authorization_basis=None)
+    # Ghidra 12+ via PyGhidra (rea-eng-02). authorization_basis falls back to
+    # ICDEV_RE_AUTHORIZATION_BASIS; with neither, a run is refused (error /
+    # authorization_missing) before any JVM starts.
     # — every keyword carries a default, so only the observable is bound.
     binding:
       observable_arg: path
+
+  # -------------------------------------------------------------------------
+  # REA, the no-source front end (rea-wire-02, project card `rea`)
+  # -------------------------------------------------------------------------
+  # One entrypoint, declared per family: `family` is a static argument, so a
+  # declaration cannot be dispatched as the wrong kind of artifact. REA is
+  # reached through tools/mcp_client (pin, read-only allowlist, single-user,
+  # air-gap removal, a re_analysis.* audit row per call). `status_key: status`
+  # makes the dispatcher report the adapter's own outcome -- `unavailable` when
+  # REA, the engine or the family is absent, `partial` when REA truncated or
+  # its answer exceeded the MCP budget -- instead of calling every return `ok`.
+  # All `sandboxed`: REA's own SECURITY.md says "This is not a sandbox"
+  # (sandbox-coverage Gap 73). Levels are `info` only: structure, no verdict.
+  # Context keys a caller may supply: authorization_basis (or
+  # ICDEV_RE_AUTHORIZATION_BASIS), actor, and per family engine / procedure /
+  # sensitive_values. Without a basis a run is refused before REA is reached.
+  - key: rea_native
+    kind: analyzer
+    display_name: REA Native Binary (license-gated provider)
+    description: >-
+      Opens a native PE/ELF in REA with the provider the license gate allowed
+      (re_engines; Ghidra by default, Hopper/IDA bring-your-own) and returns
+      REA's overview evidence, session unknowns and, when `procedure` is
+      given, that procedure's pseudocode marked `decompiled`.
+    module: tools.analyzers.rea_adapter
+    entrypoint: analyze
+    accepts: [binary]
+    taxonomy:
+      namespace: BINARY
+      predicates: [evidence, format, decompiled, unknowns]
+      levels: [info]
+    sandbox: sandboxed
+    # Ghidra auto-analysis is 24-30 s cold per run (rea-spike-01).
+    timeout_seconds: 300
+    rate_limit:
+      max_calls: 10
+      per_seconds: 3600
+    status_key: status
+    binding:
+      observable_arg: target
+      static_args: {family: binary}
+      context_args:
+        engine: engine
+        procedure: procedure
+        authorization_basis: authorization_basis
+        actor: actor
+
+  - key: rea_dotnet
+    kind: analyzer
+    display_name: REA .NET Assembly (static)
+    description: Inspects a .NET assembly's CIL metadata statically with REA; no CLR, no engine.
+    module: tools.analyzers.rea_adapter
+    entrypoint: analyze
+    accepts: [dotnet_assembly]
+    taxonomy:
+      namespace: BINARY
+      predicates: [evidence, format, unknowns]
+      levels: [info]
+    sandbox: sandboxed
+    rate_limit:
+      max_calls: 60
+      per_seconds: 3600
+    status_key: status
+    binding:
+      observable_arg: target
+      static_args: {family: dotnet_assembly}
+      context_args:
+        authorization_basis: authorization_basis
+        actor: actor
+
+  - key: rea_javascript
+    kind: analyzer
+    display_name: REA JavaScript Bundle
+    description: Analyses a built JS bundle and its source maps with REA (detail=summary; never executed).
+    module: tools.analyzers.rea_adapter
+    entrypoint: analyze
+    accepts: [js_bundle]
+    taxonomy:
+      namespace: BINARY
+      predicates: [evidence, format, unknowns]
+      levels: [info]
+    sandbox: sandboxed
+    rate_limit:
+      max_calls: 60
+      per_seconds: 3600
+    status_key: status
+    binding:
+      observable_arg: target
+      static_args: {family: js_bundle}
+      context_args:
+        authorization_basis: authorization_basis
+        actor: actor
+        # rea-aiify-01: [{kind, value}] -> one trace_application_feature each.
+        feature_seeds: feature_seeds
+
+  - key: rea_har
+    kind: analyzer
+    display_name: REA HAR Capture
+    description: >-
+      Inspects a recorded HAR with REA. Refused without `sensitive_values`
+      (pass [] to assert none): REA keeps response-body secrets verbatim.
+    module: tools.analyzers.rea_adapter
+    entrypoint: analyze
+    accepts: [har]
+    taxonomy:
+      namespace: BINARY
+      predicates: [evidence, format, unknowns]
+      levels: [info]
+    sandbox: sandboxed
+    rate_limit:
+      max_calls: 60
+      per_seconds: 3600
+    status_key: status
+    binding:
+      observable_arg: target
+      static_args: {family: har}
+      context_args:
+        sensitive_values: sensitive_values
+        authorization_basis: authorization_basis
+        actor: actor
+
+  # The three below never reach REA. Each reports `unavailable` naming the
+  # measured reason (rea_adapter.FAMILIES) -- a declared absence, not a
+  # silent one.
+  - key: rea_apk
+    kind: analyzer
+    display_name: REA Android Package (not allowlisted)
+    description: Reports `unavailable` -- REA's JADX path is not on the rea-wire-01 allowlist.
+    module: tools.analyzers.rea_adapter
+    entrypoint: analyze
+    accepts: [apk]
+    taxonomy:
+      namespace: BINARY
+      predicates: [evidence]
+      levels: [info]
+    sandbox: sandboxed
+    status_key: status
+    binding:
+      observable_arg: target
+      static_args: {family: apk}
+
+  - key: rea_wasm
+    kind: analyzer
+    display_name: REA WebAssembly (no analysis in REA 6.4.0)
+    description: Reports `unavailable` -- rea-spike-01 measured REA 6.4.0 has no WASM analysis.
+    module: tools.analyzers.rea_adapter
+    entrypoint: analyze
+    accepts: [wasm]
+    taxonomy:
+      namespace: BINARY
+      predicates: [evidence]
+      levels: [info]
+    sandbox: sandboxed
+    status_key: status
+    binding:
+      observable_arg: target
+      static_args: {family: wasm}
+
+  - key: rea_website
+    kind: analyzer
+    display_name: REA Website (not allowlisted)
+    description: Reports `unavailable` -- REA's website tools access the network and are excluded.
+    module: tools.analyzers.rea_adapter
+    entrypoint: analyze
+    accepts: [website]
+    taxonomy:
+      namespace: BINARY
+      predicates: [evidence]
+      levels: [info]
+    sandbox: sandboxed
+    status_key: status
+    binding:
+      observable_arg: target
+      static_args: {family: website}
 
   - key: pvm_attack_surface
     kind: analyzer

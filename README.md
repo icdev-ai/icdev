@@ -28,7 +28,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-1242--packaging-fix-the-sync-overwrote-real-modules-with-their-shims)
+- [What's New](#whats-new-in-1244--icdev-on-omarchy-with-opencode-and-pi-as-first-class-harnesses)
 - [What ICDEV™ Builds](#what-icdev-builds)
 - [13 Design Canvases](#13-design-canvases)
 - [Quick Start](#quick-start)
@@ -46,6 +46,16 @@
 - [Testing](#testing)
 - [Project Structure](#project-structure)
 - [License](#license)
+
+---
+
+## What's New in 1.2.44 — ICDEV on Omarchy, with opencode and Pi as First-Class Harnesses
+
+- **Install on Omarchy with one line:** `omarchy-mise-install 'pipx:icdev[extras=postgresql]' icdev`, then `icdev omarchy setup`. See [docs/install/omarchy.md](docs/install/omarchy.md).
+- **opencode and Pi are fully supported** alongside Claude Code; the kanban runner follows `omarchy default agent`.
+- **Autonomous agents are fenced:** ICDEV's guard runs inside every harness, writes stay in the task worktree, and an agent cannot push to `main`.
+- **Local and subscription models:** vLLM as a local provider, and failover between a Claude subscription (via the `claude-cli` bridge) and Ollama Cloud.
+- **Preview, off by default:** a reverse-engineering engine registry (Ghidra by default; Hopper/IDA bring-your-own-license).
 
 ---
 

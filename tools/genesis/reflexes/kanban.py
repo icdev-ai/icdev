@@ -5886,9 +5886,182 @@ def _pick_chain_adapter(chain: list, task_type: Optional[str] = None):
         return None
 
 
+# ---------------------------------------------------------------------------
+# omx-adapt-06: provider failover for coding-agent dispatches
+# ---------------------------------------------------------------------------
+# "If Claude exhausts its tokens, we have Ollama Cloud and vice versa." The
+# classifier, the shared state and the run/failover/hold decision all live in
+# tools/llm/provider_exhaustion.py -- the router uses the same module, so the
+# two seams cannot disagree about which provider is exhausted or until when.
+#
+# A failover is NOT a task failure: failure_count, the token-retry counter and
+# the lifetime-exhaustion count (which decides decomposition) are untouched.
+# The task re-enters dispatch through the proven token_exhausted retry path
+# with resume_at = now; the next dispatch reads the recorded exhaustion and
+# picks the other provider. Both exhausted -> the same park, held until the
+# EARLIER resume time.
+
+#: Prefix of every transition reason this seam writes; _lifetime_exhaustion_count
+#: excludes it, so a provider hold never pushes a task toward decomposition.
+PROVIDER_FAILOVER_REASON = "provider failover"
+
+#: task -> (adapter, model, family) of the dispatch now running.
+_dispatch_provider: Dict[str, Tuple[str, Optional[str], Optional[str]]] = {}
+#: task -> harness model a failover dispatch must run with (read by _agent_session).
+_provider_failover_model: Dict[str, str] = {}
+#: tasks parked by a hold at DISPATCH time this cycle (their resume_at is
+#: deliberate and must not be overwritten by the token-retry backoff).
+_provider_held: set = set()
+
+_RUN_FAILED_RE = re.compile(
+    r'"is_error"\s*:\s*true|stopReason["\s:=]+error|"type"\s*:\s*"error"',
+    re.IGNORECASE,
+)
+
+
+def _adapter_usable(name: str) -> bool:
+    try:
+        from tools.agents import registry as _agent_registry  # noqa: PLC0415
+
+        return bool(_agent_registry.get_adapter(name).available())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _hold_for_provider_exhaustion(task_id: str, hold_until: Optional[float],
+                                  reason: str) -> None:
+    """Park ``task_id`` (not failed) until ``hold_until`` -- both providers out."""
+    resume = (datetime.fromtimestamp(hold_until, tz=timezone.utc) if hold_until
+              else datetime.now(timezone.utc) + timedelta(seconds=TOKEN_RETRY_DELAY_SECONDS))
+    _move_task(task_id, "token_exhausted",
+               reason=(f"{PROVIDER_FAILOVER_REASON}: {reason} -- held (not failed) "
+                       f"until {resume.isoformat()}"))
+    _save_resume_at(task_id, resume)
+    _provider_held.add(task_id)
+    logger.warning("kanban: %s HELD until %s -- %s", task_id, resume.isoformat(), reason)
+    print(f"  Kanban: {task_id} held until {resume.astimezone().strftime('%I:%M %p')} "
+          f"-- {reason}")
+
+
+def _provider_failover_dispatch(adapter, task: dict, chain: list,
+                                tier_outcomes: List[str]):
+    """Apply recorded provider exhaustion to the chosen harness.
+
+    Returns ``(adapter, switched, held)``: the adapter to run (possibly the
+    declared failover harness), whether it differs from the one passed in,
+    and whether the task was parked instead. Fails open to the adapter given.
+    """
+    if adapter is None:
+        return adapter, False, False
+    task_id = task["id"]
+    name = getattr(adapter, "name", "")
+    try:
+        from tools.llm import provider_exhaustion as _pe  # noqa: PLC0415
+
+        model = _pe.harness_current_model(name)
+        plan = _pe.plan_harness_dispatch(name, model, available=_adapter_usable)
+    except Exception as exc:  # noqa: BLE001 -- never wedge dispatch on advisory state
+        logger.debug("kanban: provider failover check skipped for %s: %s", task_id, exc)
+        return adapter, False, False
+
+    if plan.action == "run":
+        _dispatch_provider[task_id] = (name, model, plan.family)
+        return adapter, False, False
+    if plan.action == "hold":
+        tier_outcomes.append(f"{name}=held ({plan.reason})")
+        _hold_for_provider_exhaustion(task_id, plan.hold_until, plan.reason)
+        return adapter, False, True
+
+    chosen = adapter
+    if plan.adapter != name:
+        try:
+            from tools.agents import registry as _agent_registry  # noqa: PLC0415
+
+            chosen = _guard_parity_screen(_agent_registry.get_adapter(plan.adapter),
+                                          chain, task_id, tier_outcomes)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("kanban: failover adapter %s unusable: %s", plan.adapter, exc)
+            chosen = None
+        if chosen is None or getattr(chosen, "name", "") != plan.adapter:
+            reason = (f"{plan.from_family} exhausted and failover harness "
+                      f"{plan.adapter} did not pass the guard screen")
+            tier_outcomes.append(f"{name}=held ({reason})")
+            _hold_for_provider_exhaustion(task_id, _pe.exhausted_until(plan.from_family),
+                                          reason)
+            return adapter, False, True
+    if plan.model:
+        _provider_failover_model[task_id] = plan.model
+    _dispatch_provider[task_id] = (plan.adapter, plan.model, plan.family)
+    logger.warning(
+        "kanban: provider failover %s: %s exhausted (until %s) -> %s via %s%s",
+        task_id, plan.from_family,
+        datetime.fromtimestamp(_pe.exhausted_until(plan.from_family) or time.time(),
+                               tz=timezone.utc).isoformat(),
+        plan.family, plan.adapter, f" model {plan.model}" if plan.model else "",
+    )
+    tier_outcomes.append(f"{name}=failover ({plan.reason})")
+    return chosen, plan.adapter != name, False
+
+
+def _handle_provider_exhaustion(task_id: str, ret: Optional[int], output: str) -> bool:
+    """Completion seam: a run that failed on an exhausted provider fails over.
+
+    Reads the BODY (Pi exits 0 on a provider 400/404 -- the adapter thread
+    still reports the run as failed, and a claude envelope says ``is_error``).
+    Returns True when the task was re-queued or held; the caller then skips
+    the generic token-exhaustion and failure paths entirely.
+    """
+    info = _dispatch_provider.pop(task_id, None)
+    try:
+        from tools.llm import provider_exhaustion as _pe  # noqa: PLC0415
+
+        if info is None:
+            adapter = _get_executor_type(task_id) or ""
+            model = _pe.harness_current_model(adapter)
+            info = (adapter, model, _pe.harness_family(adapter, model))
+        adapter, model, fam = info
+        if not fam or not output:
+            return False
+        tail = output[-_pe.TAIL_CHARS:]
+        if (ret == 0) and not _RUN_FAILED_RE.search(tail):
+            return False  # a run that SUCCEEDED is never failed over
+        exh = _pe.classify(tail, provider=fam)
+        if exh is None:
+            return False
+        _pe.record(exh)
+        if exh.provider != fam:
+            return False
+        plan = _pe.plan_harness_dispatch(adapter, model, available=_adapter_usable)
+    except Exception as exc:  # noqa: BLE001 -- fall through to the generic paths
+        logger.debug("kanban: provider exhaustion check failed for %s: %s", task_id, exc)
+        return False
+
+    if plan.action == "failover":
+        target = plan.family
+        _move_task(task_id, "token_exhausted",
+                   reason=(f"{PROVIDER_FAILOVER_REASON}: {fam} {exh.kind} -> re-dispatch "
+                           f"on {target} via {plan.adapter} (not a failure)"))
+        _save_resume_at(task_id, datetime.now(timezone.utc))
+        logger.warning(
+            "kanban: %s provider %s %s -> failing over to %s via %s (not counted as a failure)",
+            task_id, fam, exh.kind, target, plan.adapter,
+        )
+        print(f"  Kanban: {task_id} {fam} {exh.kind} -> re-dispatching on {target} "
+              f"via {plan.adapter}")
+        return True
+    if plan.action == "hold":
+        _hold_for_provider_exhaustion(task_id, plan.hold_until, plan.reason)
+        return True
+    return False
+
+
 def _guard_parity_screen(adapter, chain: list, task_id: str,
                          tier_outcomes: List[str]):
     """Screen the chain adapter through ``tools.agents.guard_parity`` (omx-guard-02).
+
+    An adapter passes when its MEASURED guard layers meet the coverage policy
+    in ``args/guard_coverage.yaml`` (omx-guard-06) -- not only when it has a
+    native hook, so a harness with L2+L3 (codex) is dispatchable too.
 
     ``enforce`` swaps an unguarded adapter for the next guarded one in the
     chain's ``fallback_order``, or returns None so the adapter tiers are skipped
@@ -6463,6 +6636,10 @@ def _agent_session(task: dict, instruction: str, work_dir: str,
         metadata["model_id"] = str(_model["model_id"])
         logger.info("kanban: dispatching %s on model %s (%s)",
                     task_id, _model["name"], _model["model_id"])
+    # omx-adapt-06: a provider-failover dispatch runs on the other provider's model.
+    _failover_model = _provider_failover_model.pop(task_id, None)
+    if _failover_model:
+        metadata["model_id"] = _failover_model
 
     # omx-guard-04 (L2): put the guarded shell in front of $SHELL / PATH for
     # whatever harness this is -- every adapter merges metadata["env"] into its
@@ -6479,6 +6656,23 @@ def _agent_session(task: dict, instruction: str, work_dir: str,
                            task_id, _wiring["reason"])
     except Exception as exc:  # noqa: BLE001 -- a broken L2 must not stop a dispatch
         logger.warning("kanban: guarded shell (L2) wiring failed for %s (%s: %s); "
+                       "dispatching WITHOUT it", task_id, type(exc).__name__, exc)
+
+    # omx-guard-05 (L3): ask for the OS write sandbox -- every CLI adapter's
+    # build_argv wraps itself in it, with its own declared state dirs. Where
+    # there is none (Windows, no bwrap/Landlock, a kill switch), the reason is
+    # logged on every dispatch: never a silent pass.
+    try:
+        from tools.hooks import write_sandbox as _write_sandbox  # noqa: PLC0415
+
+        _sandbox = _write_sandbox.status()
+        if _sandbox["supported"]:
+            metadata[_write_sandbox.META_KEY] = True
+        else:
+            logger.warning("kanban: write sandbox (L3) NOT applied for %s: %s",
+                           task_id, _sandbox["reason"])
+    except Exception as exc:  # noqa: BLE001 -- a broken L3 must not stop a dispatch
+        logger.warning("kanban: write sandbox (L3) check failed for %s (%s: %s); "
                        "dispatching WITHOUT it", task_id, type(exc).__name__, exc)
 
     # The SAME budget the reaper uses to kill this task, so a blocking adapter
@@ -8047,6 +8241,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
 
     # omx-guard-02: never AUTONOMOUSLY spawn an adapter whose guard is not
     # verified — it would run with no ICDEV control over its tool calls.
+    # omx-guard-06: "verified" is guard COVERAGE (args/guard_coverage.yaml):
+    # L1 native hook, or L2 guarded shell + L3 write sandbox, by default.
     chain_adapter = _guard_parity_screen(chain_adapter, effective_chain,
                                          task_id, tier_outcomes)
     # omx-select-02: an adapter that is no tier of this chain was chosen by a
@@ -8054,6 +8250,13 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     # runs at the first adapter position, like a forced one.
     if chain_adapter is not None and chain_adapter.name not in {
             _ADAPTER_TIERS[t] for t in effective_chain if t in _ADAPTER_TIERS}:
+        adapter_forced = True
+    # omx-adapt-06: an exhausted provider fails over (or the task is held).
+    chain_adapter, _pf_switched, _pf_held = _provider_failover_dispatch(
+        chain_adapter, task, effective_chain, tier_outcomes)
+    if _pf_held:
+        return
+    if _pf_switched:
         adapter_forced = True
     for tier in effective_chain:
         if tier in _ADAPTER_TIERS:
@@ -12388,6 +12591,15 @@ def _check_completed():
                         "cost attribution skipped for %s: %s", task_id, _cost_exc,
                     )
 
+            # ── PROVIDER FAILOVER (omx-adapt-06) ───────────────────────
+            # Before the generic check: an exhausted PROVIDER is not a task
+            # that ran out of room, and must not count toward decomposition.
+            if _handle_provider_exhaustion(task_id, ret, claude_output):
+                del _running[task_id]
+                _dispatch_times.pop(task_id, None)
+                completed.append(task_id)
+                continue
+
             # ── TOKEN EXHAUSTION CHECK (runs for ANY exit code) ───────
             is_exhausted, reset_hint = _detect_token_exhaustion(ret, claude_output)
             if is_exhausted:
@@ -13024,10 +13236,13 @@ def _lifetime_exhaustion_count(task_id: str) -> int:
     try:
         conn = get_connection()
         try:
+            # omx-adapt-06: a provider failover/hold is not evidence of task
+            # SIZE, so it never counts toward decomposition.
             row = conn.execute(
                 "SELECT COUNT(*) AS n FROM kanban_status_transitions "
-                "WHERE task_id = %s AND to_status = 'token_exhausted'",
-                (task_id,),
+                "WHERE task_id = %s AND to_status = 'token_exhausted' "
+                "AND COALESCE(reason, '') NOT LIKE %s",
+                (task_id, PROVIDER_FAILOVER_REASON + "%"),
             ).fetchone()
             if not row:
                 return 0
@@ -14187,7 +14402,11 @@ def _run_cycle(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 # was spent on it again. One task did that 212 times in the
                 # current log while every other parked task waited behind it.
                 # Push resume_at out so the retry backs off and the queue moves.
-                _token_retry_backoff(task["id"], retry_count)
+                # omx-adapt-06: a provider HOLD already set its resume_at.
+                if task["id"] in _provider_held:
+                    _provider_held.discard(task["id"])
+                else:
+                    _token_retry_backoff(task["id"], retry_count)
         except Exception as e:
             print(f"  Kanban: token retry error for {task['id']}: {e}")
             try:
@@ -14444,6 +14663,10 @@ def _run_cycle(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         }
                     )
                     print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
+                elif task["id"] in _provider_held:
+                    # omx-adapt-06: both providers exhausted -- parked, not failed.
+                    _provider_held.discard(task["id"])
+                    print(f"  Kanban: {task['id']} held -- provider(s) exhausted")
                 else:
                     # Dispatch failed — leave task in backlog, clean up prompt
                     errors += 1

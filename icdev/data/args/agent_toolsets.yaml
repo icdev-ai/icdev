@@ -231,14 +231,50 @@ bundles:
       - databridge_fetch
     mutating: false
 
+  reverse_engineering:
+    description: >-
+      Evidence-backed analysis of an artifact ICDEV has no source for (native
+      PE/ELF via Ghidra, .NET CIL, a JS bundle + source map) through the `rea`
+      external MCP server (rea-wire-01). The server is shipped OFF, so until an
+      operator installs the pinned rea-agents and enables it these names resolve
+      to nothing and are dropped with a warning. When it is on, every call still
+      needs an operator grant for the target's sha256 (owned | licensed |
+      customer-authorized) and leaves an audit row. Decompiled output is
+      Ghidra's reconstruction, never the original source. Read-only analysis
+      tools only; the full allowlist is in args/external_mcp_servers.yaml.
+    tools:
+      - ext__rea__binary_session
+      - ext__rea__open_binary
+      - ext__rea__binary_overview
+      - ext__rea__list_procedures
+      - ext__rea__search_procedures
+      - ext__rea__search_strings
+      - ext__rea__procedure_info
+      - ext__rea__procedure_pseudo_code
+      - ext__rea__procedure_callers
+      - ext__rea__procedure_callees
+      - ext__rea__analyze_function
+      - ext__rea__xrefs
+      - ext__rea__get_call_graph
+      - ext__rea__trace_feature
+      - ext__rea__inspect_managed_artifact
+      - ext__rea__inspect_managed_members
+      - ext__rea__analyze_javascript_application
+      - ext__rea__trace_application_feature
+      - ext__rea__get_evidence_bundle
+      - ext__rea__export_evidence_bundle
+      - ext__rea__list_unknowns
+    # External tools are never marked read-only (see below), so always gated.
+    mutating: true
+
 # ---------------------------------------------------------------------------
 # TOOLS ON THIRD-PARTY MCP SERVERS
 #
 # Tools discovered from an external MCP server appear in the same registry under
 # `ext__<server>__<tool>` and are listed in a bundle by that name, like any other
-# tool. No bundle is shipped: the servers list in args/external_mcp_servers.yaml
-# is empty and `enabled: false`, so a bundle here would name tools that do not
-# exist.
+# tool. One bundle is shipped, `reverse_engineering` above, for the `rea` server,
+# which is itself shipped `enabled: false`: its names resolve to nothing until an
+# operator turns the server on.
 #
 # Enabling one is deliberately TWO steps, because they answer different
 # questions. args/external_mcp_servers.yaml decides which remote tools ICDEV may

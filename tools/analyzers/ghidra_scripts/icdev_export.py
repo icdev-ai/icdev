@@ -1,16 +1,31 @@
 # CUI // SP-CTI
 # @category ICDEV
-# @runtime Jython
+# @runtime PyGhidra
 """Ghidra postScript: export one program's functions, imports and strings as JSON (xrv-bin-02).
 
-THIS FILE NEVER RUNS UNDER CPython. It is handed to ``analyzeHeadless`` with
-``-postScript`` and executes inside Ghidra, under Jython 2.7 (Ghidra 10.x) or
-PyGhidra (11.x+), with the Ghidra script API injected as GLOBALS. Its consumer
-is ``tools/analyzers/ghidra_headless.py``, which reads the JSON back.
+THIS FILE RUNS INSIDE GHIDRA 12+, UNDER PyGhidra (rea-eng-02). It is handed to
+Ghidra's ``AnalyzeHeadless`` with ``-postScript``; the caller,
+``tools/analyzers/ghidra_headless.py``, starts that class through
+``python -m pyghidra.ghidra_launch``, so this is CPython 3 over JPype with the
+Ghidra script API injected as GLOBALS, and the caller reads the JSON back.
+``@runtime PyGhidra`` is stated rather than left to the default: Ghidra 12.0
+made PyGhidra the default Python engine and moved Jython to an optional
+extension, and a header that names the engine cannot be re-read as the other.
+
+TWO PyGhidra FACTS THIS FILE IS SHAPED BY:
+
+  * The script's globals are PyGhidra's ``PyGhidraScript`` -- a ``dict``
+    subclass that resolves ``currentProgram`` / ``getScriptArgs`` in
+    ``__missing__``. ``globals().get("currentProgram")`` therefore returns
+    None on a run that HAS a program (``dict.get`` never calls
+    ``__missing__``); only subscripting reaches the host. See ``_host``.
+  * Java strings cross JPype as ``java.lang.String``. Every value written to
+    the JSON goes through ``str()`` first, so ``json.dump`` never meets one.
 
 THREE RULES IT LIVES BY, and each has a reason that is not style:
 
-  1. NO THIRD-PARTY IMPORT. Jython 2.7 has no pip and no site-packages here;
+  1. NO THIRD-PARTY IMPORT. The interpreter is whichever one carries
+     ``pyghidra``, and nothing else can be assumed installed in it;
      ``json``, ``sys`` and ``traceback`` are all that is used. This is also why
      the ``ghidra.*`` imports below sit at MODULE level and NOT inside a
      ``try``: an undeclared third-party import inside a swallowing handler is
@@ -46,6 +61,15 @@ from ghidra.util.task import ConsoleTaskMonitor
 #: that they come from the host, not from an import.
 _HOST = globals()
 
+
+def _host(name):
+    """A host global, or None. SUBSCRIPT, never ``.get``: PyGhidra resolves the
+    script API in ``__missing__``, which ``dict.get`` bypasses."""
+    try:
+        return _HOST[name]
+    except KeyError:
+        return None
+
 #: Per-function decompile budget. The whole-run budget is the caller's
 #: ``-analysisTimeoutPerFile``; this one stops ONE pathological function from
 #: spending it. Only the entry point is decompiled, so this is paid once.
@@ -64,7 +88,7 @@ def _args():
     walk over a hostile artifact is how the caller's wall budget gets spent
     with no export written at all.
     """
-    raw = list(_HOST["getScriptArgs"]())
+    raw = [str(item) for item in _host("getScriptArgs")()]
     out_path = raw[0] if raw else "icdev_export.json"
 
     def _int(index, default):
@@ -89,7 +113,7 @@ def _functions(program, limit):
             break
         out.append(
             {
-                "name": function.getName(),
+                "name": str(function.getName()),
                 "address": str(function.getEntryPoint()),
                 "size": int(function.getBody().getNumAddresses()),
                 "external": bool(function.isExternal()),
@@ -108,9 +132,9 @@ def _imports(program):
     out = []
     seen = set()
     for symbol in program.getSymbolTable().getExternalSymbols():
-        name = symbol.getName()
+        name = str(symbol.getName())
         namespace = symbol.getParentNamespace()
-        library = namespace.getName() if namespace is not None else None
+        library = str(namespace.getName()) if namespace is not None else None
         key = (library, name)
         if key in seen:
             continue
@@ -122,18 +146,22 @@ def _imports(program):
 def _strings(program, limit):
     """Defined strings in address order, capped. Returns ``(list, truncated)``.
 
-    ``DefinedDataIterator`` is imported HERE rather than at module level
-    because its package moved between Ghidra 9.x and 10.x; a module-level
-    import that raises would take the whole export down, and the caller would
-    lose the functions and imports it could otherwise have had. This is the one
-    place a narrow guard is correct, and the failure is still RECORDED rather
-    than swallowed -- it propagates to the section's own ``null``.
+    ``DefinedStringIterator`` is imported HERE rather than at module level
+    because this is the API that keeps moving: Ghidra 12 has no
+    ``DefinedDataIterator.definedStrings`` any more (measured on 12.1.4, the
+    run reported ``AttributeError`` for it), and a module-level import that
+    raises would take the whole export down, losing the functions and imports
+    it could otherwise have had. This is the one place a narrow guard is
+    correct, and the failure is still RECORDED rather than swallowed -- it
+    propagates to the section's own ``null``.
     """
-    from ghidra.program.util import DefinedDataIterator
+    from ghidra.program.util import DefinedStringIterator
 
     out = []
     truncated = False
-    for data in DefinedDataIterator.definedStrings(program):
+    iterator = DefinedStringIterator.forProgram(program)
+    while iterator.hasNext():
+        data = iterator.next()
         if len(out) >= limit:
             truncated = True
             break
@@ -167,7 +195,7 @@ def _entry_decompiled(program):
             iterator = manager.getFunctions(True)
             while iterator.hasNext():
                 item = iterator.next()
-                if item.getName() == candidate:
+                if str(item.getName()) == candidate:
                     function = item
                     break
             if function is not None:
@@ -194,7 +222,7 @@ def _entry_decompiled(program):
 
 def main():
     out_path, max_functions, max_strings = _args()
-    program = _HOST.get("currentProgram")
+    program = _host("currentProgram")
 
     payload = {
         "program": None,
@@ -218,13 +246,14 @@ def main():
         return
 
     try:
+        sha256 = program.getExecutableSHA256()
         payload["program"] = {
-            "name": program.getName(),
+            "name": str(program.getName()),
             "format": str(program.getExecutableFormat()),
             "language": str(program.getLanguageID()),
             "compiler": str(program.getCompilerSpec().getCompilerSpecID()),
             "image_base": str(program.getImageBase()),
-            "sha256": program.getExecutableSHA256(),
+            "sha256": str(sha256) if sha256 is not None else None,
         }
     except Exception:  # noqa: BLE001
         errors.append("program metadata: %s" % traceback.format_exc().strip().splitlines()[-1])
@@ -259,7 +288,7 @@ def _write(out_path, payload):
     """Write the export. A failure here goes to stderr, which the caller keeps
     as ``stderr_tail`` -- it is the only channel left once the file is gone."""
     try:
-        handle = open(out_path, "w")
+        handle = open(out_path, "w", encoding="utf-8")
         try:
             json.dump(payload, handle, indent=2)
         finally:

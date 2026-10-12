@@ -308,18 +308,40 @@ class HttpTransport:
         return None
 
 
-def build_transport(spec: dict) -> Any:
-    """Construct the transport described by a registry entry, or None."""
+def resolve_command(spec: dict) -> list[str] | None:
+    """The stdio command with ``env:VAR`` elements expanded, or None.
+
+    A launch path is per-host (where the operator installed the server), so the
+    config names it by reference. An element whose variable is unset makes the
+    whole command None: spawning with a hole in argv runs something else.
+    """
+    out: list[str] = []
+    for element in spec.get("command") or []:
+        text = str(element)
+        value = _resolve_secret(text) if text.startswith("env:") else text
+        if not value:
+            return None
+        out.append(value)
+    return out or None
+
+
+def build_transport(spec: dict, *, command_prefix: list[str] | None = None) -> Any:
+    """Construct the transport described by a registry entry, or None.
+
+    *command_prefix* is prepended to a stdio command -- the argv of a
+    containment wrapper (the L3 write sandbox, rea-wire-02). It never applies
+    to an http server, which has no local process to contain.
+    """
     name = str(spec.get("name") or "")
     kind = str(spec.get("transport") or "stdio").lower()
     timeout = float(spec.get("timeout_seconds") or 30.0)
 
     if kind == "stdio":
-        command = spec.get("command") or []
+        command = resolve_command(spec)
         if not command:
-            logger.warning("mcp_client[%s]: stdio server has no command", name)
+            logger.warning("mcp_client[%s]: stdio server has no resolvable command", name)
             return None
-        return StdioTransport(name, list(command), spec.get("env"), timeout)
+        return StdioTransport(name, list(command_prefix or []) + command, spec.get("env"), timeout)
 
     if kind == "http":
         url = str(spec.get("url") or "")

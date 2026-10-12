@@ -31,7 +31,6 @@ tests/agent_runtime/test_config.py
 tests/agent_runtime/test_cron.py
 tests/agent_runtime/test_delegation.py
 tests/agent_runtime/test_discovery.py
-tests/agent_runtime/test_external_mcp_wiring.py
 tests/agent_runtime/test_goal_commands.py
 tests/agent_runtime/test_interrupt.py
 tests/agent_runtime/test_project_context.py
@@ -1117,7 +1116,6 @@ tests/test_mce_inventory_scanner.py
 tests/test_mce_wave_backout_validation.py
 tests/test_mce_wave_planner.py
 tests/test_mcip_dat.py
-tests/test_mcp_client.py
 tests/test_mcp_config_generator.py
 tests/test_mcp_http_e2e.py
 tests/test_mcp_instrumentation.py

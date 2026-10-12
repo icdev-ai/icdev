@@ -452,3 +452,87 @@ def test_panel_is_not_applicable_off_omarchy(make_host):
     host = make_host(world)
     assert _states(omarchy.run("setup", host))["panel"] == "n/a"
     assert not (host.home / ".local" / "bin" / omarchy.PANEL_BIN).exists()
+
+
+# --------------------------------------------------------------------------- #
+# Optional -- Ghidra 12 + PyGhidra (rea-eng-02)
+# --------------------------------------------------------------------------- #
+
+class GhidraWorld(FakeWorld):
+    """pacman installs Ghidra under ``ghidra_home`` and pyghidra into the system python."""
+
+    def __init__(self, ghidra_home, *, installed=False, version="12.1.2", **kw):
+        super().__init__(omarchy_on=True, pg_ready=True, **kw)
+        self.bins.add("python3")
+        self.ghidra_home = ghidra_home
+        self.version = version
+        if installed:
+            self._install()
+
+    def _install(self):
+        props = self.ghidra_home / "Ghidra" / "application.properties"
+        props.parent.mkdir(parents=True, exist_ok=True)
+        props.write_text(f"application.version={self.version}\n", encoding="utf-8")
+
+    def run(self, argv, env=None):
+        argv = list(argv)
+        if argv[:3] == ["sudo", "pacman", "-S"] and "ghidra" in argv:
+            self.calls.append(argv)
+            self.version = "12.1.2"
+            self._install()
+            return Result(0)
+        if argv[1:] == ["-c", "import pyghidra"]:
+            self.calls.append(argv)
+            installed = (self.ghidra_home / "Ghidra").is_dir() and self.version.startswith("12")
+            return Result(0 if installed and argv[0] == "/usr/bin/python3" else 1)
+        return super().run(argv, env)
+
+
+def _ghidra_host(make_host, world, monkeypatch):
+    host = make_host(world)
+    host.environ["ICDEV_GHIDRA_HOME"] = str(world.ghidra_home)
+    host.python = "/home/icdev/icdev/.venv/bin/python"
+    return host
+
+
+def test_ghidra_is_offered_not_installed_by_default(make_host):
+    report = omarchy.run("setup", make_host(FakeWorld(omarchy_on=True, pg_ready=True)), dry_run=True)
+    assert "ghidra" not in _states(report)
+    assert any("--ghidra" in o for o in report["optional"])
+
+
+def test_ghidra_setup_installs_via_pacman_with_yes_then_skips(make_host, tmp_path, monkeypatch):
+    world = GhidraWorld(tmp_path / "opt-ghidra")
+    host = _ghidra_host(make_host, world, monkeypatch)
+
+    pending = omarchy.run("setup", host, ghidra=True)
+    step = [s for s in pending["steps"] if s["step"] == "ghidra"][0]
+    assert step["state"] == "pending"
+    assert "sudo pacman -S --needed --noconfirm ghidra jdk21-openjdk" in step["commands"]
+
+    done = omarchy.run("setup", host, ghidra=True, yes=True)
+    assert _states(done)["ghidra"] == "done", done
+    # pacman put pyghidra into the system python, so pip was SKIPPED.
+    assert not any(c[1:4] == ["-m", "pip", "install"] for c in world.calls)
+
+    again = omarchy.run("status", host, ghidra=True)
+    assert _states(again)["ghidra"] == "ok"
+    detail = [s for s in again["steps"] if s["step"] == "ghidra"][0]["detail"]
+    assert "12.1.2" in detail and "/usr/bin/python3" in detail
+
+
+def test_a_pre_12_ghidra_is_upgraded_not_accepted(make_host, tmp_path, monkeypatch):
+    world = GhidraWorld(tmp_path / "opt-ghidra", installed=True, version="11.4.2")
+    host = _ghidra_host(make_host, world, monkeypatch)
+    report = omarchy.run("setup", host, ghidra=True, dry_run=True)
+    step = [s for s in report["steps"] if s["step"] == "ghidra"][0]
+    assert step["state"] == "planned" and "12.0+ is required" in step["detail"]
+
+
+def test_ghidra_without_pacman_points_at_the_install_doc(make_host, tmp_path, monkeypatch):
+    world = GhidraWorld(tmp_path / "ghidra")
+    world.bins.discard("pacman")
+    host = _ghidra_host(make_host, world, monkeypatch)
+    step = [s for s in omarchy.run("setup", host, ghidra=True)["steps"] if s["step"] == "ghidra"][0]
+    assert step["state"] == "pending"
+    assert "docs/install/ghidra.md" in step["detail"]

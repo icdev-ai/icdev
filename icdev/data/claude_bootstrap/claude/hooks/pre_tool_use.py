@@ -963,6 +963,18 @@ def check_git_danger(tool_name: str, tool_input: dict) -> str:
     return shared_checks.check_git_danger(tool_name, tool_input) or ""
 
 
+def check_default_branch_push(tool_name: str, tool_input: dict, cwd: str = "") -> str:
+    """Refuse a ``git push`` to the repository's DEFAULT branch (omx-guard-08).
+
+    *cwd* is the hook payload's ``cwd`` -- the directory the session's shell is
+    in, which is the repository being pushed, not this hook's REPO_ROOT. Set
+    ICDEV_DEFAULT_BRANCH_PUSH_GUARD=0 to disable. Fails OPEN on any error.
+    """
+    return shared_checks.check_default_branch_push(
+        tool_name, tool_input, cwd=cwd or None
+    ) or ""
+
+
 def check_gh_pr_merge_bypass(tool_name: str, tool_input: dict) -> str:
     """Refuse a raw ``gh pr merge`` on a kanban-linked PR (kpr-rvfy-05).
 
@@ -1031,6 +1043,7 @@ HOOK_CHECKS = (
     "check_env_file_access",
     "check_dangerous_rm",
     "check_git_danger",
+    "check_default_branch_push",
     "check_append_only_write",
     "check_direct_sqlite_usage",
     "check_file_access_tiers",
@@ -1049,6 +1062,7 @@ HOOK_CHECK_CALLSITES = {
     "check_env_file_access": "is_env_file_access",
     "check_dangerous_rm": "is_dangerous_rm_command",
     "check_git_danger": "check_git_danger",
+    "check_default_branch_push": "check_default_branch_push",
     "check_append_only_write": "is_append_only_table_modification",
     "check_direct_sqlite_usage": "is_direct_sqlite_usage",
     "check_file_access_tiers": "check_file_access_tiers",
@@ -1073,6 +1087,8 @@ HOOK_CHECK_REQUIREMENTS = {
     "check_env_file_access": None,
     "check_dangerous_rm": None,
     "check_git_danger": None,
+    # A `git` subprocess in the session's own directory, nothing on disk.
+    "check_default_branch_push": None,
     "check_append_only_write": None,
     "check_direct_sqlite_usage": None,
     "check_branch_deletion": None,
@@ -1146,6 +1162,7 @@ CHECK_KILL_SWITCHES = {
     "env_file_access": "ICDEV_ENV_FILE_GUARD",
     "dangerous_rm": "ICDEV_DANGEROUS_RM_GUARD",
     "git_danger": "ICDEV_GIT_DANGER_GUARD",
+    "default_branch_push": "ICDEV_DEFAULT_BRANCH_PUSH_GUARD",
     "append_only_write": "ICDEV_APPEND_ONLY_GUARD",
     "direct_sqlite_usage": "ICDEV_DIRECT_SQLITE_GUARD",
     "file_access_tiers": "ICDEV_FILE_ACCESS_TIERS_GUARD",
@@ -1179,6 +1196,9 @@ def main():
         input_data = json.load(sys.stdin)
         tool_name = input_data.get("tool_name", "")
         tool_input = input_data.get("tool_input", {})
+        # The session shell's directory, for checks that act on the repository
+        # the command runs in rather than on this hook's REPO_ROOT.
+        session_cwd = input_data.get("cwd", "") or ""
 
         # (check name, callable returning a refusal reason or "")
         checks = (
@@ -1195,6 +1215,10 @@ def main():
             # HEADLESS_CHECKS runs it — the two paths block the same set in the
             # same order (exa-bench-06).
             ("git_danger", lambda: check_git_danger(tool_name, tool_input)),
+            # Never push to the repository's default branch (omx-guard-08):
+            # work lands through a PR, on every remote, protected or not.
+            ("default_branch_push",
+             lambda: check_default_branch_push(tool_name, tool_input, session_cwd)),
             # Block modification of all append-only tables (NIST 800-53 AU, D6)
             ("append_only_write", lambda: (
                 shared_checks.APPEND_ONLY_BLOCK_REASON

@@ -195,6 +195,14 @@ CAPABILITIES: Dict[str, str] = {
         "declared (native_subscription | cli_bridge), and a metered Anthropic API "
         "key never reaches the backend's environment."
     ),
+    # omx-guard-05 (L3). Measured by real writes: the sandbox is taken from the
+    # adapter's OWN build_argv, then a write inside the worktree and into the
+    # adapter's declared state dir must land and one outside must not.
+    "sandboxed": (
+        "An autonomous run can only write inside its task worktree (plus the "
+        "harness's declared state dirs): the OS write sandbox the runner asks "
+        "for wraps the adapter's command line (tools/hooks/write_sandbox.py)."
+    ),
 }
 
 #: Capabilities declared as an enum rather than a boolean; "none" means false.
@@ -886,6 +894,36 @@ def _probe_claude_route(adapter: Any, config: Optional[Dict[str, Any]] = None) -
                         f"declared {declared}, measured {measured}: {how}", detail)
 
 
+def _probe_sandboxed(adapter: Any) -> ProbeOutcome:
+    """L3: does the adapter's own command line confine its writes?
+
+    An adapter with no command line runs in-process -- there is no OS process
+    to sandbox, a measured absence. An OS with no sandbox backend is
+    unconfirmed, with the reason (Windows says so explicitly).
+    """
+    from tools.hooks import write_sandbox  # noqa: PLC0415
+
+    name = getattr(adapter, "name", "")
+    try:
+        _build_argv(adapter, {})
+    except AttributeError:
+        return ProbeOutcome(
+            ABSENT, INTERFACE,
+            "no build_argv: the adapter runs in-process, so there is no OS "
+            "process for the write sandbox to wrap",
+        )
+    except Exception as exc:  # noqa: BLE001 -- unconstructible is unconfirmed
+        return _unconfirmed(f"build_argv raised {type(exc).__name__}: {exc}")
+    report = write_sandbox.probe(
+        name,
+        build_argv=lambda wt, meta: _build_argv(adapter, meta, working_dir=wt),
+    )
+    if report["sandboxed"] is None:
+        return _unconfirmed(report["reason"], method=BEHAVIORAL)
+    return ProbeOutcome(PRESENT if report["sandboxed"] else ABSENT, BEHAVIORAL,
+                        f"{report['status'].get('backend')}: {report['reason']}")
+
+
 _PROBES = {
     "streaming": _probe_streaming,
     "tool_calling": _probe_tool_calling,
@@ -897,6 +935,7 @@ _PROBES = {
     "guard_wired": _probe_guard_wired,
     "guard_shell": _probe_guard_shell,
     "claude_route": _probe_claude_route,
+    "sandboxed": _probe_sandboxed,
 }
 #: Probes that need the declarations, not just the adapter.
 _CONFIG_PROBES = {"claude_route"}
@@ -1000,6 +1039,10 @@ def build_matrix(
             results[name] = probe_adapter(name, cfg, only=probed)
         except KeyError as exc:
             results[name] = {"adapter": name, "error": str(exc)}
+            continue
+        coverage = _guard_coverage(name, results[name])
+        if coverage is not None:
+            results[name]["guard_coverage"] = coverage
 
     totals: Dict[str, int] = {}
     for entry in results.values():
@@ -1018,6 +1061,9 @@ def build_matrix(
             ),
         },
         "adapters": results,
+        # omx-adapt-06: which LLM provider families are exhausted right now,
+        # until when, and what each fails over to -- a dispatch reads the same.
+        "provider_exhaustion": _provider_exhaustion_state(),
         "summary": {
             "adapters": len(results),
             "capabilities": len(probed),
@@ -1039,6 +1085,37 @@ def build_matrix(
     if use_cache and adapters is None and config is None:
         _MATRIX_CACHE = matrix
     return matrix
+
+
+def _guard_coverage(name: str, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """omx-guard-06: the guard layers live for this adapter, and the gate's verdict.
+
+    Read from the cells just probed -- the autonomous-dispatch gate
+    (tools/agents/guard_parity.py) measures the same three. claude_cli's L1 is
+    its settings.json hook, which the adapter seam cannot see.
+    """
+    from tools.agents import guard_parity  # noqa: PLC0415 -- it imports this module
+
+    cells = entry.get("capabilities") or {}
+    caps = guard_parity.LAYER_CAPABILITY
+    if not all(cap in cells for cap in caps.values()):
+        return None
+    layers = {layer: cells[cap]["actual"] for layer, cap in caps.items()}
+    if name == "claude_cli":
+        settings = guard_parity.claude_settings_verdict()
+        layers[guard_parity.L1] = PRESENT if settings.guarded else ABSENT
+    verdict = guard_parity.coverage_verdict(name, layers)
+    return {"layers": layers, "live": verdict.live,
+            "admitted": verdict.guarded, "reason": verdict.reason}
+
+
+def _provider_exhaustion_state() -> Dict[str, Any]:
+    try:
+        from tools.llm import provider_exhaustion  # noqa: PLC0415
+
+        return provider_exhaustion.snapshot()
+    except Exception as exc:  # noqa: BLE001 -- unreadable state is reported, not hidden
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 def reset_cache() -> None:
@@ -1103,6 +1180,11 @@ def _render_text(matrix: Dict[str, Any]) -> str:
                 f"[{cell['method']}]"
             )
             lines.append(f"        {cell['evidence']}")
+        coverage = entry.get("guard_coverage")
+        if coverage:
+            tag = "ADMITTED" if coverage["admitted"] else "REFUSED"
+            lines.append(f"    guard coverage: {tag} for autonomous dispatch -- "
+                         f"{coverage['reason']}")
         lines.append("")
     s = matrix["summary"]
     lines.append(
@@ -1114,6 +1196,14 @@ def _render_text(matrix: Dict[str, Any]) -> str:
         f"{s.get(OVERCLAIMED, 0)} OVERCLAIMED, {s.get(UNVERIFIED, 0)} unverified, "
         f"{s.get(UNDECLARED_PRESENT, 0)} undeclared-but-present"
     )
+    for family, st in sorted((matrix.get("provider_exhaustion") or {}).items()):
+        if isinstance(st, dict):
+            lines.append(
+                f"provider {family}: "
+                + (f"EXHAUSTED ({st.get('kind')}) until {st.get('resume_at')}"
+                   if st.get("exhausted") else "available")
+                + f" -> fails over to {st.get('failover_to')}"
+            )
     return "\n".join(lines)
 
 

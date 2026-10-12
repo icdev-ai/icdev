@@ -43,6 +43,18 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
 
+# vLLM (optional local/LAN provider, omx-vllm-02) — discovery + status
+icdev llm doctor --json                                          # reachability, served models, max_model_len, tool support
+python tools/llm/vllm_discovery.py --status --json               # same report, no `icdev` entry point needed
+# Router auto-registers each served model as vllm:<served-name> when VLLM_BASE_URL is set;
+# VLLM_MODEL names the model behind the stable `vllm-local` alias (unset = skipped in every chain).
+
+# Harnesses on the SAME vLLM endpoint (omx-vllm-04) — opencode / Pi / Codex configs from VLLM_BASE_URL
+icdev llm harnesses --llm vllm                                   # dry run: which files, which served models, tool-call warnings
+python tools/llm/harness_llm_config.py --llm vllm --write        # write opencode.json provider, ~/.pi/agent/models.json, ~/.codex/config.toml block
+python tools/dx/companion.py --sync --write --llm auto           # same, opencode in the PROJECT opencode.json; auto = only when reachable
+# ICDEV_HARNESS_LLM=vllm (opt-in) makes opencode_cli/pi_cli/codex_cli pass the router's vLLM choice as --model.
+
 # Ollama prefix cache — measured in LATENCY, never dollars (cch-prov-03)
 python tools/llm/ollama_prefix_latency.py --json                  # cold vs warm prompt-eval
 python tools/llm/ollama_prefix_latency.py --model qwen3:4b --repeats 7
@@ -173,6 +185,9 @@ icdev profile list                 # List available profiles
 icdev profile show [<name>]        # Show profile details (active profile by default)
 icdev profile apply <name>         # Append profile env overrides to .env
 icdev profile apply <name> --dry-run  # Preview overrides
+icdev skill install [--dirs auto|claude,codex,pi,gemini,hermes,opencode]  # ONE ICDEV skill -> ~/.agents/skills, linked into each existing harness skill dir (omx-dx-02)
+icdev skill uninstall              # Remove exactly what install created (manifest: ~/.icdev/skill-install-manifest.json)
+icdev skill status [--json]        # What install created, and whether it is still there
 
 # Scaffolding
 icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>] [--template <dir>] [--out <dir>]   # Generate a new canvas
@@ -524,7 +539,16 @@ python tools/analyzers/dispatch.py --type binary --value <path>   # through the 
 python -m tools.analyzers.ghidra_headless <path> --json         # functions, imports, strings, entry C
 python -m tools.analyzers.ghidra_headless <path>                # human report
 python -m tools.analyzers.ghidra_headless <path> --timeout 900 --max-cpu 4
-python -m tools.analyzers.ghidra_headless <path> --ghidra-home /opt/ghidra_11.1.2_PUBLIC
+python -m tools.analyzers.ghidra_headless <path> --ghidra-home /opt/ghidra --authorization-basis owned
+python -m tools.analyzers.ghidra_headless <path> --ghidra-python /usr/bin/python3   # the python that imports pyghidra
+icdev omarchy setup --ghidra --yes                               # Arch/Omarchy: ghidra + jdk21 + pyghidra (rea-eng-02)
+icdev omarchy status --ghidra
+# GHIDRA 12+ VIA PYGHIDRA (rea-eng-02): the run is `<python> -m pyghidra.ghidra_launch
+# --install-dir <home> ghidra.app.util.headless.AnalyzeHeadless ...`; an older Ghidra is
+# `unavailable` / ghidra_version_unsupported. A run needs an authorization basis
+# (owned | licensed | customer-authorized; --authorization-basis or
+# ICDEV_RE_AUTHORIZATION_BASIS) or it is refused before the JVM; `provenance` records the
+# target sha256 + basis. Install, Windows included: docs/install/ghidra.md.
 python -m tools.dx.tool_index --name analyzeHeadless --json     # is Ghidra on this host at all?
 # ON A DEFAULT INSTALL THIS REPORTS `unavailable`, and that IS the correct reading.
 # Ghidra needs a JDK 21+ and a ~400 MB install, so it is deliberately NOT in
@@ -547,6 +571,14 @@ python -m tools.dx.tool_index --name analyzeHeadless --json     # is Ghidra on t
 # analyzeHeadless has no version flag. The version is read from
 # <home>/Ghidra/application.properties and is on every report.
 python tools/analyzers/dispatch.py --type ip --value 1.2.3.4 --responders # responders ACT — opt-in
+
+# RE engine registry + license gate (rea-eng-01) -- Ghidra always; Hopper/IDA bring-your-own
+python -m tools.analyzers.re_engines --json                    # allow/refuse + named reason, every engine
+python -m tools.analyzers.re_engines --engine ida --json       # one engine's decision + provenance
+python -m tools.analyzers.re_engines --template                # a license declaration to copy to ~/.config/icdev/
+# YOU maintain your own Hopper/IDA license: declare edition/use in ~/.config/icdev/re_licenses.yaml
+# (or $ICDEV_RE_LICENSES). ICDEV reads no keys and never downloads or installs a commercial engine.
+# IDA Free + use=commercial, and Hopper / non-OEM IDA on ICDEV_SAAS_MODE / ICDEV_MULTI_TENANT, are refused.
 ```
 
 ### The two consumers of that triage (xrv-bin-03)
@@ -2479,6 +2511,16 @@ python tools/genesis/shutdown_dashboard.py --keep-ft --keep-rt --json   # leave 
 # produced three concurrent pr_watchers. Agent workers (grandchildren) are reported
 # and left running unless --include-workers. Exit 0 stopped/already down, 1 a
 # survivor or listener on 5050/5200/5300 remains, 2 the tree could not be measured.
+# The two services /start runs OUTSIDE the supervisor (portal :8443, poll trigger), by verified pidfile
+python -m tools.genesis.unsupervised_services --status
+python -m tools.genesis.unsupervised_services --start                 # adopts a running instance
+python -m tools.genesis.unsupervised_services --stop --dry-run        # pids it would stop; touches nothing
+# Start the Genesis supervisor at logon (omx-linux-01): systemd --user units on Linux, Task Scheduler on Windows
+python -m tools.genesis.install_units --platform linux --dry-run
+python -m tools.genesis.install_units --platform linux --enable       # write units + systemctl --user enable --now icdev-genesis.timer
+python -m tools.genesis.install_units --platform linux --uninstall
+python -m tools.genesis.install_units --status                       # survives logout/reboot? units, timer, linger (omx-linux-02)
+python tools/dx/project_python.py                                     # the interpreter /start and /stop run (venv first; stdlib-only)
 python tools/genesis/daemon.py --reflex audit --json          # Self-scan (code quality + SAST)
 python tools/genesis/daemon.py --reflex comply --json         # cATO evidence + crosswalk + SbD
 python tools/genesis/daemon.py --reflex ingest --json         # RSS → innovation_signals
@@ -4221,6 +4263,32 @@ python tools/hooks/fire_rate_survey.py --gate --max-fire-rate 0.01   # exit 1 ab
 # Enforcement switches (read by the hook, not by this tool):
 #   ICDEV_PRETOOLUSE_ENFORCE=0   all nine checks report but never refuse
 #   ICDEV_<CHECK>_GUARD=0        skip one check — see CHECK_KILL_SWITCHES
+
+# Harness guard (omx-guard-01) — ICDEV's PreToolUse checks inside opencode
+icdev harness install-guard opencode --project .     # writes ./.opencode/plugin/icdev-guard.ts
+icdev harness install-guard opencode --global        # writes $XDG_CONFIG_HOME/opencode/plugin/ (default ~/.config)
+python -m tools.hooks.harness_guard --harness opencode < call.json   # stdin {"tool","args"}, stdout JSON verdict
+# Same kill switches as the hook; fails open (logged) on a broken bridge.
+# omx-guard-03 — the same bridge inside Pi (tool_call extension)
+icdev harness install-guard pi --project .           # writes ./.pi/extensions/icdev-guard.ts
+icdev harness install-guard pi --global              # writes $PI_CODING_AGENT_DIR/extensions/ (default ~/.pi/agent)
+python -m tools.hooks.harness_guard --harness pi < call.json         # Pi spelling: path, edits[], powershell
+# omx-guard-04 (L2) — guarded shell: the runner fronts $SHELL / PATH so ANY harness's `bash -c` passes the same checks
+python -m tools.hooks.guard_shell --wiring           # install the shims, print the spawn env (exit 1 + reason where unsupported, e.g. Windows)
+python -m tools.hooks.guard_shell --measure -- opencode run "Use your shell tool to run exactly: echo {marker}"   # how a harness finds its shell
+python tools/agents/capability_matrix.py --capability guard_shell --json   # per-adapter guard_shell, probe-measured
+python -m tools.hooks.write_sandbox --status          # L3 write sandbox backend on this host (bwrap / Landlock; exit 1 + reason where unsupported, e.g. Windows)
+python -m tools.hooks.write_sandbox --self-test --adapter codex_cli --json   # real writes: inside + state land, outside refused
+python tools/agents/capability_matrix.py --capability sandboxed --json   # per-adapter sandboxed, probe-measured
+
+# omx-setup-01 — fresh Omarchy / plain Arch host to a running ICDEV, idempotent
+icdev omarchy setup --dry-run        # print the step plan; change nothing
+icdev omarchy setup --yes --start    # run it: --yes allows the sudo PostgreSQL steps, --start enables the genesis timer
+icdev omarchy status [--json]        # per-step state: ok / missing / n/a
+icdev omarchy uninstall [--dry-run]  # reverse MCP, skill, guards, systemd units (never the database or .env)
+# omx-panel-01 — the ICDEV record for Omarchy's agents panel (setup's `panel` step installs it + a 5-min timer)
+python -m tools.cli.omarchy_panel             # print the record: kanban in-progress/backlog, today's spend, adapter + guard
+python -m tools.cli.omarchy_panel --write     # also write ~/.local/state/omarchy/agents/usage/icdev.json; DB down -> stale: true
 
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
@@ -7299,6 +7367,14 @@ python tools/installer/release.py --version 1.2.43 --bump-only
 
 # Machine-readable report
 python tools/installer/release.py --bump patch --json
+
+# Re-render the AUR package (deploy/aur/PKGBUILD + .SRCINFO) from a built wheel (omx-dist-01).
+# A full release run renders these automatically after the wheel verifies.
+python tools/installer/release.py --aur-from-wheel dist/icdev-1.2.43-py3-none-any.whl
+
+# Arch Linux package smoke, one phase at a time, INSIDE an archlinux container (omx-ci-01).
+# CI runs it as the non-required `Arch Package Smoke` job; phases: deps wheel package setup agents.
+bash tools/ci/arch_package_smoke.sh package
 ```
 
 Credentials are read from `.env` (`TWINE_USERNAME`/`TWINE_PASSWORD`, or
@@ -7923,6 +7999,23 @@ python tools/agents/capability_matrix.py --capability sandbox_passthrough
 # Exit 1 when a capability is DECLARED but measured absent (opt-in; wired to
 # no pipeline — it is a report you can run, not a gate that runs itself)
 python tools/agents/capability_matrix.py --gate
+```
+
+### Guard parity gate (omx-guard-02)
+
+The kanban runner refuses to AUTONOMOUSLY spawn an adapter whose PreToolUse
+guard is not verified (`claude_cli`: an un-neutralised all-tools hook in
+`.claude/settings.json`; every other adapter: `guard_wired` measured `present`).
+Since omx-guard-06 "verified" is guard COVERAGE from `args/guard_coverage.yaml`:
+L1 native hook, or L2 guarded shell + L3 write sandbox (L2 alone only with
+`l2_only_opt_in: true`); the survey names each adapter's live layers.
+`ICDEV_GUARD_PARITY_GATE=enforce` (default) falls back to the next guarded
+adapter and records the refusal in `last_failure_reason`; `=report` logs only.
+Interactive use is unaffected.
+
+```bash
+python -m tools.agents.guard_parity --survey
+python -m tools.agents.guard_parity --survey --json
 ```
 
 Each cell reports `declared` (the hand-written claim in
@@ -9064,6 +9157,18 @@ all documented with their defaults in `.env.example`. `LOCALSTACK_ENABLED`,
 There is deliberately no credential setting: `credentials()` always returns the
 dummy `("test", "test")` pair, because these values reach `docker run -e` and a
 Terraform provider block aimed at localhost.
+
+### vLLM air-gap bundle — pinned image + model weights (omx-vllm-05)
+
+```bash
+docker compose --profile vllm config --quiet                     # validate the optional service
+python deploy/offline/vllm_bundle.py save --model Qwen/Qwen2.5-1.5B-Instruct-AWQ   # low side
+python deploy/offline/vllm_bundle.py verify                      # re-hash weights + image
+python deploy/offline/vllm_bundle.py load                        # high side; prints VLLM_IMAGE line
+python tools/airgap/image_vendor.py --save --topic vllm --json   # image half only
+```
+
+Walkthrough: [docs/install/vllm.md](../install/vllm.md).
 
 ### floci runtime base images — what the emulator PULLS at run time (flx-airgap-02)
 

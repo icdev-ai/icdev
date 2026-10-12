@@ -17,19 +17,36 @@ Four controls, none of which require trusting the remote server:
 4. **Air-gap interlock.** Every server is disabled in air-gap mode, whatever
    the config says.
 
+Three more, opt-in per server, for a server that analyses artifacts
+(rea-wire-01):
+
+5. **Exact pin.** A ``package:`` block names one exact version, and the
+   installed ``package.json`` beside the launch path must carry it. A server
+   launched through a registry resolver (``npx``, ``@latest``) has no installed
+   path to check, so it is refused.
+6. **Single-user only.** ``single_user_only: true`` drops the server on a shared
+   / SaaS deployment (the ``re_engines.deployment_context`` signals).
+7. **Authorized targets.** ``authorization: {required: true}`` routes every call
+   through ``target_auth``: no operator grant for the target's sha256 means no
+   call, and every call leaves one provenance row.
+
 Descriptions are sanitised on the way in (``sanitize.py``) because they enter an
 agent's prompt as attacker-controlled text.
 """
 from __future__ import annotations
 
+import json
+import re
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import yaml
 
 from icdev.tools.logging.icdev_logger import get_logger
 from icdev.tools.mcp_client import client as transport_mod
+from icdev.tools.mcp_client import target_auth
 from icdev.tools.mcp_client.sanitize import (
     is_suspicious,
     sanitize_description,
@@ -92,6 +109,56 @@ def _classification_rank(value: str) -> int:
     return _CLASSIFICATION_ORDER.index(text) if text in _CLASSIFICATION_ORDER else 0
 
 
+def _shared_deployment() -> bool:
+    """True on a shared / SaaS deployment. Unknown counts as shared (fail closed)."""
+    try:
+        from icdev.tools.analyzers.re_engines import deployment_context
+
+        return bool(deployment_context().get("shared"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("mcp_client: deployment context unavailable (%s); treating as shared", exc)
+        return True
+
+
+#: An exact version: no range operator, no dist-tag, no ``latest``.
+_EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
+
+
+def pin_problem(spec: dict, command: list[str] | None = None) -> str | None:
+    """Why the server's declared pin does not hold, or None when it does.
+
+    A server with no ``package:`` block declares no pin, and nothing is checked.
+    *command* is the RESOLVED launch command (``env:`` references expanded).
+    """
+    package = spec.get("package")
+    if not package:
+        return None
+    name = str(package.get("name") or "")
+    version = str(package.get("version") or "")
+    if not name or not _EXACT_VERSION.match(version):
+        return f"package pin {name!r}@{version!r} is not an exact version"
+
+    elements = command if command is not None else (spec.get("command") or [])
+    for element in elements:
+        candidate = Path(str(element))
+        if not str(element) or not candidate.is_file():
+            continue
+        for parent in list(candidate.resolve().parents)[:4]:
+            manifest = parent / "package.json"
+            if not manifest.is_file():
+                continue
+            try:
+                installed = json.loads(manifest.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if installed.get("name") != name:
+                continue
+            if installed.get("version") != version:
+                return f"installed {name} is {installed.get('version')!r}, pinned {version!r}"
+            return None
+    return f"no installed {name} found beside the launch path"
+
+
 def enabled_servers() -> list[dict]:
     """Server specs that are enabled, with defaults merged in.
 
@@ -116,6 +183,10 @@ def enabled_servers() -> list[dict]:
             logger.warning("mcp_client: skipping unnamed server entry")
             continue
         merged = {**defaults, **spec}
+        if merged.get("single_user_only") and _shared_deployment():
+            logger.info("mcp_client[%s]: single-user server skipped on a shared deployment",
+                        merged["name"])
+            continue
         out.append(merged)
     return out
 
@@ -123,12 +194,26 @@ def enabled_servers() -> list[dict]:
 class ExternalToolRegistry:
     """Discovers, namespaces and dispatches external MCP tools."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, command_prefix: list[str] | None = None,
+                 allow_execute: bool = False) -> None:
+        #: Prepended to every stdio server command this registry spawns -- a
+        #: containment wrapper. The pin is checked on the UNWRAPPED command.
+        self.command_prefix = list(command_prefix or [])
+        #: Per-run opt-in (rea-pif-01). A server's ``execute_tools`` -- tools that
+        #: LAUNCH the target -- are exposed only by a registry built with this
+        #: ``True``; the shared singleton never is.
+        self.allow_execute = allow_execute is True
         self._transports: dict[str, Any] = {}
         self._tools: dict[str, ExternalTool] = {}
         self._specs: dict[str, dict] = {}
         self._lock = threading.Lock()
         self._discovered = False
+        #: Operator grants, for servers with ``authorization.required``.
+        self.grants = target_auth.TargetGrants()
+        #: Authorized targets opened on each server process; later calls cite them.
+        self._session_targets: dict[str, list[dict]] = {}
+        #: Provenance writer. Tests inject one.
+        self.recorder: target_auth.Recorder = target_auth.audit_recorder
 
     # -- discovery ---------------------------------------------------------
 
@@ -144,13 +229,20 @@ class ExternalToolRegistry:
             for spec in enabled_servers():
                 name = str(spec["name"])
                 allow = {sanitize_tool_name(t) for t in (spec.get("tools") or [])}
+                if self.allow_execute:
+                    allow |= {sanitize_tool_name(t) for t in (spec.get("execute_tools") or [])}
                 if not allow:
                     logger.info("mcp_client[%s]: no tools allowlisted — contributing none", name)
                     continue
 
                 transport = self._transports.get(name)
                 if transport is None:
-                    transport = transport_mod.build_transport(spec)
+                    problem = pin_problem(spec, transport_mod.resolve_command(spec))
+                    if problem:
+                        logger.warning("mcp_client[%s]: refused: %s", name, problem)
+                        continue
+                    transport = transport_mod.build_transport(
+                        spec, command_prefix=self.command_prefix)
                     if transport is None:
                         continue
                     self._transports[name] = transport
@@ -185,6 +277,20 @@ class ExternalToolRegistry:
 
     def list_tools(self) -> list[dict]:
         return [t.to_dict() for t in self.discover()]
+
+    def grant_target(self, server: str, target: Any, *, basis: str,
+                     operator: str | None = None, note: str = "") -> dict:
+        """Operator authorization for the bytes at *target* on *server*.
+
+        The server's ``authorization.bases`` may narrow the default bases and
+        can never widen them. Raises ``ValueError`` on a basis outside the set.
+        """
+        self.discover()
+        spec = self._specs.get(server) or {}
+        declared = (spec.get("authorization") or {}).get("bases") or target_auth.DEFAULT_BASES
+        bases = tuple(b for b in declared if b in target_auth.DEFAULT_BASES)
+        return self.grants.grant(server, target, basis=basis, operator=operator,
+                                 note=note, bases=bases)
 
     def get(self, namespaced_name: str) -> ExternalTool | None:
         self.discover()
@@ -227,10 +333,38 @@ class ExternalToolRegistry:
         if transport is None:
             return {"ok": False, "error": f"server {tool.server!r} is not connected"}
 
-        result = transport.call_tool(tool.remote_name, dict(arguments or {}))
+        args = dict(arguments or {})
+        decision = None
+        if (spec.get("authorization") or {}).get("required"):
+            decision = target_auth.decide(
+                spec, tool.remote_name, args, self.grants,
+                self._session_targets.get(tool.server, []),
+            )
+            written = target_auth.record(decision, self.recorder, classification)
+            if not decision["allowed"]:
+                return {"ok": False, "refused": decision["reason"], "error": decision["message"]}
+            if not written:
+                return {
+                    "ok": False,
+                    "refused": "provenance_unwritable",
+                    "error": (f"no provenance row could be written for {namespaced_name!r}; "
+                              "an unrecorded RE run is refused"),
+                }
+
+        result = transport.call_tool(tool.remote_name, args)
         if result is None:
             return {"ok": False, "error": f"call to {namespaced_name!r} failed"}
-        return {"ok": True, "server": tool.server, "tool": tool.remote_name, "result": result}
+        out = {"ok": True, "server": tool.server, "tool": tool.remote_name, "result": result}
+        if decision is not None:
+            if decision.get("opens_target"):
+                opened = self._session_targets.setdefault(tool.server, [])
+                known = {t["target_sha256"] for t in opened}
+                opened.extend(t for t in decision["targets"] if t["target_sha256"] not in known)
+            out["authorization"] = [
+                {"target_sha256": t["target_sha256"], "basis": t["basis"]}
+                for t in decision["targets"]
+            ]
+        return out
 
     def close(self) -> None:
         with self._lock:
@@ -241,6 +375,7 @@ class ExternalToolRegistry:
                     pass
             self._transports.clear()
             self._tools.clear()
+            self._session_targets.clear()
             self._discovered = False
 
 

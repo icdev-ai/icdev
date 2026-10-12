@@ -335,7 +335,10 @@ class CopilotCliAdapter:
             argv.append(f"--model={model_id}")
 
         argv += [str(arg) for arg in (meta.get("extra_args") or [])]
-        return argv
+        # omx-guard-05 (L3): inside the write sandbox when the runner asked.
+        from tools.hooks.write_sandbox import wrap_argv  # noqa: PLC0415
+
+        return wrap_argv(argv, session, self.name)
 
     def build_env(self, session: AgentSession) -> Dict[str, str]:
         """Inherited environment plus the dispatch tags.
