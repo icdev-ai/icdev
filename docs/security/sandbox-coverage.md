@@ -2721,7 +2721,20 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
   - **HAR evidence keeps body secrets.** rea-spike-01 found a CSRF token in a response body that survived verbatim. The caller must pass `sensitive_values` (the analyzer card's job) before HAR evidence is persisted.
 - **Revisit if:** an `ext__rea__*` agent path is routed through `SandboxExecutor` too; a tool declaring `accessesNetwork`, `launchesProcess`-based capture, or `mutatesTarget` is added to the allowlist; the pin moves; or REA gains an HTTP transport.
 
-### Gap 74 — AI-ify observed-behaviour input mode (`tools/aiify/observed_inventory.py`, `tools/aiify/engine.py`)
+### Gap 74 — REA evidence feeds (`tools/analyzers/rea_feeds.py`)
+
+**Module:** `tools/analyzers/rea_feeds.py` (rea-sec-01, card `rea`), consumed by `tools/compliance/binary_components.py::rea_hinted_components` (and `sbom_generator --rea-report`), `tools/network/attack_surface_mapper.py::map_artifact_surface` (`--artifact-report`), `tools/supply_chain/scrm_assessor.py::assess_artifact_dependencies` (`--rea-report`) and `tools/compliance/evidence_collector.py::collect_evidence(rea_reports=)` (`--rea-report`).
+
+**Ingress path:** a `rea_adapter` report -- in-process, or a JSON file an operator passes by path. The report is REA's OBSERVATION of an artifact. The artifact itself is never opened here, REA is never started, and nothing reaches the network.
+
+- **Decision:** **trusted-first-party.** The input is structured JSON produced by the already-`sandboxed` REA adapter (Gap 73). It is read with `json.loads` only. Nothing in it is executed, imported, rendered or used as a path to open. Every field is read through `isinstance` checks, so a malformed report yields `unmeasured` entries or a refusal and never an exception.
+- **Guardrails (code, pinned by `tests/analyzers/test_rea_feeds.py`):**
+  - **No provenance, no feed.** A report without a target sha256 or an `owned | licensed | customer-authorized` basis is `refused` by all four consumers. So is a report whose status is not `ok`/`partial`.
+  - **HAR query strings are dropped** before an endpoint enters the attack-surface map. REA redacts only known credential names, so an unknown query parameter may still be a secret.
+  - **Observations only.** Every item is `basis: observed`, `confidence: unasserted`. Nothing is scored, and the ATO block refuses to overwrite an existing key. A signature verdict is never moved (the `artifact_corroboration` rule).
+- **Residual:** the APK shape, Electron `ipc.channels[]` and .NET `module_references[]` are ASSUMED, not measured (`rea_feeds.ASSUMED_SHAPES`). An APK report reaches here only from an exported REA bundle, because the adapter reports `apk` as `unavailable`.
+- **Revisit if:** a feed starts persisting rows, opening the target, or following a URL from a HAR.
+### Gap 75 — AI-ify observed-behaviour input mode (`tools/aiify/observed_inventory.py`, `tools/aiify/engine.py`)
 
 **Module:** `tools/aiify/observed_inventory.py` (rea-aiify-01, card `rea`), called by `tools/aiify/engine.py::_resolve_input` / `run_scan` for `input_type` `har`, `electron_app`, `website`, `apk`.
 

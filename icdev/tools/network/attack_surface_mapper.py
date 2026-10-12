@@ -10,12 +10,14 @@ Public API
 map_attack_surface(network_id)  → summary dict
 get_attack_surface(...)          → list[dict] from nc_attack_surface
 get_surface_summary()            → aggregate counts
+map_artifact_surface(reports)    → entry points REA observed in artifacts (rea-sec-01)
 
 CLI
 ---
 python tools/network/attack_surface_mapper.py --map [--network-id <id>] --json
 python tools/network/attack_surface_mapper.py --surface [--cve CVE-...] [--device name] --json
 python tools/network/attack_surface_mapper.py --summary --json
+python tools/network/attack_surface_mapper.py --artifact-report rea_report.json --json
 """
 from __future__ import annotations
 
@@ -465,6 +467,54 @@ def get_surface_summary() -> dict:
         conn.close()
 
 
+def map_artifact_surface(reports: list) -> dict:
+    """Entry points REA OBSERVED in analysed artifacts (rea-sec-01). Never raises.
+
+    The second input to this mapper beside NQE + Nessus: Electron IPC channels,
+    JS routes and client requests, HAR endpoints, APK manifest permissions and
+    exported components -- each read by ``tools.analyzers.rea_feeds`` and
+    carrying ``basis: observed``, ``confidence: unasserted`` and its REA
+    provenance (evidence id, target sha256, authorization basis).
+
+    Returned, NOT written to ``nc_attack_surface``: that table is keyed by
+    (device_name, cve_id) and an IPC channel is neither. A report without
+    provenance is listed under ``refused`` with its reason; a list REA could
+    not enumerate is under ``unmeasured``, never an empty success.
+    """
+    from tools.analyzers.rea_feeds import attack_surface
+
+    entries: list[dict] = []
+    refused: list[dict] = []
+    unmeasured: list[dict] = []
+    for report in reports or []:
+        if not isinstance(report, dict):
+            try:
+                report = json.loads(Path(report).read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                refused.append({"target": str(report), "reason": f"unreadable: {exc}"})
+                continue
+        feed = attack_surface(report)
+        if feed["items"] is None:
+            refused.append({"target": report.get("target"), "reason": feed["reason"]})
+            continue
+        entries.extend(feed["items"])
+        for kind, why in feed["unmeasured"].items():
+            unmeasured.append({"target": report.get("target"), "surface_kind": kind, "basis": why})
+    by_kind: dict[str, int] = {}
+    for entry in entries:
+        by_kind[entry["surface_kind"]] = by_kind.get(entry["surface_kind"], 0) + 1
+    return {
+        "source": "rea_artifacts",
+        "entries": entries,
+        "entry_count": len(entries),
+        "by_kind": by_kind,
+        "unmeasured": unmeasured,
+        "refused": refused,
+        "persisted": False,
+        "generated_at": _now(),
+    }
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -478,10 +528,14 @@ def _main() -> None:
     parser.add_argument("--device", default=None, help="Filter by device name")
     parser.add_argument("--min-score", type=float, default=0.0, help="Minimum surface_score filter")
     parser.add_argument("--summary", action="store_true", help="Get aggregate summary")
+    parser.add_argument("--artifact-report", action="append", default=None,
+                        help="rea_adapter report JSON to map (repeatable; rea-sec-01)")
     parser.add_argument("--json", action="store_true", help="Output JSON")
     args = parser.parse_args()
 
-    if args.map:
+    if args.artifact_report:
+        result = map_artifact_surface(args.artifact_report)
+    elif args.map:
         result = map_attack_surface(network_id=args.network_id)
     elif args.surface:
         result = get_attack_surface(

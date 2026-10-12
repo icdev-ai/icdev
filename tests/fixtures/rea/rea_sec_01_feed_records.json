@@ -1,0 +1,115 @@
+{
+ "_comment": "rea-sec-01: REA evidence records (tools/call bodies) for the feed tests. NOT recordings. `electron` and `har` follow the shapes rea-spike-01 MEASURED in real REA 6.4.0 exports (%TEMP%/rea-spike-01/evidence/win_js_1, win_har_1) with the values reduced to a small Electron app; `electron.summary.ipc.channels` is ASSUMED (the spike app was not Electron). `apk` is ASSUMED end to end (REA's JADX path is not allowlisted, so no APK record has been measured). `dotnet_native` is the real Fixture.dll record plus an ASSUMED `module_references` list. The real dotnet and js summary records live in rea_6.4.0_recorded.json / rea_6.4.0_adapter_responses.json and are used directly.",
+ "records": {
+  "electron": {
+   "tool": "analyze_javascript_application",
+   "body": {
+    "evidence_id": "ev_feedfixture_electron_0001",
+    "subject": {"name": "SCRATCH/electron-app/app.asar", "digest": {"sha256": "1111111111111111111111111111111111111111111111111111111111111111"}, "format": "asar"},
+    "provider": {"id": "rea-javascript", "name": "REA JavaScript application analysis", "version": "1"},
+    "operation": "analyze_javascript_application",
+    "confidence": "observed",
+    "authority": "shipped-artifact",
+    "limitations": ["JavaScript and HTML were parsed as inert text; bundle bootstrap code was never executed."],
+    "normalized_result": {
+     "format": "asar",
+     "summary": {
+      "browser_windows": 1,
+      "preload_entrypoints": 1,
+      "context_bridge_apis": 1,
+      "exposed_api_members": 2,
+      "ipc": {
+       "operations": 3,
+       "literal_channels": 2,
+       "dynamic_channel_operations": 0,
+       "main_handlers": 2,
+       "channels": [
+        {"channel": "settings:read", "direction": "renderer_to_main", "operation": "invoke"},
+        {"channel": "file:open", "direction": "renderer_to_main", "operation": "invoke"}
+       ]
+      }
+     },
+     "graph": {
+      "nodes": [
+       {"kind": "source-module", "identity": {"original_source": "webpack:///./node_modules/electron-store/index.js"}},
+       {"kind": "source-module", "identity": {"original_source": "webpack:///./node_modules/@sentry/electron/main.js"}},
+       {"kind": "source-module", "identity": {"original_source": "../src/main.js"}}
+      ]
+     },
+     "semantic_graph": {
+      "nodes": [
+       {"kind": "request", "label": "fetch", "properties": {"endpoint": "https://updates.example.test/latest.json", "method": "fetch", "operation_kind": "request"}},
+       {"kind": "request", "label": "fetch", "properties": {"endpoint": null, "method": "fetch", "operation_kind": "request"}},
+       {"kind": "module", "label": "main.js", "properties": {}}
+      ]
+     }
+    }
+   }
+  },
+  "har": {
+   "tool": "inspect_web_network_capture",
+   "body": {
+    "evidence_id": "ev_feedfixture_har_0001",
+    "subject": {"name": "capture.har", "digest": {"sha256": "2222222222222222222222222222222222222222222222222222222222222222"}, "format": "har"},
+    "provider": {"id": "rea-web-network-capture", "name": "REA web network capture", "version": "1"},
+    "operation": "inspect_web_network_capture",
+    "confidence": "observed",
+    "authority": "producer-evidence",
+    "limitations": ["This is retained producer evidence, without live browser transaction IDs, scenario provenance, execution attribution or deployment authenticity. Recorded URLs are never fetched."],
+    "normalized_result": {
+     "format": "har",
+     "total_records": 3,
+     "records": [
+      {"ordinal": 0, "reported": {"request": {"method": "GET", "url": "http://127.0.0.1:5050/api/kanban/tasks?status=open&token=abc"}, "response": {"status": 200}}},
+      {"ordinal": 1, "reported": {"request": {"method": "GET", "url": "http://127.0.0.1:5050/api/kanban/tasks?status=done"}, "response": {"status": 200}}},
+      {"ordinal": 2, "reported": {"request": {"method": "POST", "url": "http://127.0.0.1:5050/api/kanban/tasks/x/move"}, "response": {"status": 403}}}
+     ]
+    }
+   }
+  },
+  "apk": {
+   "tool": "analyze_android_package",
+   "body": {
+    "evidence_id": "ev_feedfixture_apk_0001",
+    "subject": {"name": "app-release.apk", "digest": {"sha256": "3333333333333333333333333333333333333333333333333333333333333333"}, "format": "apk"},
+    "provider": {"id": "rea-jadx", "name": "REA JADX provider", "version": "1"},
+    "operation": "analyze_android_package",
+    "confidence": "observed",
+    "authority": "shipped-artifact",
+    "limitations": ["Manifest decoded statically; no install or execution."],
+    "normalized_result": {
+     "manifest": {
+      "package": "test.example.field",
+      "permissions": [{"name": "android.permission.INTERNET"}, {"name": "android.permission.CAMERA"}],
+      "components": [
+       {"kind": "activity", "name": ".MainActivity", "exported": true},
+       {"kind": "service", "name": ".SyncService", "exported": false},
+       {"kind": "receiver", "name": ".BootReceiver", "exported": true, "permission": "android.permission.RECEIVE_BOOT_COMPLETED"}
+      ]
+     },
+     "native_libraries": [{"path": "lib/arm64-v8a/libsqlcipher.so"}, {"path": "lib/arm64-v8a/libcrypto.so"}]
+    }
+   }
+  },
+  "dotnet_native": {
+   "tool": "inspect_managed_artifact",
+   "body": {
+    "evidence_id": "ev_feedfixture_dotnet_0001",
+    "subject": {"name": "Vendor.Interop.dll", "digest": {"sha256": "4444444444444444444444444444444444444444444444444444444444444444"}, "format": "pe"},
+    "provider": {"id": "rea-dotnet-static", "name": "REA managed static analysis provider", "version": "1"},
+    "operation": "inspect_managed_artifact",
+    "confidence": "observed",
+    "authority": "shipped-artifact",
+    "limitations": ["Static inspection did not load the assembly, resolve dependencies through a CLR, decompile C#, or execute target code."],
+    "normalized_result": {
+     "metadata": {"status": "complete", "table_row_counts": {"AssemblyRef": 2, "ModuleRef": 1}},
+     "references": [
+      {"name": "System.Runtime", "version": "8.0.0.0", "public_key_or_token": {"kind": "public-key-token", "token": "b03f5f7f11d50a3a"}},
+      {"name": "Vendor.Core", "version": "2.3.1.0", "public_key_or_token": {"kind": "none", "token": null}}
+     ],
+     "module_references": [{"name": "vendorcrypt.dll"}]
+    }
+   }
+  }
+ }
+}
