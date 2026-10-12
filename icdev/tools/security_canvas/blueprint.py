@@ -2384,7 +2384,7 @@ def create_security_blueprint():
 
         pillar_meta = next((p for p in ZIG_PILLARS if p["slug"] == pillar_slug), None)
         if not pillar_meta:
-            return render_template("security_canvas/zig/index.html"), 404
+            return render_template("404.html"), 404
 
         capabilities = get_capability_status_by_pillar(pillar_slug)
         score_data = score_pillar(pillar_slug)

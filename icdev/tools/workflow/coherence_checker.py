@@ -7426,9 +7426,22 @@ def check_template_variable_parity() -> "CoherenceCheck":
     """Detect Jinja2 template variables used in templates but not passed by render_template().
 
     Scans blueprint.py files for render_template() calls, extracts keyword
-    arguments, then compares against {{ var }} references in the template.
-    Variables used in the template but absent from the call-site are potential
-    UndefinedError failures at runtime.
+    arguments, then compares against top-level names referenced in the
+    template. Variables used in the template but absent from the call-site
+    are potential UndefinedError failures at runtime.
+
+    Template-scoped names are NOT runtime context, so they are collected as
+    definitions up front: ``{% set %}`` targets, ``{% with %}`` assignments,
+    ``{% for %}`` loop targets (incl. tuple unpacking), ``{% macro %}`` names
+    and parameters, and ``{% from %}/{% import %}`` aliases. Jinja keywords,
+    operators and test names (``not``, ``is``, ``defined``, ``iterable``...)
+    are never variables. Names injected by Flask context processors
+    (``@app.context_processor`` / ``@bp.context_processor`` decorated
+    functions, ``*_context_processor`` functions, and
+    ``app.jinja_env.globals`` registrations) are collected from the codebase
+    via AST and treated as provided. Names that appear only under an
+    ``or``-fallback, ``|default(...)``, or ``is defined`` guard cannot raise
+    UndefinedError and are excluded.
 
     Conservative: skips calls that use **kwargs (dynamic), and excludes
     Flask/Jinja2 built-in globals to avoid false positives.
@@ -7440,15 +7453,83 @@ def check_template_variable_parity() -> "CoherenceCheck":
     _BUILTINS = frozenset({
         "g", "request", "session", "config", "current_user", "url_for",
         "get_flashed_messages", "range", "lipsum", "dict", "namespace",
-        "loop", "super", "caller", "True", "False", "None",
+        "loop", "super", "caller", "self", "cycler", "joiner",
+        "True", "False", "None",
         "csrf_token", "now", "static",
         # Common ICDEV context processors
         "active_alerts", "nav_links", "unseen_release", "icdev_version",
         "active_toggles", "current_tenant", "security_context",
     })
 
+    # Jinja2 statement tags, expression operators, and test/literal names.
+    _JINJA_KEYWORDS = frozenset({
+        # statement tags
+        "if", "elif", "else", "endif", "for", "endfor", "in", "set", "endset",
+        "with", "endwith", "macro", "endmacro", "block", "endblock",
+        "extends", "include", "from", "import", "as", "recursive", "scoped",
+        "required", "ignore", "missing", "context", "without", "filtered",
+        "do", "call", "endcall", "filter", "endfilter", "raw", "endraw",
+        "trans", "endtrans", "pluralize", "break", "continue", "sandboxed",
+        # operators / literals
+        "not", "and", "or", "is", "none", "true", "false",
+        # test names (x is <test>)
+        "defined", "undefined", "boolean", "integer", "float", "number",
+        "string", "mapping", "sequence", "iterable", "callable", "sameas",
+        "escaped", "divisibleby", "eq", "equalto", "ne", "lt", "le", "gt",
+        "ge", "lower", "upper", "even", "odd", "of",
+    })
+
+    _COMMENT_RE = _re.compile(r"\{#.*?#\}", _re.DOTALL)
+    _EXPR_RE = _re.compile(r"\{\{.*?\}\}", _re.DOTALL)
+    _TAG_RE = _re.compile(r"\{%.*?%\}", _re.DOTALL)
+    _STRING_RE = _re.compile(r"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"")
+    _IDENT_RE = _re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
+    # Guards under which a missing name cannot raise UndefinedError
+    _GUARD_IS_RE = _re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s+is\b")
+    _GUARD_DEFAULT_RE = _re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\|\s*default\s*\(")
+    _GUARD_OR_RE = _re.compile(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s+or\b")
+    _INLINE_IF_RE = _re.compile(r"\bif\s+(.+?)\s+else\b", _re.DOTALL)
+    _COND_SPLIT_RE = _re.compile(r"\b(?:and|or)\b")
+    _IN_TARGET_RE = _re.compile(r"\bin\s+([a-zA-Z_][a-zA-Z0-9_]*)")
+    _BARE_IDENT_RE = _re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
+
+    def _cond_guard_names(cond: str) -> Set[str]:
+        """Bare positive-identifier terms in a truthiness condition.
+
+        Only a bare term (``{% if name %}``, ``... if name and ...``) guards:
+        a negated term proves nothing about the truthy branch, and a dotted
+        or operator term already touches the name, which raises on undefined.
+        """
+        out: Set[str] = set()
+        for term in _COND_SPLIT_RE.split(cond):
+            t = term.strip()
+            if t.startswith("not") or t.startswith("("):
+                continue
+            if _BARE_IDENT_RE.fullmatch(t):
+                out.add(t)
+        return out
+
     _TEMPLATES_DIR = PROJECT_ROOT / "tools" / "dashboard" / "templates"
     violations: List[str] = []
+
+    def _split_top_commas(text: str) -> List[str]:
+        """Split on commas not nested in () / [] / {} (strings pre-stripped)."""
+        parts: List[str] = []
+        cur: List[str] = []
+        depth = 0
+        for ch in text:
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth = max(0, depth - 1)
+            if ch == "," and depth == 0:
+                parts.append("".join(cur))
+                cur = []
+            else:
+                cur.append(ch)
+        if cur:
+            parts.append("".join(cur))
+        return [p.strip() for p in parts if p.strip()]
 
     def _extract_render_calls(src: str):
         """Return [(template_name, frozenset(kwargs))] from a blueprint source."""
@@ -7478,21 +7559,274 @@ def check_template_variable_parity() -> "CoherenceCheck":
             calls.append((template_name, kwargs))
         return calls
 
-    def _find_template_vars(template_src: str) -> set:
-        """Extract first-level identifiers from {{ var }}, {% if var %}, {% for x in var %}."""
-        found = set()
-        # {{ identifier }} or {{ identifier.attr }} or {{ identifier | filter }}
-        for m in _re.finditer(r'\{\{-?\s*([a-zA-Z_][a-zA-Z0-9_]*)', template_src):
-            found.add(m.group(1))
-        # {% if/elif var %}, {% for x in var %}, {% set x = var %}
-        for m in _re.finditer(
-            r'\{%-?\s+(?:if|elif|for\s+\w+\s+in)\s+([a-zA-Z_][a-zA-Z0-9_]*)',
-            template_src
-        ):
-            found.add(m.group(1))
-        return found - _BUILTINS
+    def _context_processor_names() -> Set[str]:
+        """Names injected into every template context without explicit kwargs.
 
-    # Search both namespaces
+        AST-scans the codebase for Flask context processors
+        (``@*.context_processor`` / ``@*.app_context_processor`` decorated
+        functions, ``*_context_processor``-named functions, and
+        ``*.context_processor(func)`` call registrations), plus
+        ``app.jinja_env.globals[...]`` / ``.globals.update({...})``
+        registrations, and unions the keys of every dict literal they return.
+        """
+        names: Set[str] = set()
+        needles = ("context_processor", "jinja_env.globals")
+        _processor_attrs = ("context_processor", "app_context_processor")
+
+        def _dict_keys_of_returns(fn_node) -> Set[str]:
+            out: Set[str] = set()
+            for sub in _ast.walk(fn_node):
+                ret = getattr(sub, "value", None) if isinstance(sub, _ast.Return) else None
+                if ret is None:
+                    continue
+                if isinstance(ret, _ast.Dict):
+                    for k in ret.keys:
+                        if isinstance(k, _ast.Constant) and isinstance(k.value, str):
+                            out.add(k.value)
+                elif (
+                    isinstance(ret, _ast.Call)
+                    and isinstance(ret.func, _ast.Name)
+                    and ret.func.id == "dict"
+                ):
+                    for kw in ret.keywords:
+                        if kw.arg:
+                            out.add(kw.arg)
+            return out
+
+        for base in (PROJECT_ROOT / "tools", PROJECT_ROOT / "icdev" / "tools"):
+            if not base.exists():
+                continue
+            for py in base.rglob("*.py"):
+                s = str(py).replace("\\", "/")
+                if "__pycache__" in s or "/tests/" in s:
+                    continue
+                try:
+                    text = py.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+                if not any(n in text for n in needles):
+                    continue
+                try:
+                    tree = _ast.parse(text)
+                except SyntaxError:
+                    continue
+                fns = {
+                    n.name: n
+                    for n in _ast.walk(tree)
+                    if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))
+                }
+                for node in _ast.walk(tree):
+                    if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                        decorated = any(
+                            (
+                                isinstance(d, _ast.Attribute)
+                                and d.attr in _processor_attrs
+                            )
+                            or (
+                                isinstance(d, _ast.Call)
+                                and isinstance(d.func, _ast.Attribute)
+                                and d.func.attr in _processor_attrs
+                            )
+                            for d in node.decorator_list
+                        )
+                        if decorated or node.name.endswith("_context_processor"):
+                            names |= _dict_keys_of_returns(node)
+                    elif isinstance(node, _ast.Call) and isinstance(node.func, _ast.Attribute):
+                        attr = node.func.attr
+                        if (
+                            attr in _processor_attrs
+                            and node.args
+                            and isinstance(node.args[0], _ast.Name)
+                        ):
+                            tgt = fns.get(node.args[0].id)
+                            if tgt is not None:
+                                names |= _dict_keys_of_returns(tgt)
+                        elif (
+                            attr == "update"
+                            and "globals" in _ast.dump(node.func.value)
+                            and node.args
+                            and isinstance(node.args[0], _ast.Dict)
+                        ):
+                            for k in node.args[0].keys:
+                                if isinstance(k, _ast.Constant) and isinstance(k.value, str):
+                                    names.add(k.value)
+                    elif isinstance(node, _ast.Assign):
+                        for tgt in node.targets:
+                            if (
+                                isinstance(tgt, _ast.Subscript)
+                                and isinstance(tgt.slice, _ast.Constant)
+                                and isinstance(tgt.slice.value, str)
+                                and "globals" in _ast.dump(tgt.value)
+                            ):
+                                names.add(tgt.slice.value)
+        return names
+
+    context_names = _context_processor_names()
+
+    def _find_template_vars(template_src: str) -> set:
+        """Names a template REQUIRES from the render context.
+
+        Returns only names with at least one STRICT usage — an occurrence
+        that raises UndefinedError under Jinja2's default Undefined:
+        attribute access (``x.``), subscript (``x[``), call (``x(...)``),
+        iteration (``{% for _ in x %}``), containment target (``_ in x``),
+        comparison/arithmetic operands, or any filter other than
+        ``|default(...)``. Names that appear ONLY in safe positions (bare
+        ``{{ x }}`` output, bare ``{% if x %}`` truthiness) never raise, so
+        they are not reported.
+
+        Excluded up front: template-scoped definitions (set/with/for/macro/
+        from-import), Jinja keywords and test names, attribute/filter/kwarg
+        positions, and names used under a guard: ``or``-fallback,
+        ``|default(...)``, ``is <test>``, or a bare positive term in an
+        ``{% if %}/{% elif %}`` condition or ``A if cond else B`` test
+        (guards are tracked template-wide, not lexically scoped).
+        """
+        src = _COMMENT_RE.sub(" ", template_src)
+        defined: Set[str] = set()
+        guarded: Set[str] = set()
+        # (body, force_strict) — for-iterable tails force strictness because
+        # iterating the root name raises on undefined.
+        expr_bodies: List[Tuple[str, bool]] = []
+
+        for m in _TAG_RE.finditer(src):
+            body = m.group(0)[2:-2].strip().lstrip("-+~").rstrip("-+~").strip()
+            wm = _re.match(r"(\w+)", body)
+            if not wm:
+                continue
+            tag = wm.group(1)
+            rest = _STRING_RE.sub(" ", body[wm.end():])
+            if tag in ("block", "endblock"):
+                continue  # block names are identifiers but never variables
+            if tag == "set":
+                if "=" in rest:
+                    lhs, _, rhs = rest.partition("=")
+                    for t in _split_top_commas(lhs):
+                        defined.update(_IDENT_RE.findall(t))
+                    expr_bodies.append((rhs, False))
+                else:
+                    defined.update(_IDENT_RE.findall(rest))
+            elif tag == "for":
+                im = _re.search(r"\bin\b", rest)
+                if im:
+                    defined.update(_IDENT_RE.findall(rest[: im.start()]))
+                    iterable = _re.sub(r"\brecursive\b\s*$", "", rest[im.end():])
+                    expr_bodies.append((iterable, True))
+                else:
+                    expr_bodies.append((rest, False))
+            elif tag == "with":
+                for seg in _split_top_commas(rest):
+                    lhs, eq_, rhs = seg.partition("=")
+                    if eq_:
+                        defined.update(_IDENT_RE.findall(lhs))
+                        expr_bodies.append((rhs, False))
+                    else:
+                        expr_bodies.append((seg, False))
+            elif tag == "macro":
+                mm = _re.match(r"\s*(\w+)\s*\((.*)\)\s*$", rest, _re.DOTALL)
+                if mm:
+                    defined.add(mm.group(1))
+                    for p in _split_top_commas(mm.group(2)):
+                        lhs, eq_, rhs = p.partition("=")
+                        defined.update(_IDENT_RE.findall(lhs))
+                        if eq_:
+                            expr_bodies.append((rhs, False))
+            elif tag == "from":
+                im = _re.search(r"\bimport\b(.*)$", rest, _re.DOTALL)
+                if im:
+                    for seg in _split_top_commas(im.group(1)):
+                        seg = seg.replace("(", " ").replace(")", " ")
+                        am = _re.search(r"\bas\s+(\w+)\s*$", seg)
+                        if am:
+                            defined.add(am.group(1))
+                        else:
+                            defined.update(_IDENT_RE.findall(seg))
+            elif tag == "import":
+                am = _re.search(r"\bas\s+(\w+)\s*$", rest)
+                if am:
+                    defined.add(am.group(1))
+            elif tag in ("if", "elif"):
+                guarded |= _cond_guard_names(rest)
+                expr_bodies.append((rest, False))
+            else:
+                # extends/include/do/end* — scan remainder as expression
+                expr_bodies.append((rest, False))
+
+        for m in _EXPR_RE.finditer(src):
+            expr_bodies.append((m.group(0)[2:-2], False))
+
+        strict: Set[str] = set()
+        for body, force in expr_bodies:
+            if not body or not body.strip():
+                continue
+            b = _STRING_RE.sub(" ", body)
+            for g in _GUARD_IS_RE.finditer(b):
+                guarded.add(g.group(1))
+            for g in _GUARD_DEFAULT_RE.finditer(b):
+                guarded.add(g.group(1))
+            for g in _GUARD_OR_RE.finditer(b):
+                guarded.add(g.group(1))
+            for cm in _INLINE_IF_RE.finditer(b):
+                guarded |= _cond_guard_names(cm.group(1))
+            for it in _IN_TARGET_RE.finditer(b):
+                if it.group(1) not in _JINJA_KEYWORDS:
+                    strict.add(it.group(1))
+            for im in _IDENT_RE.finditer(b):
+                name = im.group(0)
+                if name in _JINJA_KEYWORDS:
+                    continue
+                # Skip attribute access (x.<attr>) and filter names (|<filter>)
+                j = im.start() - 1
+                while j >= 0 and b[j] in " \t":
+                    j -= 1
+                prev_ch = b[j] if j >= 0 else ""
+                # NOTE: prev_ch may be "" at the start of a body, and
+                # "" in ".|" is True (empty substring) — guard explicitly.
+                if prev_ch and prev_ch in ".|":
+                    continue
+                # Skip keyword-argument names (name=<value>, but not name==)
+                k = im.end()
+                while k < len(b) and b[k] in " \t":
+                    k += 1
+                next_ch = b[k] if k < len(b) else ""
+                if (
+                    next_ch == "="
+                    and (k + 1 >= len(b) or b[k + 1] != "=")
+                ):
+                    continue
+                if force:
+                    strict.add(name)
+                    continue
+                # Strictness: dotted / subscript / call occurrences raise
+                if next_ch in (".", "[", "("):
+                    strict.add(name)
+                    continue
+                # Any non-default filter (tojson, map, round, safe, ...) is
+                # applied to the value and is not guaranteed Undefined-safe
+                if next_ch == "|":
+                    fm = _re.match(r"\|\s*([a-zA-Z_]\w*)", b[k:])
+                    if fm and fm.group(1) == "default":
+                        continue  # guarded — cannot raise
+                    strict.add(name)
+                    continue
+                # Comparison (except ==/!=) and arithmetic touch the value
+                if next_ch in ("<", ">", "+", "-", "*", "/", "%"):
+                    strict.add(name)
+                    continue
+                if prev_ch in ("<", ">", "+", "-", "*", "/", "%"):
+                    strict.add(name)
+                    continue
+                # else: bare output / bare truthiness — safe under Undefined
+
+        return strict - defined - guarded - _BUILTINS
+
+    # Search both namespaces. The same template is commonly rendered by
+    # several routes in one blueprint, each passing the context subset its
+    # page mode needs (list vs detail, new vs edit) while {% if %}-guarded
+    # sections cover the rest — so the per-template contract is the UNION of
+    # kwargs across all of that file's render_template() calls: a name is
+    # only paritable-undefined when NO call site ever provides it.
+    template_var_cache: Dict[str, Set[str]] = {}
     for bp_dir in [PROJECT_ROOT / "tools", PROJECT_ROOT / "icdev" / "tools"]:
         for bp_file in sorted(bp_dir.rglob("blueprint.py")):
             # Skip test fixtures
@@ -7504,19 +7838,26 @@ def check_template_variable_parity() -> "CoherenceCheck":
                 continue
 
             calls = _extract_render_calls(src)
+            provided_by_template: Dict[str, Set[str]] = {}
             for template_name, kwargs in calls:
+                provided_by_template.setdefault(template_name, set()).update(kwargs)
+
+            for template_name, all_kwargs in provided_by_template.items():
                 tmpl_path = _TEMPLATES_DIR / template_name
                 if not tmpl_path.exists():
                     continue
-                try:
-                    tmpl_src = tmpl_path.read_text(encoding="utf-8", errors="replace")
-                except Exception:
-                    continue
+                if template_name not in template_var_cache:
+                    try:
+                        tmpl_src = tmpl_path.read_text(encoding="utf-8", errors="replace")
+                    except Exception:
+                        template_var_cache[template_name] = set()
+                        continue
+                    template_var_cache[template_name] = _find_template_vars(tmpl_src)
 
-                template_vars = _find_template_vars(tmpl_src)
-                # Strip {% include %} vars — included templates have their own context
-                # Only flag top-level vars that are not in kwargs
-                missing_vars = template_vars - kwargs
+                template_vars = template_var_cache[template_name]
+                # Only flag top-level vars that come from nowhere: not in any
+                # render call's kwargs and not injected by a context processor.
+                missing_vars = template_vars - all_kwargs - context_names
                 if missing_vars:
                     rel_bp = str(bp_file.relative_to(PROJECT_ROOT))
                     violations.append(
