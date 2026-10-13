@@ -393,6 +393,7 @@ cpmp:
     rate_limit:
       requests_per_second: 10
       delay_between_requests: 0.15
+    request_timeout_seconds: 8   # runs on the dashboard request path
     lookback_days: 90
 
   # COR Portal (D-CPMP-4)

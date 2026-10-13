@@ -51,6 +51,9 @@ API_KEY_ENV = _CFG.get("api_key_env", "SAM_GOV_API_KEY")
 LOOKBACK_DAYS = _CFG.get("lookback_days", 90)
 RATE_LIMIT = _CFG.get("rate_limit", {})
 DELAY = RATE_LIMIT.get("delay_between_requests", 0.15)
+# sync_awards runs on the dashboard request path (POST /api/cpmp/sam/sync-awards),
+# so the outbound call must answer inside a browser/E2E request budget.
+REQUEST_TIMEOUT = _CFG.get("request_timeout_seconds", 8)
 
 
 def _get_db():
@@ -120,8 +123,10 @@ def sync_awards(lookback_days=None):
         "ptype": "a",  # Award notices
     }
 
-    data, error = _safe_get(API_URL, params=params, timeout=60)
+    data, error = _safe_get(API_URL, params=params, timeout=REQUEST_TIMEOUT)
     if error:
+        # requests' HTTPError text carries the full URL, query-string api_key included
+        error = error.replace(api_key, "***")
         return {"status": "error", "message": f"SAM.gov API error: {error}"}
 
     if not data:
