@@ -242,7 +242,7 @@ images:
       docs/audits/artifact-fresh-e30db43367-kafka-redpanda-pin.md.
 
   - ref: "public.ecr.aws/amazonlinux/amazonlinux:2023"
-    digest: "sha256:12052e9b5d3fd85769abbdd863dd038e1890c9ace31d5fdbe1afa78eda97d061"
+    digest: "sha256:f8da58e59abcaf46c6c3aebc1a2f12195d3bdee88f337652c9e795541bc71dd5"
     service: ec2
     variant: null
     mutable_tag: true
@@ -270,10 +270,12 @@ images:
       RE-MEASURED 2026-09-15 (artifact-fresh-f1edf3d78e) by
       `docker pull` + `docker image inspect` of the live tag, AL
       2023.12.20260918 re-measured 2026-09-19 (artifact-fresh-66057392f8) the
-      same way, and AL 2023.12.20260930 (the digest above) re-measured
+      same way, AL 2023.12.20260930 (sha256:12052e9b...) re-measured
       2026-10-02 (artifact-fresh-d20e410382) the same way -- two rebuilds past
       the previous pin, because the tag moved again (off AL 2023.12.20260928,
-      sha256:99860dc4...) between the card being filed and being worked. Flagged
+      sha256:99860dc4...) between the card being filed and being worked -- and
+      AL 2023.12.20261012 (the digest above) re-measured 2026-10-13
+      (artifact-fresh-9498e50df5) the same way. Flagged
       `mutable_tag` for the same reason redpanda and k3s are -- a re-vendor must
       re-measure rather than assume -- even though, unlike those two, the tag
       does carry an ordering.
