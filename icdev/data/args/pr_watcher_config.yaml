@@ -587,6 +587,21 @@ union_resolver:
     # drops content that landed.
     - path: args/red_first_gate.yaml
       rules: [keep_both_blocks, adjacent_edits]
+    # 10d14ca46bbf896a (kpr-watch-22): 4 refusals, all `undeclared:
+    # .github/workflows/icdev-ci.yml`. SURVEYED PER HUNK before arming --
+    # `python -m tools.kanban.artifact_pin_union_survey --file
+    # .github/workflows/icdev-ci.yml`: 16 merges git conflicted on, 19 hunks,
+    # 13 exact, 1 union_kept_more, 1 human_also_edited, 4 refused, and
+    # lost_content = 0. Every decisive hunk is the same shape -- each card
+    # appends its own "earns a slot" rationale comment and its test entries at
+    # the same point in a job's test list. The 4 refused hunks REWRITE base
+    # lines (shape rewrites_base) and `keep_both_blocks` correctly declines
+    # them, so they stay with a human. Known blind spot, as for
+    # floci_runtime_images.yaml below: two cards adding the SAME mapping key at
+    # one point would union into a duplicate key that safe_load accepts; none
+    # of the 19 observed hunks had that shape.
+    - path: .github/workflows/icdev-ci.yml
+      rules: [keep_both_blocks, adjacent_edits]
     # NOT DECLARED, AND MEASURED RATHER THAN JUDGED (kpr-watch-20):
     # `icdev/data/args/floci_runtime_images.yaml` conflicted on #2269 and is a
     # candidate by proximity only. Its one conflict is an ADD/ADD of the SAME
