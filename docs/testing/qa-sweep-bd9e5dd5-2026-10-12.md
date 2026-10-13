@@ -43,6 +43,28 @@ Each card records the error message and the screenshot path:
 - `qa-fail-4056903498e8d9de`
 - `qa-fail-b535d046a9341241`
 
+### `qa-fail-4056903498e8d9de` — already fixed on main; the sweep tested stale code
+
+The fix is `ca5e698c3` (`qa-fail-cf5b5d4e84be3839`, PR #2480). It moved the
+spend panel's git sweep onto a worker thread, and a request now waits at most
+`REFRESH_WAIT_SECONDS` (3s) for it. PR #2480 merged at 23:35:45Z. This run
+started at 23:41:45Z, but the dashboard serving it (PID 6452 on :5050) had been
+running since 18:45Z. Merging to main does not reload a running dashboard, so
+the sweep exercised the old synchronous sweep. Proof: that process's
+`GET /api/cache-savings/spend` returns no `refreshing` key, and the fix adds
+that key to every payload.
+
+Measured against `401884261` with the Flask test client and the panel cache
+cleared before each request:
+
+| Case | `GET /cache-savings` | Panel |
+|---|---|---|
+| Cold app, real sweep | 200 in 5.90s (includes first-request app init) | all four KPI labels present |
+| Warm app, cache cleared | 200 in 4.36s | all four KPI labels present |
+| `collect` slowed to 29s (the cold time measured in `qa-fail-cf5b5d4e84be3839`) | 200 in 3.29s | `unmeasurable`, all four labels present, no `$0.00` inside `#spend-by-card` |
+
+No code change. Restarting the :5050 dashboard picks up the fix.
+
 ## 4. Persistence
 
 `qa_agent_runner.py --status qa-1791848505` returns the `ace_qa_runs` row:
