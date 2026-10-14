@@ -274,6 +274,28 @@ def test_constant_cpi_across_contracts_is_flagged_as_non_discriminating(no_side_
     assert snap["avg_portfolio_cpi"] == 0.969
 
 
+def test_constant_spi_is_flagged_in_the_advisory_not_only_on_the_tile(no_side_channels):
+    """The 2026-10-12 brief: every SPI was 0.9333, the tile said so, the advisory did not."""
+    flat_spi = [
+        {"id": "c1", "contract_number": "W15QKN-24-C-0001", "title": "Enclave Sustainment",
+         "cpi": 0.88, "spi": 0.9333},
+        {"id": "c2", "contract_number": "N00178-25-D-0042", "title": "Transport Modernization",
+         "cpi": 1.02, "spi": 0.9333},
+    ]
+    with patch(
+        "tools.govcon.portfolio_manager.get_portfolio_summary",
+        return_value=_summary(contracts=flat_spi),
+    ):
+        snap = reflex._gather_portfolio_snapshot()
+
+    dq = snap["data_quality"]
+    assert dq["state"] == reflex.DQ_DEGRADED
+    assert "no_spi_variance" in dq["reasons"]
+    # CPI varies here, so only the SPI is called out.
+    assert "no_cpi_variance" not in dq["reasons"]
+    assert "reporting an SPI report the SAME value" in dq["detail"]
+
+
 def test_a_real_portfolio_is_measured_and_carries_no_advisory(no_side_channels):
     """Negative control: a real brief must not be cluttered with a banner."""
     with patch(
