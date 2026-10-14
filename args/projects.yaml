@@ -10404,3 +10404,37 @@ projects:
   - {key: pif, title: "PROCESS-IFY FROM OBSERVED BEHAVIOUR", priority: medium}
   - {key: sec, title: "SUPPLY CHAIN AND ATTACK SURFACE FROM ARTIFACTS", priority: medium}
   - {key: docs, title: "DOCUMENT IT", priority: low}
+- key: ftatm
+  name: FTATM - ICDEV_FT_ATM, a COS-style signal-overlap trade manager for NT8
+  description: 'ICDEV_FT_ATM (icdev_ft PR #495, card note docs/cards/ftatm-core-01.md) is
+    an NT8 indicator with a trade panel: up to 4 discovered signal slots, overlap /
+    first-N / exit / risk rules, orders through NT8''s own ATM engine with ATM and account
+    following Chart Trader, ANALYZE replaying signals through the ATM template''s real
+    brackets, and a daily regime engine in SHADOW mode. This card is what remains. ALL
+    WORK IS IN THE icdev_ft REPO (C:\AI\icdev_ft). MANUAL-ONLY: every task is held
+    behind ftatm-gate-00 because NinjaScript is compiled by the operator in NinjaTrader
+    (F5) -- no CI compiles C#, so the autonomous runner cannot verify a build. Regime
+    AUTO stays off until the pre-registered study passes; nothing here is evidence of
+    edge.'
+  task_prefix: ftatm-
+  default_open: true
+  briefs:
+  - 'SA: bring ICDEV_FT_ATMStrategy to parity with the indicator (regime, LONG/SHORT
+    model, Qty split over brackets) so Strategy Analyzer can test it over YEARS, not
+    the few days a Renko chart loads.'
+  - 'STUDY: pre-register and run the regime gate study (both directions vs momentum+200d
+    vs +SMC structure +ConfluenceStrip downgrade) on the ES 2010-2025 export; the SMC
+    Python port must be brought to v1.1 first.'
+  - 'CORTEX: annotate (never veto) each ATM signal with the Trading Cortex score and
+    keep a signal-to-outcome ledger keyed by SignalId so the score''s IC can be measured
+    on ATM''s own signals.'
+  - 'COS: presets 1-4 and an ANALYZE equity-curve / trade-list window.'
+  - 'FIX: daily P&L scoped to the instrument / ATM''s own trades; slot indicators that add
+    data series (MTFConfluence, FourLines_MTF, AimWave HTF) verified or supported.'
+  epics:
+  - {key: gate, title: "GATE - manual hold sentinel (built by hand, never dispatched)", priority: high}
+  - {key: sa, title: "SA - Strategy Analyzer parity", priority: high}
+  - {key: study, title: "STUDY - pre-registered regime gate study", priority: high}
+  - {key: cortex, title: "CORTEX - annotation + signal-outcome ledger", priority: medium}
+  - {key: cos, title: "COS - presets and equity window", priority: low}
+  - {key: fix, title: "FIX - known limitations", priority: medium}
