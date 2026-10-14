@@ -288,6 +288,17 @@ def _assess_data_quality(snapshot: Dict[str, Any]) -> Dict[str, Any]:
             "portfolio average is one constant restated and ranks nothing"
         )
 
+    # SPI is published beside CPI and can be the same seeded constant
+    # independently of it; the tile disclosing it is not the advisory.
+    distinct_spi = snapshot.get("spi_distinct_values")
+    spi_sample = snapshot.get("spi_sample_size") or 0
+    if distinct_spi is not None and spi_sample >= 2 and distinct_spi <= 1:
+        reasons.append("no_spi_variance")
+        details.append(
+            f"all {spi_sample} contract(s) reporting an SPI report the SAME value, so the "
+            "schedule average is one constant restated and ranks nothing"
+        )
+
     unscored = snapshot.get("unscored_contracts") or 0
     if unscored > 0:
         reasons.append("health_unscored")
