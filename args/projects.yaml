@@ -10431,6 +10431,17 @@ projects:
   - 'COS: presets 1-4 and an ANALYZE equity-curve / trade-list window.'
   - 'FIX: daily P&L scoped to the instrument / ATM''s own trades; slot indicators that add
     data series (MTFConfluence, FourLines_MTF, AimWave HTF) verified or supported.'
+  - 'EDGE: is there one at all? Count the configurations tried and report Deflated
+    Sharpe / PBO beside every ANALYZE result; flag Renko backtests as optimistic and
+    compare against time bars; measure how independent the 4 slots really are; select
+    presets walk-forward with a locked holdout.'
+  - 'EXEC: per-SignalId execution quality (slippage, MAE/MFE, R-multiple), costs in
+    ANALYZE, bracket tuning from MAE/MFE, start-up/reconnect reconciliation, naked-
+    position and stale-signal guards.'
+  - 'RISK: volatility-scaled sizing, a lockout that survives F5/restart, ONE auto-trader
+    per account+instrument (enforced, not remembered), event and roll blackouts.'
+  - 'MON: live-vs-backtest drift pauses AUTO; P&L attributed by slot, time of day and
+    regime.'
   epics:
   - {key: gate, title: "GATE - manual hold sentinel (built by hand, never dispatched)", priority: high}
   - {key: sa, title: "SA - Strategy Analyzer parity", priority: high}
@@ -10438,3 +10449,7 @@ projects:
   - {key: cortex, title: "CORTEX - annotation + signal-outcome ledger", priority: medium}
   - {key: cos, title: "COS - presets and equity window", priority: low}
   - {key: fix, title: "FIX - known limitations", priority: medium}
+  - {key: edge, title: "EDGE - overfitting-aware validation", priority: high}
+  - {key: exec, title: "EXEC - execution quality ledger + safety guards", priority: high}
+  - {key: risk, title: "RISK - sizing, persistent lockout, ownership, blackouts", priority: high}
+  - {key: mon, title: "MON - live-vs-backtest drift + attribution", priority: medium}
