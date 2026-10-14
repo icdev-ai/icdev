@@ -659,6 +659,19 @@ class SQLiteVectorStore(VectorStoreProvider):
         conn.close()
         return result
 
+    def count_by(self, field: str) -> Optional[Dict[str, int]]:
+        if field not in ("source_type", "tier"):
+            return None
+        conn = self._get_conn()
+        sql = f"SELECT {field}, COUNT(*) FROM rag_chunks"  # nosec B608 -- field is whitelisted above
+        params: list = []
+        if self._tenant_id:
+            sql += " WHERE (tenant_id = ? OR tenant_id = '')"
+            params.append(self._tenant_id)
+        rows = conn.execute(sql + f" GROUP BY {field}", params).fetchall()
+        conn.close()
+        return {r[0]: r[1] for r in rows if r[0]}
+
     def check_availability(self) -> bool:
         try:
             conn = self._get_conn()

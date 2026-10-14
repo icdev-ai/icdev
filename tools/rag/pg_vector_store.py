@@ -393,14 +393,29 @@ class PgVectorStore(VectorStoreProvider):
     def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         conn = get_connection()
         try:
-            if filters and filters.get("source_type"):
-                row = conn.execute(
-                    "SELECT COUNT(*) FROM rag_chunks WHERE source_type = %s",
-                    (filters["source_type"],),
-                ).fetchone()
-            else:
-                row = conn.execute("SELECT COUNT(*) FROM rag_chunks").fetchone()
+            conditions = []
+            params: list = []
+            for col in ("source_type", "tier"):
+                if filters and filters.get(col):
+                    conditions.append(f"{col} = %s")
+                    params.append(filters[col])
+            sql = "SELECT COUNT(*) FROM rag_chunks"
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+            row = conn.execute(sql, params).fetchone()  # nosec B608 -- column names are internal constants
             return row[0] if row else 0
+        finally:
+            conn.close()
+
+    def count_by(self, field: str) -> Optional[Dict[str, int]]:
+        if field not in ("source_type", "tier"):
+            return None
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                f"SELECT {field}, COUNT(*) FROM rag_chunks GROUP BY {field}"  # nosec B608 -- field is whitelisted above
+            ).fetchall()
+            return {r[0]: r[1] for r in rows if r[0]}
         finally:
             conn.close()
 

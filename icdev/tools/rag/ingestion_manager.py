@@ -710,19 +710,24 @@ def get_status(tenant_id: str = "") -> Dict[str, Any]:
     store = VectorStoreFactory.create(tenant_id=tenant_id)
     available = store.check_availability()
 
-    # Count by source type
-    source_counts = {}
-    for src in SOURCE_REGISTRY:
-        count = store.count(filters={"source_type": src})
-        if count > 0:
-            source_counts[src] = count
+    # Count by source type / tier: one GROUP BY each when the backend supports
+    # it. The per-value loop was 67 round trips and pushed /knowledge-search
+    # past the E2E 30s page-load budget on a loaded host (qa-fail-181763bb17fe5938).
+    source_counts = store.count_by("source_type")
+    if source_counts is None:
+        source_counts = {}
+        for src in SOURCE_REGISTRY:
+            count = store.count(filters={"source_type": src})
+            if count > 0:
+                source_counts[src] = count
 
-    # Count by tier
-    tier_counts = {}
-    for tier in ("hot", "warm", "cold"):
-        count = store.count(filters={"tier": tier})
-        if count > 0:
-            tier_counts[tier] = count
+    tier_counts = store.count_by("tier")
+    if tier_counts is None:
+        tier_counts = {}
+        for tier in ("hot", "warm", "cold"):
+            count = store.count(filters={"tier": tier})
+            if count > 0:
+                tier_counts[tier] = count
 
     # Last ingestion from log
     last_ingestion = None
