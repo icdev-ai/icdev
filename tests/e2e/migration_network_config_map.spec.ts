@@ -86,8 +86,14 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
 
   test('full lifecycle: create session, import config, map, apply, preview, download', async ({ page }) => {
     // Step 1: Navigate to new migration wizard.
-    await page.goto('/migration-canvas/network-migration/new');
-    await page.waitForLoadState('domcontentloaded');
+    // Wait for DOMContentLoaded, not the default `load`. The wizard pulls five
+    // vendor scripts (jquery/lodash/backbone/joint/topology) plus every base.html
+    // asset from the one Flask server, and `load` waits on all of them. Run
+    // qa-1792016705 timed out here at 30s, yet the route answers in ~0.4s, and
+    // this spec passed in 19s right after against the same server. The parser-blocking
+    // scripts still run before DOMContentLoaded, so `goStep` and the form
+    // controls exist when the steps below use them.
+    await page.goto('/migration-canvas/network-migration/new', { waitUntil: 'domcontentloaded' });
     await dismissTour(page);
 
     const bodyText = await page.textContent('body');
