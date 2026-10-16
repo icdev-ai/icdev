@@ -127,6 +127,11 @@ prefixes:
   # feature for the trading parent inside this PUBLIC checkout. Same repo, same
   # env var; additionally held behind fni-gate-00.
   fni: icdev_ft
+  # ftatm -- ICDEV[FT]'s NinjaTrader ATM tooling (ICDEV_FT_ATM, cards ftatm-*). It was SEEDED unregistered:
+  # 25 cards resolved to this PUBLIC checkout, and on 2026-10-15 the dispatcher tried four times to
+  # `git worktree add` ftatm-study-01/-02 under C:\AI\ICDev\.tmp\worktrees (each killed at the 30 s
+  # budget, parked 'worktree creation failed'). Same repo, same env var; also held behind ftatm-gate-00.
+  ftatm: icdev_ft
   # rt -- ICDEV[RT], the retirement + insurance planning parent. Same discipline
   # as ftl-/ftp- above: registered before seeding so the stream cannot fall
   # through to the ICDev default. Dispatchable exactly when
