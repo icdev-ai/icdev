@@ -1774,6 +1774,12 @@ token_budgets:
       monthly_usd: 5.00           # mostly Ollama, minimal cloud
     proposal-genesis-daemon:
       monthly_usd: 5.00
+    # The kanban runner's own calls (the agent id should_run and the scheduler
+    # carry). It had no entry, fell to the $50 default, and hard-stopped the board
+    # on 2026-10-17 with $322.28 spent in 17 days (~$19/day, ~$590/month).
+    # $600 = that measured pace; the operator chose it. hard_stop stays true.
+    kanban-scheduler:
+      monthly_usd: 600.00
 
 # -----------------------------------------------------------------------
 # Module Budget Enforcement (generative_intelligence + predictive_analysis)
@@ -1822,7 +1828,12 @@ module_budgets:
   per_module:
     generative_intelligence:
       monthly_usd: 150.00         # LLM calls, embeddings, chain orchestration
-      monthly_tokens: 400000
+      # The kanban runner's code_generation calls are charged here. The 2026-10
+      # period row was already at 2,000,000 (set outside this file) and hit
+      # 2,010,566 on day 17 (~3.6M/month pace). 4,000,000 = that pace + ~10%;
+      # the operator chose it. A period row is frozen at creation, so this value
+      # sizes the NEXT month -- the current row is edited in the database.
+      monthly_tokens: 4000000
       monthly_operations: 0       # not used for generative
     predictive_analysis:
       monthly_usd: 50.00          # simulation runs, Monte Carlo, COA generation
