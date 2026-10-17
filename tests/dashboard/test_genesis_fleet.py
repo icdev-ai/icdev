@@ -41,10 +41,12 @@ import time
 import pytest
 
 from tools.dashboard.genesis_fleet import (
+    DEFAULT_DEADLINE_SECONDS,
     ERROR,
     OK,
     ROOT_MISSING,
     UNMEASURED,
+    FleetProbeCache,
     gather_fleet_status,
 )
 
@@ -199,6 +201,68 @@ class TestShapeThePageAlreadyConsumes:
 
     def test_an_empty_registry_is_an_empty_result_not_a_raise(self):
         assert gather_fleet_status({}, lambda k, c, t: {}, deadline_seconds=1.0) == {}
+
+
+class TestProbeCache:
+    """qa-fail-007b14002f882f59. Measured on the dev box 2026-10-17: the
+    ``govproposal`` probe answers in 23.45s and ``trading-engine`` did not answer
+    in 40.98s, so EVERY ``GET /genesis`` paid the full 8.0s deadline (8.41 /
+    8.19 / 8.03s), and the probe killed at the deadline could never land an
+    answer for the next render. 8s of a 10s client budget is not a margin."""
+
+    def test_a_probe_slower_than_the_page_lands_for_the_next_render(self):
+        cache = FleetProbeCache()
+
+        def probe(key, cfg, timeout):
+            time.sleep(0.6)
+            return {"daemon": {"enabled": True}}
+
+        first = gather_fleet_status(_apps("slow"), probe, deadline_seconds=0.1, cache=cache)
+        assert first["slow"]["_probe_state"] == UNMEASURED
+        time.sleep(1.0)
+        second = gather_fleet_status(_apps("slow"), probe, deadline_seconds=0.1, cache=cache)
+        assert second["slow"]["_probe_state"] == OK
+        assert second["slow"]["daemon"]["enabled"] is True
+
+    def test_a_probe_still_in_flight_is_not_spawned_again(self):
+        cache = FleetProbeCache()
+        calls = []
+
+        def probe(key, cfg, timeout):
+            calls.append(key)
+            time.sleep(1.0)
+            return {}
+
+        for _ in range(3):
+            gather_fleet_status(_apps("hung"), probe, deadline_seconds=0.1, cache=cache)
+        assert calls == ["hung"], f"one in-flight probe per app, got {calls}"
+
+    def test_a_fresh_answer_is_served_without_probing(self):
+        cache = FleetProbeCache(fresh_seconds=60.0)
+        calls = []
+
+        def probe(key, cfg, timeout):
+            calls.append(key)
+            return {"daemon": {"enabled": True}}
+
+        gather_fleet_status(_apps("a"), probe, deadline_seconds=2.0, cache=cache)
+        out = gather_fleet_status(_apps("a"), probe, deadline_seconds=2.0, cache=cache)
+        assert calls == ["a"]
+        assert out["a"]["_probe_state"] == OK
+
+    def test_a_cached_probe_gets_its_own_budget_not_the_page_deadline(self):
+        """Killing the probe at the page deadline is why a slow app could never
+        be measured at all."""
+        cache = FleetProbeCache(probe_timeout_seconds=45.0)
+        seen = []
+        gather_fleet_status(
+            _apps("a"), lambda k, c, t: seen.append(t) or {}, deadline_seconds=1.0, cache=cache
+        )
+        assert seen == [45.0]
+
+    def test_the_default_deadline_leaves_most_of_the_client_budget(self):
+        """playwright actionTimeout is 10s; the fan-out may spend at most half."""
+        assert DEFAULT_DEADLINE_SECONDS <= 5.0
 
 
 class TestMirrorParity:
