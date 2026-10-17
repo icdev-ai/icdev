@@ -575,6 +575,36 @@ def get_pwin_assessment(opportunity_id):
     return r
 
 
+def _latest_pwin_assessments(conn, opportunity_ids):
+    """Most recent pWin assessment per opportunity, in ONE query.
+
+    pipeline_value_rollup used to call get_pwin_assessment() per row, and each
+    call opened its own connection, re-ran the CREATE TABLE and committed --
+    three round trips per opportunity. With ~50 open opportunities /proposals
+    spent ~3s server-side on the live dashboard, and the 3-viewport E2E test
+    (gcpl-prop-13) blew its 60s budget under load (qa-fail-a44cbeb086b6ac68).
+    """
+    if not opportunity_ids:
+        return {}
+    placeholders = ", ".join(["%s"] * len(opportunity_ids))
+    rows = conn.execute(
+        f"SELECT * FROM pg_pwin_assessments WHERE opportunity_id IN ({placeholders}) "
+        "ORDER BY assessed_at DESC",
+        tuple(opportunity_ids),
+    ).fetchall()
+    latest = {}
+    for row in rows:
+        r = dict(row)
+        if r["opportunity_id"] in latest:
+            continue
+        try:
+            r["factor_breakdown"] = json.loads(r["factor_breakdown"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+        latest[r["opportunity_id"]] = r
+    return latest
+
+
 def pipeline_value_rollup():
     """Compute weighted pipeline value across all active proposals.
 
@@ -593,6 +623,8 @@ def pipeline_value_rollup():
         ).fetchall()
     except Exception:
         rows = []
+
+    assessments = _latest_pwin_assessments(conn, [dict(row)["id"] for row in rows])
 
     total_potential = 0.0
     total_weighted = 0.0
@@ -613,7 +645,7 @@ def pipeline_value_rollup():
             mid_value = 0.0
 
         # Prefer computed pWin; fall back to stored win_probability
-        pwa = get_pwin_assessment(opp_id)
+        pwa = assessments.get(opp_id)
         if pwa:
             pwin = pwa["pwin_score"]
             scored += 1
