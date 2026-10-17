@@ -72,7 +72,14 @@
 #   3.12.15, awslambdaric 4.1.0 and boto3 1.42.97. floci 2.0.1 re-driven
 #   against the fresh pull. See
 #   docs/audits/artifact-fresh-c04b654d3d-lambda-python-pin.md.
-public.ecr.aws/lambda/python@sha256:c05509c1a303e7ca10acc26782f530ff1a8573411132e2a67c1924d687a65a96
+#   RE-VENDORED 2026-10-17 (artifact-fresh-01bb14635b): rebuilt twice more
+#   (c05509c1... -> 471e480c..., the digest the card named, -> the digest
+#   below, created 2026-10-15T13:25Z). Again NO observed content change
+#   across all three: same Amazon Linux 2023.12.20260914, rpm set, Python
+#   3.12.15, awslambdaric 4.1.0 and boto3 1.42.97. floci 2.0.1 re-driven
+#   against the fresh pull. See
+#   docs/audits/artifact-fresh-01bb14635b-lambda-python-pin.md.
+public.ecr.aws/lambda/python@sha256:3856536f53e945debf4c90d0ff301cbaa837c07a4ab9b0e2c102c6e54ceb9762
 
 # lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
 #   KEPT at 20 (artifact-fresh-333eeead1d): nothing in this tree declares a Node
