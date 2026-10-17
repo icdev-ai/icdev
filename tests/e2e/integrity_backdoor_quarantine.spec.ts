@@ -57,6 +57,17 @@ test.describe('SIPA Backdoor Assessment — QUARANTINE', () => {
     // endpoint still fails here, just later. 120s is ~2.7x the modern maximum.
     // The per-test budget must exceed it, or the 60s default in
     // playwright.config.ts fires first and the request budget is dead code.
+    //
+    // RE-MEASURED 2026-10-17 (qa-fail-62fbfa3621f36b5c), n=43 since 2026-10-01:
+    // median 7.7s, 38 of 43 under 45s. ONE run exceeded 120s — #631, 277s, in
+    // sweep qa-1792102873, which filed TEN other timeouts across unrelated
+    // canvases (mission, finetune, kanban API, RAG, compliance nav): the host
+    // stalled, not this endpoint. It still returned `assessed` / `quarantine`.
+    // The budget was NOT raised again — 277s is a stall, and a budget sized to
+    // a stall is a threshold raised to quieten an alarm. Note what the slow
+    // runs share: #604, #605 and #631 each lost the output of one or both of
+    // the sast/secrets subprocesses and still reported `assessed`; nothing
+    // persists a per-scanner failure, so the DB cannot say the scan degraded.
     test.setTimeout(180_000);
     const resp = await request.post('/api/integrity/assess', {
       data: { source: FIXTURE_DIR, mode: 'provenance_blind' },
