@@ -322,6 +322,12 @@ artifacts:
       CreateCacheCluster" line args/floci_runtime_images.yaml records as
       measured -- and RDS SQL Server (#3752), an image class the air-gap bundle
       does not hold. See docs/audits/artifact-fresh-145e1b11e9-floci-pin.md.
+      KEPT A THIRD TIME past 2.3.0 (artifact-fresh-aacec4a146, 2026-10-17):
+      2.3.0 carries all of 2.2.0 unreverted and adds new container-creating
+      paths (ElastiCache serverless, EKS EC2 nodes) plus RDS engine-default
+      and ECR registry-address changes -- a 1,000+ entry gap nobody has
+      re-driven. The next act is a re-measurement card, not a fourth keep.
+      See docs/audits/artifact-fresh-aacec4a146-floci-pin.md.
 
   # -- The three sibling emulators. Compose-tagged, NOT digest-pinned: no
   # vendor/images topic exists for them, so `digest_drift` is unmeasurable and
