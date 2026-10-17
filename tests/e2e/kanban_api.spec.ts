@@ -63,10 +63,19 @@ test.describe('Kanban API', () => {
   test('POST /api/kanban/tasks/<id>/move changes task status', async ({ request }) => {
     if (!createdTaskId) test.skip();
 
+    // The move is an UPDATE on kanban_tasks, and every PG connection runs with
+    // lock_timeout=10000ms (tools/db/storage.py::_pg_session_options). The
+    // config's actionTimeout is ALSO 10000ms, so a move queued behind a held
+    // kanban_tasks lock was abandoned by the client at the same instant the
+    // server would have answered -- reported as an opaque
+    // "apiRequestContext.post: Timeout 10000ms exceeded" (qa-fail-ad230483cc7340d6)
+    // instead of the server's own lock error. Outwait the server's bound so a
+    // transient lock succeeds and a real one fails with its actual reason.
     const resp = await request.post(`/api/kanban/tasks/${createdTaskId}/move`, {
       data: { status: 'in_progress' },
+      timeout: 30_000,
     });
-    expect(resp.status()).toBeLessThan(300);
+    expect(resp.status(), await resp.text()).toBeLessThan(300);
   });
 
   test('child task with depends_on_task_id is accepted by API', async ({ request }) => {
