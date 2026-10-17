@@ -244,7 +244,7 @@ def test_pipeline_value_rollup_uses_computed_pwin_when_available(db):
     conn = _conn(db)
     conn.execute(
         "INSERT INTO proposal_opportunities (id, title, status, estimated_value_low, estimated_value_high) "
-        "VALUES ('opp-1', 'Test', 'writing', 1_000_000, 1_000_000)"
+        "VALUES ('opp-1', 'Test', 'writing', 1000000, 1000000)"
     )
     conn.commit()
     conn.close()
@@ -269,7 +269,7 @@ def test_pipeline_value_rollup_falls_back_to_stored_win_probability(db):
     conn = _conn(db)
     conn.execute(
         "INSERT INTO proposal_opportunities (id, title, status, estimated_value_low, estimated_value_high, win_probability) "
-        "VALUES ('opp-1', 'Test', 'writing', 1_000_000, 1_000_000, 65)"
+        "VALUES ('opp-1', 'Test', 'writing', 1000000, 1000000, 65)"
     )
     conn.commit()
     conn.close()
@@ -287,7 +287,7 @@ def test_pipeline_value_rollup_defaults_to_neutral_when_fully_unscored(db):
     conn = _conn(db)
     conn.execute(
         "INSERT INTO proposal_opportunities (id, title, status, estimated_value_low, estimated_value_high) "
-        "VALUES ('opp-1', 'Test', 'writing', 1_000_000, 1_000_000)"
+        "VALUES ('opp-1', 'Test', 'writing', 1000000, 1000000)"
     )
     conn.commit()
     conn.close()
