@@ -85,35 +85,31 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
     await page.goto('/knowledge-search');
     await page.waitForLoadState('domcontentloaded');
 
-    const searchInput = page.locator(
-      'input[type="search"], input[name="query"], input[name="q"], input[placeholder*="search" i]'
+    // The page's own input, by id (qa-fail-ba2fd422e35d033e). The sweep failure
+    // was fill() spending its whole 10s actionTimeout on "waiting for element to
+    // be visible, enabled and editable" for an input that is plain markup with
+    // no hidden/disabled state -- the page had not been laid out yet on a busy
+    // host. Wait for visibility explicitly, with room for a stalled renderer,
+    // rather than letting the action timeout absorb it.
+    const searchInput = page.locator('#rag-query');
+    await expect(searchInput).toBeVisible({ timeout: 30000 });
+    await searchInput.fill('FedRAMP AC-2 implementation patterns');
+
+    // Wait on the search round trip itself, not a fixed sleep: searchRAG()
+    // POSTs /api/rag/search and then un-hides #rag-results with either the
+    // results, "No results found", or the error it got back.
+    const searchDone = page.waitForResponse(
+      (r) => r.url().includes('/api/rag/search') && r.request().method() === 'POST',
+      { timeout: 30000 },
     );
-    if (await searchInput.count() > 0) {
-      await searchInput.first().fill('FedRAMP AC-2 implementation patterns');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await searchDone;
+    await expect(page.locator('#rag-results')).toBeVisible({ timeout: 10000 });
 
-      const searchBtn = page.getByRole('button', { name: /Search/i });
-      if (await searchBtn.count() > 0) {
-        await searchBtn.first().click().catch(() => {});
-        await page.waitForLoadState('domcontentloaded').catch(() => {});
-        await page.waitForTimeout(3000);
-      }
-
-      await page.screenshot({
-        path: '.tmp/test_runs/screenshots/knowledge_search_02_results.png',
-        fullPage: true,
-      });
-
-      const bodyText = await page.textContent('body');
-      // Either results or no-results message
-      const resultTerms = ['result', 'Result', 'No results', 'found', 'chunk'];
-      let resultFound = false;
-      for (const term of resultTerms) {
-        if (bodyText?.toLowerCase().includes(term.toLowerCase())) {
-          resultFound = true;
-          break;
-        }
-      }
-    }
+    await page.screenshot({
+      path: '.tmp/test_runs/screenshots/knowledge_search_02_results.png',
+      fullPage: true,
+    });
 
     const bodyText = await page.textContent('body');
     expect(bodyText).toContain(CUI_BANNER);
