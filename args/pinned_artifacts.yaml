@@ -335,7 +335,7 @@ artifacts:
   - name: floci-az
     kind: image
     ref: floci/floci-az
-    pinned: "0.14.0"
+    pinned: "0.15.0"
     pin_source: "compose:floci-az"
     upstream: dockerhub
     note: >-
@@ -345,7 +345,9 @@ artifacts:
       (artifact-fresh-6de1bfe08c) after driving 0.13.0 and 0.14.0 side by side
       through the shipped connector -- identical rows on every table; the
       health body now carries the real release. See
-      docs/spikes/flx-az-parity.md §10.
+      docs/spikes/flx-az-parity.md §10. Bumped from 0.14.0 on 2026-10-18
+      (artifact-fresh-95d11e24a8) after the same side-by-side drive of 0.14.0
+      and 0.15.0 -- identical rows, nothing the seam reads moved. See §11.
 
   - name: floci-gcp
     kind: image

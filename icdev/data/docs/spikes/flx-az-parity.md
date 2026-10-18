@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 
-# flx-az-parity — what floci-az ACTUALLY answers (0.12.0, re-measured on 0.13.0 in §9 and 0.14.0 in §10)
+# flx-az-parity — what floci-az ACTUALLY answers (0.12.0, re-measured on 0.13.0 in §9, 0.14.0 in §10 and 0.15.0 in §11)
 
 **Measured 2026-09-05** on this host (Windows 11, Docker Desktop 28.5.1,
 `linux/amd64`), against:
@@ -396,3 +396,53 @@ per-RG fan-out remains correct and is still required (a reader that trusted
 subscription scope would still report zero vnets), so
 `SUBSCRIPTION_SCOPED_LIST_IS_EMPTY` is unchanged; recorded so the next pass
 does not re-derive §1 row 7 as if it still held.
+
+---
+
+## 11. Re-measured against 0.15.0 (2026-10-18, artifact-fresh-95d11e24a8)
+
+The pin moved 0.14.0 → 0.15.0 (`artifact_freshness` / xrv-pin-01). Same method
+as §10: both digests run side by side on this host (no docker socket mounted,
+`FLOCI_AZ_DEFAULT_REGION=usgovvirginia`), the §1 estate PUT into each with
+identical bodies, and the SHIPPED `FlociAzConnector` read every table in
+`TABLES` from each. A third container ran 0.15.0 with `FLOCI_AZ_PARITY=azure`.
+
+```
+floci/floci-az:0.15.0
+sha256:530635d603223e120adbf9221a97560cffc6991d65fa0c72d0f79d1097974c89
+native · Quarkus 3.40.1 (unchanged) · edition "floci-az-always-free" · 46 MB (0.14.0: 176 MB)
+```
+
+| probe | 0.14.0 | 0.15.0 | 0.15.0, `PARITY=azure` |
+|---|---|---|---|
+| `GET /_floci/health` | `{"version":"0.14.0",…,"status":"UP"}` | `{"status":"UP","version":"0.15.0",…}` (key order only) | same |
+| `GET /_localstack/health` | 501 | 501 | — |
+| connector `health`, `subscriptions`, `resource_groups` | ok, 1 / 1 / 1 | ok, 1 / 1 / 1 | ok, 1 / 1 / 1 |
+| connector `resources` (per-RG) | ok, 5 | ok, 5 | ok, 5 |
+| connector `virtual_networks`, `network_security_groups`, `storage_accounts`, `key_vaults`, `managed_identities` | ok, 1 each | ok, 1 each | ok, 1 each |
+| subscription-scoped `Microsoft.Network/*` lists | 200, 0 | 200, 0 — §1 trap unchanged | 200, 0 — **not** fixed by azure parity |
+| subscription-scoped Storage / KeyVault / ManagedIdentity / generic `resources` | 1 / 1 / 1 / 5 | 1 / 1 / 1 / 5 | 1 / 1 / 1 / 5 |
+| `GET /subscriptions` keys | 8 keys (§10) | identical | identical |
+| §4 absent providers (Web, EventHub, ServiceBus, SignalR, APIM, DocumentDB, AppConfiguration, Insights, OperationalInsights, EventGrid) | 404 | 404 | — |
+| §9 lanes (DBforPostgreSQL, DBforMySQL, App/containerApps) | 200 | 200 | — |
+| banner routing tables | 11 host, 23 suffix, 12 ARM | 11 host, 23 suffix, **13 ARM** | — |
+
+**What changed, and what this seam does about it — nothing it reads moved:**
+
+* **A `parity` mode.** The banner now logs `parity: compat (set
+  FLOCI_AZ_PARITY=azure for Azure's ARM answers, strict to add its refusals)`.
+  `compat` is the default and is what ICDEV runs (`docker-compose.yml` sets no
+  `FLOCI_AZ_PARITY`). `azure` was driven too: every connector table and every
+  subscription-scope result above is identical, so §1's per-RG fan-out is
+  still required under it. `strict` was not driven.
+* **An Azure Policy lane** (`policy [enabled ]`, the 13th ARM route):
+  `GET /subscriptions/{sub}/providers/Microsoft.Authorization/policyDefinitions`
+  is 404 on 0.14.0 and 200 on 0.15.0. Not designed against (§8 rule).
+* **Banner echoes more configuration** — `arm … cloud:AzureCloud directory
+  storage: memory`, `entra … validate-client-credentials:false`. Still a
+  configuration echo (§2), not a health signal.
+* **The image is ~4× smaller** (176 MB → 46 MB, same 6 layers, same entrypoint
+  and command, still runs as the image default user). Startup 0.184 s → 0.036 s.
+
+`HEALTH_REPORTS_REAL_VERSION` stays True: re-measured, the body's `version`
+equals the image's `FLOCI_AZ_VERSION=0.15.0`.

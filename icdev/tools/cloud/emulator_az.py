@@ -114,14 +114,21 @@ MODE = "floci-az"
 # trap reproduce unchanged. One measured change IS consumed here: the health
 # body now carries the real release, so HEALTH_REPORTS_REAL_VERSION flips to
 # True. See docs/spikes/flx-az-parity.md §10.
+#
+# Moved 0.14.0 -> 0.15.0 on 2026-10-18 (artifact-fresh-95d11e24a8) after driving
+# 0.14.0 and 0.15.0 side by side: identical rows on every connector table, the
+# subscription-scope trap reproduces (also under FLOCI_AZ_PARITY=azure), and
+# the health body still carries the real release. Nothing consumed here moved;
+# the new parity mode and Azure Policy lane are not designed against. See
+# docs/spikes/flx-az-parity.md §11.
 IMAGE_REPOSITORY = "floci/floci-az"
-IMAGE_TAG = "0.14.0"
+IMAGE_TAG = "0.15.0"
 IMAGE = f"{IMAGE_REPOSITORY}:{IMAGE_TAG}"
 
-#: Digest MEASURED from the pulled image on 2026-10-07. Recorded so an air-gap
+#: Digest MEASURED from the pulled image on 2026-10-18. Recorded so an air-gap
 #: bundle can be verified by digest rather than by tag -- a tag-only check reads
 #: a `docker load`ed bundle as absent (see the flx-airgap-01 discipline).
-IMAGE_DIGEST = "sha256:a35e74dfca9a5e811090d8ae98876044fc8990a8874ee525231f524ca56679db"
+IMAGE_DIGEST = "sha256:530635d603223e120adbf9221a97560cffc6991d65fa0c72d0f79d1097974c89"
 
 #: Port floci-az serves the Azure API edge on, INSIDE the container. The
 #: host-side port is a deployment's choice; this one is the emulator's.
@@ -154,7 +161,7 @@ HEALTH_PATH = "/_floci/health"
 #: different finding from "no services are running".
 HEALTH_HAS_SERVICE_MAP = False
 
-#: MEASURED on 0.14.0: ``/_floci/health`` reports ``"version":"0.14.0"``,
+#: MEASURED on 0.14.0 and 0.15.0: ``/_floci/health`` reports the release,
 #: matching the image's own ``FLOCI_AZ_VERSION`` env var. Through 0.13.0 it
 #: reported ``"dev"`` (parity spike §3, §9), which is why this was False --
 #: it is a property of the PINNED image, so re-measure it on every bump.
@@ -554,7 +561,7 @@ def health(env: Optional[Mapping[str, str]] = None, *, timeout: float = 2.0) -> 
     :func:`status`, which is what says which.
 
     MEASURED shape: ``{"status": "UP", "edition": "floci-az-always-free",
-    "version": "0.14.0"}``. There is NO ``services`` key
+    "version": "0.15.0"}``. There is NO ``services`` key
     (:data:`HEALTH_HAS_SERVICE_MAP` is False); since 0.14.0 ``version`` carries
     the real release (:data:`HEALTH_REPORTS_REAL_VERSION` is True).
     """
