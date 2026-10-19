@@ -11115,6 +11115,36 @@ _DECAY_PROMOTION_REASON = (
 )
 
 
+#: Prefix ``orphan_requeue._repark_card_spec`` gives a REPARK card; the rest
+#: of the id is the subject task (which may itself be a REPARK card).
+_REPARK_PREFIX = "kph-repark-"
+
+#: Subject statuses after which a REPARK card has nothing left to do.
+_REPARK_SUBJECT_TERMINAL = frozenset({"done", "cancelled", "decomposed", "superseded"})
+
+
+def _repark_subject_is_terminal(conn: Any, task_id: str) -> bool:
+    """True when ``task_id`` is a REPARK card whose subject has gone terminal.
+
+    A REPARK card is seeded ``suggested`` while its subject sits parked. If the
+    subject is then unstuck and finished by other means, the card's premise is
+    gone -- but the decay sweep used to re-queue it 48 h later anyway, and the
+    dispatched card was itself parked by the same worktree guard, which seeded
+    a ``kph-repark-kph-repark-<id>`` card about the card. Measured 2026-10-19
+    (kph-repark-qa-fail-aed33993b690221d): seeded 2026-10-16 00:19 while its
+    subject was parked, subject forced done 2026-10-17 21:04 with nothing to
+    land, decay-promoted 2026-10-18 00:24; 10 of 24 open REPARK cards on the
+    board had a ``done`` subject.
+    """
+    if not task_id.startswith(_REPARK_PREFIX):
+        return False
+    subject = task_id[len(_REPARK_PREFIX):]
+    row = conn.execute(
+        "SELECT status FROM kanban_tasks WHERE id = %s", (subject,)
+    ).fetchone()
+    return row is not None and dict(row).get("status") in _REPARK_SUBJECT_TERMINAL
+
+
 def _promote_stale_suggested() -> None:
     """Decay sweep: re-queue 'suggested' tasks that have been stuck >48 h
     and are NOT hard-quarantined (failure_count < 5 and last_failure_reason
@@ -11160,14 +11190,16 @@ def _promote_stale_suggested() -> None:
                 (cutoff,),
             ).fetchall()
 
-        candidates = []
-        for r in rows:
-            d = dict(r)
-            fc = d.get("failure_count") or 0
-            reason = (d.get("last_failure_reason") or "").lower()
-            if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
-                continue  # genuinely quarantined — leave for human review
-            candidates.append(d["id"])
+            candidates = []
+            for r in rows:
+                d = dict(r)
+                fc = d.get("failure_count") or 0
+                reason = (d.get("last_failure_reason") or "").lower()
+                if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
+                    continue  # genuinely quarantined — leave for human review
+                if _repark_subject_is_terminal(conn, d["id"]):
+                    continue  # nothing left to repark — see the helper
+                candidates.append(d["id"])
 
         # requeue_task opens its own connection, so the read above is closed
         # before promoting rather than nesting a second connection inside it.
