@@ -922,7 +922,7 @@ def spawn_refill(*, repo_root: Any = None, base: str = "origin/main",
         # names the pool explicitly.
         kwargs: Dict[str, Any] = {
             "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL, "cwd": str(_REPO_ROOT),
+            "stderr": subprocess.DEVNULL, "cwd": str(BASE_DIR),
         }
         if os.name == "nt":
             kwargs["creationflags"] = (
