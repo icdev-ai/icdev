@@ -11124,12 +11124,20 @@ _DECAY_PROMOTION_REASON = (
 #: of the id is the subject task (which may itself be a REPARK card).
 _REPARK_PREFIX = "kph-repark-"
 
+#: Card prefixes whose premise is "the subject is stuck". A ``kph-orphan-<id>``
+#: card (``stranded_audit``: "stuck in 'validating' with no branch") has the
+#: same shape as a REPARK card and was decay-promoted the same way: measured
+#: 2026-10-19 (kph-orphan-qa-fail-aed33993b690221d), re-queued 34 h after its
+#: subject was forced done. ``kph-stranded-`` is deliberately NOT here -- a
+#: done subject is that card's premise ("done, but commits not on main").
+_SUBJECT_CARD_PREFIXES = (_REPARK_PREFIX, "kph-orphan-")
+
 #: Subject statuses after which a REPARK card has nothing left to do.
 _REPARK_SUBJECT_TERMINAL = frozenset({"done", "cancelled", "decomposed", "superseded"})
 
 
 def _repark_subject_is_terminal(conn: Any, task_id: str) -> bool:
-    """True when ``task_id`` is a REPARK card whose subject has gone terminal.
+    """True when ``task_id`` is a REPARK (or orphan) card whose subject has gone terminal.
 
     A REPARK card is seeded ``suggested`` while its subject sits parked. If the
     subject is then unstuck and finished by other means, the card's premise is
@@ -11141,9 +11149,10 @@ def _repark_subject_is_terminal(conn: Any, task_id: str) -> bool:
     land, decay-promoted 2026-10-18 00:24; 10 of 24 open REPARK cards on the
     board had a ``done`` subject.
     """
-    if not task_id.startswith(_REPARK_PREFIX):
+    prefix = next((p for p in _SUBJECT_CARD_PREFIXES if task_id.startswith(p)), None)
+    if prefix is None:
         return False
-    subject = task_id[len(_REPARK_PREFIX):]
+    subject = task_id[len(prefix):]
     row = conn.execute(
         "SELECT status FROM kanban_tasks WHERE id = %s", (subject,)
     ).fetchone()

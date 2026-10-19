@@ -111,3 +111,24 @@ def test_nested_repark_card_reads_its_immediate_subject(reflex, db):
     reflex._promote_stale_suggested()
 
     assert _status(db, "kph-repark-kph-repark-qa-fail-x3") == "suggested"
+
+
+def test_orphan_card_with_done_subject_stays_out_of_dispatch(reflex, db):
+    """``kph-orphan-<id>`` was decay-promoted 34 h after ``<id>`` was forced done
+    (kph-orphan-qa-fail-aed33993b690221d, 2026-10-19)."""
+    _insert(db, "qa-fail-x4", "done", updated_at=_ago(hours=1))
+    _insert(db, "kph-orphan-qa-fail-x4", "suggested")
+
+    reflex._promote_stale_suggested()
+
+    assert _status(db, "kph-orphan-qa-fail-x4") == "suggested"
+
+
+def test_stranded_card_with_done_subject_is_still_promoted(reflex, db):
+    """A done subject IS a ``kph-stranded-`` card's premise -- not a reason to skip."""
+    _insert(db, "qa-fail-x5", "done", updated_at=_ago(hours=1))
+    _insert(db, "kph-stranded-qa-fail-x5", "suggested")
+
+    reflex._promote_stale_suggested()
+
+    assert _status(db, "kph-stranded-qa-fail-x5") == "scheduled"
