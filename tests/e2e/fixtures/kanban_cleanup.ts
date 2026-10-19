@@ -17,13 +17,16 @@
 //      403 CSRF_FAILED — not 404, and not silence. The token has to be obtained
 //      from a GET first and echoed in the X-CSRF-Token header.
 
-import type { APIRequestContext, PlaywrightWorkerArgs, TestInfo } from '@playwright/test';
+import type { APIRequestContext, APIResponse, PlaywrightWorkerArgs, TestInfo } from '@playwright/test';
 
 const CSRF_COOKIE = 'icdev_csrf';
+const CLEANUP_ATTEMPTS = 3;
+const CLEANUP_BACKOFF_MS = 2000;
+const CLEANUP_REQUEST_TIMEOUT_MS = 10000;
 
 /** Obtain the double-submit CSRF token, or '' when the app is not enforcing it. */
 async function csrfToken(api: APIRequestContext): Promise<string> {
-  await api.get('/').catch(() => null); // sets the cookie; failure is not fatal
+  await api.get('/', { timeout: CLEANUP_REQUEST_TIMEOUT_MS }).catch(() => null); // sets the cookie; failure is not fatal
   const { cookies } = await api.storageState();
   return cookies.find((c) => c.name === CSRF_COOKIE)?.value ?? '';
 }
@@ -46,18 +49,39 @@ export async function deleteKanbanTasks(
   const present = ids.filter(Boolean) as string[];
   if (!present.length) return;
 
+  // The hook shares the test timeout; give it room for every retry it may make
+  // (the CSRF GET, then per id: each attempt plus the backoff before it).
+  const backoffTotal = CLEANUP_BACKOFF_MS * ((CLEANUP_ATTEMPTS * (CLEANUP_ATTEMPTS - 1)) / 2);
+  testInfo.setTimeout(
+    testInfo.timeout + CLEANUP_REQUEST_TIMEOUT_MS +
+      present.length * (CLEANUP_ATTEMPTS * CLEANUP_REQUEST_TIMEOUT_MS + backoffTotal),
+  );
+
   const api = await playwright.request.newContext({
     baseURL: (testInfo.project.use as { baseURL?: string }).baseURL,
   });
   try {
     const token = await csrfToken(api);
     for (const id of present) {
-      const resp = await api
-        .delete(`/api/kanban/tasks/${id}`, {
-          headers: token ? { 'X-CSRF-Token': token } : {},
-        })
-        .catch(() => null);
-      if (!resp || resp.status() >= 300) {
+      let resp: APIResponse | null = null;
+      // Retry only a TRANSIENT failure (no response, or a 5xx). The cleanup
+      // runs straight after the tests, so when a test failed because the
+      // server stalled, the first DELETE lands in the same stall -- and a
+      // single attempt left both fixtures of sweep qa-1792102873 on the live
+      // board as backlog work (qa-fail-c39fc7dc39e5e68c). A 4xx is an answer,
+      // not a stall: retrying a 403 or 409 would only repeat it.
+      for (let attempt = 0; attempt < CLEANUP_ATTEMPTS; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, CLEANUP_BACKOFF_MS * attempt));
+        resp = await api
+          .delete(`/api/kanban/tasks/${id}`, {
+            headers: token ? { 'X-CSRF-Token': token } : {},
+            timeout: CLEANUP_REQUEST_TIMEOUT_MS,
+          })
+          .catch(() => null);
+        if (resp && resp.status() < 500) break;
+      }
+      // 404: the task is already gone, which is the outcome cleanup wants.
+      if (!resp || (resp.status() >= 300 && resp.status() !== 404)) {
         console.warn(
           `[${specName}] could not delete fixture ${id}` +
             (resp ? ` (HTTP ${resp.status()})` : ' (request failed)') +

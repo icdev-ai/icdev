@@ -163,6 +163,14 @@ class VectorStoreProvider(ABC):
             Number of matching chunks.
         """
 
+    def count_by(self, field: str) -> Optional[Dict[str, int]]:
+        """Count chunks grouped by ``field`` ("source_type" or "tier") in one query.
+
+        Returns None when the backend has no grouped count; callers then fall
+        back to one ``count()`` per value.
+        """
+        return None
+
     @abstractmethod
     def check_availability(self) -> bool:
         """Check if the vector store backend is available and ready."""

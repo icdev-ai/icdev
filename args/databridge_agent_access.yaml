@@ -314,9 +314,10 @@ connectors:
       compartment-scoped request each, because compartmentId is honoured on this
       emulator (measured 2026-09-05: a bogus compartment returns zero rows),
       unlike the Azure sibling's subscription-scope trap. OKE rows carry
-      `lifecycle_is_unverified`: floci-oci sets ACTIVE once at create and never
-      re-checks it (through 0.4.1 k3s exited at once for lack of a --token; on
-      0.4.2 a stopped k3s still reads ACTIVE).
+      `lifecycle_is_unverified`: floci-oci has never been observed re-checking
+      lifecycleState (through 0.4.1 k3s exited at once for lack of a --token; on
+      0.4.2 a stopped k3s still reads ACTIVE; 0.5.0 reports CREATING at create
+      and its re-check is unmeasured).
       Emulated state is never evidence about a real estate — a reader must mark
       it as such.
     connection_id: floci-oci-emulator-local

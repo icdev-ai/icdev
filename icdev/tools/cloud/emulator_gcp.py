@@ -9,7 +9,9 @@ modules rather than one parameterised module because **almost nothing about
 them is shared**, and every difference below was MEASURED against
 ``floci/floci-gcp:0.8.0`` on 2026-09-05, and re-confirmed against ``0.9.0`` on
 2026-09-17 (artifact-fresh-6a0d68cce8, no behavioural change) and ``0.10.0`` on
-2026-10-07 (artifact-fresh-6ba99af4d5, one new control-plane-only service) -- see
+2026-10-07 (artifact-fresh-6ba99af4d5, one new control-plane-only service) and
+``0.11.0`` on 2026-10-19 (artifact-fresh-b20d238422, no change to anything read
+here) -- see
 ``docs/spikes/flx-gcp-parity.md``:
 
   * a third health path. floci keeps ``/_localstack/health``, floci-az answers
@@ -77,7 +79,10 @@ lists reflect writes, measured for buckets, topics, secrets and key rings. And
 there are no host-forwarded proxy port ranges: spawned services are addressed
 by Docker BRIDGE IP (measured: ``172.17.0.3:5432`` for a Cloud SQL instance,
 ``5432/tcp`` exposed and unpublished), so this module deliberately carries no
-``PROXY_PORT_RANGES`` constant.
+``PROXY_PORT_RANGES`` constant. The one exception is Cloud Run, whose revision
+container gets ONE ephemeral host port per revision -- on ``0.0.0.0`` through
+``0.10.0``, narrowed to ``127.0.0.1`` in ``0.11.0`` (measured 2026-10-19). That is
+a per-revision port, not a range, and nothing here dials it.
 
 Usage::
 
@@ -125,14 +130,19 @@ MODE = "floci-gcp"
 # evidence, re-driven live. The one delta is a 24th service, ``compute``, which
 # is CONTROL-PLANE ONLY -- an instance reads RUNNING and no container starts,
 # with or without a docker socket -- so CONTAINER_BACKED_SERVICES is unchanged.
+#
+# Moved 0.10.0 -> 0.11.0 on 2026-10-19 (artifact-fresh-b20d238422), re-driven
+# live beside a 0.10.0 reference. Same 24 services (``serviceusage`` moved
+# position; nothing reads the order), same spawns, same socket-less 500s and
+# fabricated Cloud Run 200. Cloud Run's revision port is now loopback-bound.
 IMAGE_REPOSITORY = "floci/floci-gcp"
-IMAGE_TAG = "0.10.0"
+IMAGE_TAG = "0.11.0"
 IMAGE = f"{IMAGE_REPOSITORY}:{IMAGE_TAG}"
 
-#: Digest MEASURED from the pulled image on 2026-10-07. Recorded so an air-gap
+#: Digest MEASURED from the pulled image on 2026-10-19. Recorded so an air-gap
 #: bundle can be verified by digest rather than by tag -- a tag-only check reads
 #: a `docker load`ed bundle as absent (see the flx-airgap-01 discipline).
-IMAGE_DIGEST = "sha256:405c128b685afbc461276820f2286defcc3a6fa478755067d3e3f740c5503c07"
+IMAGE_DIGEST = "sha256:eae9683d806ceb643bcb36aee97cdb8cad13c3e2959cd053bf40e481994fde12"
 
 #: Port floci-gcp serves on, INSIDE the container. The host-side port is a
 #: deployment's choice; this one is the emulator's. MEASURED: it is the ONLY
@@ -169,7 +179,7 @@ HEALTH_HAS_SERVICE_MAP = True
 HEALTH_SERVICE_MAP_IS_ENABLEMENT_ONLY = True
 
 #: MEASURED: ``/health`` reports the real release (``"0.8.0"``, then
-#: ``"0.9.0"`` after the 2026-09-17 bump, ``"0.10.0"`` after 2026-10-07), matching the image's own
+#: ``"0.9.0"`` after the 2026-09-17 bump, ``"0.10.0"`` after 2026-10-07, ``"0.11.0"`` after 2026-10-19), matching the image's own
 #: ``FLOCI_GCP_VERSION``. The one constant that inverts in the helpful
 #: direction relative to floci-az (which reports ``"dev"``) -- recorded for
 #: symmetry, and load-bearing for nothing.
@@ -723,7 +733,7 @@ def health(env: Optional[Mapping[str, str]] = None, *, timeout: float = 2.0) -> 
     ``{}`` here means "not read", never "no services" -- read it beside
     :func:`status`, which is what says which.
 
-    MEASURED shape: ``{"services": {<24 names>: "running"}, "version": "0.10.0"}``.
+    MEASURED shape: ``{"services": {<24 names>: "running"}, "version": "0.11.0"}``.
     The version IS the real release. The services map IS NOT A HEALTH SIGNAL --
     see :data:`HEALTH_SERVICE_MAP_IS_ENABLEMENT_ONLY` and :func:`health_services`.
     """

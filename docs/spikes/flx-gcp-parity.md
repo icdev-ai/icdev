@@ -565,3 +565,50 @@ default (supported only for `gcs` and `resourcemanager`). The seam is
 read/inventory-only and never relied on IAM enforcement.
 
 Decision record: `docs/audits/artifact-fresh-6ba99af4d5-floci-gcp-pin.md`.
+
+## 12. Re-measured against `0.11.0` (artifact-fresh-b20d238422, 2026-10-19)
+
+The reflex found the pin behind again (`0.11.0` published, `0.10.0` pinned).
+Re-derived on the same host (Windows 11, Docker Desktop 28.5.1,
+`linux/amd64`) with three containers running together: `0.10.0` (socket) as
+the live reference, `0.11.0` (socket, `FLOCI_GCP_STORAGE_MODE=persistent`),
+and `0.11.0` with `DOCKER_HOST`/`FLOCI_GCP_DOCKER_DOCKER_HOST` pointed at a
+nonexistent path.
+
+```
+floci/floci-gcp:0.11.0
+sha256:eae9683d806ceb643bcb36aee97cdb8cad13c3e2959cd053bf40e481994fde12
+64.7 MB · native (Quarkus 3.39.5) · edition banner "GCP Local Emulator · Always Free"
+```
+
+| Fact (section) | 0.10.0 | 0.11.0 |
+|---|---|---|
+| Health path / siblings 404 (§2) | `/health` 200, `/_floci/health` and `/_localstack/health` 404 | unchanged |
+| Service map all `"running"`, byte-identical with/without docker socket (§2) | 24 names | **24 names, same set** — `serviceusage` moved from 3rd to 19th; still all `"running"`; the socket and socket-less bodies are byte-identical |
+| `version` field reports the real release (§2) | `"0.10.0"` | `"0.11.0"` |
+| `GET /v1/projects/floci-local` (§3) | 200 | unchanged |
+| Firestore/Datastore REST 404 (§1) | `/documents/...` and `:runQuery` 404 | unchanged |
+| GKE/Kafka path collision (§4) | `/v1/.../clusters` → Managed Kafka, GKE at `/container/v1` | unchanged (both 200; a Kafka create on `/v1/.../clusters` spawned `redpandadata/redpanda:latest`) |
+| Container-backed spawns (§5) | cloudsql → `postgres:15.18-alpine`, kafka → `redpandadata/redpanda:latest`, cloudrun → the user's image | unchanged; Cloud SQL still `5432/tcp` exposed, unpublished |
+| No socket: cloudsql/kafka 500 (dockerjava), Cloud Run fabricated 200 (§5) | confirmed | unchanged — a later `GET` lists the socket-less service with `uid`, `generation`, `createTime`, `traffic`, `uri`, `urls`, just as on the socket-backed one |
+| `FLOCI_GCP_STORAGE_MODE=persistent` → banner `Storage: persistent` (§7) | confirmed | unchanged |
+| GCS bucket create → list round-trip (§6) | confirmed | unchanged |
+
+**Nothing reads the map order.** `health_services` and the connector's
+`enabled_services` read the map as names only, so moving `serviceusage` changes
+no row this platform produces.
+
+**One delta, plus a correction to §5.** §5 says "floci-gcp does not forward
+host ports at all". That holds for Cloud SQL and Kafka but **never held for
+Cloud Run**: the revision container gets one ephemeral host port. On `0.10.0`
+that port is published on **all interfaces** (`0.0.0.0:35999->8080`, plus
+`[::]`). On `0.11.0` it is bound to **loopback only**
+(`127.0.0.1:35245->8080`). That makes the new release the safer choice. It
+is still not a port *range*, so the "no `PROXY_PORT_RANGES`" decision stands.
+Nothing here dials the port.
+
+Other changes nothing here reads: the startup IAM WARN now names `cloudrun` as
+well as `gcs` and `resourcemanager`, and a BigQuery upload-session reaper
+starts at boot.
+
+Decision record: `docs/audits/artifact-fresh-b20d238422-floci-gcp-pin.md`.

@@ -1020,6 +1020,37 @@ def test_every_oke_reason_string_names_the_pinned_release(emulator_on, monkeypat
         assert tag in text, f"{where} does not name the pinned release {tag}: {text!r}"
 
 
+def test_no_oke_reason_string_claims_active_is_written_at_create(emulator_on, monkeypatch):
+    """0.5.0 answers a create with CREATING, so "sets ACTIVE once at create" is false.
+
+    Measured 2026-10-19 (artifact-fresh-6717a5a069): the create response and the
+    immediate list both read ``CREATING``. Whether the state is ever re-checked
+    against a dead sidecar was NOT measured, so the guard stays -- but a reason
+    string may no longer state the 0.4.x mechanism as the pinned release's.
+    """
+    import re
+
+    note = _FakeConnector(
+        {"/20180222/clusters": [{"id": "ocid1.cluster.x", "lifecycleState": "ACTIVE"}]}
+    ).read(_request("clusters")).metadata["note"]
+
+    adapter = twin_mod.FlociOciTwinAdapter()
+    monkeypatch.setattr(
+        adapter, "_read_table",
+        lambda *a, **k: type(
+            "O", (), {"ok": True, "connector_status": "ok", "row_count": 1}
+        )(),
+    )
+    monkeypatch.setattr(adapter, "_persist_snapshot", lambda snap: False)
+    reason = adapter.take_snapshot("local")["unverified_reason"]
+
+    stale = re.compile(r"sets (lifecycleState )?ACTIVE once at create", re.IGNORECASE)
+    for where, text in (("connector note", note), ("snapshot reason", reason)):
+        assert not stale.search(text), f"{where} still states the 0.4.x mechanism: {text!r}"
+    assert emulator_oci.OKE_LIFECYCLE_IS_UNVERIFIED is True
+    assert emulator_oci.FABRICATED_ACTIVE_WITH_DOCKER == frozenset({"oke"})
+
+
 def test_latest_status_over_nothing_is_unknown_never_pass(monkeypatch):
     """The twin has never looked, which is not a clean bill of health."""
     adapter = twin_mod.FlociOciTwinAdapter()

@@ -29,7 +29,8 @@ MEASURED SHAPES THIS CONNECTOR HANDLES AND ITS SIBLINGS DO NOT
 * **An OKE cluster reporting ``ACTIVE`` is not a working cluster.** Through
   0.4.1 floci-oci spawned ``rancher/k3s`` without a ``--token`` and k3s died
   immediately; 0.4.2 starts it properly, but the API still never re-checks --
-  a stopped k3s keeps reading ``ACTIVE``. The ``clusters`` table therefore carries
+  a stopped k3s keeps reading ``ACTIVE``. 0.5.0 reports ``CREATING`` at create,
+  and a re-check is unmeasured. The ``clusters`` table therefore carries
   ``lifecycle_is_unverified`` and this connector never promotes
   ``lifecycleState`` to a health verdict.
 * **An empty list IS a real answer here.** ``compartmentId`` is honoured
@@ -392,14 +393,16 @@ class FlociOciConnector(SaaSBaseConnector):
             # An OKE row says a record exists, never that a cluster runs.
             # Measured: lifecycleState is written once at create and never
             # re-checked -- through 0.4.1 k3s always died (no --token); on
-            # 0.4.2 a stopped k3s still reads ACTIVE with a dead endpoint.
+            # 0.4.2 a stopped k3s still reads ACTIVE with a dead endpoint; 0.5.0
+            # reports CREATING at create and a re-check is unmeasured.
             metadata["lifecycle_is_unverified"] = emulator_oci.OKE_LIFECYCLE_IS_UNVERIFIED
             metadata["note"] = (
-                "lifecycleState on these rows is NOT verified. floci-oci sets "
-                "ACTIVE once at create and never re-checks it: through 0.4.1 k3s "
-                "started without a --token and exited immediately, and on 0.4.2 a "
+                "lifecycleState on these rows is NOT verified. floci-oci has never "
+                "been observed re-checking it against the cluster: through 0.4.1 k3s "
+                "started without a --token and exited immediately, on 0.4.2 a "
                 "stopped k3s still reads ACTIVE with an endpoint that has no "
-                "listener. Treat a row as 'a record exists', never as 'a cluster runs'."
+                "listener, and 0.5.0's re-check is unmeasured. Treat a row as "
+                "'a record exists', never as 'a cluster runs'."
             )
         return ConnectorResponse(
             status="ok",

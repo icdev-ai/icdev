@@ -322,6 +322,12 @@ artifacts:
       CreateCacheCluster" line args/floci_runtime_images.yaml records as
       measured -- and RDS SQL Server (#3752), an image class the air-gap bundle
       does not hold. See docs/audits/artifact-fresh-145e1b11e9-floci-pin.md.
+      KEPT A THIRD TIME past 2.3.0 (artifact-fresh-aacec4a146, 2026-10-17):
+      2.3.0 carries all of 2.2.0 unreverted and adds new container-creating
+      paths (ElastiCache serverless, EKS EC2 nodes) plus RDS engine-default
+      and ECR registry-address changes -- a 1,000+ entry gap nobody has
+      re-driven. The next act is a re-measurement card, not a fourth keep.
+      See docs/audits/artifact-fresh-aacec4a146-floci-pin.md.
 
   # -- The three sibling emulators. Compose-tagged, NOT digest-pinned: no
   # vendor/images topic exists for them, so `digest_drift` is unmeasurable and
@@ -329,7 +335,7 @@ artifacts:
   - name: floci-az
     kind: image
     ref: floci/floci-az
-    pinned: "0.14.0"
+    pinned: "0.15.0"
     pin_source: "compose:floci-az"
     upstream: dockerhub
     note: >-
@@ -339,7 +345,9 @@ artifacts:
       (artifact-fresh-6de1bfe08c) after driving 0.13.0 and 0.14.0 side by side
       through the shipped connector -- identical rows on every table; the
       health body now carries the real release. See
-      docs/spikes/flx-az-parity.md §10.
+      docs/spikes/flx-az-parity.md §10. Bumped from 0.14.0 on 2026-10-18
+      (artifact-fresh-95d11e24a8) after the same side-by-side drive of 0.14.0
+      and 0.15.0 -- identical rows, nothing the seam reads moved. See §11.
 
   - name: floci-gcp
     kind: image
@@ -362,10 +370,19 @@ artifacts:
   - name: floci-oci
     kind: image
     ref: floci/floci-oci
-    pinned: "0.4.2"
+    pinned: "0.5.0"
     pin_source: "compose:floci-oci"
     upstream: dockerhub
     note: >-
+      Bumped from 0.4.2 on 2026-10-19 (artifact-fresh-6717a5a069) after
+      driving live 0.4.2 and 0.5.0 containers side by side with one probe:
+      every inventory lane, the health shape, create/400/404 statuses,
+      storage-mode honouring and the container-local endpoint quirk are
+      identical. OKE now answers a create with CREATING rather than ACTIVE;
+      whether it re-checks a dead sidecar was NOT measured (the docker engine
+      restarted under k3s), so OKE_LIFECYCLE_IS_UNVERIFIED stays True. See
+      docs/spikes/flx-oci-parity.md section 11 and
+      docs/audits/artifact-fresh-6717a5a069-floci-oci-pin.md.
       Bumped from 0.4.1 on 2026-10-06 (artifact-fresh-f2a465a983) after
       driving live 0.4.1 and 0.4.2 containers side by side. Every inventory
       lane, the health shape and the container-local endpoint quirk reproduce

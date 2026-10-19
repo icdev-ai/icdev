@@ -72,7 +72,14 @@
 #   3.12.15, awslambdaric 4.1.0 and boto3 1.42.97. floci 2.0.1 re-driven
 #   against the fresh pull. See
 #   docs/audits/artifact-fresh-c04b654d3d-lambda-python-pin.md.
-public.ecr.aws/lambda/python@sha256:c05509c1a303e7ca10acc26782f530ff1a8573411132e2a67c1924d687a65a96
+#   RE-VENDORED 2026-10-17 (artifact-fresh-01bb14635b): rebuilt twice more
+#   (c05509c1... -> 471e480c..., the digest the card named, -> the digest
+#   below, created 2026-10-15T13:25Z). Again NO observed content change
+#   across all three: same Amazon Linux 2023.12.20260914, rpm set, Python
+#   3.12.15, awslambdaric 4.1.0 and boto3 1.42.97. floci 2.0.1 re-driven
+#   against the fresh pull. See
+#   docs/audits/artifact-fresh-01bb14635b-lambda-python-pin.md.
+public.ecr.aws/lambda/python@sha256:3856536f53e945debf4c90d0ff301cbaa837c07a4ab9b0e2c102c6e54ceb9762
 
 # lambda/nodejs20.x -- public.ecr.aws/lambda/nodejs:20
 #   KEPT at 20 (artifact-fresh-333eeead1d): nothing in this tree declares a Node
@@ -147,13 +154,17 @@ redpandadata/redpanda@sha256:c98c2f04a751e6646012cc701bac5183252cee44c88ba1dfa41
 #   2023.12.20260930 (sha256:12052e9b...) -- TWO rebuilds past the previous
 #   pin: the card was filed against AL 2023.12.20260928 (sha256:99860dc4...)
 #   and the tag had moved again before it was picked up -- then again
-#   2026-10-13 to AL 2023.12.20261012 (the digest below). See
+#   2026-10-13 to AL 2023.12.20261012 (sha256:f8da58e5...), then again
+#   2026-10-16 to AL 2023.12.20261014 (the digest below) -- TWO rebuilds
+#   past the previous pin again: the card was filed against AL
+#   2023.12.20261013 (sha256:1eb8fe7a...). See
 #   docs/audits/artifact-fresh-b5394142b3-ec2-amazonlinux-pin.md,
 #   docs/audits/artifact-fresh-f1edf3d78e-ec2-amazonlinux-pin.md,
 #   docs/audits/artifact-fresh-66057392f8-ec2-amazonlinux-pin.md,
-#   docs/audits/artifact-fresh-d20e410382-ec2-amazonlinux-pin.md and
-#   docs/audits/artifact-fresh-9498e50df5-ec2-amazonlinux-pin.md.
-public.ecr.aws/amazonlinux/amazonlinux@sha256:f8da58e59abcaf46c6c3aebc1a2f12195d3bdee88f337652c9e795541bc71dd5
+#   docs/audits/artifact-fresh-d20e410382-ec2-amazonlinux-pin.md,
+#   docs/audits/artifact-fresh-9498e50df5-ec2-amazonlinux-pin.md and
+#   docs/audits/artifact-fresh-ec04f18d53-ec2-amazonlinux-pin.md.
+public.ecr.aws/amazonlinux/amazonlinux@sha256:18c71e6a20f8b0834b002b6002156a84eea76162d5adea72d2ea8b86800eaf91
 
 # eks -- rancher/k3s:latest   # MUTABLE TAG upstream -- re-measure, never assume
 rancher/k3s@sha256:5e0707cfd1239b358ef73f3254bc3eadc027dd30cd5ec6ca41e29e47652a1b8c

@@ -8196,11 +8196,13 @@ def create_app(testing: bool = False) -> Flask:
     # args/genesis_apps.yaml (xit-gen-01). Same shape the routes below always
     # consumed; roots come from each app's root_env with a sibling-directory
     # fallback, and an app that is not on this machine is `available: False`.
-    from tools.dashboard.genesis_fleet import gather_fleet_status
+    from tools.dashboard.genesis_fleet import FleetProbeCache, gather_fleet_status
     from tools.genesis.apps_registry import load_genesis_apps as _load_genesis_apps
     from tools.genesis.apps_registry import root_missing as _genesis_root_missing
 
     GENESIS_APPS = _load_genesis_apps(BASE_DIR)
+    # qa-fail-007b14002f882f59: one probe in flight per app, answers outlive the page.
+    _GENESIS_PROBE_CACHE = FleetProbeCache()
 
     def _genesis_app(app_key):
         """Get Genesis app config, default to icdev."""
@@ -8258,6 +8260,7 @@ def create_app(testing: bool = False) -> Flask:
         return gather_fleet_status(
             live,
             lambda key, cfg, timeout: _genesis_run(key, ["--status", "--json"], timeout=timeout),
+            cache=_GENESIS_PROBE_CACHE,
         )
 
     def _genesis_db(app_key):

@@ -34,18 +34,51 @@ _CATEGORY_LABELS: dict[str, str] = {
 }
 
 
-def _fetch_all_events() -> list[dict]:
-    """Return every ROI event (newest first). Raises on DB error."""
+#: Rows shown in the "recent events" table.
+_RECENT_LIMIT = 10
+
+
+def _fetch_aggregates() -> dict:
+    """Return ROI totals, per-type / per-agent aggregates and the newest events.
+
+    Aggregated in SQL rather than by fetching every row: ``aisg_roi_events`` is
+    written by the genesis daemon on every reflex, so it is not a low-volume
+    stream (118,466 rows on 2026-10-14). Pulling it whole cost ~9.5s per request
+    and timed out the nav sweep (qa-fail-1f5a9e0dfee73531). Raises on DB error.
+    """
     conn = get_connection()
     try:
         c = conn.cursor()
         c.execute(
-            "SELECT action_type, time_saved_minutes, description, triggered_by, occurred_at "
-            "FROM aisg_roi_events ORDER BY occurred_at DESC"
+            "SELECT COUNT(*) AS n, SUM(time_saved_minutes) AS minutes "
+            "FROM aisg_roi_events"
         )
-        return [dict(r) for r in c.fetchall()]
+        totals = dict(c.fetchone() or {})
+        c.execute(
+            "SELECT action_type, SUM(time_saved_minutes) AS minutes "
+            "FROM aisg_roi_events GROUP BY action_type"
+        )
+        by_type = [dict(r) for r in c.fetchall()]
+        c.execute(
+            "SELECT triggered_by, COUNT(*) AS n, MAX(occurred_at) AS last_run "
+            "FROM aisg_roi_events GROUP BY triggered_by ORDER BY COUNT(*) DESC"
+        )
+        by_agent = [dict(r) for r in c.fetchall()]
+        c.execute(
+            "SELECT action_type, time_saved_minutes, description, triggered_by, occurred_at "
+            "FROM aisg_roi_events ORDER BY occurred_at DESC LIMIT %s",
+            (_RECENT_LIMIT,),
+        )
+        recent = [dict(r) for r in c.fetchall()]
     finally:
         conn.close()
+    return {
+        "count": int(totals.get("n") or 0),
+        "minutes": float(totals.get("minutes") or 0),
+        "by_type": by_type,
+        "by_agent": by_agent,
+        "recent": recent,
+    }
 
 
 def _base_payload(state: str, message: str) -> dict:
@@ -93,23 +126,23 @@ def get_executive_data() -> dict:
     Payload ``state`` is one of ``"ok"`` / ``"empty"`` / ``"error"``.
     """
     try:
-        events = _fetch_all_events()
+        agg = _fetch_aggregates()
     except Exception as exc:
         logger.warning("get_executive_data: DB error reading aisg_roi_events: %s", exc)
         return _base_payload("error", "Executive ROI data is temporarily unavailable.")
 
-    if not events:
+    if not agg["count"]:
         return _base_payload("empty", "No ROI events recorded yet")
 
-    hours_saved = sum(float(e.get("time_saved_minutes") or 0) / 60.0 for e in events)
+    hours_saved = agg["minutes"] / 60.0
     cost_avoided = hours_saved * COST_PER_HOUR
     total_hours = hours_saved
 
     # Cost breakdown by action-type category (real aggregates).
     by_type: dict[str, float] = {}
-    for e in events:
-        at = e.get("action_type") or "other"
-        by_type[at] = by_type.get(at, 0.0) + float(e.get("time_saved_minutes") or 0) / 60.0
+    for r in agg["by_type"]:
+        at = r.get("action_type") or "other"
+        by_type[at] = by_type.get(at, 0.0) + float(r.get("minutes") or 0) / 60.0
     cost_breakdown = [
         {
             "category": _CATEGORY_LABELS.get(at, at.replace("_", " ").title()),
@@ -122,27 +155,19 @@ def get_executive_data() -> dict:
     # Agent activity digest derived from triggered_by (real).
     now = datetime.now(timezone.utc)
     active_cutoff = now - timedelta(days=_ACTIVE_WINDOW_DAYS)
-    agents: dict[str, dict] = {}
-    for e in events:
-        agent = e.get("triggered_by") or "unknown"
-        occurred = str(e.get("occurred_at") or "")
-        a = agents.setdefault(agent, {"tasks_completed": 0, "last_run": ""})
-        a["tasks_completed"] += 1
-        if occurred > a["last_run"]:
-            a["last_run"] = occurred
-
     agent_activity = []
     agents_active = 0
-    for agent, a in sorted(agents.items(), key=lambda x: -x[1]["tasks_completed"]):
-        dt = _parse_dt(a["last_run"])
+    for r in agg["by_agent"]:
+        last_run = str(r.get("last_run") or "")
+        dt = _parse_dt(last_run)
         is_active = dt is not None and dt >= active_cutoff
         if is_active:
             agents_active += 1
         agent_activity.append(
             {
-                "agent": agent,
-                "tasks_completed": a["tasks_completed"],
-                "last_run": a["last_run"],
+                "agent": r.get("triggered_by") or "unknown",
+                "tasks_completed": int(r.get("n") or 0),
+                "last_run": last_run,
                 "status": "active" if is_active else "idle",
             }
         )
@@ -154,7 +179,7 @@ def get_executive_data() -> dict:
         "message": "",
         "hours_saved": round(hours_saved, 1),
         "cost_avoided": round(cost_avoided, 0),
-        "roi_events": events[:10],
+        "roi_events": agg["recent"],
         "cost_breakdown": cost_breakdown,
         "agent_activity": agent_activity,
         # AI-maturity has no real data source yet — report as unavailable rather
@@ -164,5 +189,5 @@ def get_executive_data() -> dict:
         "maturity_score": None,
         "maturity_level": "Not available",
         "agents_active": agents_active,
-        "total_tasks_automated": len(events),
+        "total_tasks_automated": agg["count"],
     }

@@ -131,7 +131,7 @@ def test_every_ft_domain_stream_on_the_board_is_external(monkeypatch):
     external + not dispatchable, i.e. PARKED.
     """
     monkeypatch.delenv("ICDEV_KANBAN_REPO_FT", raising=False)
-    for stream in ("ftl", "fdx", "xft"):
+    for stream in ("ftl", "fdx", "xft", "ftp", "fni", "ftatm"):   # ftatm: seeded unregistered, 2026-10-15
         t = rr.resolve_task_repo(f"{stream}-zzz-01")
         assert t.is_external is True, f"{stream}- must not build in the public checkout"
         assert t.name == "icdev_ft", f"{stream}- resolved to {t.name}"

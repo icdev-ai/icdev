@@ -244,7 +244,7 @@ def test_pipeline_value_rollup_uses_computed_pwin_when_available(db):
     conn = _conn(db)
     conn.execute(
         "INSERT INTO proposal_opportunities (id, title, status, estimated_value_low, estimated_value_high) "
-        "VALUES ('opp-1', 'Test', 'writing', 1_000_000, 1_000_000)"
+        "VALUES ('opp-1', 'Test', 'writing', 1000000, 1000000)"
     )
     conn.commit()
     conn.close()
@@ -269,7 +269,7 @@ def test_pipeline_value_rollup_falls_back_to_stored_win_probability(db):
     conn = _conn(db)
     conn.execute(
         "INSERT INTO proposal_opportunities (id, title, status, estimated_value_low, estimated_value_high, win_probability) "
-        "VALUES ('opp-1', 'Test', 'writing', 1_000_000, 1_000_000, 65)"
+        "VALUES ('opp-1', 'Test', 'writing', 1000000, 1000000, 65)"
     )
     conn.commit()
     conn.close()
@@ -287,7 +287,7 @@ def test_pipeline_value_rollup_defaults_to_neutral_when_fully_unscored(db):
     conn = _conn(db)
     conn.execute(
         "INSERT INTO proposal_opportunities (id, title, status, estimated_value_low, estimated_value_high) "
-        "VALUES ('opp-1', 'Test', 'writing', 1_000_000, 1_000_000)"
+        "VALUES ('opp-1', 'Test', 'writing', 1000000, 1000000)"
     )
     conn.commit()
     conn.close()
@@ -316,3 +316,51 @@ def test_pipeline_value_rollup_sorts_by_weighted_value_descending(db):
     result = pipeline_value_rollup()
     ids_in_order = [o["opportunity_id"] for o in result["opportunities"]]
     assert ids_in_order == ["opp-high", "opp-low"]
+
+
+def test_pipeline_value_rollup_opens_one_connection_regardless_of_pipeline_size(db, monkeypatch):
+    """The rollup used to open a connection (and re-run CREATE TABLE + commit)
+    per opportunity -- /proposals took ~3s live and gcpl-prop-13 timed out
+    (qa-fail-a44cbeb086b6ac68). It must cost O(1) connections, not O(N)."""
+    import tools.govcon.bayesian_bid_scorer as bbs
+
+    conn = _conn(db)
+    conn.executemany(
+        "INSERT INTO proposal_opportunities (id, title, status, estimated_value_low, estimated_value_high) "
+        "VALUES (?, ?, 'writing', 1000, 1000)",
+        [(f"opp-{i}", f"Opp {i}") for i in range(20)],
+    )
+    conn.commit()
+    conn.close()
+    bbs.compute_pwin("opp-3", {f: 1.0 for f in bbs.PWIN_FACTORS})
+
+    opened = []
+    real = bbs.get_connection
+    monkeypatch.setattr(bbs, "get_connection", lambda *a, **k: opened.append(1) or real(*a, **k))
+
+    result = bbs.pipeline_value_rollup()
+    assert len(result["opportunities"]) == 20
+    assert result["scored_count"] == 1
+    assert len(opened) == 1
+
+
+def test_pipeline_value_rollup_uses_the_most_recent_assessment(db):
+    import tools.govcon.bayesian_bid_scorer as bbs
+
+    conn = _conn(db)
+    conn.execute(
+        "INSERT INTO proposal_opportunities (id, title, status, estimated_value_low, estimated_value_high) "
+        "VALUES ('opp-1', 'Test', 'writing', 1000, 1000)"
+    )
+    conn.commit()
+    conn.close()
+    bbs.compute_pwin("opp-1", {f: 0.0 for f in bbs.PWIN_FACTORS})
+    latest = bbs.compute_pwin("opp-1", {f: 1.0 for f in bbs.PWIN_FACTORS})
+    c = _conn(db)
+    c.execute("UPDATE pg_pwin_assessments SET assessed_at = '2000-01-01' WHERE id != ?", (latest["id"],))
+    c.commit()
+    c.close()
+
+    item = bbs.pipeline_value_rollup()["opportunities"][0]
+    assert item["pwin_pct"] == latest["pwin_pct"]
+    assert isinstance(item["factor_breakdown"], dict)

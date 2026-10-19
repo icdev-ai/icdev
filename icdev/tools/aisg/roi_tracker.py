@@ -59,23 +59,49 @@ def emit_roi_event(
         conn.close()
 
 
-def _fetch_all_events() -> list[dict]:
-    """Return every ROI event (newest first) as a list of dicts.
+def _fetch_aggregates() -> dict:
+    """Return ROI totals, per-type and per-month sums, and the 10 newest events.
 
     Raises on any DB error so callers can distinguish an empty table (healthy,
-    no events yet) from a broken database (degraded). ROI events are a
-    low-volume audit stream, so fetching all rows for aggregation is cheap.
+    no events yet) from a broken database (degraded). Aggregated in SQL: the
+    genesis daemon emits an event per reflex, so the table is NOT low-volume
+    (118,466 rows on 2026-10-14) and fetching it whole took ~12s per request
+    (qa-fail-1f5a9e0dfee73531). The month bucket is ``SUBSTR(CAST(.. AS TEXT))``,
+    which PostgreSQL and SQLite both accept for a TEXT or timestamp column.
     """
     conn = get_connection()
     try:
         c = conn.cursor()
         c.execute(
-            "SELECT action_type, time_saved_minutes, description, triggered_by, occurred_at "
-            "FROM aisg_roi_events ORDER BY occurred_at DESC"
+            "SELECT COUNT(*) AS n, SUM(time_saved_minutes) AS minutes "
+            "FROM aisg_roi_events"
         )
-        return [dict(r) for r in c.fetchall()]
+        totals = dict(c.fetchone() or {})
+        c.execute(
+            "SELECT action_type, SUM(time_saved_minutes) AS minutes "
+            "FROM aisg_roi_events GROUP BY action_type"
+        )
+        by_type = [dict(r) for r in c.fetchall()]
+        c.execute(
+            "SELECT SUBSTR(CAST(occurred_at AS TEXT), 1, 7) AS month, "
+            "SUM(time_saved_minutes) AS minutes "
+            "FROM aisg_roi_events GROUP BY SUBSTR(CAST(occurred_at AS TEXT), 1, 7)"
+        )
+        by_month = [dict(r) for r in c.fetchall()]
+        c.execute(
+            "SELECT action_type, time_saved_minutes, description, triggered_by, occurred_at "
+            "FROM aisg_roi_events ORDER BY occurred_at DESC LIMIT 10"
+        )
+        recent = [dict(r) for r in c.fetchall()]
     finally:
         conn.close()
+    return {
+        "count": int(totals.get("n") or 0),
+        "minutes": float(totals.get("minutes") or 0),
+        "by_type": by_type,
+        "by_month": by_month,
+        "recent": recent,
+    }
 
 
 def _month_key(occurred_at: str) -> str | None:
@@ -96,17 +122,18 @@ def _month_label(key: str) -> str:
         return key
 
 
-def _monthly_trend(events: list[dict]) -> list[dict]:
+def _monthly_trend(by_month: list[dict]) -> list[dict]:
     """Hours saved grouped by calendar month, chronological.
 
-    Computed in Python (PG-primary: no SQLite-dialect date SQL at the call site).
+    ``by_month`` rows carry a raw ``YYYY-MM`` prefix and a minute sum; the
+    shape is validated here, in Python, rather than with dialect date SQL.
     """
     buckets: dict[str, float] = {}
-    for e in events:
-        key = _month_key(str(e.get("occurred_at") or ""))
+    for r in by_month:
+        key = _month_key(str(r.get("month") or ""))
         if not key:
             continue
-        buckets[key] = buckets.get(key, 0.0) + float(e.get("time_saved_minutes") or 0) / 60.0
+        buckets[key] = buckets.get(key, 0.0) + float(r.get("minutes") or 0) / 60.0
     return [
         {"month": _month_label(k), "hours": round(v, 1), "key": k}
         for k, v in sorted(buckets.items())
@@ -137,21 +164,21 @@ def get_roi_summary() -> dict:
       * ``"error"`` — DB error; degraded payload, zeros, no canned numbers
     """
     try:
-        events = _fetch_all_events()
+        agg = _fetch_aggregates()
     except Exception as exc:
         logger.warning("get_roi_summary: DB error reading aisg_roi_events: %s", exc)
         return _empty_payload("ROI data is temporarily unavailable.", error=True)
 
-    if not events:
+    if not agg["count"]:
         return _empty_payload("No ROI events recorded yet")
 
-    hours_saved = sum(float(e.get("time_saved_minutes") or 0) / 60.0 for e in events)
+    hours_saved = agg["minutes"] / 60.0
     cost_avoided = hours_saved * COST_PER_HOUR
 
     by_type: dict[str, float] = {}
-    for e in events:
-        at = e.get("action_type") or "other"
-        by_type[at] = by_type.get(at, 0.0) + float(e.get("time_saved_minutes") or 0) / 60.0
+    for r in agg["by_type"]:
+        at = r.get("action_type") or "other"
+        by_type[at] = by_type.get(at, 0.0) + float(r.get("minutes") or 0) / 60.0
     breakdown = [
         {"action_type": k, "hours": round(v, 1)}
         for k, v in sorted(by_type.items(), key=lambda x: -x[1])
@@ -163,8 +190,8 @@ def get_roi_summary() -> dict:
         "error": False,
         "hours_saved": round(hours_saved, 1),
         "cost_avoided": round(cost_avoided, 0),
-        "total_events": len(events),
-        "recent_events": events[:10],
+        "total_events": agg["count"],
+        "recent_events": agg["recent"],
         "breakdown": breakdown,
-        "monthly_trend": _monthly_trend(events),
+        "monthly_trend": _monthly_trend(agg["by_month"]),
     }

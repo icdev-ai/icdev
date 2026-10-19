@@ -86,8 +86,14 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
 
   test('full lifecycle: create session, import config, map, apply, preview, download', async ({ page }) => {
     // Step 1: Navigate to new migration wizard.
-    await page.goto('/migration-canvas/network-migration/new');
-    await page.waitForLoadState('domcontentloaded');
+    // Wait for DOMContentLoaded, not the default `load`. The wizard pulls five
+    // vendor scripts (jquery/lodash/backbone/joint/topology) plus every base.html
+    // asset from the one Flask server, and `load` waits on all of them. Run
+    // qa-1792016705 timed out here at 30s, yet the route answers in ~0.4s, and
+    // this spec passed in 19s right after against the same server. The parser-blocking
+    // scripts still run before DOMContentLoaded, so `goStep` and the form
+    // controls exist when the steps below use them.
+    await page.goto('/migration-canvas/network-migration/new', { waitUntil: 'domcontentloaded' });
     await dismissTour(page);
 
     const bodyText = await page.textContent('body');
@@ -182,15 +188,30 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     await page
       .getByRole('textbox', { name: /Paste Juniper|Paste Running Config/i })
       .fill(SAMPLE_JUNIPER_CONFIG);
+    // Wait on the two real responses, not a fixed sleep. parseConfig() awaits
+    // the parse-config POST, renders, and only THEN fires the topology POST
+    // that draws the sidecar -- two chained round trips. Measured idle
+    // (2026-10-17, qa-fail-4bc5eb2bee83b0ae) they take ~0.9s + ~0.8s, but run
+    // qa-1792102873 gave the pair a 1.5s sleep plus a 5s visibility wait under
+    // sweep load and found no svg; a sibling call on the same server took >10s
+    // in a loaded re-run. Awaiting the topology response also turns a failed
+    // build (rendered as "Topology unavailable", never an svg) into a named
+    // status instead of a bare visibility timeout.
+    const isNetMig = (r: any, suffix: string) =>
+      r.request().method() === 'POST' &&
+      r.url().includes(`/migration-canvas/api/network-migration/${sessionId}/${suffix}`);
+    const parseResponse = page.waitForResponse((r) => isNetMig(r, 'parse-config'), { timeout: 30000 });
+    const topologyResponse = page.waitForResponse((r) => isNetMig(r, 'topology'), { timeout: 60000 });
     await page.getByRole('button', { name: /Parse Config/ }).click();
-    await page.waitForTimeout(1500);
+    expect((await parseResponse).status()).toBe(200);
+    expect((await topologyResponse).status()).toBe(200);
 
     const parsedText = await page.textContent('body');
     expect(parsedText).toContain('Parsed');
 
     // Step 2b: The auto-generated topology sidecar should render from parsed config.
     expect(parsedText).toContain('Auto-generated Topology');
-    await expect(page.locator('#topology-paper svg')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('#topology-paper svg')).toBeVisible({ timeout: 10000 });
     const topologyNodeCount = await page.locator('#topology-paper svg .joint-cell').count();
     expect(topologyNodeCount).toBeGreaterThan(0);
 
