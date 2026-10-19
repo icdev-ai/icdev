@@ -13250,6 +13250,27 @@ def _check_completed():
 
             # ── TOKEN EXHAUSTION CHECK (runs for ANY exit code) ───────
             is_exhausted, reset_hint = _detect_token_exhaustion(ret, claude_output)
+            # kph-orphan-task-e2e-8f6cb4d0: a session that has ALREADY moved its
+            # own card to `done` is finished, whatever its exit looked like.
+            # Parking it here overwrote a merge-verified (or audited force-)done
+            # with token_exhausted, and the retry re-dispatched a finished card:
+            # measured 2026-10-19, done -> token_exhausted twice on one card,
+            # each 40s after the worker's own `done`, with an empty task log --
+            # so the exit-code branch, not provider text. Release it instead.
+            if is_exhausted and _task_status(task_id) == "done":
+                logger.info(
+                    "kanban: %s exited abnormally (rc=%s) after reaching done "
+                    "-- not parking a finished task", task_id, ret,
+                )
+                _clear_retry_count(task_id)
+                _clear_resume_at(task_id)
+                if task_id in _worktrees:
+                    _cleanup_worktree(task_id)
+                    del _worktrees[task_id]
+                del _running[task_id]
+                _dispatch_times.pop(task_id, None)
+                completed.append(task_id)
+                continue
             if is_exhausted:
                 retry_count = _increment_retry_count(task_id)
 
