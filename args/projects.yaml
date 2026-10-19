@@ -4,6 +4,61 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: kph_orphan_mfx
+  name: Kph Orphan Mfx Project
+  description: Auto-registered project for tasks with prefix 'kph-orphan-mfx-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: kph-orphan-mfx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: own
+    title: OWN
+    priority: medium
+- key: kph_orphan_ftatm
+  name: Kph Orphan Ftatm Project
+  description: Auto-registered project for tasks with prefix 'kph-orphan-ftatm-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: kph-orphan-ftatm-
+  default_open: true
+  briefs: []
+  epics:
+  - key: study
+    title: STUDY
+    priority: medium
+- key: kph_repark_ftatm
+  name: Kph Repark Ftatm Project
+  description: Auto-registered project for tasks with prefix 'kph-repark-ftatm-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: kph-repark-ftatm-
+  default_open: true
+  briefs: []
+  epics:
+  - key: study
+    title: STUDY
+    priority: medium
+- key: task_ucand
+  name: Task Ucand Project
+  description: Auto-registered project for tasks with prefix 'task-ucand-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: task-ucand-
+  default_open: true
+  briefs: []
+  epics:
+  - key: clear
+    title: CLEAR
+    priority: medium
+- key: pmo
+  name: Pmo Project
+  description: Auto-registered project for tasks with prefix 'pmo-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: pmo-
+  default_open: true
+  briefs: []
+  epics:
+  - key: rpt
+    title: RPT
+    priority: medium
 - key: ftl_bz
   name: FT 30m BoxZone + Jev Intraday (stocks & crypto)
   description: 'Port the NinjaTrader BoxZone indicator into ICDEV[FT] for 30-minute intraday
@@ -10406,16 +10461,16 @@ projects:
   - {key: docs, title: "DOCUMENT IT", priority: low}
 - key: ftatm
   name: FTATM - ICDEV_FT_ATM, a COS-style signal-overlap trade manager for NT8
-  description: 'ICDEV_FT_ATM (icdev_ft PR #495, card note docs/cards/ftatm-core-01.md) is
-    an NT8 indicator with a trade panel: up to 4 discovered signal slots, overlap /
-    first-N / exit / risk rules, orders through NT8''s own ATM engine with ATM and account
-    following Chart Trader, ANALYZE replaying signals through the ATM template''s real
-    brackets, and a daily regime engine in SHADOW mode. This card is what remains. ALL
-    WORK IS IN THE icdev_ft REPO (C:\AI\icdev_ft). MANUAL-ONLY: every task is held
-    behind ftatm-gate-00 because NinjaScript is compiled by the operator in NinjaTrader
+  description: 'ICDEV_FT_ATM (icdev_ft PR #495, card note docs/cards/ftatm-core-01.md)
+    is an NT8 indicator with a trade panel: up to 4 discovered signal slots, overlap
+    / first-N / exit / risk rules, orders through NT8''s own ATM engine with ATM and
+    account following Chart Trader, ANALYZE replaying signals through the ATM template''s
+    real brackets, and a daily regime engine in SHADOW mode. This card is what remains.
+    ALL WORK IS IN THE icdev_ft REPO (C:\AI\icdev_ft). MANUAL-ONLY: every task is
+    held behind ftatm-gate-00 because NinjaScript is compiled by the operator in NinjaTrader
     (F5) -- no CI compiles C#, so the autonomous runner cannot verify a build. Regime
-    AUTO stays off until the pre-registered study passes; nothing here is evidence of
-    edge.'
+    AUTO stays off until the pre-registered study passes; nothing here is evidence
+    of edge.'
   task_prefix: ftatm-
   default_open: true
   briefs:
@@ -10423,14 +10478,14 @@ projects:
     model, Qty split over brackets) so Strategy Analyzer can test it over YEARS, not
     the few days a Renko chart loads.'
   - 'STUDY: pre-register and run the regime gate study (both directions vs momentum+200d
-    vs +SMC structure +ConfluenceStrip downgrade) on the ES 2010-2025 export; the SMC
-    Python port must be brought to v1.1 first.'
+    vs +SMC structure +ConfluenceStrip downgrade) on the ES 2010-2025 export; the
+    SMC Python port must be brought to v1.1 first.'
   - 'CORTEX: annotate (never veto) each ATM signal with the Trading Cortex score and
     keep a signal-to-outcome ledger keyed by SignalId so the score''s IC can be measured
     on ATM''s own signals.'
   - 'COS: presets 1-4 and an ANALYZE equity-curve / trade-list window.'
-  - 'FIX: daily P&L scoped to the instrument / ATM''s own trades; slot indicators that add
-    data series (MTFConfluence, FourLines_MTF, AimWave HTF) verified or supported.'
+  - 'FIX: daily P&L scoped to the instrument / ATM''s own trades; slot indicators
+    that add data series (MTFConfluence, FourLines_MTF, AimWave HTF) verified or supported.'
   - 'EDGE: is there one at all? Count the configurations tried and report Deflated
     Sharpe / PBO beside every ANALYZE result; flag Renko backtests as optimistic and
     compare against time bars; measure how independent the 4 slots really are; select
@@ -10440,16 +10495,39 @@ projects:
     position and stale-signal guards.'
   - 'RISK: volatility-scaled sizing, a lockout that survives F5/restart, ONE auto-trader
     per account+instrument (enforced, not remembered), event and roll blackouts.'
-  - 'MON: live-vs-backtest drift pauses AUTO; P&L attributed by slot, time of day and
-    regime.'
+  - 'MON: live-vs-backtest drift pauses AUTO; P&L attributed by slot, time of day
+    and regime.'
   epics:
-  - {key: gate, title: "GATE - manual hold sentinel (built by hand, never dispatched)", priority: high}
-  - {key: sa, title: "SA - Strategy Analyzer parity", priority: high}
-  - {key: study, title: "STUDY - pre-registered regime gate study", priority: high}
-  - {key: cortex, title: "CORTEX - annotation + signal-outcome ledger", priority: medium}
-  - {key: cos, title: "COS - presets and equity window", priority: low}
-  - {key: fix, title: "FIX - known limitations", priority: medium}
-  - {key: edge, title: "EDGE - overfitting-aware validation", priority: high}
-  - {key: exec, title: "EXEC - execution quality ledger + safety guards", priority: high}
-  - {key: risk, title: "RISK - sizing, persistent lockout, ownership, blackouts", priority: high}
-  - {key: mon, title: "MON - live-vs-backtest drift + attribution", priority: medium}
+  - key: gate
+    title: GATE - manual hold sentinel (built by hand, never dispatched)
+    priority: high
+  - key: sa
+    title: SA - Strategy Analyzer parity
+    priority: high
+  - key: study
+    title: STUDY - pre-registered regime gate study
+    priority: high
+  - key: cortex
+    title: CORTEX - annotation + signal-outcome ledger
+    priority: medium
+  - key: cos
+    title: COS - presets and equity window
+    priority: low
+  - key: fix
+    title: FIX - known limitations
+    priority: medium
+  - key: edge
+    title: EDGE - overfitting-aware validation
+    priority: high
+  - key: exec
+    title: EXEC - execution quality ledger + safety guards
+    priority: high
+  - key: risk
+    title: RISK - sizing, persistent lockout, ownership, blackouts
+    priority: high
+  - key: mon
+    title: MON - live-vs-backtest drift + attribution
+    priority: medium
+  - key: sme
+    title: SME
+    priority: medium
