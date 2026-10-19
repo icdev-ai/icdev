@@ -37,6 +37,7 @@ from collections.abc import Mapping
 import json
 import logging
 import os
+import functools
 import subprocess
 import sys
 import threading
@@ -305,6 +306,18 @@ _STALL_HEALTH_SLOW_SECONDS = 2.0
 #: How long one probe may wait for /api/health before it is recorded as slow.
 _STALL_PROBE_TIMEOUT_SECONDS = 15.0
 
+#: Consecutive probes that TIMED OUT -- the kernel completed the handshake and
+#: the server never answered -- before the sampler captures the server's
+#: thread stacks (qa-fail-1e4704134393f67a). Run qa-1792419663 (2026-10-19):
+#: the dashboard answered every serial test until 14:23:28, then never again;
+#: 52 consecutive 15 s probe timeouts filled the accept backlog, and from
+#: 14:40 every connect was REFUSED. Nobody captured the stacks before the
+#: process was restarted, so why it froze is unrecoverable. Three timeouts is
+#: ~60 s of a server that is not serving -- far past any slow page.
+_WEDGE_CONSECUTIVE_TIMEOUTS = 3
+#: How long one `py-spy dump` may take.
+_STACK_DUMP_TIMEOUT_SECONDS = 60.0
+
 _ENV_STALL_SAMPLER = "ICDEV_QA_STALL_SAMPLER"
 _ENV_STALL_SAMPLE_SECONDS = "ICDEV_QA_STALL_SAMPLE_SECONDS"
 
@@ -423,6 +436,67 @@ def classify_sample(
     return SAMPLE_OK
 
 
+def _listening_pid(port: int) -> Optional[int]:
+    """PID of the process LISTENING on `port`, or None."""
+    try:
+        import psutil
+    except ImportError:
+        return None
+    try:
+        for conn in psutil.net_connections(kind="tcp"):
+            if conn.status == psutil.CONN_LISTEN and conn.laddr and conn.laddr.port == port and conn.pid:
+                return int(conn.pid)
+    except (psutil.Error, OSError):
+        return None
+    return None
+
+
+def dump_server_stacks(base_url: str, out_path: Path,
+                       timeout: float = _STACK_DUMP_TIMEOUT_SECONDS) -> Dict[str, Any]:
+    """Capture every thread's stack in the server behind `base_url` with
+    `py-spy dump`, into `out_path`. Never raises; the result says what it got.
+
+    py-spy reads the target's memory from OUTSIDE, so it works on a process
+    whose GIL is held or whose every thread is deadlocked -- the case where
+    nothing inside the server can report anything. `--nonblocking` so the
+    capture never suspends a server that is merely slow.
+    """
+    import shutil
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(base_url)
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    pid = _listening_pid(port)
+    if pid is None:
+        return {"captured": False, "reason": "no_listener_pid", "port": port}
+    py_spy = shutil.which("py-spy")
+    if not py_spy:
+        return {"captured": False, "reason": "py_spy_not_installed", "pid": pid}
+    try:
+        proc = subprocess.run(  # nosec B603 - fixed argv, shell=False
+            [py_spy, "dump", "--nonblocking", "--pid", str(pid)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {"captured": False, "reason": "py_spy_timeout", "pid": pid}
+    except OSError as exc:
+        return {"captured": False, "reason": f"py_spy_error: {exc}", "pid": pid}
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            f"# py-spy dump --pid {pid} at {_iso_utc(time.time())} (rc={proc.returncode})\n"
+            f"{proc.stdout}{proc.stderr}",
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        return {"captured": False, "reason": f"write_failed: {exc}", "pid": pid}
+    out: Dict[str, Any] = {"captured": proc.returncode == 0, "pid": pid, "path": str(out_path)}
+    if proc.returncode != 0:
+        out["reason"] = f"py_spy_rc_{proc.returncode}"
+    return out
+
+
 @dataclass
 class StallSample:
     #: When the probe finished, UTC ISO text (for a reader) and epoch (for the
@@ -461,6 +535,8 @@ class StallSampler(threading.Thread):
         host_overshoot_seconds: float = _STALL_HOST_OVERSHOOT_SECONDS,
         health_slow_seconds: float = _STALL_HEALTH_SLOW_SECONDS,
         probe_timeout_seconds: float = _STALL_PROBE_TIMEOUT_SECONDS,
+        stack_dumper=None,
+        wedge_after: int = _WEDGE_CONSECUTIVE_TIMEOUTS,
     ) -> None:
         super().__init__(name="qa-stall-sampler", daemon=True)
         self.base_url = base_url
@@ -471,6 +547,12 @@ class StallSampler(threading.Thread):
         self.probe_timeout_seconds = probe_timeout_seconds
         self.samples: List[StallSample] = []
         self.error: Optional[str] = None
+        #: Called with base_url ONCE, after `wedge_after` consecutive probe
+        #: timeouts; its dict lands on the census as `server_stack_dump`.
+        self.stack_dumper = stack_dumper
+        self.wedge_after = max(1, int(wedge_after))
+        self.stack_dump: Optional[Dict[str, Any]] = None
+        self._consecutive_timeouts = 0
         # `_halt`, NOT `_stop`: threading.Thread defines `_stop` as an internal
         # METHOD on CPython <= 3.12, and `join()` -> `_wait_for_tstate_lock()`
         # calls `self._stop()`. Assigning an Event to that name shadows the
@@ -503,8 +585,26 @@ class StallSampler(threading.Thread):
                         health_slow_seconds=self.health_slow_seconds,
                     ),
                 ))
+                self._note_probe(health)
         except Exception as exc:  # noqa: BLE001 - recorded, never propagated
             self.error = f"{type(exc).__name__}: {exc}"
+
+    def _note_probe(self, health: Optional[float]) -> None:
+        """Count consecutive probe TIMEOUTS; on the `wedge_after`-th, capture
+        the server's stacks once. A refusal or a fast answer resets the count:
+        only "took the connection, never answered" is the wedge signature."""
+        if health is not None and health >= self.probe_timeout_seconds:
+            self._consecutive_timeouts += 1
+        else:
+            self._consecutive_timeouts = 0
+        if (self.stack_dumper is None or self.stack_dump is not None
+                or self._consecutive_timeouts < self.wedge_after):
+            return
+        try:
+            self.stack_dump = dict(self.stack_dumper(self.base_url))
+        except Exception as exc:  # noqa: BLE001 - a failed capture is recorded, never raised
+            self.stack_dump = {"captured": False, "reason": f"dumper_error: {exc}"}
+        self.stack_dump["at"] = _iso_utc(time.time())
 
     def stop(self, timeout: Optional[float] = None) -> None:
         self._halt.set()
@@ -549,6 +649,8 @@ class StallSampler(threading.Thread):
         }
         if self.error:
             out["error"] = self.error
+        if self.stack_dump is not None:
+            out["server_stack_dump"] = self.stack_dump
         return out
 
 
@@ -860,7 +962,12 @@ def run_e2e_suite(
         # (the `finally`), so a deadline kill cannot leave a probe thread
         # sampling a server the next batch will replace.
         sampler = (
-            StallSampler(stall_cfg["base_url"], interval_seconds=stall_cfg["interval"])
+            StallSampler(
+                stall_cfg["base_url"], interval_seconds=stall_cfg["interval"],
+                stack_dumper=functools.partial(
+                    dump_server_stacks,
+                    out_path=report_path.parent / f"server-stacks-{run_tag}.txt"),
+            )
             if stall_cfg["enabled"] else None
         )
         t0 = time.time()
