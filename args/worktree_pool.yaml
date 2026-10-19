@@ -15,16 +15,26 @@ enabled: true
 # a DISK budget, not a throughput one. KANBAN_MAX_IN_PROGRESS is 3, and a cycle
 # dispatches at most that many; 2 covers the common 1-2 dispatch cycle and costs
 # ~550 MB steady state.
-target_size: 2
+#
+# RAISED TO 3 BY OBSERVED BURST DEPTH (mfx-own-10). Over every pool log on this
+# host (2026-09-12..10-19, 422 claims + misses), 111 began a run of 3 or more
+# asks inside FIVE minutes and 56 a run of 4+; the deepest was 7 in 5 min (the
+# 2026-10-18 repark wave). A target of 2 is drained by the third ask of a burst
+# in seconds. 3 absorbs the common burst while the detached refill (which now
+# fills to target in one run) replaces entries behind it; ~825 MB steady state.
+target_size: 3
 
 # Hard ceiling. The pool may never hold more than this, whatever the target says
 # -- a pool that grows without bound is the accumulation mfx-own-04 exists for.
-max_size: 3
+max_size: 4
 
-# Entries created per refill run. One, deliberately: a refill is a real
-# `git worktree add` on the same disk a dispatch needs, so filling the pool
-# takes a few cycles rather than monopolising the disk for a minute.
-max_refills_per_run: 1
+# Entries created per refill run. Was 1, so that a refill never monopolised the
+# disk -- but the refill ran INLINE in the cycle then, and a drained pool took a
+# cycle per entry to recover while the burst that drained it kept dispatching.
+# Now the run is DETACHED and takes the add lock PER ADD (released between
+# entries, so a dispatch add waiting on it gets in), so it fills to target
+# (mfx-own-10). Still bounded by max_size, re-checked before every add.
+max_refills_per_run: 3
 
 # An entry older than this is REAPED rather than claimed. Not a correctness
 # bound -- a claim resets to origin/<default> whatever the entry's age, and a
@@ -44,7 +54,7 @@ refill_requires_quiet: true
 # behind it.
 refill_lock_wait_seconds: 5
 
-# Seconds of silence after a refill add FAILS. A refill add is killed at the same
+# Seconds of silence after a refill add FAILS. A refill add was killed at the same
 # 30s budget a dispatch add is, and the host is slow for MINUTES at a time -- on
 # an IDLE board `host_io` reports UNMEASURABLE (no dispatch add was recorded,
 # because no dispatch happened), so without this the pool would burn 30s of disk
@@ -52,3 +62,21 @@ refill_lock_wait_seconds: 5
 # down. NOT a retry budget and NOT a backoff ladder: the next attempt after the
 # cooldown is an ordinary attempt.
 refill_failure_cooldown_seconds: 600
+
+# THE REFILL'S OWN ADD BUDGET (mfx-own-10) -- the DISPATCH add's 30s is NOT
+# changed and stays pinned to the reflex. Measured over the 2026-10-14..18 pool
+# log (the window this card was filed from): 88 refills killed at 30s against 34
+# completed (p90 23.5s, max 28.6s -- a distribution truncated by the budget). A killed refill does not spare the
+# disk: it discards every file it wrote, then spends more IO deleting them, and
+# buys a 10-minute cooldown with the pool empty. Off the critical path a slow
+# refill harms nobody. Must not exceed the dispatcher's add-LOCK wait (90s,
+# KANBAN_WORKTREE_ADD_LOCK_WAIT), because a refill holds that lock while it
+# checks out: at or under it, a dispatch queued behind a refill always gets the
+# lock -- and then claims the entry the refill just made. Pinned by test.
+refill_add_timeout_seconds: 90
+
+# Run the refill in a DETACHED process instead of inline in the cycle's
+# `finally` (mfx-own-10). Inline, a 90s refill would hold the cycle -- and the
+# next dispatch -- for its whole duration. One refill per pool at a time
+# (single-flight lock beside the pool). false = the old inline behaviour.
+refill_detached: true
