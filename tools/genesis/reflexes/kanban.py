@@ -1652,6 +1652,36 @@ def _create_worktree(task_id: str) -> Optional[str]:
                 "holder must not wedge the board.",
                 task_id, WORKTREE_ADD_LOCK_WAIT_SECONDS,
             )
+        # ASK THE POOL AGAIN, NOW (mfx-own-10). The add lock is what a REFILL
+        # holds while it checks out, so the wait above most often ends because a
+        # warm entry was just created -- and in a burst the first ask found the
+        # pool drained. This is a second CLAIM, not a retry of the add: no add has
+        # run, nothing parks on a miss, and the miss falls through to the one add
+        # below exactly as before. The refill budget is pinned to the lock wait
+        # above by test, so the refill finishes inside it.
+        try:
+            from tools.kanban import worktree_pool as _pool2  # noqa: PLC0415
+
+            _rewarm = _pool2.claim(
+                task_id, worktree_path, repo_root=_repo_root, base=base,
+                expect_manifest=(_repo_root == BASE_DIR),
+                phase=_pool2.PHASE_AFTER_ADD_LOCK,
+            )
+        except Exception as _pool_exc2:  # noqa: BLE001 -- never break dispatch
+            logger.debug("worktree pool second ask failed for %s (%s)",
+                         task_id, _pool_exc2)
+            _rewarm = None
+        if _rewarm:
+            try:
+                _wt_lock.__exit__(None, None, None)
+            except Exception:  # noqa: BLE001
+                logger.debug("worktree add lock release failed for %s", task_id)
+            logger.info(
+                "Claimed a warm worktree for %s at %s after waiting on the add "
+                "lock -- no `git worktree add` ran", task_id, _rewarm,
+            )
+            _scrub_tracked_pycs(Path(_rewarm), task_id)
+            return _rewarm
         _add_started = time.monotonic()
         _proc = _sp.Popen(
             ["git", *WORKTREE_ADD_GIT_CONFIG, "worktree", "add", "-b",
@@ -14612,7 +14642,16 @@ def _tend_worktree_pool() -> None:
         if not _pool.enabled():
             return
         _base = _default_base_ref(_canonical_repo_root())
-        rep = _pool.refill(base=_base)
+        _cfg = _pool.load_config()
+        if _cfg.get("refill_detached", True):
+            # DETACHED (mfx-own-10): the refill has its own 90s budget now, and
+            # inline it would hold this cycle -- and the next dispatch -- for
+            # that long. The child logs its own outcome to the pool's NDJSON,
+            # which is where `--measure` reads refills and failures from.
+            spawned = _pool.spawn_refill(base=_base, cfg=_cfg)
+            rep = {"created": 0, "failures": [], "spawned": spawned}
+        else:
+            rep = _pool.refill(base=_base, cfg=_cfg)
         if rep.get("created"):
             logger.info("worktree pool: created %d warm worktree(s), depth %s -> %s",
                         rep["created"], rep.get("depth_before"), rep.get("depth_after"))

@@ -96,13 +96,19 @@ HONESTY RAILS, each of them a way this must never become a new failure mode:
     being held means a dispatch is checking out right now, and the pool must
     never queue ahead of the board.
 
-THE BUDGET IS THE DISPATCHER'S, AND IS NOT RAISED. A refill add runs under the
-same 30s `WORKTREE_ADD_TIMEOUT_SECONDS` and the same `checkout.workers=0`, and
-kills its whole process tree on expiry -- pinned to the dispatcher's literals by
-tests/kanban/test_worktree_pool.py, which reads the reflex's AST rather than
-importing 13,840 lines into a library. Giving the refill MORE patience would put
-a 60s checkout on the very disk the dispatcher needs, making the pool the noisy
-neighbour it exists to protect the board from.
+THE DISPATCHER'S BUDGET IS NOT RAISED; THE REFILL HAS ITS OWN (mfx-own-10). The
+dispatch add's 30s and `checkout.workers=0` are restated here and pinned to the
+reflex's literals by tests/kanban/test_worktree_pool.py, which reads the
+reflex's AST rather than importing 13,840 lines into a library. mfx-own-09 ran
+the refill under that same 30s, reasoning that more patience would make the pool
+a noisy neighbour. The log said otherwise: with the host loaded, 88 of 122
+refills died at 30s, and a killed checkout does not spare the disk -- it
+discards what it wrote and spends more IO deleting it, then empties the pool for
+a 10-minute cooldown. So a refill now gets `refill_add_timeout_seconds` (90),
+runs DETACHED so no cycle waits on it, takes the add lock PER ADD so a dispatch
+add is never queued behind a whole run, and is bounded by the dispatcher's 90s
+add-lock wait so a dispatch queued behind one always gets the lock -- and then
+asks the pool a second time, finding the entry the refill just made.
 
 WHEN "QUIET" IS UNMEASURABLE THE POOL STILL REFILLS, and that is a decision.
 `tools.kanban.host_io` returns WAIT only when a slow or killed add sits inside
@@ -125,6 +131,7 @@ Headless:
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import secrets
@@ -134,7 +141,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 # sys.path BOOTSTRAP first, so `python tools/kanban/worktree_pool.py` reaches
 # main() (kax-conflict-04); then the ONE root resolver.
@@ -179,6 +186,17 @@ _ENTRY_HEX_LEN = 12
 ADD_TIMEOUT_SECONDS = 30
 ADD_GIT_CONFIG: Tuple[str, ...] = ("-c", "checkout.workers=0")
 
+#: The REFILL's own budget (mfx-own-10), deliberately NOT the dispatcher's. A
+#: refill is off the critical path -- nobody waits on it -- and killing it at 30s
+#: does not spare the disk: it throws away every file it had already written and
+#: then spends more IO deleting them. Measured over the 2026-10-14..18 pool log:
+#: 88 refills KILLED at 30s against 34 completed, and the completed ones' p90 was
+#: 23.5s with a max of 28.6s -- a distribution cut off by the budget, not one that
+#: ended under it. Bounded ABOVE by the dispatcher's add-LOCK wait (90s, pinned by
+#: test), because a refill holds that lock: a dispatch queued behind a refill
+#: therefore always gets the lock rather than timing out and overlapping it.
+REFILL_ADD_TIMEOUT_SECONDS = 90
+
 #: Seconds a claim waits for the pool bookkeeping lock. A claim is ~1.3s of git
 #: plumbing, so this only ever queues behind another claim or a reap.
 CLAIM_LOCK_WAIT_SECONDS = 10
@@ -195,6 +213,12 @@ MISS_TASK_BRANCH_EXISTS = "task_branch_exists"
 MISS_CONVERT_FAILED = "convert_failed"
 MISS_ERROR = "error"
 
+#: Which ask of the dispatcher a claim answers (mfx-own-10). The second ask is
+#: made after the inline path has waited for the add lock -- which a refill holds
+#: while it checks out -- so it is the moment a fresh entry most often exists.
+PHASE_DISPATCH = "dispatch"
+PHASE_AFTER_ADD_LOCK = "after_add_lock"
+
 
 # ---------------------------------------------------------------------------
 # Config
@@ -208,6 +232,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "refill_requires_quiet": True,
     "refill_lock_wait_seconds": 5,
     "refill_failure_cooldown_seconds": 600,
+    "refill_add_timeout_seconds": REFILL_ADD_TIMEOUT_SECONDS,
+    "refill_detached": True,
 }
 
 _CONFIG_RELPATH = Path("args") / "worktree_pool.yaml"
@@ -451,8 +477,13 @@ def _teardown(dest: Path, branch: str, root: Path) -> None:
 
 
 def _convert(entry: Dict[str, Any], task_id: str, dest: Path, root: Path,
-             base: str, expect_manifest: bool) -> Optional[str]:
+             base: str, expect_manifest: bool,
+             phase: str = PHASE_DISPATCH) -> Tuple[Optional[str], str]:
     """Turn one pool entry into the task's worktree, or leave nothing behind.
+
+    Returns ``(path, "")`` or ``(None, <step>:<git's own words>)`` -- the second
+    half is what a `convert_failed` miss records, because a bare
+    `convert_failed` (5 on 2026-10-18) names that a claim failed and not WHY.
 
     ORDER IS THE SAFETY. The branch is renamed first because it is a ref update
     -- instant and reversible -- so the window in which a directory sits at the
@@ -471,7 +502,7 @@ def _convert(entry: Dict[str, Any], task_id: str, dest: Path, root: Path,
         # in the pool. Nothing to undo.
         logger.warning("worktree pool: could not rename %s -> %s: %s",
                        pool_branch, task_branch, err.strip())
-        return None
+        return None, _why("rename", err)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     rc, _out, err = _git(["worktree", "move", str(src), str(dest)], root, timeout=180)
@@ -493,14 +524,14 @@ def _convert(entry: Dict[str, Any], task_id: str, dest: Path, root: Path,
         else:
             logger.warning("worktree pool: move of %s to %s failed: %s",
                            src, dest, err.strip())
-        return None
+        return None, _why("move", err)
 
     rc, _out, err = _git(["reset", "--hard", base], dest, timeout=180)
     if rc != 0:
         logger.warning("worktree pool: reset of %s to %s failed (%s) -- tearing down",
                        dest, base, err.strip())
         _teardown(dest, task_branch, root)
-        return None
+        return None, _why("reset", err)
 
     # CONFIRM BY RE-READING THE WORLD, never from the return codes above. A
     # claimed entry is about to receive an autonomous worker session; the four
@@ -523,21 +554,32 @@ def _convert(entry: Dict[str, Any], task_id: str, dest: Path, root: Path,
                        "(%s) -- tearing down so the inline add starts clean",
                        task_id, ", ".join(problems))
         _teardown(dest, task_branch, root)
-        return None
+        return None, "verify:" + ",".join(problems)
 
     _log_event("claim", task_id=task_id, path=str(dest), source=str(src),
-               seconds=round(time.monotonic() - started, 3))
-    return str(dest)
+               phase=phase, seconds=round(time.monotonic() - started, 3))
+    return str(dest), ""
+
+
+def _why(step: str, err: str) -> str:
+    """`<step>:<last line git printed>`, short enough to sit in a log field."""
+    lines = [ln.strip() for ln in (err or "").splitlines() if ln.strip()]
+    return f"{step}:{lines[-1][:160] if lines else 'no stderr'}"
 
 
 def claim(task_id: str, dest_path: Any, *, repo_root: Any = None,
           base: str = "origin/main", cfg: Optional[Dict[str, Any]] = None,
-          expect_manifest: bool = True) -> Optional[str]:
+          expect_manifest: bool = True, phase: str = PHASE_DISPATCH) -> Optional[str]:
     """Hand a warm worktree to `task_id`, or None -- and None is never an error.
 
     The caller falls through to its own `git worktree add` on None. This function
     is the optimisation; the add is the contract. It therefore swallows every
     exception: a pool defect must not become a dispatch failure.
+
+    `phase` is recorded on every event so `measure` can tell the dispatcher's
+    first ask from its second one -- made after it waited for the add lock, which
+    is usually a REFILL finishing (mfx-own-10). Counting both as misses would
+    double every pool-empty dispatch.
     """
     cfg = cfg or load_config()
     dest = Path(dest_path)
@@ -552,25 +594,25 @@ def claim(task_id: str, dest_path: Any, *, repo_root: Any = None,
             # asks its own repository for warm entries and finds a directory
             # nothing refills. One stat answers that without taking a lock or
             # spawning git on every external dispatch.
-            _log_event("miss", task_id=task_id, reason=MISS_NO_POOL,
+            _log_event("miss", task_id=task_id, phase=phase, reason=MISS_NO_POOL,
                        repo_root=str(root))
             return None
         if dest.exists():
-            _log_event("miss", task_id=task_id, reason=MISS_DEST_EXISTS)
+            _log_event("miss", task_id=task_id, phase=phase, reason=MISS_DEST_EXISTS)
             return None
 
         with _pool_lock(CLAIM_LOCK_WAIT_SECONDS) as held:
             if not held:
-                _log_event("miss", task_id=task_id, reason=MISS_LOCK)
+                _log_event("miss", task_id=task_id, phase=phase, reason=MISS_LOCK)
                 return None
             listing = worktree_listing(root)
             if listing is None:
-                _log_event("miss", task_id=task_id, reason=MISS_LISTING)
+                _log_event("miss", task_id=task_id, phase=phase, reason=MISS_LISTING)
                 return None
             entries = list_entries(root, listing=listing)
             healthy = [e for e in entries if e["healthy"]]
             if not healthy:
-                _log_event("miss", task_id=task_id, reason=MISS_EMPTY,
+                _log_event("miss", task_id=task_id, phase=phase, reason=MISS_EMPTY,
                            pool_depth=0, entries=len(entries))
                 return None
             rc, out, _err = _git(
@@ -579,22 +621,24 @@ def claim(task_id: str, dest_path: Any, *, repo_root: Any = None,
             if rc == 0 and out.strip():
                 # The dispatcher's own stale-branch cleanup owns this case; a
                 # claim on top of an existing task branch would rename over it.
-                _log_event("miss", task_id=task_id, reason=MISS_TASK_BRANCH_EXISTS,
+                _log_event("miss", task_id=task_id, phase=phase, reason=MISS_TASK_BRANCH_EXISTS,
                            pool_depth=len(healthy))
                 return None
             # NEWEST first: the freshest entry has the smallest reset.
             entry = healthy[0]
-            got = _convert(entry, task_id, dest, root, base, expect_manifest)
+            got, why = _convert(entry, task_id, dest, root, base, expect_manifest,
+                                phase=phase)
             if got is None:
-                _log_event("miss", task_id=task_id, reason=MISS_CONVERT_FAILED,
-                           pool_depth=len(healthy))
+                _log_event("miss", task_id=task_id, phase=phase,
+                           reason=MISS_CONVERT_FAILED, detail=why,
+                           source=str(entry.get("path")), pool_depth=len(healthy))
                 return None
             _log_event("pool_depth", pool_depth=len(healthy) - 1, after="claim")
             return got
     except Exception as exc:  # noqa: BLE001 - the pool may never break a dispatch
         logger.warning("worktree pool: claim for %s failed (%s) -- "
                        "falling back to an inline add", task_id, exc)
-        _log_event("miss", task_id=task_id, reason=MISS_ERROR, error=str(exc))
+        _log_event("miss", task_id=task_id, phase=phase, reason=MISS_ERROR, error=str(exc))
         return None
 
 
@@ -645,8 +689,14 @@ def _remove_partial(path: Path, branch: str, root: Path) -> None:
     _git(["branch", "-D", branch], root, timeout=15)
 
 
-def _create_entry(root: Path, base: str, expect_manifest: bool) -> Dict[str, Any]:
-    """One `git worktree add` into the pool. Reports its own failure by name."""
+def _create_entry(root: Path, base: str, expect_manifest: bool,
+                  timeout: float = REFILL_ADD_TIMEOUT_SECONDS) -> Dict[str, Any]:
+    """One `git worktree add` into the pool. Reports its own failure by name.
+
+    `timeout` is the REFILL's budget, not the dispatcher's -- see
+    REFILL_ADD_TIMEOUT_SECONDS. The kill on expiry is unchanged: whole tree,
+    partial checkout removed, so an abandoned refill stops consuming IO.
+    """
     hex_id = secrets.token_hex(_ENTRY_HEX_LEN // 2)
     path = pool_root(root) / f"{ENTRY_PREFIX}{hex_id}"
     branch = entry_branch(hex_id)
@@ -662,7 +712,7 @@ def _create_entry(root: Path, base: str, expect_manifest: bool) -> Dict[str, Any
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "reason": f"spawn_failed:{exc}", "hex": hex_id}
     try:
-        _out, err = proc.communicate(timeout=ADD_TIMEOUT_SECONDS)
+        _out, err = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
         how = _kill_tree(proc)
         try:
@@ -671,7 +721,8 @@ def _create_entry(root: Path, base: str, expect_manifest: bool) -> Dict[str, Any
             pass
         _remove_partial(path, branch, root)
         return {"ok": False, "reason": "budget_exceeded", "hex": hex_id,
-                "seconds": round(time.monotonic() - started, 2), "kill": how}
+                "seconds": round(time.monotonic() - started, 2), "kill": how,
+                "budget_seconds": timeout}
     if proc.returncode != 0:
         _remove_partial(path, branch, root)
         return {"ok": False, "reason": f"rc={proc.returncode}",
@@ -683,6 +734,9 @@ def _create_entry(root: Path, base: str, expect_manifest: bool) -> Dict[str, Any
     return {"ok": True, "hex": hex_id, "path": str(path),
             "seconds": round(time.monotonic() - started, 2)}
 
+
+#: The single-flight lock file a refill holds for its whole run (mfx-own-10).
+_REFILL_FLIGHT_LOCK = ".refill.lock"
 
 #: One line, one timestamp: when a refill add last FAILED. A file rather than an
 #: in-process variable because two dispatchers refill against one disk, and a
@@ -763,6 +817,10 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
     each add and `reap` enforces the ceiling regardless, so the overshoot is
     bounded by the number of concurrent refills and is transient.
 
+    ONE REFILL AT A TIME PER POOL (mfx-own-10). With its own 90s budget and a
+    detached caller, two dispatchers' cycles could otherwise start overlapping
+    refills; the second declines as `refill_in_flight`.
+
     Returns a report. Failures are NAMED in `failures` -- a refill that silently
     does nothing is indistinguishable from a pool that is full.
     """
@@ -775,6 +833,117 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
     if not report["enabled"]:
         report["skipped"] = MISS_DISABLED
         return report
+    with _refill_flight(root) as flying:
+        if not flying:
+            report["skipped"] = "refill_in_flight"
+            return report
+        return _refill_locked(root, base, cfg, expect_manifest, report)
+
+
+@contextlib.contextmanager
+def _refill_flight(root: Path) -> Iterator[bool]:
+    """Non-blocking, per-POOL single-flight lock. Yields False when one is running.
+
+    Beside the pool rather than under COORD_DIR, so a throwaway test repository
+    never contends with a refill running against the real board.
+    """
+    try:
+        from filelock import FileLock, Timeout  # noqa: PLC0415
+    except Exception:  # noqa: BLE001 - no filelock: the add lock still serialises
+        yield True
+        return
+    path = pool_root(root) / _REFILL_FLIGHT_LOCK
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        lock = FileLock(str(path), timeout=0)
+        lock.acquire()
+    except Timeout:
+        yield False
+        return
+    except OSError:
+        yield True  # the lock file cannot even be created: behave as before
+        return
+    try:
+        yield True
+    finally:
+        try:
+            lock.release()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def refill_in_flight(root: Optional[Path] = None) -> bool:
+    """Is a refill running against this pool right now? One non-blocking probe."""
+    with _refill_flight(Path(root) if root else canonical_root()) as flying:
+        return not flying
+
+
+def _healthy_depth(root: Path) -> Optional[int]:
+    """Healthy entries as the world holds them NOW; None when unreadable."""
+    try:
+        listing = worktree_listing(root)
+        if listing is None:
+            return None
+        return len([e for e in list_entries(root, listing=listing) if e["healthy"]])
+    except Exception:  # noqa: BLE001 - a depth read must never break a refill
+        return None
+
+
+def spawn_refill(*, repo_root: Any = None, base: str = "origin/main",
+                 cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Start a refill in a DETACHED process and return at once (mfx-own-10).
+
+    WHY DETACHED. A refill used to run inline in the cycle's `finally`, under a
+    30s budget so it could not hold the cycle for long -- and 88 of 122 died at
+    that budget in the 2026-10-14..18 pool log. Off the critical path a slow
+    refill harms nobody, but INSIDE the cycle it delays the next dispatch by its
+    whole duration; detaching is what makes the longer budget free.
+
+    Cheap when there is nothing to do: one `git worktree list` and one lock
+    probe, no process spawned when the pool is at target or a refill is already
+    running. Never raises.
+    """
+    cfg = cfg or load_config()
+    root = Path(repo_root) if repo_root else canonical_root()
+    out: Dict[str, Any] = {"spawned": False, "pid": None, "skipped": None}
+    try:
+        if not enabled(cfg):
+            out["skipped"] = MISS_DISABLED
+            return out
+        depth = _healthy_depth(root)
+        if depth is not None and depth >= int(cfg.get("target_size", 2)):
+            out["skipped"] = "at_target"
+            return out
+        if refill_in_flight(root):
+            out["skipped"] = "refill_in_flight"
+            return out
+        # cwd is THIS module's checkout, not the pool's repo: the child must run
+        # the same code as the parent that decided to spawn it, and `--repo-root`
+        # names the pool explicitly.
+        kwargs: Dict[str, Any] = {
+            "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL, "cwd": str(_REPO_ROOT),
+        }
+        if os.name == "nt":
+            kwargs["creationflags"] = (
+                getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+                | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
+        else:
+            kwargs["start_new_session"] = True
+        proc = subprocess.Popen(  # nosec B603 - fixed argv, no shell
+            [sys.executable, "-m", "tools.kanban.worktree_pool", "--refill",
+             "--base", base, "--repo-root", str(root)], **kwargs)
+        out["spawned"], out["pid"] = True, int(proc.pid)
+        _log_event("refill_spawned", pid=proc.pid, pool_depth=depth)
+    except Exception as exc:  # noqa: BLE001 - the pool may never break the cycle
+        out["skipped"] = f"error:{exc}"
+        logger.warning("worktree pool: could not spawn a refill: %s", exc)
+    return out
+
+
+def _refill_locked(root: Path, base: str, cfg: Dict[str, Any],
+                   expect_manifest: bool, report: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # ---- decide, under the pool lock, in milliseconds --------------------
         with _pool_lock(CLAIM_LOCK_WAIT_SECONDS) as held:
@@ -800,6 +969,16 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
                 return report
             quiet = quiet_check(cfg)
             report["quiet_basis"] = quiet.get("basis")
+            if not quiet["refill"] and not healthy:
+                # AN EMPTY POOL OVERRIDES WAIT (mfx-own-10). WAIT says the host is
+                # slow; with nothing warm, the NEXT dispatch runs its inline add
+                # on that same slow host whatever the pool does, so declining
+                # protects nobody and guarantees the miss. Measured 2026-10-14..18:
+                # 51 `host_busy` skips beside 99 `pool_empty` misses. With an entry
+                # in hand the gate still holds -- there the pool has something to
+                # lose by competing for the disk.
+                report["quiet_basis"] = f"{quiet.get('basis')}+pool_empty_override"
+                quiet = dict(quiet, refill=True)
             if not quiet["refill"]:
                 report["skipped"] = "host_busy"
                 report["quiet_detail"] = quiet.get("detail")
@@ -813,34 +992,43 @@ def refill(*, repo_root: Any = None, base: str = "origin/main",
         from tools.coordination.gitlock import worktree_add_lock  # noqa: PLC0415
 
         wait = float(cfg.get("refill_lock_wait_seconds", 5))
-        with worktree_add_lock(timeout=wait) as add_held:
-            if not add_held:
-                report["skipped"] = "add_lock_busy"
-                _log_event("refill_skipped", reason="add_lock_busy",
-                           pool_depth=len(healthy))
-                return report
-            for _ in range(want):
+        budget = float(cfg.get("refill_add_timeout_seconds", REFILL_ADD_TIMEOUT_SECONDS))
+        for _ in range(want):
+            # THE ADD LOCK IS TAKEN PER ADD, never across the run (mfx-own-10):
+            # a run now fills to target, and holding the lock across several
+            # 90s-budget adds would outlast the dispatcher's 90s lock wait.
+            with worktree_add_lock(timeout=wait) as add_held:
+                if not add_held:
+                    report["skipped"] = "add_lock_busy"
+                    _log_event("refill_skipped", reason="add_lock_busy",
+                               pool_depth=_healthy_depth(root))
+                    break
                 # The CEILING re-checked against the world as it is NOW: another
                 # dispatcher may have refilled while this one waited for the lock.
                 live = len([e for e in list_entries(root) if e["hex"]])
                 if live >= int(cfg.get("max_size", 3)):
                     report["skipped"] = "at_max_size"
                     break
-                made = _create_entry(root, base, expect_manifest)
-                if made.get("ok"):
-                    report["created"] += 1
-                    _log_event("refill", hex=made["hex"],
-                               seconds=made.get("seconds"),
-                               pool_depth=len(healthy) + report["created"])
-                else:
-                    report["failures"].append(made)
-                    _record_refill_failure(root)
-                    _log_event("refill_failed", reason=made.get("reason"),
-                               hex=made.get("hex"), seconds=made.get("seconds"),
-                               pool_depth=len(healthy) + report["created"])
-                    break  # a failing add on a loaded disk will fail again
+                made = _create_entry(root, base, expect_manifest, timeout=budget)
+            # Depth RE-READ, not computed: claims do not take the add lock, so
+            # `healthy + created` over-counts whenever a dispatch claimed during
+            # the add -- and an over-count here is a park `measure` would
+            # wrongly file as `pool_nonempty`.
+            depth = _healthy_depth(root)
+            if made.get("ok"):
+                report["created"] += 1
+                _log_event("refill", hex=made["hex"], seconds=made.get("seconds"),
+                           budget_seconds=budget, pool_depth=depth)
+            else:
+                report["failures"].append(made)
+                _record_refill_failure(root)
+                _log_event("refill_failed", reason=made.get("reason"),
+                           hex=made.get("hex"), seconds=made.get("seconds"),
+                           budget_seconds=budget, detail=made.get("detail"),
+                           pool_depth=depth)
+                break  # a failing add on a loaded disk will fail again
 
-        report["depth_after"] = len(healthy) + report["created"]
+        report["depth_after"] = _healthy_depth(root)
         _log_event("pool_depth", pool_depth=report["depth_after"], after="refill")
         return report
     except Exception as exc:  # noqa: BLE001 - a refill may never break the cycle
@@ -958,6 +1146,7 @@ def status(*, repo_root: Any = None,
         "depth": len([e for e in entries if e["healthy"]]),
         "entries": entries,
         "quiet": quiet_check(cfg),
+        "refill_in_flight": refill_in_flight(root),
     }
 
 
@@ -999,6 +1188,36 @@ def _read_events(path: Path, cutoff: datetime) -> Optional[List[Dict[str, Any]]]
         events.append({"at": ts, **extra})
     events.sort(key=lambda e: e["at"])
     return events
+
+
+def _read_window(path: Path, cutoff: datetime) -> Optional[List[Dict[str, Any]]]:
+    """The live log AND its rotated siblings, for a window that spans midnight.
+
+    THE ROTATION DEFECT (mfx-own-10). The handler rotates this file daily to
+    `<name>.<date>`, and `measure` read the live file alone -- so a 24h window
+    asked at 08:46 saw one hour of events, and every park before 07:45 was
+    `unmeasurable`. That is how the card's own acceptance number went blind.
+    A rotated file whose mtime predates the cutoff cannot hold an event inside
+    the window, and is not opened.
+    """
+    found: List[Dict[str, Any]] = []
+    read_any = False
+    cut = cutoff.timestamp()
+    for p in [path, *sorted(path.parent.glob(path.name + ".*"))]:
+        try:
+            if p != path and p.stat().st_mtime < cut:
+                continue
+        except OSError:
+            continue
+        got = _read_events(p, cutoff)
+        if got is None:
+            continue
+        read_any = True
+        found.extend(got)
+    if not read_any:
+        return None
+    found.sort(key=lambda e: e["at"])
+    return found
 
 
 def _park_rows(cutoff: datetime, get_conn: Any = None) -> Optional[List[Dict[str, Any]]]:
@@ -1056,7 +1275,7 @@ def measure(window_hours: float = 24.0, *, repo_root: Any = None,
     cutoff = now - timedelta(hours=window_hours)
     root = Path(repo_root) if repo_root else canonical_root()
     logp = log_file(root)
-    events = _read_events(logp, cutoff)
+    events = _read_window(logp, cutoff)
     parks = _park_rows(cutoff, get_conn=get_conn)
 
     out: Dict[str, Any] = {
@@ -1067,6 +1286,9 @@ def measure(window_hours: float = 24.0, *, repo_root: Any = None,
         "pool_events": None if events is None else len(events),
         "claims": None, "misses": None, "miss_reasons": {},
         "refills": None, "refill_failures": None, "refill_failure_reasons": {},
+        "refill_attempts": None, "refill_budget_exceeded_share": None,
+        "claims_after_add_lock": None, "misses_after_add_lock": None,
+        "convert_failed_detail": [],
         "parks": None if parks is None else len(parks),
         "parks_while_pool_nonempty": None,
         "parks_while_pool_empty": None,
@@ -1082,9 +1304,21 @@ def measure(window_hours: float = 24.0, *, repo_root: Any = None,
         out["reason"] = "the board's transition log could not be read"
         return out
 
-    out["claims"] = sum(1 for e in events if e["event"] == "claim")
-    misses = [e for e in events if e["event"] == "miss"]
+    # The dispatcher's SECOND ask (after waiting on the add lock) is counted
+    # apart: folded in, every pool-empty dispatch would read as two misses.
+    def _second(e: Dict[str, Any]) -> bool:
+        return e.get("phase") == PHASE_AFTER_ADD_LOCK
+
+    claims = [e for e in events if e["event"] == "claim"]
+    out["claims"] = sum(1 for e in claims if not _second(e))
+    out["claims_after_add_lock"] = sum(1 for e in claims if _second(e))
+    all_misses = [e for e in events if e["event"] == "miss"]
+    misses = [e for e in all_misses if not _second(e)]
+    out["misses_after_add_lock"] = len(all_misses) - len(misses)
     out["misses"] = len(misses)
+    out["convert_failed_detail"] = [
+        str(e.get("detail") or "unexplained") for e in all_misses
+        if e.get("reason") == MISS_CONVERT_FAILED]
     for e in misses:
         k = str(e.get("reason") or "unknown")
         out["miss_reasons"][k] = out["miss_reasons"].get(k, 0) + 1
@@ -1094,6 +1328,14 @@ def measure(window_hours: float = 24.0, *, repo_root: Any = None,
     for e in fails:
         k = str(e.get("reason") or "unknown")
         out["refill_failure_reasons"][k] = out["refill_failure_reasons"].get(k, 0) + 1
+    # THE ACCEPTANCE RATIO: budget kills over ATTEMPTS, never over failures --
+    # 30 of 31 failures being budget kills says nothing about how often a
+    # refill dies; 30 of 50 attempts does.
+    attempts = out["refills"] + out["refill_failures"]
+    out["refill_attempts"] = attempts
+    if attempts:
+        out["refill_budget_exceeded_share"] = round(
+            out["refill_failure_reasons"].get("budget_exceeded", 0) / attempts, 3)
 
     depth_events = [e for e in events if e.get("pool_depth") is not None]
     nonempty = empty = unknown = 0
@@ -1148,8 +1390,12 @@ def _render_measure(m: Dict[str, Any]) -> str:
         f"pool over the last {m['window_hours']}h "
         f"({m['pool_events']} pool events, {m['parks']} parks)",
         f"  claims {m['claims']}   misses {m['misses']} {m['miss_reasons'] or ''}",
+        f"  claims after waiting on the add lock {m['claims_after_add_lock']}"
+        f"   (misses there {m['misses_after_add_lock']})",
         f"  refills {m['refills']}   refill FAILURES {m['refill_failures']} "
         f"{m['refill_failure_reasons'] or ''}",
+        f"  budget kills / refill attempts: {m['refill_budget_exceeded_share']}"
+        f" of {m['refill_attempts']}",
         f"  parks while the pool was NON-EMPTY: {m['parks_while_pool_nonempty']}"
         "   <- the finding",
         f"  parks while the pool was empty:     {m['parks_while_pool_empty']}"
@@ -1157,6 +1403,8 @@ def _render_measure(m: Dict[str, Any]) -> str:
         f"  parks with no prior observation:    {m['parks_unmeasurable']}"
         "   (not a clean result)",
     ]
+    for d in m["convert_failed_detail"]:
+        lines.append(f"    convert_failed: {d}")
     for p in m["park_detail"]:
         lines.append(f"    {p['at']}  {p['task_id']}  depth="
                      f"{p['pool_depth_at_park']}  {p['verdict']}")
@@ -1174,11 +1422,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--reap", action="store_true")
     ap.add_argument("--measure", action="store_true")
     ap.add_argument("--window-hours", type=float, default=24.0)
+    ap.add_argument("--base", default="origin/main",
+                    help="ref a refill checks out (the detached refill passes the "
+                         "dispatcher's default base)")
+    ap.add_argument("--repo-root", default=None)
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
     if args.refill:
-        out: Dict[str, Any] = refill()
+        out: Dict[str, Any] = refill(repo_root=args.repo_root, base=args.base)
         text = json.dumps(out, indent=2, default=str) if args.json else (
             f"created {out['created']}  depth {out['depth_before']} -> "
             f"{out['depth_after']}  skipped={out['skipped']}  "
