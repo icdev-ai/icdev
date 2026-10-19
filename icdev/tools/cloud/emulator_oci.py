@@ -79,8 +79,12 @@ THE MEASURED TRAPS THIS SEAM EXISTS TO STATE ONCE
    token** (k3s now starts with a ``token-auth-file``, the apiserver answers,
    and the kubeconfig lane hands out a working token) -- but ``ACTIVE`` is
    still written once at create and never re-checked: stop the k3s container
-   and the API keeps reporting ``ACTIVE`` against a dead endpoint. The set
-   stays ``{"oke"}`` because the field is still not evidence.
+   and the API keeps reporting ``ACTIVE`` against a dead endpoint. **0.5.0**
+   answers a create with ``CREATING`` instead of ``ACTIVE`` -- so state is no
+   longer simply written once -- but whether it is ever re-checked against the
+   sidecar was NOT measured (2026-10-19: the docker engine restarted under the
+   privileged k3s container on the measuring host). The set stays ``{"oke"}``
+   because the field is still not evidence.
    :data:`OKE_LIFECYCLE_IS_UNVERIFIED` is why no consumer may promote that
    field to a health verdict.
 
@@ -131,6 +135,14 @@ MODE = "floci-oci"
 
 # ── Image identity ─────────────────────────────────────────────────────────
 #
+# Moved 0.4.2 -> 0.5.0 on 2026-10-19 (artifact-fresh-6717a5a069) after driving
+# 0.4.2 and 0.5.0 side by side with one probe: every inventory lane, the health
+# shape, the create/400/404 statuses, the container-local endpoint quirk and
+# storage-mode honouring are identical. OKE CHANGED AGAIN, partly: a create now
+# reports `lifecycleState: CREATING` rather than ACTIVE; whether it is ever
+# re-checked was NOT measured (the docker engine restarted under the k3s
+# sidecar on this host). See docs/spikes/flx-oci-parity.md §11.
+#
 # Moved 0.4.1 -> 0.4.2 on 2026-10-06 (artifact-fresh-f2a465a983) after driving
 # a live 0.4.2 container: every inventory lane, the health shape, the
 # container-local endpoint quirk and storage-mode honouring reproduce
@@ -146,13 +158,13 @@ MODE = "floci-oci"
 # docs/spikes/flx-oci-parity.md §9 for the full delta (there is none of
 # substance -- a Quarkus point bump, nothing else).
 IMAGE_REPOSITORY = "floci/floci-oci"
-IMAGE_TAG = "0.4.2"
+IMAGE_TAG = "0.5.0"
 IMAGE = f"{IMAGE_REPOSITORY}:{IMAGE_TAG}"
 
-#: Digest MEASURED from the pulled image on 2026-10-06. Recorded so an air-gap
+#: Digest MEASURED from the pulled image on 2026-10-19. Recorded so an air-gap
 #: bundle can be verified by digest rather than by tag -- a tag-only check
 #: reads a `docker load`ed bundle as absent (see the flx-airgap-01 discipline).
-IMAGE_DIGEST = "sha256:98ba24585a582ed0b1f482aa4ac11fcd65f39effec51c3ada8a3182b30bcad3b"
+IMAGE_DIGEST = "sha256:3cb5af867fb2a4e8b60f8cf6fd0acf4873108f01d481c0aac23c01ca00f935ae"
 
 # ── Network ────────────────────────────────────────────────────────────────
 CONTAINER_PORT = 4599
@@ -262,7 +274,8 @@ FABRICATED_SUCCESS_WITHOUT_DOCKER: frozenset[str] = frozenset()
 #: a socket, the API reports ``lifecycleState: ACTIVE`` whether or not k3s is
 #: alive. Through 0.4.1 k3s always died (``--token is required``); from 0.4.2
 #: it starts, but the state is written once at create and never re-checked --
-#: a stopped k3s container still reads ``ACTIVE`` (measured 2026-10-06).
+#: a stopped k3s container still reads ``ACTIVE`` (measured 2026-10-06). 0.5.0
+#: reports ``CREATING`` at create; a re-check is UNMEASURED, so the guard holds.
 FABRICATED_ACTIVE_WITH_DOCKER = frozenset({"oke"})
 
 #: So an OKE row is never evidence of a working cluster, whatever it says.

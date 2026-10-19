@@ -30,7 +30,8 @@ without a ``--token``, k3s exits immediately, and the API keeps reporting
 ``lifecycleState: ACTIVE`` with a ``kubernetes`` endpoint that has no listener.
 Re-measured 2026-10-06 on ``0.4.2``: k3s now starts and authenticates, but the
 state is still never re-checked -- a stopped k3s keeps reading ``ACTIVE``.
-So ``clusters`` rows are counted as RECORDS and ``unverified_tables`` names them
+Re-measured 2026-10-19 on ``0.5.0``: a create reports ``CREATING``; whether the
+state is ever re-checked was NOT measured. So ``clusters`` rows are counted as RECORDS and ``unverified_tables`` names them
 on every snapshot -- including a clean one, because a reader who only learns of
 the caveat when something looks wrong will read a clean snapshot as a working
 cluster.
@@ -344,16 +345,17 @@ class FlociOciTwinAdapter(TwinAdapter):
             # tables' rows are records whose backing the emulator does not
             # verify: lifecycleState is set once at create and never re-checked
             # (0.4.0/0.4.1 never started k3s at all; on 0.4.2 a stopped k3s
-            # still reads ACTIVE). A reader who learns that
+            # still reads ACTIVE; 0.5.0's re-check is unmeasured). A reader who learns that
             # only from a failing snapshot will read a clean one as a working
             # cluster.
             "unverified_tables": list(_UNVERIFIED_TABLES),
             "unverified_reason": (
-                "OKE rows are records, not running clusters: floci-oci sets "
-                "lifecycleState ACTIVE once at create and never re-checks it. "
+                "OKE rows are records, not running clusters: floci-oci has never "
+                "been observed re-checking lifecycleState against the cluster. "
                 "Through 0.4.1 rancher/k3s started without a --token and exited "
                 "immediately; on 0.4.2 k3s starts, but a stopped one still reads "
-                "ACTIVE with an endpoint that has no listener (measured 2026-10-06)."
+                "ACTIVE with an endpoint that has no listener (measured 2026-10-06); "
+                "0.5.0 reports CREATING at create and its re-check is unmeasured."
             )
             if _UNVERIFIED_TABLES
             else "",
@@ -495,6 +497,7 @@ class FlociOciTwinAdapter(TwinAdapter):
           re-checked. Through 0.4.1 k3s never started at all (no ``--token``);
           0.4.2 starts it, but a stopped k3s still reads ACTIVE, and a created
           cluster is a privileged k3s publishing 6443 on every host interface.
+          0.5.0 reports ``CREATING`` at create; its re-check is unmeasured.
         * **CAN THIS HOST EXERCISE ITS DATA PLANE?** A container-backed service
           with no docker socket, at ``medium``. Unlike the GCP sibling there is
           no severity escalation for a fabricating service here, because
@@ -531,7 +534,10 @@ class FlociOciTwinAdapter(TwinAdapter):
                     f"starts and authenticates, but stopping it leaves the API reporting "
                     f"ACTIVE with a kubernetes endpoint that has no listener, and the "
                     f"cluster is a privileged container publishing 6443 on every host "
-                    f"interface. Without a docker socket the create fails loudly with a "
+                    f"interface. MEASURED 2026-10-19 on 0.5.0: a create reports "
+                    f"CREATING and the 6443 bind reproduces; whether the state is ever "
+                    f"re-checked was not measured. "
+                    f"Without a docker socket the create fails loudly with a "
                     f"500. Rehearse "
                     f"'{service}' elsewhere and treat any row this twin reports for it "
                     f"as a record, never as a running cluster. This says nothing about "

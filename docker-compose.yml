@@ -1327,9 +1327,9 @@ services:
     profiles: ["floci-gcp"]
     # PINNED, never `:latest`. Kept in step with emulator_gcp.IMAGE by hand —
     # YAML cannot import a Python constant — and a test pins them equal.
-    # Digest measured 2026-10-07 (artifact-fresh-6ba99af4d5, bumped from 0.9.0):
-    #   sha256:405c128b685afbc461276820f2286defcc3a6fa478755067d3e3f740c5503c07
-    image: floci/floci-gcp:0.10.0
+    # Digest measured 2026-10-19 (artifact-fresh-b20d238422, bumped from 0.10.0):
+    #   sha256:eae9683d806ceb643bcb36aee97cdb8cad13c3e2959cd053bf40e481994fde12
+    image: floci/floci-gcp:0.11.0
     container_name: icdev-floci-gcp
     ports:
       # Loopback-only: an emulator holding the host docker socket must not be
@@ -1405,9 +1405,9 @@ services:
     profiles: ["floci-oci"]
     # PINNED, never `:latest`. Kept in step with emulator_oci.IMAGE by hand —
     # YAML cannot import a Python constant — and a test pins them equal.
-    # Digest measured 2026-10-06 (artifact-fresh-f2a465a983, bumped from 0.4.1):
-    #   sha256:98ba24585a582ed0b1f482aa4ac11fcd65f39effec51c3ada8a3182b30bcad3b
-    image: floci/floci-oci:0.4.2
+    # Digest measured 2026-10-19 (artifact-fresh-6717a5a069, bumped from 0.4.2):
+    #   sha256:3cb5af867fb2a4e8b60f8cf6fd0acf4873108f01d481c0aac23c01ca00f935ae
+    image: floci/floci-oci:0.5.0
     container_name: icdev-floci-oci
     ports:
       # Loopback-only: an emulator holding the host docker socket must not be
@@ -1454,11 +1454,14 @@ services:
       # `--token`, the container exited immediately, and the API still
       # reported lifecycleState ACTIVE. 0.4.2 (artifact-fresh-f2a465a983,
       # 2026-10-06) FIXED the token — k3s comes up and authenticates — but the
-      # API still never re-checks: a stopped k3s still reads ACTIVE. Mounting
+      # API still never re-checks: a stopped k3s still reads ACTIVE. 0.5.0
+      # (artifact-fresh-6717a5a069, 2026-10-19) answers a create with CREATING
+      # instead of ACTIVE; whether it re-checks a dead sidecar is UNMEASURED
+      # (the docker engine restarted under k3s on the measuring host). Mounting
       # the socket keeps this profile identical in shape to its three siblings;
       # nothing in ICDEV depends on OKE.
       #
-      # NEW IN 0.4.2, AND OUTSIDE THIS FILE'S CONTROL: a created cluster is a
+      # NEW IN 0.4.2 (reproduced on 0.5.0), AND OUTSIDE THIS FILE'S CONTROL: a created cluster is a
       # PRIVILEGED k3s container that publishes 6443 on ALL host interfaces
       # (0.0.0.0, not the loopback the port above is held to). Token auth is
       # on and anonymous auth off, but a host where off-host reach to 6443

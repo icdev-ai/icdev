@@ -3516,10 +3516,15 @@ def _get_due_tasks() -> list:
         # by a dashboard move or decay-promotion without passing through it,
         # and an E2E fixture dispatched from there costs the same wasted
         # worker session. Same belt-and-braces the manual gate gets.
+        # `_repark_subject_is_terminal` is the dispatch-side twin of the
+        # decay-sweep skip: kph-repark-qa-fail-a873b6f8944c7b5d was promoted
+        # before that skip landed, with its subject already done, and was
+        # dispatched anyway.
         result = [
             dict(r) for r in scheduled
             if not _is_manual_gate(dict(r).get("id"), dict(r).get("title"))
             and not _is_test_fixture(dict(r).get("id"), dict(r).get("title"))
+            and not _repark_subject_is_terminal(conn, dict(r).get("id") or "")
         ]
 
         # Phase-exit validation (2026-04-15 V&V Batch 2): for phased task IDs
@@ -11149,12 +11154,20 @@ _DECAY_PROMOTION_REASON = (
 #: of the id is the subject task (which may itself be a REPARK card).
 _REPARK_PREFIX = "kph-repark-"
 
+#: Card prefixes whose premise is "the subject is stuck". A ``kph-orphan-<id>``
+#: card (``stranded_audit``: "stuck in 'validating' with no branch") has the
+#: same shape as a REPARK card and was decay-promoted the same way: measured
+#: 2026-10-19 (kph-orphan-qa-fail-aed33993b690221d), re-queued 34 h after its
+#: subject was forced done. ``kph-stranded-`` is deliberately NOT here -- a
+#: done subject is that card's premise ("done, but commits not on main").
+_SUBJECT_CARD_PREFIXES = (_REPARK_PREFIX, "kph-orphan-")
+
 #: Subject statuses after which a REPARK card has nothing left to do.
 _REPARK_SUBJECT_TERMINAL = frozenset({"done", "cancelled", "decomposed", "superseded"})
 
 
 def _repark_subject_is_terminal(conn: Any, task_id: str) -> bool:
-    """True when ``task_id`` is a REPARK card whose subject has gone terminal.
+    """True when ``task_id`` is a REPARK (or orphan) card whose subject has gone terminal.
 
     A REPARK card is seeded ``suggested`` while its subject sits parked. If the
     subject is then unstuck and finished by other means, the card's premise is
@@ -11166,9 +11179,10 @@ def _repark_subject_is_terminal(conn: Any, task_id: str) -> bool:
     land, decay-promoted 2026-10-18 00:24; 10 of 24 open REPARK cards on the
     board had a ``done`` subject.
     """
-    if not task_id.startswith(_REPARK_PREFIX):
+    prefix = next((p for p in _SUBJECT_CARD_PREFIXES if task_id.startswith(p)), None)
+    if prefix is None:
         return False
-    subject = task_id[len(_REPARK_PREFIX):]
+    subject = task_id[len(prefix):]
     row = conn.execute(
         "SELECT status FROM kanban_tasks WHERE id = %s", (subject,)
     ).fetchone()
@@ -13275,6 +13289,27 @@ def _check_completed():
 
             # ── TOKEN EXHAUSTION CHECK (runs for ANY exit code) ───────
             is_exhausted, reset_hint = _detect_token_exhaustion(ret, claude_output)
+            # kph-orphan-task-e2e-8f6cb4d0: a session that has ALREADY moved its
+            # own card to `done` is finished, whatever its exit looked like.
+            # Parking it here overwrote a merge-verified (or audited force-)done
+            # with token_exhausted, and the retry re-dispatched a finished card:
+            # measured 2026-10-19, done -> token_exhausted twice on one card,
+            # each 40s after the worker's own `done`, with an empty task log --
+            # so the exit-code branch, not provider text. Release it instead.
+            if is_exhausted and _task_status(task_id) == "done":
+                logger.info(
+                    "kanban: %s exited abnormally (rc=%s) after reaching done "
+                    "-- not parking a finished task", task_id, ret,
+                )
+                _clear_retry_count(task_id)
+                _clear_resume_at(task_id)
+                if task_id in _worktrees:
+                    _cleanup_worktree(task_id)
+                    del _worktrees[task_id]
+                del _running[task_id]
+                _dispatch_times.pop(task_id, None)
+                completed.append(task_id)
+                continue
             if is_exhausted:
                 retry_count = _increment_retry_count(task_id)
 
@@ -13972,6 +14007,11 @@ def _check_token_exhausted_tasks() -> list:
                     continue
             except Exception as _ho_exc:  # noqa: BLE001 — never wedge the sweep
                 logger.debug("parked hand-off check failed for %s: %s", task_id, _ho_exc)
+
+            # 0b. A REPARK card whose subject has gone terminal has nothing
+            #     left to do; re-dispatching it only earns another park.
+            if _repark_subject_is_terminal(conn, task_id):
+                continue
 
             # 1. Load persisted resume_at (preferred)
             resume_at = _load_resume_at(task_id)
