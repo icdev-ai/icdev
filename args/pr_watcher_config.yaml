@@ -623,6 +623,16 @@ union_resolver:
     # safe_load accepts; none of the 7 observed hunks had that shape.
     - path: args/agent_capabilities.yaml
       rules: [keep_both_blocks, adjacent_edits]
+    # bab0bd5e6a2028ab (kpr-watch-22): 34 refusals, all omx-adapt-04,
+    # `undeclared: tools/agents/capability_matrix.py`. SURVEYED PER HUNK before
+    # arming -- `python -m tools.kanban.artifact_pin_union_survey --file
+    # tools/agents/capability_matrix.py`: 1 merge git conflicted on (62520cc27),
+    # 3 hunks, 2 exact + 1 order_only, shape append_shaped (base_seg empty on
+    # both sides), 0 lost_content. Each card appends a CAPABILITIES entry, a
+    # probe function and a _PROBES row at the same points. The icdev/tools/
+    # mirror folds onto this entry via _MIRROR_PREFIXES, so no second line.
+    - path: tools/agents/capability_matrix.py
+      rules: [keep_both_blocks, adjacent_edits]
     # NOT DECLARED, AND MEASURED RATHER THAN JUDGED (kpr-watch-20):
     # `icdev/data/args/floci_runtime_images.yaml` conflicted on #2269 and is a
     # candidate by proximity only. Its one conflict is an ADD/ADD of the SAME
