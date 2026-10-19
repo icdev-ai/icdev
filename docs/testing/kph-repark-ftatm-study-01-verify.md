@@ -44,5 +44,19 @@ subject `done` is correct.
 
 `stranded_audit` only puts a row in `orphan_validating` when its `status ==
 'validating'` and it has no branch (`tools/kanban/stranded_audit.py:351`). A `done`
-row cannot appear there. See the live run result in the card comment on
-`kph-repark-ftatm-study-01`.
+row cannot appear there.
+
+PG was restarting during this run, so the first audit attempt returned
+`"error": "...the database system is starting up"` and an empty finding set. That
+result is not evidence, and this note does not use it. I queried the board directly
+once PG was back (2026-10-19T14:40Z):
+
+| id | status |
+|---|---|
+| `ftatm-study-01` | `done` (2026-10-16T08:43Z) |
+| `ftatm-study-02` | `done` |
+| `ftatm-study-03` | **`validating`**, the only validating row on the board |
+
+`ftatm-study-03` is outside this card's scope. If its `kanban/ftatm-study-03`
+branch is missing, it is the row `orphan_validating` would list, not
+`ftatm-study-01`.
