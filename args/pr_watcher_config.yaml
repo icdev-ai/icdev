@@ -609,6 +609,20 @@ union_resolver:
     # of the 19 observed hunks had that shape.
     - path: .github/workflows/icdev-ci.yml
       rules: [keep_both_blocks, adjacent_edits]
+    # 30be3e74058a5e9b (kpr-watch-22): 34 refusals, all `undeclared:
+    # args/agent_capabilities.yaml`, all from omx-adapt-04. SURVEYED PER HUNK
+    # before arming -- `python -m tools.kanban.artifact_pin_union_survey --file
+    # args/agent_capabilities.yaml`: 1 merge git conflicted on (62520cc27),
+    # 7 hunks, 7 exact, lost_content = 0, shape append_shaped. Each card adds
+    # ONE new capability key as the last line of every adapter block, so main
+    # and the card insert at the same point (`sandboxed:` from omx-guard-05 vs
+    # `claude_route:` from omx-adapt-04). Not `derived_from`: the wheel copy
+    # icdev/data/args/agent_capabilities.yaml is not byte-identical and was in
+    # no conflict set. Same blind spot as icdev-ci.yml: two cards adding the
+    # SAME key to one adapter would union into a duplicate mapping key that
+    # safe_load accepts; none of the 7 observed hunks had that shape.
+    - path: args/agent_capabilities.yaml
+      rules: [keep_both_blocks, adjacent_edits]
     # NOT DECLARED, AND MEASURED RATHER THAN JUDGED (kpr-watch-20):
     # `icdev/data/args/floci_runtime_images.yaml` conflicted on #2269 and is a
     # candidate by proximity only. Its one conflict is an ADD/ADD of the SAME
