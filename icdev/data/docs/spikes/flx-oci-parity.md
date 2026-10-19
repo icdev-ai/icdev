@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 
-# flx-oci-parity — what floci-oci ACTUALLY answers (0.4.0, re-measured on 0.4.1 in §9 and on 0.4.2 in §10), and what ICDEV can actually do with it
+# flx-oci-parity — what floci-oci ACTUALLY answers (0.4.0, re-measured on 0.4.1 in §9, on 0.4.2 in §10 and on 0.5.0 in §11), and what ICDEV can actually do with it
 
 **Measured 2026-09-05** on this host (Windows 11, Docker Desktop 28.5.1,
 `linux/amd64`), against:
@@ -492,3 +492,61 @@ creates a cluster (the seam is read/inventory-only), but an operator who
 creates one has exposed an apiserver off-host. Recorded in `docker-compose.yml`
 and sandbox-coverage; not mitigated here, because the bind is chosen by the
 emulator, not by anything this repository passes it.
+
+## 11. Re-measured against 0.5.0 (2026-10-19, artifact-fresh-6717a5a069) — inventory identical, OKE partly re-measured
+
+The pin moved 0.4.2 → 0.5.0 (`artifact_freshness` / xrv-pin-01). Driven live
+(Docker Desktop 28.5.1, `linux/amd64`), 0.4.2 and 0.5.0 side by side, with ONE
+probe script issuing identical requests to both:
+
+```
+floci/floci-oci:0.5.0
+sha256:3cb5af867fb2a4e8b60f8cf6fd0acf4873108f01d481c0aac23c01ca00f935ae
+native (Quarkus 3.40.1) · image created 2026-10-15
+```
+
+### Unchanged — the inventory contract ICDEV reads
+
+| probe | 0.4.2 | 0.5.0 |
+|---|---|---|
+| startup log, `ServiceRegistry` | 7 services (no `functions`) | identical |
+| `GET /health` → `services` | 8 (+ `functions`), all `"running"` | identical; only `version` differs |
+| `GET /n/` | `"floci-local"` | identical |
+| bucket / compartment / vault / queue / stream create | 200 / 200 / 200 / **202** / 200 | identical |
+| `compartmentId` omitted: vaults / buckets / streams | 400 / 400 / 200 | identical |
+| vaults under a bogus compartment | 0 rows | identical |
+| all eleven list lanes the seam reads | 200, same row keys | identical (queues still `{"items": [...]}`) |
+| vault `cryptoEndpoint` / `managementEndpoint` | container-local `http://localhost:4599` | identical |
+| controls (`/20990101/nonsense`, Compute, VCN, streamPools, four GenAI paths) | 404 | identical |
+| OKE create **without** a docker socket | 500, nothing recorded | identical |
+| `FLOCI_OCI_STORAGE_MODE=persistent` | banner `Storage: persistent` | identical |
+| image `HEALTHCHECK`, exposed ports | `/usr/local/bin/healthcheck.sh`, `4599/tcp` | identical |
+
+### OKE — one change observed, one question left open
+
+With the docker socket mounted, `POST /20180222/clusters` → 202 and the
+emulator spawns the same `rancher/k3s:v1.30.1-k3s1`, privileged, publishing
+`0.0.0.0:6443` **and** `[::]:6443` — the §10 exposure reproduces.
+
+| probe | 0.4.2 | 0.5.0 |
+|---|---|---|
+| `lifecycleState` in the create response and the immediate list | `ACTIVE` | **`CREATING`** |
+| `kubernetesVersion` | echo of the request | still an echo (`v1.29.1`) |
+| `lifecycleState` after the sidecar is stopped | still `ACTIVE` | **NOT MEASURED** |
+
+The run did not get further: about 15 seconds after the k3s sidecar started,
+the **Docker engine on the measuring host restarted** (every container exited
+255 at the same instant, including the unrelated Postgres and CI-runner
+containers). This host's memory pressure is a known hazard. The probe was not
+retried. Repeating a run that had just taken the shared engine down would have
+risked the same outage again, all to answer a question ICDEV does not depend on.
+
+What that does to the seam's constants: **nothing**.
+`FABRICATED_ACTIVE_WITH_DOCKER` stays `{"oke"}` and
+`OKE_LIFECYCLE_IS_UNVERIFIED` stays `True`. A `CREATING` → `ACTIVE`
+transition would show the emulator now tracks *something*. It would not show
+that a dead cluster is ever noticed, and nothing in this release was observed
+doing that. The guard is fail-closed, so leaving a question unmeasured keeps
+it in place. Only a measurement can lift it. A later card that wants to retire
+the guard must stop the sidecar on a host that can carry k3s and observe the
+state change.

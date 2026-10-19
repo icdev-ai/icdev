@@ -2513,7 +2513,10 @@ that.
   makes the grant LARGER, not smaller: a create now leaves a **privileged**
   k3s container publishing 6443 on **all** host interfaces (token auth on,
   anonymous auth off), outside the loopback-only posture of the emulator port.
-  `lifecycleState` is still never re-checked. ICDEV itself never creates an
+  `lifecycleState` is still never re-checked. **On 0.5.0 (2026-10-19,
+  artifact-fresh-6717a5a069)** the 6443 bind on `0.0.0.0` and `[::]` reproduces
+  and a create reports `CREATING` rather than `ACTIVE`; whether the state is
+  re-checked was not measured. ICDEV itself never creates an
   OKE cluster (the seam is read/inventory-only). It is
   granted for two narrow reasons: shape-parity with the three sibling profiles,
   so a later release that fixes OKE needs no compose change; and because the

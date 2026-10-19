@@ -374,10 +374,19 @@ artifacts:
   - name: floci-oci
     kind: image
     ref: floci/floci-oci
-    pinned: "0.4.2"
+    pinned: "0.5.0"
     pin_source: "compose:floci-oci"
     upstream: dockerhub
     note: >-
+      Bumped from 0.4.2 on 2026-10-19 (artifact-fresh-6717a5a069) after
+      driving live 0.4.2 and 0.5.0 containers side by side with one probe:
+      every inventory lane, the health shape, create/400/404 statuses,
+      storage-mode honouring and the container-local endpoint quirk are
+      identical. OKE now answers a create with CREATING rather than ACTIVE;
+      whether it re-checks a dead sidecar was NOT measured (the docker engine
+      restarted under k3s), so OKE_LIFECYCLE_IS_UNVERIFIED stays True. See
+      docs/spikes/flx-oci-parity.md section 11 and
+      docs/audits/artifact-fresh-6717a5a069-floci-oci-pin.md.
       Bumped from 0.4.1 on 2026-10-06 (artifact-fresh-f2a465a983) after
       driving live 0.4.1 and 0.4.2 containers side by side. Every inventory
       lane, the health shape and the container-local endpoint quirk reproduce
