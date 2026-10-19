@@ -3486,10 +3486,15 @@ def _get_due_tasks() -> list:
         # by a dashboard move or decay-promotion without passing through it,
         # and an E2E fixture dispatched from there costs the same wasted
         # worker session. Same belt-and-braces the manual gate gets.
+        # `_repark_subject_is_terminal` is the dispatch-side twin of the
+        # decay-sweep skip: kph-repark-qa-fail-a873b6f8944c7b5d was promoted
+        # before that skip landed, with its subject already done, and was
+        # dispatched anyway.
         result = [
             dict(r) for r in scheduled
             if not _is_manual_gate(dict(r).get("id"), dict(r).get("title"))
             and not _is_test_fixture(dict(r).get("id"), dict(r).get("title"))
+            and not _repark_subject_is_terminal(conn, dict(r).get("id") or "")
         ]
 
         # Phase-exit validation (2026-04-15 V&V Batch 2): for phased task IDs
@@ -13942,6 +13947,11 @@ def _check_token_exhausted_tasks() -> list:
                     continue
             except Exception as _ho_exc:  # noqa: BLE001 — never wedge the sweep
                 logger.debug("parked hand-off check failed for %s: %s", task_id, _ho_exc)
+
+            # 0b. A REPARK card whose subject has gone terminal has nothing
+            #     left to do; re-dispatching it only earns another park.
+            if _repark_subject_is_terminal(conn, task_id):
+                continue
 
             # 1. Load persisted resume_at (preferred)
             resume_at = _load_resume_at(task_id)
