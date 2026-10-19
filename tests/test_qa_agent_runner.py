@@ -1830,5 +1830,91 @@ class TestCLIRecordsFailures(unittest.TestCase):
         assert "1 of 2 failures inside a measured stall" in text
 
 
+class TestServerStackCaptureOnWedge(unittest.TestCase):
+    """qa-fail-1e4704134393f67a: run qa-1792419663's dashboard took every
+    connection and answered none for 17 minutes, then refused, and was
+    restarted before anyone captured why. The sampler now captures the
+    server's stacks itself, once, the moment the wedge is unambiguous."""
+
+    def _sampler(self, dumper, **kw):
+        return StallSampler("http://127.0.0.1:5050", interval_seconds=5.0,
+                            probe=lambda _b: 0.1, probe_timeout_seconds=15.0,
+                            stack_dumper=dumper, **kw)
+
+    def test_consecutive_probe_timeouts_capture_stacks_exactly_once(self):
+        calls = []
+        sampler = self._sampler(lambda base: calls.append(base) or {"captured": True, "path": "x"})
+        for _ in range(10):
+            sampler._note_probe(15.0)
+        assert calls == ["http://127.0.0.1:5050"]
+        sampler.samples.append(_sample(SAMPLE_HEALTH_SLOW, 0, 15, health_seconds=15.0))
+        dump = sampler.census()["server_stack_dump"]
+        assert dump["captured"] is True and dump["path"] == "x" and dump["at"]
+
+    def test_a_refusal_or_an_answer_resets_the_count(self):
+        calls = []
+        sampler = self._sampler(lambda base: calls.append(base) or {"captured": True})
+        for health in (15.0, 15.0, None, 15.0, 15.0, 0.1, 15.0, 15.0, 4.0):
+            sampler._note_probe(health)
+        assert calls == [], "only an unbroken run of timeouts is the wedge signature"
+        sampler.samples.append(_sample(SAMPLE_OK, 0, 5))
+        assert "server_stack_dump" not in sampler.census()
+
+    def test_a_dumper_that_raises_is_recorded_not_propagated(self):
+        def _boom(_base):
+            raise RuntimeError("no py-spy here")
+        sampler = self._sampler(_boom, wedge_after=1)
+        sampler._note_probe(15.0)
+        assert sampler.stack_dump["captured"] is False
+        assert "no py-spy here" in sampler.stack_dump["reason"]
+
+    def test_dump_server_stacks_without_a_listener_says_so(self):
+        from icdev.tools.testing import qa_agent_runner as m
+        with patch.object(m, "_listening_pid", return_value=None):
+            out = m.dump_server_stacks("http://localhost:5999", Path("unused.txt"))
+        assert out == {"captured": False, "reason": "no_listener_pid", "port": 5999}
+
+    def test_dump_server_stacks_writes_py_spy_output(self):
+        import tempfile
+        from icdev.tools.testing import qa_agent_runner as m
+        proc = MagicMock(returncode=0, stdout='Thread 1 (idle): "MainThread"\n', stderr="")
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = Path(tmp) / "stacks.txt"
+            with (
+                patch.object(m, "_listening_pid", return_value=4242),
+                patch("shutil.which", return_value="py-spy"),
+                patch.object(m.subprocess, "run", return_value=proc) as run,
+            ):
+                out = m.dump_server_stacks("http://127.0.0.1:5050", out_path)
+            argv = run.call_args.args[0]
+            assert argv[1:] == ["dump", "--nonblocking", "--pid", "4242"]
+            assert out == {"captured": True, "pid": 4242, "path": str(out_path)}
+            assert "MainThread" in out_path.read_text(encoding="utf-8")
+
+    def test_the_sweep_arms_every_batch_sampler_with_a_dumper(self):
+        seen = []
+        module = sys.modules["icdev.tools.testing.qa_agent_runner"]
+
+        class _Spy(module.StallSampler):
+            def __init__(self_inner, *a, **kw):  # noqa: N805
+                seen.append(kw.get("stack_dumper"))
+                super().__init__(*a, **kw)
+
+            def start(self_inner):  # noqa: N805
+                return None
+
+            def stop(self_inner, timeout=None):  # noqa: N805
+                return None
+
+        proc = MagicMock(returncode=0, stdout=json.dumps({"stats": {"expected": 1}, "suites": []}), stderr="")
+        with (
+            patch("icdev.tools.testing.qa_agent_runner.resolve_spec_files", return_value=["tests/e2e/s0.spec.ts"]),
+            patch("icdev.tools.testing.qa_agent_runner.subprocess.run", return_value=proc),
+            patch("icdev.tools.testing.qa_agent_runner.StallSampler", _Spy),
+        ):
+            run_e2e_suite(deadline_seconds=600, batch_size=1)
+        assert len(seen) == 1 and callable(seen[0])
+
+
 if __name__ == "__main__":
     unittest.main()
