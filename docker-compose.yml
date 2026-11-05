@@ -1532,6 +1532,9 @@ services:
       ENABLE_DIRECT_CONNECTIONS: "false"
       # -- retrieval stays in ICDEV (entitlement RAG, provenance) --
       BYPASS_EMBEDDING_AND_RETRIEVAL: "true"
+      # Upload UI off (owui-rag-02): documents go to ICDEV document intelligence.
+      # UI-only in Open WebUI 0.13 -- the data volume stays inside the boundary.
+      USER_PERMISSIONS_CHAT_FILE_UPLOAD: "false"
       ENABLE_WEB_SEARCH: "false"
       ENABLE_IMAGE_GENERATION: "false"
       # -- accounts: admin-provisioned only --

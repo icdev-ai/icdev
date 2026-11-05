@@ -51,6 +51,7 @@ def test_bypass_paths_are_off(svc):
     env = svc["environment"]
     assert env["ENABLE_DIRECT_CONNECTIONS"] == "false"
     assert env["BYPASS_EMBEDDING_AND_RETRIEVAL"] == "true"
+    assert env["USER_PERMISSIONS_CHAT_FILE_UPLOAD"] == "false"
     assert env["ENABLE_SIGNUP"] == "false"
     assert env["OFFLINE_MODE"] == "true"
     assert env["ANONYMIZED_TELEMETRY"] == "false"
