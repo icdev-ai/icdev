@@ -327,6 +327,14 @@ class RedactionRegistry:
             result = re.sub(re.escape(surrogate), real_value, result, flags=re.IGNORECASE)
         return result
 
+    def surrogates(self) -> List[str]:
+        """Every surrogate issued in this session (lower-cased), never the real values.
+
+        owui-api-06: a streaming caller needs the SET of surrogates to know how much
+        trailing text could still be the start of one, so it holds back only that.
+        """
+        return list(self._reverse_cache)
+
     def list_mappings(self) -> List[Dict[str, str]]:
         """List all mappings for this session (surrogates only, no real values)."""
         mappings = []

@@ -294,6 +294,10 @@ class GovConSanitizer:
         """
         return self._anonymizer.de_anonymize(text)
 
+    def active_surrogates(self) -> List[str]:
+        """Surrogates issued in this session (lower-cased) -- see RedactionRegistry.surrogates."""
+        return self._anonymizer._registry.surrogates()
+
     def sanitize_case_study(self, title: str, body: str, tags: Optional[List[str]] = None) -> Dict[str, str]:
         """Sanitize a Pulse case study for publication.
 

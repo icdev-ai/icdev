@@ -261,6 +261,22 @@ def _is_transient(exc: Exception) -> bool:
     )
 
 
+def _safe_release_point(text: str, surrogates: List[str]) -> int:
+    """Length of the prefix of ``text`` that can be de-anonymized and released now.
+
+    The earliest index whose suffix is a PROPER prefix of some surrogate
+    (case-insensitive) is where an incomplete surrogate may begin; everything
+    before it is safe -- a surrogate starting earlier and running past the end
+    would make an even earlier suffix a prefix, contradicting minimality.
+    """
+    low = text.lower()
+    for i in range(len(low)):
+        tail = low[i:]
+        if any(len(s) > len(tail) and s.startswith(tail) for s in surrogates):
+            return i
+    return len(text)
+
+
 class LLMRouter:
     """Config-driven router that maps ICDEV™ functions to LLM providers.
 
@@ -3098,42 +3114,64 @@ class LLMRouter:
         un-restored, and no ``ai_telemetry`` row was written, so every streamed
         call was invisible to the ledger.
 
-        With a redaction session active the text is BUFFERED and de-anonymized
-        once, at the end: a surrogate can be split across two chunks, and
-        restoring chunk by chunk would leak the half that did not match. Without
-        one, text passes through as it arrives. Either way exactly one telemetry
+        With a redaction session active a surrogate can be split across two
+        chunks, and restoring chunk by chunk would leak the half that did not
+        match. So text is released INCREMENTALLY up to the earliest position whose
+        tail could still begin a known surrogate (owui-api-06); only that tail is
+        held back. When the session's surrogate set is unknowable the whole
+        response is buffered and restored at the end -- slower, never leaky.
+        Without a session, text passes through as it arrives. Either way exactly one telemetry
         row is written when the stream ends -- including a stream the caller
         abandons early (``finally``), which is a call the provider still served.
         """
         start = time.time()
-        parts: List[str] = []
+        parts: List[str] = []  # what the caller has been given (restored)
+        pending = ""           # held back: may still be the start of a surrogate
         stop: dict = {}
-        buffer = bool(redaction_session)
+        redact = bool(redaction_session)
+        surrogates = self._session_surrogates() if redact else []
+
+        def restore(text: str) -> str:
+            return self._post_invoke_deanonymize(LLMResponse(content=text), redaction_session).content
+
+        def flush() -> Optional[dict]:
+            nonlocal pending
+            if not pending:
+                return None
+            out, pending = restore(pending), ""
+            parts.append(out)
+            return {"type": "text", "text": out} if out else None
+
         try:
             for event in stream:
                 etype = event.get("type") if isinstance(event, dict) else None
                 if etype == "text":
-                    parts.append(event.get("text", ""))
-                    if buffer:
+                    if not redact:
+                        parts.append(event.get("text", ""))
+                        yield event
                         continue
-                elif etype == "message_stop":
+                    pending += event.get("text", "")
+                    if surrogates is None:
+                        continue  # surrogate set unknowable: buffer to the end
+                    cut = _safe_release_point(pending, surrogates)
+                    if cut:
+                        out = restore(pending[:cut])
+                        pending = pending[cut:]
+                        parts.append(out)
+                        if out:
+                            yield {"type": "text", "text": out}
+                    continue
+                if etype == "message_stop":
                     stop = event
-                    if buffer:
-                        restored = self._post_invoke_deanonymize(
-                            LLMResponse(content="".join(parts)), redaction_session
-                        ).content
-                        parts = [restored]
-                        if restored:
-                            yield {"type": "text", "text": restored}
+                    tail = flush()
+                    if tail:
+                        yield tail
                 yield event
-            if buffer and not stop and parts:
-                # Ended without message_stop (an error event, a provider that never
-                # sends one): flush what was buffered rather than swallow it.
-                restored = self._post_invoke_deanonymize(
-                    LLMResponse(content="".join(parts)), redaction_session
-                ).content
-                parts = [restored]
-                yield {"type": "text", "text": restored}
+            # Ended without message_stop (an error event, a provider that never
+            # sends one): flush what was held back rather than swallow it.
+            tail = flush()
+            if tail:
+                yield tail
         finally:
             response = LLMResponse(
                 content="".join(parts),
@@ -3155,6 +3193,14 @@ class LLMRouter:
             except Exception as exc:  # noqa: BLE001
                 # Best-effort, as in invoke(): a served stream is never failed on bookkeeping.
                 logger.warning("AI telemetry logging failed for stream: %s", exc)
+
+    def _session_surrogates(self) -> Optional[List[str]]:
+        """Lower-cased surrogates the sanitizer has issued, or None if unknowable."""
+        try:
+            sanitizer = self._get_sanitizer()
+            return list(sanitizer.active_surrogates()) if sanitizer is not None else None
+        except Exception:  # noqa: BLE001 -- unknown means "buffer", never "release"
+            return None
 
     def invoke_streaming(self, function: str, request: LLMRequest):
         """Resolve provider and invoke with streaming + fallback."""
