@@ -1,0 +1,41 @@
+# CUI // SP-CTI
+#
+# Governed OpenAI-compatible endpoint (owui-api-01, D-OWUI-1).
+#
+# tools/saas/openai_compat.py serves /v1/models and /v1/chat/completions on the
+# SaaS API gateway so OpenAI-compatible clients (Open WebUI first) reach a model
+# ONLY through LLMRouter -- redaction, routing policy, budgets and ai_telemetry.
+#
+# The ids below are ICDEV CAPABILITIES, not vendor models. A client never picks
+# a provider; it picks a capability, and the router's chain for `llm_function`
+# (declared in args/llm_config.yaml -- an undeclared function silently falls
+# back to routing.default, so declare it) decides who serves it.
+#
+# Do NOT add an id that maps to a raw vendor model: that would hand the client
+# the routing decision the router exists to make.
+
+# Used when the request carries no X-ICDEV-Classification header. Fail toward
+# the more restrictive marking: this is the router's own default as well.
+default_classification: CUI
+
+# Header a client may send to declare the request's classification. A value
+# not in allowed_classifications is refused (400), never silently downgraded.
+classification_header: X-ICDEV-Classification
+allowed_classifications: [UNCLASSIFIED, CUI, SECRET]
+
+# Upper bound applied to a client's max_tokens.
+max_tokens_cap: 8192
+
+models:
+  - id: icdev/general
+    llm_function: openai_compat_general
+    description: General assistant over the ICDEV router (cloud-eligible after redaction).
+  - id: icdev/code
+    llm_function: openai_compat_code
+    description: Code generation and review.
+  - id: icdev/compliance
+    llm_function: openai_compat_compliance
+    description: NIST 800-53 / FedRAMP / CMMC questions and artifact drafting.
+  - id: icdev/local-only
+    llm_function: openai_compat_local
+    description: Never leaves this host -- force_local routing.

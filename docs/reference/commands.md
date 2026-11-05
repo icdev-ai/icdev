@@ -5213,6 +5213,10 @@ python tools/saas/tenant_manager.py --add-user --tenant-id "tenant-uuid" --email
 python tools/saas/api_gateway.py --port 8443 --debug                             # Start API gateway (dev mode)
 gunicorn -w 4 -b 0.0.0.0:8443 tools.saas.api_gateway:app                       # Start API gateway (production)
 python tools/saas/openapi_spec.py [--output spec.json]                           # Generate OpenAPI spec to file
+# Governed OpenAI-compatible endpoint (owui-api-01, D-OWUI-1) -- served by the gateway above
+curl -H "Authorization: Bearer $ICDEV_KEY" http://localhost:8443/v1/models       # ICDEV capabilities (args/openai_compat.yaml)
+curl -H "Authorization: Bearer $ICDEV_KEY" -H "X-ICDEV-Classification: CUI" -H "Content-Type: application/json" \
+  -d '{"model":"icdev/local-only","messages":[{"role":"user","content":"hi"}]}' http://localhost:8443/v1/chat/completions
 python tools/saas/licensing/license_generator.py --generate --customer "ACME" --tier enterprise --expires-in-days 365 --private-key /path/key.pem
 python tools/saas/licensing/license_validator.py --validate --json               # Validate on-prem license
 python tools/saas/infra/namespace_provisioner.py --create --slug acme --il IL4 --tier professional  # Create tenant K8s NS

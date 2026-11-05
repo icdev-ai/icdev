@@ -1084,6 +1084,26 @@ routing:
     effort: low
     disable_thinking: true
 
+  # Governed OpenAI-compatible endpoint (owui-api-01): the capability ids in
+  # args/openai_compat.yaml map onto these. Local-first like the rest of this
+  # file; cloud entries are reached only after redaction and routing policy.
+  openai_compat_general:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  openai_compat_code:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, codestral-local, vllm-local]
+    effort: high
+
+  openai_compat_compliance:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, llama-local]
+    effort: high
+
+  openai_compat_local:
+    chain: [qwen3-local, llama-local, vllm-local]
+    effort: medium
+    force_local: true
+
   # -----------------------------------------------------------------------
   # Chain-of-Thought role chains
   # Each CoT role uses a different preferred model family for true multi-LLM reasoning.
