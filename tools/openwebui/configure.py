@@ -179,6 +179,8 @@ def desired_writes(state: Dict[str, Any], icdev_url: str, icdev_key: str,
     if with_tools and not kept:
         kept = [{"url": f"{mcp}/?toolset={toolset}", "path": "", "type": "mcp", "auth_type": "bearer",
                  "key": icdev_key, "config": {"enable": True},
+                 # owui-mcp-02: tags every call so mcp_authz_survey can measure this client.
+                 "headers": {"X-ICDEV-Client": "openwebui"},
                  "info": {"id": "icdev", "name": "ICDEV", "description": f"ICDEV tools ({toolset})"}}]
     writes.append({"path": TOOL_SERVERS_CONFIG, "body": {"TOOL_SERVER_CONNECTIONS": kept}})
     return writes

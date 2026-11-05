@@ -335,7 +335,8 @@ def test_monitor_mode_does_not_refuse_the_dispatch(monkeypatch, monitor, audited
         "ssp_generate", {}, "tenant-1", user_role="developer", user_id="user-1"
     )
     assert result == {"ok": True}
-    assert [r["action"] for r in audited] == ["mcp.tool.would_deny"]
+    # owui-mcp-02: every call also writes one mcp.tool.call row (the survey's denominator).
+    assert [r["action"] for r in audited] == ["mcp.tool.call", "mcp.tool.would_deny"]
 
 
 def test_monitor_mode_does_not_hide_tools(client, monitor, audited):
