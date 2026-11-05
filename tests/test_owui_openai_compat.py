@@ -45,12 +45,35 @@ class FakeRouter:
         self._config = yaml.safe_load(
             (BASE_DIR / "args" / "llm_config.yaml").read_text(encoding="utf-8"))
 
+    def invoke_streaming(self, function, req):
+        self.calls.append((function, req))
+        if self.error is not None:
+            raise self.error  # raised eagerly, as the router's policy/redaction checks are
+        return iter([{"type": "text", "text": "governed "}, {"type": "text", "text": "answer"},
+                     {"type": "message_stop", "model_id": "qwen3.5:latest"}])
+
     def invoke(self, function, req):
         self.calls.append((function, req))
         if self.error is not None:
             raise self.error
         return LLMResponse(content=self.reply, model_id="qwen3.5:latest", provider="ollama",
                            input_tokens=11, output_tokens=7, classification=req.classification)
+
+
+@pytest.fixture(autouse=True)
+def audit_rows(monkeypatch):
+    """Capture audit_trail writes; patched on the sys.modules object the code imports from."""
+    import importlib
+
+    rows = []
+    mod = importlib.import_module("tools.audit.audit_logger")
+
+    def _log_event(**kw):
+        rows.append(kw)
+        return len(rows)
+
+    monkeypatch.setattr(mod, "log_event", _log_event)
+    return rows
 
 
 @pytest.fixture
@@ -149,15 +172,81 @@ def test_unknown_classification_is_refused_not_downgraded(client, router):
     assert router.calls == []
 
 
-def test_stream_returns_sse_ending_in_done(client, router):
+def _frames(resp):
+    return [f for f in resp.get_data(as_text=True).split("\n\n") if f]
+
+
+def test_stream_emits_one_delta_per_router_text_event(client, router):
     resp = _chat(client, stream=True)
     assert resp.status_code == 200
     assert resp.mimetype == "text/event-stream"
-    frames = [f for f in resp.get_data(as_text=True).split("\n\n") if f]
+    frames = _frames(resp)
     assert frames[-1] == "data: [DONE]"
-    first = json.loads(frames[0][len("data: "):])
-    assert first["object"] == "chat.completion.chunk"
-    assert first["choices"][0]["delta"]["content"] == "governed answer"
+    chunks = [json.loads(f[len("data: "):]) for f in frames[:-1]]
+    assert all(c["object"] == "chat.completion.chunk" for c in chunks)
+    deltas = [c["choices"][0]["delta"].get("content") for c in chunks if c["choices"][0]["delta"].get("content")]
+    assert deltas == ["governed ", "answer"]
+    assert chunks[-1]["choices"][0]["finish_reason"] == "stop"
+
+
+def test_stream_policy_refusal_is_still_an_error_body(client, router):
+    router.error = ForceLocalViolation("cloud egress refused")
+    resp = _chat(client, stream=True)
+    assert resp.status_code == 403
+    assert resp.get_json()["error"]["code"] == "routing_policy"
+
+
+# ---------------------------------------------------------------------------
+# Audit (owui-flow-02)
+# ---------------------------------------------------------------------------
+def test_served_exchange_writes_one_audit_row_with_hashes_not_text(client, router, audit_rows):
+    _chat(client, headers={"X-ICDEV-Classification": "SECRET"}, model="icdev/local-only")
+    (row,) = audit_rows
+    assert row["event_type"] == "chat.message_received"
+    assert row["classification"] == "SECRET"  # the REQUEST's, not the router default
+    d = row["details"]
+    assert d["status"] == "served" and d["model_id"] == "icdev/local-only"
+    assert len(d["prompt_sha256"]) == 64 and len(d["response_sha256"]) == 64
+    assert "hello" not in json.dumps(row) and "governed answer" not in json.dumps(row)
+
+
+def test_refused_exchange_is_audited_too(client, router, audit_rows):
+    router.error = ForceLocalViolation("no")
+    _chat(client)
+    (row,) = audit_rows
+    assert row["details"]["status"] == "refused"
+    assert row["details"]["error_code"] == "routing_policy"
+
+
+def test_streamed_exchange_is_audited_after_the_stream(client, router, audit_rows):
+    resp = _chat(client, stream=True)
+    resp.get_data()
+    (row,) = audit_rows
+    assert row["details"]["status"] == "served"
+    assert row["details"]["served_model"] == "qwen3.5:latest"
+
+
+def test_unauditable_answer_is_withheld_when_audit_is_required(client, router, monkeypatch):
+    import importlib
+
+    def _broken(**kw):
+        raise RuntimeError("audit db down")
+
+    monkeypatch.setattr(importlib.import_module("tools.audit.audit_logger"), "log_event", _broken)
+    resp = _chat(client)
+    assert resp.status_code == 503
+    assert resp.get_json()["error"]["code"] == "audit_unavailable"
+    assert "governed answer" not in resp.get_data(as_text=True)
+
+
+def test_audit_can_be_made_best_effort(client, router, monkeypatch):
+    import importlib
+
+    monkeypatch.setattr(importlib.import_module("tools.audit.audit_logger"), "log_event",
+                        lambda **kw: -1)
+    cfg = openai_compat.load_config()
+    monkeypatch.setattr(openai_compat, "load_config", lambda: {**cfg, "audit_required": False})
+    assert _chat(client).status_code == 200
 
 
 def test_unknown_model_is_404(client, router):

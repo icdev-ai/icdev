@@ -22,11 +22,14 @@ What a client sees as a "model" is an ICDEV CAPABILITY from
 ``args/openai_compat.yaml`` (``icdev/general``, ``icdev/local-only`` ...), never
 a vendor model: the router, not the client, decides who serves a request.
 
-Streaming: ``stream=true`` is answered with the FINISHED completion framed as
-``chat.completion.chunk`` events. ``LLMRouter.invoke_streaming`` applies input
-redaction but neither de-anonymizes its output nor writes telemetry, so using it
-here would return pseudonymised tokens unaudited. True token streaming waits on
-that parity fix (owui-api-02).
+Streaming: ``stream=true`` goes through ``LLMRouter.invoke_streaming``, which
+de-anonymizes its output and writes ``ai_telemetry`` (owui-api-02); each router
+text event becomes one ``chat.completion.chunk`` (owui-api-05).
+
+Audit: every exchange -- served, refused or failed -- writes one append-only
+``audit_trail`` row (``chat.message_received``) carrying hashes and the REQUEST's
+classification (owui-flow-02). With ``audit_required`` a non-streamed answer whose
+row cannot be written is withheld (503).
 
 Auth is the gateway middleware's job -- by the time a request arrives here
 ``g.tenant_id`` / ``g.user_id`` are set (``icdev_`` API key, scope ``chat:write``
@@ -34,6 +37,8 @@ for completions). A request that somehow lacks a principal is refused rather
 than served anonymously.
 """
 
+import hashlib
+import json
 import sys
 import time
 import uuid
@@ -50,9 +55,9 @@ from icdev.core.paths import repo_root  # noqa: E402
 BASE_DIR = repo_root(__file__)
 
 import yaml  # noqa: E402
-from flask import Blueprint, Response, g, jsonify, request  # noqa: E402
+from flask import Blueprint, Response, g, jsonify, request, stream_with_context  # noqa: E402
 
-from tools.llm.cli_bridge.http_bridge import _text_of, to_sse  # noqa: E402
+from tools.llm.cli_bridge.http_bridge import _text_of  # noqa: E402
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("icdev.saas.openai_compat")
@@ -199,7 +204,7 @@ def list_models():
 
 @openai_bp.route("/chat/completions", methods=["POST"])
 def chat_completions():
-    """One governed chat turn through ``LLMRouter.invoke``."""
+    """One governed, audited chat turn through ``LLMRouter`` (invoke, or invoke_streaming)."""
     if not getattr(g, "tenant_id", None):
         return openai_error(401, "authentication required", "invalid_request_error", "unauthenticated")
 
@@ -262,21 +267,119 @@ def chat_completions():
     )
 
     function = model["llm_function"]
+    exchange = {"model_id": model_id, "function": function, "classification": classification,
+                "correlation_id": req.correlation_id, "prompt_sha256": _sha256(_prompt_text(req)),
+                "tenant_id": str(g.tenant_id), "user_id": str(getattr(g, "user_id", "") or "")}
     try:
-        resp = _router().invoke(function, req)
+        if body.get("stream"):
+            events = _router().invoke_streaming(function, req)
+        else:
+            resp = _router().invoke(function, req)
     except ForceLocalViolation as exc:
         logger.warning("openai_compat: policy refused %s for %s: %s", model_id, g.tenant_id, exc)
+        _audit_exchange(cfg, exchange, "refused", error_code="routing_policy")
         return openai_error(403, f"routing policy refused this request: {exc}",
                             "policy_violation", "routing_policy")
     except RedactionUnavailableError as exc:
+        _audit_exchange(cfg, exchange, "refused", error_code="redaction_unavailable")
         return openai_error(503, f"redaction unavailable and fail-closed: {exc}",
                             "service_unavailable", "redaction_unavailable")
     except LLMUnavailableError as exc:
+        _audit_exchange(cfg, exchange, "refused", error_code="llm_unavailable")
         return openai_error(503, f"no model available for {model_id}: {exc}",
                             "service_unavailable", "llm_unavailable")
 
-    completion = to_completion(resp, model_id)
-    headers = {"X-ICDEV-Classification": getattr(resp, "classification", None) or classification}
+    headers = {"X-ICDEV-Classification": classification}
     if body.get("stream"):
-        return Response(b"".join(to_sse(completion)), mimetype="text/event-stream", headers=headers)
+        return Response(stream_with_context(_stream(cfg, events, exchange)),
+                        mimetype="text/event-stream", headers=headers)
+
+    completion = to_completion(resp, model_id)
+    exchange.update(provider=resp.provider, served_model=resp.model_id)
+    if not _audit_exchange(cfg, exchange, "served", content=resp.content) and _audit_required(cfg):
+        # NIST AU-2/AU-12: a governed turn that cannot be recorded is not handed out.
+        return openai_error(503, "the exchange could not be written to the ICDEV audit trail",
+                            "service_unavailable", "audit_unavailable")
     return jsonify(completion), 200, headers
+
+
+# ---------------------------------------------------------------------------
+# Streaming (owui-api-05) and the per-exchange audit row (owui-flow-02)
+# ---------------------------------------------------------------------------
+def _stream(cfg: Dict[str, Any], events, exchange: Dict[str, Any]):
+    """Router stream events -> OpenAI ``chat.completion.chunk`` SSE frames.
+
+    ``invoke_streaming`` de-anonymizes and writes ``ai_telemetry`` itself
+    (owui-api-02); this adds the audit row once the stream ends. Policy and
+    redaction refusals are raised BEFORE the first frame, so they still reach
+    the client as OpenAI error bodies. Once frames have been sent the response
+    cannot be withdrawn, so a failed audit write here is logged, not refused --
+    the one place ``audit_required`` cannot hold, and it is documented as such.
+    """
+    base = {"id": f"chatcmpl-{uuid.uuid4().hex}", "object": "chat.completion.chunk",
+            "created": int(time.time()), "model": exchange["model_id"]}
+
+    def frame(delta: dict, finish: Optional[str] = None) -> bytes:
+        chunk = {**base, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+        return f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode("utf-8")
+
+    parts: List[str] = []
+    status, error_code = "served", None
+    yield frame({"role": "assistant"})
+    try:
+        for event in events:
+            etype = event.get("type") if isinstance(event, dict) else None
+            if etype == "text" and event.get("text"):
+                parts.append(event["text"])
+                yield frame({"content": event["text"]})
+            elif etype == "error":
+                status, error_code = "error", "provider_error"
+                yield frame({"content": f"\n\n[ICDEV: the model provider failed: {event.get('error', '')}]"})
+            elif etype == "message_stop":
+                exchange["served_model"] = event.get("model_id", "")
+        yield frame({}, "stop")
+        yield b"data: [DONE]\n\n"
+    finally:
+        if not _audit_exchange(cfg, exchange, status, content="".join(parts), error_code=error_code):
+            logger.error("openai_compat: streamed exchange %s was NOT audited", exchange["correlation_id"])
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256((text or "").encode("utf-8", errors="replace")).hexdigest()
+
+
+def _prompt_text(req) -> str:
+    return "\n".join([req.system_prompt or ""] + [m.get("content", "") for m in req.messages])
+
+
+def _audit_required(cfg: Dict[str, Any]) -> bool:
+    return cfg.get("audit_required", True) is not False
+
+
+def _audit_exchange(cfg: Dict[str, Any], exchange: Dict[str, Any], status: str, *,
+                    content: str = "", error_code: Optional[str] = None) -> bool:
+    """One append-only ``audit_trail`` row per /v1 exchange. True when written.
+
+    ICDEV -- not Open WebUI's database -- is the system of record (D-OWUI-1). The
+    row carries hashes, never the text, and the REQUEST's classification: the
+    router's ``ai_telemetry`` row records its own default, and a response-cache
+    hit writes no telemetry at all, so this is the record that is always there.
+    """
+    from tools.audit.audit_logger import log_event
+
+    details = {**exchange, "status": status, "response_sha256": _sha256(content) if content else None,
+               "error_code": error_code, "surface": "openai_compat"}
+    try:
+        row = log_event(
+            event_type="chat.message_received",
+            actor=f"openai_compat:{exchange['tenant_id']}/{exchange['user_id']}",
+            action=f"/v1/chat/completions {exchange['model_id']} {status}",
+            details=details,
+            classification=exchange["classification"],
+            session_id=exchange["correlation_id"],
+            raise_on_error=True,
+        )
+    except Exception as exc:  # noqa: BLE001 -- reported to the caller as False
+        logger.error("openai_compat: audit write failed for %s: %s", exchange["correlation_id"], exc)
+        return False
+    return row is not None and row != -1

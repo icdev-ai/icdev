@@ -23,6 +23,12 @@ default_classification: CUI
 classification_header: X-ICDEV-Classification
 allowed_classifications: [UNCLASSIFIED, CUI, SECRET]
 
+# Every /v1 exchange writes one append-only audit_trail row (owui-flow-02). When
+# true, a non-streamed answer whose row cannot be written is withheld (503)
+# rather than handed out unrecorded (NIST AU-2/AU-12). A stream already in
+# flight cannot be withdrawn; its failed write is logged instead.
+audit_required: true
+
 # Upper bound applied to a client's max_tokens.
 max_tokens_cap: 8192
 
