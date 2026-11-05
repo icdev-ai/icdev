@@ -85,7 +85,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Path setup
@@ -884,12 +884,39 @@ def _is_response(msg: dict) -> bool:
 # ---------------------------------------------------------------------------
 # JSON-RPC method handler
 # ---------------------------------------------------------------------------
+TOOLSET_HEADER = "X-ICDEV-Toolset"
+TOOLSET_QUERY_PARAM = "toolset"
+
+
+def requested_toolset() -> Tuple[Optional[set], Optional[str]]:
+    """The toolset profile this request opted into, as ``(tool_names, error)``.
+
+    owui-mcp-01. A chat client (Open WebUI) points its tool server at
+    ``/mcp/v1/?toolset=chat_readonly`` (or sends ``X-ICDEV-Toolset``) so the model
+    is offered a few read-only tools instead of the whole surface. The profile
+    only NARROWS: it is intersected with what the role is authorized for, never
+    used to grant. No profile named means no narrowing, exactly as before. An
+    unknown name is an ERROR, not the full list -- a client that asked to be
+    restricted must never silently get everything.
+    """
+    name = (request.headers.get(TOOLSET_HEADER) or request.args.get(TOOLSET_QUERY_PARAM) or "").strip()
+    if not name:
+        return None, None
+    from tools.mcp.toolset_profiles import ToolsetProfileError, resolve_toolset
+
+    try:
+        return resolve_toolset(name, registry_names=set(_TOOL_MAP)), None
+    except ToolsetProfileError as exc:
+        return None, str(exc)
+
+
 def _handle_request(
     rpc_msg: dict,
     tenant_id: str,
     session_id: str,
     user_role: Optional[str] = None,
     user_id: str = "",
+    toolset: Optional[set] = None,
 ) -> dict:
     """Process a single JSON-RPC 2.0 request and return a response.
 
@@ -905,6 +932,8 @@ def _handle_request(
         session_id: Current MCP session ID (empty for initialize).
         user_role: Authenticated caller role (``g.user_role``).
         user_id: Authenticated user ID, for authorization audit rows.
+        toolset: Tool names of the profile the request opted into
+            (:func:`requested_toolset`); ``None`` means no narrowing.
 
     Returns:
         JSON-RPC 2.0 response dict.
@@ -937,6 +966,8 @@ def _handle_request(
     if method == "tools/list":
         tools = []
         for t in authorized_tools(user_role, tenant_id, user_id):
+            if toolset is not None and t["name"] not in toolset:
+                continue
             tools.append(
                 {
                     "name": t["name"],
@@ -952,6 +983,15 @@ def _handle_request(
         arguments = params.get("arguments", {})
         if not tool_name:
             return _jsonrpc_error(rpc_id, -32602, "Missing required param: name")
+        if toolset is not None and tool_name not in toolset:
+            # Always refused, whatever the authorizer mode: the CLIENT asked for
+            # this restriction, so there is no behaviour change to measure first.
+            return _jsonrpc_error(
+                rpc_id,
+                JSONRPC_UNAUTHORIZED,
+                "Tool not in the selected toolset profile: {}".format(tool_name),
+                {"tool": tool_name, "reason": "outside_toolset_profile"},
+            )
 
         try:
             result = _dispatch_tool(tool_name, arguments, tenant_id, user_role, user_id)
@@ -1165,6 +1205,15 @@ def mcp_post():
     user_role = getattr(g, "user_role", None) or ""
     session_id = request.headers.get("Mcp-Session-Id", "")
 
+    toolset, toolset_error = requested_toolset()
+    if toolset_error:
+        return Response(
+            json.dumps(_jsonrpc_error(None, -32602, toolset_error)),
+            status=400,
+            content_type="application/json",
+            headers={"X-Classification": "CUI // SP-CTI"},
+        )
+
     # Determine if single message or batch
     is_batch = isinstance(data, list)
     messages = data if is_batch else [data]
@@ -1233,7 +1282,7 @@ def mcp_post():
         # Handle initialize: create session
         if method == "initialize":
             new_session_id = _create_session(tenant_id, user_id)
-            result = _handle_request(rpc_msg, tenant_id, new_session_id, user_role, user_id)
+            result = _handle_request(rpc_msg, tenant_id, new_session_id, user_role, user_id, toolset)
             responses.append(result)
             continue
 
@@ -1249,7 +1298,7 @@ def mcp_post():
             )
             continue
 
-        result = _handle_request(rpc_msg, tenant_id, effective_session, user_role, user_id)
+        result = _handle_request(rpc_msg, tenant_id, effective_session, user_role, user_id, toolset)
         responses.append(result)
 
     # Build response
