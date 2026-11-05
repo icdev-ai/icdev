@@ -97,3 +97,21 @@ profiles:
       - kanban_update_task
       - kanban_move_task
       - health_check
+
+  # owui-mcp-01: the profile a CHAT client (Open WebUI) selects on the SaaS
+  # Streamable HTTP surface (/mcp/v1/?toolset=chat_readonly or the
+  # X-ICDEV-Toolset header). Names are tools/saas/mcp_http.py TOOL_REGISTRY
+  # entries, not unified_server ones. Read-only by construction: nothing here
+  # creates, generates or scans. A profile can only NARROW what the caller's
+  # role is authorized for; it never widens it. local_only because project
+  # status can carry internal data -- on the HTTP surface the next chat turn is
+  # governed by the /v1 router's redaction and routing policy (D-OWUI-1).
+  chat_readonly:
+    description: >-
+      Read-only project and NIST control lookups for chat clients on the SaaS
+      MCP HTTP surface. No tool here writes, generates an artifact or runs a scan.
+    cui_egress: local_only
+    tools:
+      - project_list
+      - project_status
+      - nist_lookup
