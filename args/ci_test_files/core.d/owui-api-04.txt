@@ -1,0 +1,1 @@
+tests/test_ai_telemetry_pg_no_sqlite_file.py

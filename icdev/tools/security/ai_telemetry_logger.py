@@ -30,7 +30,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, is_pg
 from tools.logging.icdev_logger import get_logger
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -44,6 +44,19 @@ class AITelemetryLogger:
 
     def __init__(self, db_path: Optional[Path] = None):
         self._db_path = db_path or DB_PATH
+
+    def _no_database(self) -> bool:
+        """True only when SQLite is the backend AND its file is missing.
+
+        ``_db_path`` is the SQLite file. On PostgreSQL ``get_connection`` ignores
+        it, so gating on the file there dropped every row on a PG-only deployment
+        that happened to have no stray ``data/icdev.db`` (owui-api-04). Say so when
+        it skips: a silent skip makes a broken ledger look like an idle one.
+        """
+        if is_pg() or self._db_path.exists():
+            return False
+        logger.warning("ai_telemetry: SQLite database %s not found -- skipping", self._db_path)
+        return True
 
     @staticmethod
     def hash_text(text: str) -> str:
@@ -86,7 +99,7 @@ class AITelemetryLogger:
         Returns:
             Entry ID, or None if the DB is unavailable or the INSERT failed.
         """
-        if not self._db_path.exists():
+        if self._no_database():
             return None
 
         entry_id = str(uuid.uuid4())
@@ -181,7 +194,7 @@ class AITelemetryLogger:
             List of anomaly dicts.
         """
         anomalies = []
-        if not self._db_path.exists():
+        if self._no_database():
             return anomalies
 
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
@@ -287,7 +300,7 @@ class AITelemetryLogger:
             List of drift alert dicts with agent_id, dimension, z_score, severity.
         """
         alerts: List[Dict] = []
-        if not self._db_path.exists():
+        if self._no_database():
             return alerts
 
         now = datetime.now(timezone.utc)
@@ -432,7 +445,7 @@ class AITelemetryLogger:
         Returns:
             Dict with total_requests, total_tokens, total_cost, by_provider, by_model.
         """
-        if not self._db_path.exists():
+        if self._no_database():
             return {"error": "Database not found"}
 
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
