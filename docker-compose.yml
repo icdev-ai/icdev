@@ -1506,6 +1506,53 @@ services:
 # ======================================================================
 # Networks
 # ======================================================================
+  # Open WebUI as a GOVERNED sidecar chat client (owui-ship-01, ADR D-OWUI-1).
+  # Opt-in: `docker compose --profile openwebui up`. ICDEV is its ONLY backend:
+  # models via the gateway's /v1 (LLMRouter -- redaction, routing policy,
+  # telemetry), tools via /mcp/v1. Direct Ollama/OpenAI, user direct connections
+  # and its own RAG are OFF; re-check a running instance with
+  # `python tools/openwebui/configure.py --icdev-url ... --check`.
+  # Image pinned by the MEASURED OCI index digest of v0.13.0 (pin census).
+  # Licence: review Open WebUI's branding clause before redistributing (owui-gate-00).
+  openwebui:
+    profiles: ["openwebui"]
+    image: ghcr.io/open-webui/open-webui:v0.13.0@sha256:2272b0fb7c8783a016bcc179abb467cfa34590c99c5e6560fe0e9155b4820a09
+    container_name: icdev-openwebui
+    depends_on:
+      - icdev-api-gateway
+    ports:
+      # Loopback only, and off :3000 so it never collides with a host install.
+      - "127.0.0.1:3001:8080"
+    environment:
+      # -- ICDEV is the only model backend --
+      ENABLE_OLLAMA_API: "false"
+      ENABLE_OPENAI_API: "true"
+      OPENAI_API_BASE_URL: http://icdev-api-gateway:8443/v1
+      OPENAI_API_KEY: ${OPENWEBUI_ICDEV_API_KEY:?OPENWEBUI_ICDEV_API_KEY (a scoped icdev_ key) must be set for the openwebui profile}
+      ENABLE_DIRECT_CONNECTIONS: "false"
+      # -- retrieval stays in ICDEV (entitlement RAG, provenance) --
+      BYPASS_EMBEDDING_AND_RETRIEVAL: "true"
+      ENABLE_WEB_SEARCH: "false"
+      ENABLE_IMAGE_GENERATION: "false"
+      # -- accounts: admin-provisioned only --
+      WEBUI_AUTH: "true"
+      ENABLE_SIGNUP: "false"
+      WEBUI_SECRET_KEY: ${OPENWEBUI_SECRET_KEY:?OPENWEBUI_SECRET_KEY must be set for the openwebui profile}
+      # -- no telemetry, no model downloads (air-gap safe) --
+      OFFLINE_MODE: "true"
+      HF_HUB_OFFLINE: "1"
+      SCARF_NO_ANALYTICS: "true"
+      DO_NOT_TRACK: "true"
+      ANONYMIZED_TELEMETRY: "false"
+      # -- classification banner on every page --
+      WEBUI_BANNERS: '[{"id":"icdev-cui","type":"warning","title":"","content":"CUI // SP-CTI -- responses are produced and audited by ICDEV","dismissible":false,"timestamp":0}]'
+    volumes:
+      - openwebui-data:/app/backend/data
+    networks:
+      - icdev-net
+    logging: *default-logging
+    restart: unless-stopped
+
 networks:
   icdev-net:
     driver: bridge
@@ -1515,6 +1562,8 @@ networks:
 # ======================================================================
 volumes:
   icdev-data:
+    driver: local
+  openwebui-data:
     driver: local
   # icdev-pgdata uses bind mount ./data/pgdata (not a Docker volume)
   gns3-projects:
