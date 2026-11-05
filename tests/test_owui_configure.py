@@ -117,6 +117,7 @@ def test_apply_leaves_icdev_as_the_only_backend(monkeypatch, capsys):
     (tool,) = fake.store[configure.TOOL_SERVERS_CONFIG]["TOOL_SERVER_CONNECTIONS"]
     assert tool["url"] == ICDEV + "/mcp/v1/?toolset=chat_readonly"
     assert tool["type"] == "mcp"
+    assert tool["headers"] == {"X-ICDEV-Client": "openwebui"}
     assert "icdev_secret_value" not in out
 
 

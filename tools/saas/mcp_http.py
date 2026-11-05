@@ -79,6 +79,7 @@ Usage:
 import json
 import os
 import queue
+import re
 import secrets
 import sys
 import threading
@@ -96,7 +97,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
-from flask import Blueprint, Response, g, jsonify, request  # noqa: E402
+from flask import Blueprint, Response, g, has_request_context, jsonify, request  # noqa: E402
 
 logger = get_logger("saas.mcp_http")
 
@@ -684,6 +685,35 @@ def _write_authz_audit(decision: dict, tenant_id: str, user_id: str, action: str
                 pass
 
 
+CLIENT_HEADER = "X-ICDEV-Client"
+_CLIENT_RE = re.compile(r"[^a-z0-9_.-]")
+
+
+def caller_source() -> str:
+    """Which client made this request, from ``X-ICDEV-Client`` (owui-mcp-02).
+
+    Self-declared and therefore a LABEL, not an identity -- it scopes the
+    enforce-readiness survey to one client (Open WebUI sets it on its tool
+    server connection); it never grants or denies anything. Normalised so a
+    header cannot inject arbitrary text into the audit row.
+    """
+    if not has_request_context():
+        return "unknown"
+    raw = (request.headers.get(CLIENT_HEADER) or "").strip().lower()
+    return _CLIENT_RE.sub("", raw)[:40] or "unknown"
+
+
+def record_tool_call(decision: dict, tenant_id: str, user_id: str) -> None:
+    """One ``mcp.tool.call`` row per HTTP ``tools/call``, allowed or not.
+
+    Denials alone (``log_authz_decision``) give a numerator with no
+    denominator: the would-deny RATE that decides whether ``enforce`` is safe
+    needs every call. Same best-effort writer and table as the denial rows.
+    """
+    _write_authz_audit(dict(decision, surface="tools/call", caller_source=caller_source()),
+                       tenant_id, user_id, "mcp.tool.call")
+
+
 def log_authz_decision(decision: dict, tenant_id: str, user_id: str, surface: str) -> None:
     """Log an authorization decision. Denials are recorded in both modes.
 
@@ -706,7 +736,8 @@ def log_authz_decision(decision: dict, tenant_id: str, user_id: str, surface: st
         surface,
         decision.get("reason"),
     )
-    _write_authz_audit(dict(decision, surface=surface), tenant_id, user_id, action)
+    _write_authz_audit(dict(decision, surface=surface, caller_source=caller_source()),
+                       tenant_id, user_id, action)
 
 
 def log_list_authz_decision(
@@ -831,6 +862,7 @@ def _dispatch_tool(
         raise ValueError("Unknown tool: {}".format(name))
 
     decision = authorize_tool(name, user_role)
+    record_tool_call(decision, tenant_id, user_id)
     if not decision["allowed"]:
         log_authz_decision(decision, tenant_id, user_id, "tools/call")
         if decision["enforced"]:
