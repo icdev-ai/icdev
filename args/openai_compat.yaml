@@ -51,3 +51,18 @@ models:
   - id: icdev/local-only
     llm_function: openai_compat_local
     description: Never leaves this host -- force_local routing.
+
+  # Governed WORKFLOWS (owui-flow-01): not language models -- each runs an
+  # existing ICDEV tool and answers with what it did plus a dashboard deep link
+  # for anything a human must approve (tools/saas/openai_workflows.py).
+  # required_roles is mandatory: refused (403) for any other role.
+  - id: icdev/intake
+    kind: workflow
+    workflow: intake
+    required_roles: [tenant_admin, developer, compliance_officer]
+    description: Capture requirements -> SAFe decomposition -> staged for human review (never auto-seeds kanban).
+  - id: icdev/kanban
+    kind: workflow
+    workflow: kanban
+    required_roles: [tenant_admin]
+    description: Read-only kanban board status, optionally for one project prefix.

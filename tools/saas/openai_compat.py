@@ -88,7 +88,8 @@ def _models(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     return {
         str(m["id"]): m
         for m in (cfg.get("models") or [])
-        if isinstance(m, dict) and m.get("id") and m.get("llm_function")
+        if isinstance(m, dict) and m.get("id")
+        and (m.get("llm_function") or (m.get("kind") == "workflow" and m.get("workflow")))
     }
 
 
@@ -117,7 +118,8 @@ def _declared(router, function: str) -> bool:
 
 def _served_models(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     router = _router()
-    return {mid: m for mid, m in _models(cfg).items() if _declared(router, m["llm_function"])}
+    return {mid: m for mid, m in _models(cfg).items()
+            if m.get("kind") == "workflow" or _declared(router, m["llm_function"])}
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +222,8 @@ def chat_completions():
     if model is None:
         return openai_error(404, f"model {model_id!r} does not exist", "invalid_request_error",
                             "model_not_found")
+    if model.get("kind") == "workflow":
+        return _run_workflow(cfg, model, body)
     if not _declared(_router(), model["llm_function"]):
         logger.error("openai_compat: %s -> %s is not declared in the active llm_config; refusing",
                      model_id, model["llm_function"])
@@ -412,3 +416,58 @@ def _audit_exchange(cfg: Dict[str, Any], exchange: Dict[str, Any], status: str, 
         logger.error("openai_compat: audit write failed for %s: %s", exchange["correlation_id"], exc)
         return False
     return row is not None and row != -1
+
+
+# ---------------------------------------------------------------------------
+# Governed workflows as models (owui-flow-01)
+# ---------------------------------------------------------------------------
+def _run_workflow(cfg: Dict[str, Any], model: Dict[str, Any], body: dict):
+    """Answer with an ICDEV workflow instead of a language model.
+
+    Role-gated by the model's ``required_roles`` -- refused, not filtered, so a
+    client cannot mistake "not allowed" for "nothing there". Audited exactly like
+    an LLM exchange.
+    """
+    from tools.saas import openai_workflows
+
+    model_id = model["id"]
+    role = str(getattr(g, "user_role", "") or "")
+    allowed = [str(r) for r in (model.get("required_roles") or [])]
+    if role not in allowed:
+        return openai_error(403, f"{model_id} requires one of the roles {allowed}",
+                            "permission_error", "role_not_permitted")
+
+    classification, err = _classification(cfg)
+    if err:
+        return openai_error(400, err, "invalid_request_error", "bad_classification")
+    system_prompt, messages = split_messages(body.get("messages") or [])
+    if not messages:
+        return openai_error(400, "messages must contain at least one user turn", "invalid_request_error")
+
+    exchange = {"model_id": model_id, "function": f"workflow:{model['workflow']}",
+                "classification": classification, "correlation_id": _correlation_id(),
+                "prompt_sha256": _sha256("\n".join(m["content"] for m in messages)),
+                "tenant_id": str(g.tenant_id), "user_id": str(getattr(g, "user_id", "") or "")}
+    try:
+        result = openai_workflows.run(model["workflow"], messages, tenant_id=exchange["tenant_id"],
+                                      user_id=exchange["user_id"],
+                                      chat_id=request.headers.get("X-OpenWebUI-Chat-Id"))
+    except openai_workflows.WorkflowError as exc:
+        _audit_exchange(cfg, exchange, "error", error_code="workflow_failed")
+        return openai_error(502, str(exc), "workflow_error", "workflow_failed")
+
+    from tools.llm.provider import LLMResponse
+
+    headers = {"X-ICDEV-Classification": classification}
+    if body.get("stream"):
+        events = iter([{"type": "text", "text": result["text"]},
+                       {"type": "message_stop", "model_id": exchange["function"]}])
+        return Response(stream_with_context(_stream(cfg, events, exchange)),
+                        mimetype="text/event-stream", headers=headers)
+    exchange["served_model"] = exchange["function"]
+    if not _audit_exchange(cfg, exchange, "served", content=result["text"]) and _audit_required(cfg):
+        return openai_error(503, "the exchange could not be written to the ICDEV audit trail",
+                            "service_unavailable", "audit_unavailable")
+    return jsonify(to_completion(LLMResponse(content=result["text"], model_id=exchange["function"]),
+                                 model_id)), 200, headers
+
