@@ -518,3 +518,35 @@ topologySpread:
   nodeSpread:
     maxSkew: 1
     whenUnsatisfiable: ScheduleAnyway
+
+# -----------------------------------------------------------------------
+# Open WebUI — governed sidecar chat client (owui-ship-04, ADR D-OWUI-1)
+# OFF by default. ICDEV is its ONLY backend: models via the API gateway's /v1
+# (LLMRouter -- redaction, routing policy, audit), tools via /mcp/v1. Ollama,
+# user direct connections, uploads and its own RAG are OFF; keep the env in step
+# with the docker-compose `openwebui` profile (tests/test_owui_compose_profile.py
+# pins both). Re-check a running instance with tools/openwebui/configure.py --check.
+# -----------------------------------------------------------------------
+openwebui:
+  enabled: false
+  # Same measured OCI index digest as docker-compose.yml.
+  image: ghcr.io/open-webui/open-webui:v0.13.0@sha256:2272b0fb7c8783a016bcc179abb467cfa34590c99c5e6560fe0e9155b4820a09
+  port: 8080
+  # The gateway Service serves TLS on apiGateway.port; Open WebUI must trust the
+  # cluster CA (mount it and set SSL_CERT_FILE / REQUESTS_CA_BUNDLE via extraEnv).
+  gatewayScheme: https
+  # Pre-created Secret (never put secrets in values). Keys:
+  #   icdev-api-key     the scoped icdev_ key Open WebUI presents to ICDEV
+  #   webui-secret-key  Open WebUI session signing key
+  existingSecret: icdev-openwebui
+  persistence:
+    size: 5Gi
+    storageClass: ""
+  extraEnv: []
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
