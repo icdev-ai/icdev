@@ -961,7 +961,11 @@ jobs:
   # and one database; sharding gives each shard its own of both.
   e2e-shard:
     name: E2E Shard ${{ matrix.shard }} of ${{ strategy.job-total }}
-    runs-on: ubuntu-latest
+    # PINNED (owui-ship-03, 2026-11-05): ubuntu-latest moved to 26.04 and
+    # `playwright install chromium --with-deps` fails there ("Playwright does not
+    # support chromium on ubuntu26.04-x64"), failing every shard in <1 min on every
+    # PR. Unpin once the pinned @playwright/test release supports 26.04.
+    runs-on: ubuntu-24.04
     needs: lint
     timeout-minutes: 30
     strategy:
