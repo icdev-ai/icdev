@@ -317,3 +317,34 @@ def test_real_auth_middleware_guards_v1(monkeypatch, router):
 def test_gateway_registers_the_blueprint():
     src = (BASE_DIR / "tools" / "saas" / "api_gateway.py").read_text(encoding="utf-8")
     assert "from tools.saas.openai_compat import openai_bp" in src
+
+
+# ---------------------------------------------------------------------------
+# Citations -> Open WebUI source chips (owui-rag-01)
+# ---------------------------------------------------------------------------
+def test_cited_answer_carries_url_citation_annotations(client, router, monkeypatch):
+    monkeypatch.setenv("ICDEV_DASHBOARD_URL", "http://icdev.test")
+    router.reply = "AC-2 requires account management [source: chunk nist-ac-2, ssp/7]."
+    body = _chat(client).get_json()
+    ann = body["choices"][0]["message"]["annotations"]
+    assert [a["type"] for a in ann] == ["url_citation", "url_citation"]
+    assert ann[0]["url_citation"]["url"] == "http://icdev.test/knowledge-search?q=nist-ac-2"
+    assert ann[1]["url_citation"]["url"].endswith("q=ssp%2F7")  # ids are URL-encoded
+    assert ann[0]["url_citation"]["title"] == "ICDEV source nist-ac-2"
+
+
+def test_uncited_answer_has_no_annotations(client, router):
+    body = _chat(client).get_json()
+    assert "annotations" not in body["choices"][0]["message"]
+
+
+def test_streamed_citations_arrive_as_one_annotations_delta(client, router, audit_rows, monkeypatch):
+    monkeypatch.setattr(router, "invoke_streaming", lambda function, req: iter([
+        {"type": "text", "text": "See [source: "}, {"type": "text", "text": "nist-ac-2]."},
+        {"type": "message_stop", "model_id": "m"}]))
+    resp = _chat(client, stream=True)
+    chunks = [json.loads(f[len("data: "):]) for f in _frames(resp)[:-1]]
+    with_ann = [c for c in chunks if c["choices"][0]["delta"].get("annotations")]
+    assert len(with_ann) == 1  # a citation split across chunks is parsed from the whole text
+    assert with_ann[0]["choices"][0]["delta"]["annotations"][0]["url_citation"]["title"] == "ICDEV source nist-ac-2"
+    assert audit_rows[-1]["details"]["citations"] == 1
