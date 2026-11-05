@@ -14,3 +14,4 @@
 | Traceability Builder | tools/requirements/traceability_builder.py | Full RTM: requirement > SysML > code > test > control > UAT with coverage analysis | --project-id, --build-rtm, --gap-analysis, --json | RTM + coverage % |
 | MCP Integration Server | tools/mcp/integration_server.py | MCP server for integration tools (10 tools: Jira, ServiceNow, GitLab, DOORS, approval, RTM) | stdio | JSON-RPC responses |
 
+| Open WebUI Configurator | tools/openwebui/configure.py | Make ICDEV the only backend Open WebUI can reach: --check names every bypass (direct Ollama/OpenAI, user direct connections, foreign tool servers), --plan is read-only, --apply writes the governed config via the Open WebUI admin API (owui-api-03, D-OWUI-1) | --icdev-url, --check, --plan, --apply, --with-tools, --env, --json | Findings / redacted writes JSON |
