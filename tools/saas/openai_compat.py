@@ -39,11 +39,13 @@ than served anonymously.
 
 import hashlib
 import json
+import os
 import sys
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 # kax-conflict-04: run by path, sys.path[0] is this file's own directory -- bootstrap
 # the import root before the first first-party import.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -295,7 +297,10 @@ def chat_completions():
                         mimetype="text/event-stream", headers=headers)
 
     completion = to_completion(resp, model_id)
-    exchange.update(provider=resp.provider, served_model=resp.model_id)
+    annotations = citation_annotations(cfg, resp.content)
+    if annotations:
+        completion["choices"][0]["message"]["annotations"] = annotations
+    exchange.update(provider=resp.provider, served_model=resp.model_id, citations=len(annotations))
     if not _audit_exchange(cfg, exchange, "served", content=resp.content) and _audit_required(cfg):
         # NIST AU-2/AU-12: a governed turn that cannot be recorded is not handed out.
         return openai_error(503, "the exchange could not be written to the ICDEV audit trail",
@@ -337,11 +342,35 @@ def _stream(cfg: Dict[str, Any], events, exchange: Dict[str, Any]):
                 yield frame({"content": f"\n\n[ICDEV: the model provider failed: {event.get('error', '')}]"})
             elif etype == "message_stop":
                 exchange["served_model"] = event.get("model_id", "")
+        annotations = citation_annotations(cfg, "".join(parts))
+        if annotations:
+            exchange["citations"] = len(annotations)
+            yield frame({"annotations": annotations})
         yield frame({}, "stop")
         yield b"data: [DONE]\n\n"
     finally:
         if not _audit_exchange(cfg, exchange, status, content="".join(parts), error_code=error_code):
             logger.error("openai_compat: streamed exchange %s was NOT audited", exchange["correlation_id"])
+
+
+def citation_annotations(cfg: Dict[str, Any], text: str) -> List[Dict[str, Any]]:
+    """``[source: ...]`` citations in ``text`` as OpenAI ``url_citation`` annotations (owui-rag-01).
+
+    Retrieval stays in ICDEV; this only makes its provenance VISIBLE: Open WebUI
+    renders a ``url_citation`` annotation as a source chip. Parsing is the shared
+    ``citation_grounding.parse_citations`` -- not re-implemented here. Each link is
+    a lookup into ICDEV (``citation_url_template``), never a fetch of the source.
+    """
+    from tools.quality.citation_grounding import parse_citations
+
+    template = cfg.get("citation_url_template") or "{dashboard}/knowledge-search?q={id}"
+    dashboard = (os.environ.get("ICDEV_DASHBOARD_URL") or "http://localhost:5050").rstrip("/")
+    return [
+        {"type": "url_citation",
+         "url_citation": {"url": template.format(dashboard=dashboard, id=quote(sid, safe="")),
+                          "title": f"ICDEV source {sid}"}}
+        for sid in parse_citations(text or "")
+    ]
 
 
 def _sha256(text: str) -> str:

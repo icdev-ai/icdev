@@ -29,6 +29,12 @@ allowed_classifications: [UNCLASSIFIED, CUI, SECRET]
 # flight cannot be withdrawn; its failed write is logged instead.
 audit_required: true
 
+# owui-rag-01: [source: <id>] citations in an answer become OpenAI url_citation
+# annotations, which Open WebUI renders as source chips. The link is a LOOKUP into
+# ICDEV ({dashboard} = ICDEV_DASHBOARD_URL, default http://localhost:5050) --
+# retrieval and the evidence itself stay in ICDEV.
+citation_url_template: "{dashboard}/knowledge-search?q={id}"
+
 # Upper bound applied to a client's max_tokens.
 max_tokens_cap: 8192
 
