@@ -37,6 +37,14 @@ class FakeSanitizer:
     def de_anonymize_response(self, text):
         return text.replace(SURROGATE, ORIGINAL)
 
+    def active_surrogates(self):
+        return [SURROGATE.lower()]
+
+
+class OpaqueSanitizer(FakeSanitizer):
+    def active_surrogates(self):
+        raise AttributeError("no registry")
+
 
 @pytest.fixture
 def router(monkeypatch):
@@ -105,3 +113,44 @@ def test_an_abandoned_stream_still_writes_its_row(monkeypatch, router):
     next(gen)
     gen.close()
     assert len(router._test_telemetry) == 1
+
+
+# ---------------------------------------------------------------------------
+# Incremental release under redaction (owui-api-06)
+# ---------------------------------------------------------------------------
+def test_redacted_stream_is_incremental(monkeypatch, router):
+    chunks = [{"type": "text", "text": "one "}, {"type": "text", "text": "two "},
+              {"type": "text", "text": "three"}, {"type": "message_stop", "model_id": "fake-1"}]
+    _wire(monkeypatch, router, chunks, redaction_session="sess-1")
+    events = list(router.invoke_streaming("f", LLMRequest(messages=[{"role": "user", "content": "hi"}])))
+    assert len([e for e in events if e["type"] == "text"]) >= 3
+    assert _text(events) == "one two three"
+
+
+def test_random_splits_never_leak_a_surrogate_fragment(monkeypatch, router):
+    import random
+
+    text = "Hello PERSON_7f3a, and again PERSON_7F3A here. person_ is fine alone."
+    expected = text.replace(SURROGATE, ORIGINAL).replace("PERSON_7F3A", ORIGINAL)
+    monkeypatch.setattr(router, "_get_sanitizer", lambda: type("S", (FakeSanitizer,), {
+        "de_anonymize_response": lambda self, t: __import__("re").sub("(?i)person_7f3a", ORIGINAL, t)})())
+    rng = random.Random(7)
+    for _ in range(200):
+        cuts = sorted(rng.sample(range(1, len(text)), rng.randint(1, 12)))
+        pieces = [text[a:b] for a, b in zip([0] + cuts, cuts + [len(text)])]
+        chunks = [{"type": "text", "text": p} for p in pieces] + [{"type": "message_stop"}]
+        _wire(monkeypatch, router, chunks, redaction_session="sess-1")
+        events = list(router.invoke_streaming("f", LLMRequest(messages=[{"role": "user", "content": "hi"}])))
+        assert _text(events) == expected
+        for e in events:
+            if e["type"] == "text":
+                assert "7f3a" not in e["text"].lower(), pieces
+
+
+def test_unknowable_surrogate_set_falls_back_to_buffering(monkeypatch, router):
+    monkeypatch.setattr(router, "_get_sanitizer", lambda: OpaqueSanitizer())
+    chunks = [{"type": "text", "text": "Hello PERSON_"}, {"type": "text", "text": "7f3a"},
+              {"type": "message_stop"}]
+    _wire(monkeypatch, router, chunks, redaction_session="sess-1")
+    events = list(router.invoke_streaming("f", LLMRequest(messages=[{"role": "user", "content": "hi"}])))
+    assert [e["text"] for e in events if e["type"] == "text"] == ["Hello Jane Doe"]
