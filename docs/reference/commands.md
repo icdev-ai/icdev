@@ -4493,6 +4493,13 @@ python tools/compliance/incident_response_plan.py --project-id "proj-123"
 python tools/compliance/siem_config_generator.py --project-dir "/path/to/project" --targets splunk elk
 python tools/compliance/cssp_evidence_collector.py --project-id "proj-123" --project-dir "/path"
 
+# Open WebUI as a governed sidecar client (card owui, D-OWUI-1)
+# Credentials from env, never printed: OPENWEBUI_ADMIN_TOKEN (Open WebUI admin key), OPENWEBUI_ICDEV_API_KEY (icdev_ key)
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --check --json     # exit 1 on any bypass, 2 if unreadable
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --plan             # read-only: what --apply would change
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --apply --with-tools  # ICDEV /v1 + /mcp/v1 (chat_readonly) only
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --env              # container env block that starts governed
+
 # Xacta 360 Integration
 python tools/compliance/xacta/xacta_sync.py --project-id "proj-123" --mode hybrid
 python tools/compliance/xacta/xacta_export.py --project-id "proj-123" --format oscal
