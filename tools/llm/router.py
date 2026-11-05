@@ -3090,6 +3090,72 @@ class LLMRouter:
 
         return response
 
+    def _governed_stream(self, stream, function, request, model_id, provider_name, redaction_session):
+        """Wrap a provider stream so it leaves the router at parity with :meth:`invoke`.
+
+        owui-api-02. The streaming door redacted the prompt on the way in but
+        handed the provider's chunks straight back: surrogates reached the caller
+        un-restored, and no ``ai_telemetry`` row was written, so every streamed
+        call was invisible to the ledger.
+
+        With a redaction session active the text is BUFFERED and de-anonymized
+        once, at the end: a surrogate can be split across two chunks, and
+        restoring chunk by chunk would leak the half that did not match. Without
+        one, text passes through as it arrives. Either way exactly one telemetry
+        row is written when the stream ends -- including a stream the caller
+        abandons early (``finally``), which is a call the provider still served.
+        """
+        start = time.time()
+        parts: List[str] = []
+        stop: dict = {}
+        buffer = bool(redaction_session)
+        try:
+            for event in stream:
+                etype = event.get("type") if isinstance(event, dict) else None
+                if etype == "text":
+                    parts.append(event.get("text", ""))
+                    if buffer:
+                        continue
+                elif etype == "message_stop":
+                    stop = event
+                    if buffer:
+                        restored = self._post_invoke_deanonymize(
+                            LLMResponse(content="".join(parts)), redaction_session
+                        ).content
+                        parts = [restored]
+                        if restored:
+                            yield {"type": "text", "text": restored}
+                yield event
+            if buffer and not stop and parts:
+                # Ended without message_stop (an error event, a provider that never
+                # sends one): flush what was buffered rather than swallow it.
+                restored = self._post_invoke_deanonymize(
+                    LLMResponse(content="".join(parts)), redaction_session
+                ).content
+                parts = [restored]
+                yield {"type": "text", "text": restored}
+        finally:
+            response = LLMResponse(
+                content="".join(parts),
+                model_id=stop.get("model_id") or model_id,
+                provider=provider_name,
+                input_tokens=int(stop.get("input_tokens") or 0),
+                output_tokens=int(stop.get("output_tokens") or 0),
+                duration_ms=int(stop.get("duration_ms") or (time.time() - start) * 1000),
+            )
+            try:
+                self._log_telemetry(
+                    function=function,
+                    request=request,
+                    response=response,
+                    model_id=response.model_id,
+                    provider_name=provider_name,
+                    latency_ms=response.duration_ms,
+                )
+            except Exception as exc:  # noqa: BLE001
+                # Best-effort, as in invoke(): a served stream is never failed on bookkeeping.
+                logger.warning("AI telemetry logging failed for stream: %s", exc)
+
     def invoke_streaming(self, function: str, request: LLMRequest):
         """Resolve provider and invoke with streaming + fallback."""
         # Explicit no-LLM mode: short-circuit so streaming UIs can render
@@ -3131,7 +3197,10 @@ class LLMRouter:
                 continue
             model_id = model_cfg.get("model_id", "")
             try:
-                return self._provider_invoke_streaming(provider, request, model_id, model_cfg, function=function)
+                stream = self._provider_invoke_streaming(provider, request, model_id, model_cfg, function=function)
+                return self._governed_stream(
+                    stream, function, request, model_id, provider_name, _redaction_session
+                )
             except ForceLocalViolation as exc:
                 # Same contract as the non-streaming chain walk: a policy refusal is
                 # not a provider failure. Skip this model so a LOCAL one further down
