@@ -2773,3 +2773,19 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
   - **The basis is never dropped.** Units carry `basis: decompiled`, a confidence and the REA `evidence_id`; `code_translator` copies them onto every translated / mocked / failed entry, prefixes the LLM prompt with a reconstruction notice and the written file with a `basis: decompiled` comment; `legacy_analyzer` puts them in component `properties` and the application description; `architecture_extractor.extract_call_graph` returns them per node.
 - **Residual:** the regex extractor runs on attacker-chosen text in-process; it is linear-time over bounded files but is not a sandbox. Moving the JS read into `SandboxExecutor` is the revisit if a heavier parser is ever used here.
 - **Revisit if:** the extractor gains a real JS/C parser, reads anything outside the target, or follows `sources` paths.
+
+### Gap 78 — governed OpenAI-compatible endpoint (`tools/saas/openai_compat.py`)
+
+**Module:** `tools/saas/openai_compat.py` (owui-api-01, card `owui`, ADR D-OWUI-1), registered on the SaaS API gateway at `/v1`.
+
+**Ingress path:** OpenAI `chat.completion` request bodies from an authenticated tenant principal (gateway middleware: `icdev_` API key or OAuth JWT) -- in practice Open WebUI acting for a chat user. The body is chat text plus a few scalar parameters.
+
+- **Decision:** **trusted-first-party.** The prompt text is never executed, imported, rendered server-side or used as a path. It is parsed with `request.get_json`, reduced to role/text pairs (non-text content parts become a marker, they are not fetched), and handed to `LLMRouter.invoke`. The router applies the controls that make this safe: injection scan, redaction with `redaction.fail_closed`, the classification routing policy, budgets and `ai_telemetry`.
+- **Guardrails (code, pinned by `tests/test_owui_openai_compat.py`):**
+  - **Capabilities, not vendor models.** Only ids in `args/openai_compat.yaml` are served; an unknown id is a 404.
+  - **Fail closed on an unrouted capability.** A capability whose `llm_function` is absent from the config the router ACTUALLY loaded (`ICDEV_LLM_CONFIG` may point elsewhere) is hidden from `/v1/models` and refused with 503, because the router would otherwise serve it from the cloud-first `routing.default`.
+  - **Classification is declared or defaulted, never guessed downward.** An unknown `X-ICDEV-Classification` value is a 400. A routing-policy refusal is a 403, never a silent cloud call.
+  - **Native `tools` are refused** (400) rather than ignored.
+  - **No anonymous use.** A request without a principal is a 401, even if the blueprint is mounted outside the gateway.
+- **Residual:** responses come from `invoke()`, not `invoke_streaming` -- the streaming path does not de-anonymize or write telemetry yet (owui-api-02). A router response-cache hit writes no `ai_telemetry` row, and that row records the router's default classification rather than the request's. The per-exchange audit row of owui-flow-02 closes both.
+- **Revisit if:** the endpoint starts accepting native tool calls, fetching URLs or files named in a message, or streaming through `invoke_streaming`.

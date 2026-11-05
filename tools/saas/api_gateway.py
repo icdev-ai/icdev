@@ -443,6 +443,15 @@ def create_app(config=None):
     except ImportError as exc:
         logger.warning("MCP Streamable HTTP blueprint not available: %s", exc)
 
+    # Governed OpenAI-compatible endpoint (owui-api-01, D-OWUI-1)
+    try:
+        from tools.saas.openai_compat import openai_bp
+
+        app.register_blueprint(openai_bp)
+        logger.info("OpenAI-compatible blueprint registered at /v1")
+    except ImportError as exc:
+        logger.warning("OpenAI-compatible blueprint not available: %s", exc)
+
     # Portal (optional web UI)
     try:
         from tools.saas.portal import portal_bp

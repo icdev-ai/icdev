@@ -8,3 +8,4 @@
 | MCP SSE | tools/saas/mcp_sse.py | MCP Server-Sent Events transport for SaaS | (server) | SSE stream |
 | Tenant LLM Keys | tools/saas/tenant_llm_keys.py | Per-tenant LLM API key management | --json | Key management results |
 
+| OpenAI-compatible endpoint | tools/saas/openai_compat.py | Governed /v1/models + /v1/chat/completions over LLMRouter for Open WebUI and other OpenAI clients (owui-api-01, D-OWUI-1); capabilities in args/openai_compat.yaml | (blueprint on SaaS gateway) | OpenAI chat.completion / SSE |

@@ -10531,3 +10531,39 @@ projects:
   - key: sme
     title: SME
     priority: medium
+- key: owui
+  name: Open WebUI as a Governed Sidecar Client
+  description: 'Open WebUI supplies the chat UX; ICDEV stays the only backend it may reach.
+    Models through the governed /v1 endpoint over LLMRouter, tools through /mcp/v1 with a
+    curated profile, identity from a shared IdP, retrieval and audit in ICDEV. ADR D-OWUI-1;
+    docs/features/openwebui-governed-client.md.'
+  task_prefix: owui-
+  default_open: true
+  briefs:
+  - 'api: governed OpenAI-compatible /v1 on the SaaS gateway over LLMRouter - owui-api-01'
+  - 'mcp: read-only toolset profile and authorizer survey for chat clients - owui-mcp-01'
+  epics:
+  - key: gate
+    title: GATE - operator decisions (IdP, licence)
+    priority: high
+  - key: dec
+    title: DEC - ADR, boundary and sandbox decision
+    priority: high
+  - key: api
+    title: API - governed OpenAI-compatible endpoint
+    priority: high
+  - key: mcp
+    title: MCP - tools for chat clients
+    priority: medium
+  - key: idp
+    title: IDP - shared-IdP identity and token passthrough
+    priority: medium
+  - key: rag
+    title: RAG - knowledge stays in ICDEV
+    priority: medium
+  - key: flow
+    title: FLOW - governed workflows from chat + audit
+    priority: medium
+  - key: ship
+    title: SHIP - compose/Helm, digest pin, E2E
+    priority: low
