@@ -36,13 +36,18 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from icdev.core.paths import repo_root
+# kax-conflict-04: run by path, sys.path[0] is this file's own directory -- bootstrap
+# the import root before the first first-party import.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from icdev.core.paths import repo_root  # noqa: E402
 
 BASE_DIR = repo_root(__file__)
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 
