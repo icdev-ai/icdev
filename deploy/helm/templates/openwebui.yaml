@@ -1,0 +1,124 @@
+# [TEMPLATE: CUI // SP-CTI]
+# Open WebUI — governed sidecar chat client (owui-ship-04, ADR D-OWUI-1).
+# Rendered only when .Values.openwebui.enabled. The env below is the governed
+# configuration; it mirrors the docker-compose `openwebui` profile and is pinned
+# by tests/test_owui_compose_profile.py.
+{{- if .Values.openwebui.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-openwebui-data
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "icdev.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openwebui
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.openwebui.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.openwebui.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-openwebui
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "icdev.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openwebui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "icdev.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: openwebui
+  template:
+    metadata:
+      labels:
+        {{- include "icdev.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: openwebui
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: openwebui
+          image: {{ .Values.openwebui.image | quote }}
+          ports:
+            - containerPort: {{ .Values.openwebui.port }}
+              protocol: TCP
+              name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            # Not read-only: Open WebUI writes outside its data volume at start-up
+            # (unverified which paths). Revisit with a measured writable-path list.
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ALL]
+          env:
+            # -- ICDEV is the only model backend --
+            - {name: ENABLE_OLLAMA_API, value: "false"}
+            - {name: ENABLE_OPENAI_API, value: "true"}
+            - name: OPENAI_API_BASE_URL
+              value: "{{ .Values.openwebui.gatewayScheme }}://{{ .Release.Name }}-api-gateway:{{ .Values.apiGateway.port }}/v1"
+            - name: OPENAI_API_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.openwebui.existingSecret }}, key: icdev-api-key}}
+            - {name: ENABLE_DIRECT_CONNECTIONS, value: "false"}
+            # -- retrieval and documents stay in ICDEV --
+            - {name: BYPASS_EMBEDDING_AND_RETRIEVAL, value: "true"}
+            - {name: USER_PERMISSIONS_CHAT_FILE_UPLOAD, value: "false"}
+            - {name: ENABLE_WEB_SEARCH, value: "false"}
+            - {name: ENABLE_IMAGE_GENERATION, value: "false"}
+            # -- accounts: admin-provisioned only --
+            - {name: WEBUI_AUTH, value: "true"}
+            - {name: ENABLE_SIGNUP, value: "false"}
+            - name: WEBUI_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.openwebui.existingSecret }}, key: webui-secret-key}}
+            # -- no telemetry, no model downloads (air-gap safe) --
+            - {name: OFFLINE_MODE, value: "true"}
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: SCARF_NO_ANALYTICS, value: "true"}
+            - {name: DO_NOT_TRACK, value: "true"}
+            - {name: ANONYMIZED_TELEMETRY, value: "false"}
+            - name: WEBUI_BANNERS
+              value: {{ printf "[{\"id\":\"icdev-cui\",\"type\":\"warning\",\"title\":\"\",\"content\":\"%s -- responses are produced and audited by ICDEV\",\"dismissible\":false,\"timestamp\":0}]" .Values.cui.bannerTop | quote }}
+            {{- with .Values.openwebui.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/backend/data
+          resources:
+            {{- toYaml .Values.openwebui.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-openwebui-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-openwebui
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "icdev.labels" . | nindent 4 }}
+    app.kubernetes.io/component: openwebui
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.openwebui.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "icdev.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: openwebui
+{{- end }}

@@ -67,3 +67,42 @@ def test_loopback_only_and_carries_a_classification_banner(svc):
     assert all(p.startswith("127.0.0.1:") for p in svc["ports"])
     banner = json.loads(svc["environment"]["WEBUI_BANNERS"])[0]
     assert banner["content"].startswith("CUI") and banner["dismissible"] is False
+
+
+# ---------------------------------------------------------------------------
+# Helm parity (owui-ship-04): the chart must start exactly as governed
+# ---------------------------------------------------------------------------
+GOVERNED_KEYS = ("ENABLE_OLLAMA_API", "ENABLE_OPENAI_API", "ENABLE_DIRECT_CONNECTIONS",
+                 "BYPASS_EMBEDDING_AND_RETRIEVAL", "USER_PERMISSIONS_CHAT_FILE_UPLOAD",
+                 "ENABLE_WEB_SEARCH", "ENABLE_IMAGE_GENERATION", "WEBUI_AUTH", "ENABLE_SIGNUP",
+                 "OFFLINE_MODE", "HF_HUB_OFFLINE", "SCARF_NO_ANALYTICS", "DO_NOT_TRACK",
+                 "ANONYMIZED_TELEMETRY")
+
+
+@pytest.fixture(scope="module")
+def helm():
+    values = yaml.safe_load((BASE_DIR / "deploy" / "helm" / "values.yaml").read_text(encoding="utf-8"))
+    template = (BASE_DIR / "deploy" / "helm" / "templates" / "openwebui.yaml").read_text(encoding="utf-8")
+    return values["openwebui"], template
+
+
+def test_helm_sidecar_is_off_by_default_and_pinned_like_compose(helm, svc):
+    values, _ = helm
+    assert values["enabled"] is False
+    assert values["image"] == svc["image"]
+
+
+def test_helm_env_matches_the_governed_compose_env(helm, svc):
+    _, template = helm
+    for key in GOVERNED_KEYS:
+        expected = svc["environment"][key]
+        assert re.search(r"\{name: %s, value: \"%s\"\}" % (key, re.escape(expected)), template), (
+            f"{key} in the Helm template must equal the compose profile's {expected!r}")
+
+
+def test_helm_secrets_come_only_from_a_secret_ref(helm):
+    _, template = helm
+    for key in ("OPENAI_API_KEY", "WEBUI_SECRET_KEY"):
+        block = template.split(f"name: {key}", 1)[1].split("- ", 1)[0]
+        assert "secretKeyRef" in block, f"{key} must come from a Secret"
+    assert "OPENAI_API_BASE_URLS" not in template
