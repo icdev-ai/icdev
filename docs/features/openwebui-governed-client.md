@@ -103,6 +103,27 @@ deployment therefore records no `ai_telemetry` at all. This is tracked as a sepa
 issue `%s`-placeholder SQL against SQLite, so API-key auth works only when the platform DB is
 PostgreSQL (`PLATFORM_DB_URL`). The behaviour predates this card.
 
+## Uploads (owui-rag-02) — a narrowed path, not a wall
+
+Open WebUI stores an uploaded file on its own data volume **before** any filter or
+pipeline sees it, so a "forward uploads to ICDEV" filter cannot keep CUI out of
+Open WebUI. What ships instead:
+
+- `USER_PERMISSIONS_CHAT_FILE_UPLOAD=false` in the compose profile, and
+  `configure.py --check` reports `user_file_upload` when the permission is on
+  (`--apply` turns it off and keeps every other permission).
+- `BYPASS_EMBEDDING_AND_RETRIEVAL=true`: nothing is embedded into Open WebUI's
+  vector store.
+- Documents go to ICDEV document intelligence (dashboard) where entitlement,
+  provenance and markings apply.
+
+**Residual (record in the ATO boundary):** Open WebUI 0.13 enforces the upload
+permission in the UI only — `POST /api/v1/files/` does not check it — so an
+authenticated user calling the API directly can still store a file. The
+`openwebui-data` volume (chat history, any such file) is therefore **inside the
+boundary**: encrypted at rest, backed up and retained under the same policy as
+ICDEV data.
+
 ## Roadmap (kanban card `owui`)
 
 | Phase | Tasks |

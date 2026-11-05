@@ -25,7 +25,7 @@ ICDEV = "http://icdev.test:8443"
 
 
 class FakeOpenWebUI:
-    def __init__(self, openai=None, ollama=None, connections=None, tool_servers=None):
+    def __init__(self, openai=None, ollama=None, connections=None, tool_servers=None, permissions=None):
         self.store = {
             configure.OPENAI_CONFIG: openai or {"ENABLE_OPENAI_API": False, "OPENAI_API_BASE_URLS": [],
                                                 "OPENAI_API_KEYS": [], "OPENAI_API_CONFIGS": {}},
@@ -34,6 +34,7 @@ class FakeOpenWebUI:
             configure.CONNECTIONS_CONFIG: connections or {"ENABLE_DIRECT_CONNECTIONS": False,
                                                           "ENABLE_BASE_MODELS_CACHE": False},
             configure.TOOL_SERVERS_CONFIG: tool_servers or {"TOOL_SERVER_CONNECTIONS": []},
+            configure.DEFAULT_PERMISSIONS: permissions or {"chat": {"file_upload": False, "delete": True}},
         }
         self.calls = []
 
@@ -56,6 +57,7 @@ def bypassing():
                 "OLLAMA_API_CONFIGS": {}},
         connections={"ENABLE_DIRECT_CONNECTIONS": True, "ENABLE_BASE_MODELS_CACHE": False},
         tool_servers={"TOOL_SERVER_CONNECTIONS": [{"url": "http://mcpo.local:8000", "config": {"enable": True}}]},
+        permissions={"chat": {"file_upload": True, "delete": True}},
     )
 
 
@@ -73,6 +75,7 @@ def test_check_names_every_bypass(capsys):
         ("openai_non_icdev", "https://api.openai.com/v1"),
         ("user_direct_connections", "ENABLE_DIRECT_CONNECTIONS"),
         ("foreign_tool_server", "http://mcpo.local:8000"),
+        ("user_file_upload", "permissions.chat.file_upload"),
         ("no_icdev_connection", ICDEV + "/v1"),
     }
 
@@ -90,7 +93,8 @@ def test_check_passes_on_a_governed_config(capsys):
 def test_a_disabled_connection_is_not_a_bypass():
     state = {"openai": {"ENABLE_OPENAI_API": True,
                         "OPENAI_API_BASE_URLS": [ICDEV + "/v1", "https://api.openai.com/v1"],
-                        "OPENAI_API_CONFIGS": {"1": {"enable": False}}}}
+                        "OPENAI_API_CONFIGS": {"1": {"enable": False}}},
+             "permissions": {"chat": {"file_upload": False}}}
     assert configure.find_bypasses(state, ICDEV) == []
 
 
@@ -118,6 +122,8 @@ def test_apply_leaves_icdev_as_the_only_backend(monkeypatch, capsys):
     assert tool["url"] == ICDEV + "/mcp/v1/?toolset=chat_readonly"
     assert tool["type"] == "mcp"
     assert tool["headers"] == {"X-ICDEV-Client": "openwebui"}
+    # owui-rag-02: uploads off, every other permission preserved
+    assert fake.store[configure.DEFAULT_PERMISSIONS] == {"chat": {"file_upload": False, "delete": True}}
     assert "icdev_secret_value" not in out
 
 

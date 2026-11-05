@@ -11,6 +11,8 @@ clicking through the UI is how it drifts back:
   openai_non_icdev           an OpenAI connection whose base URL is not ICDEV /v1
   user_direct_connections    users may add their own provider keys
   foreign_tool_server        a tool server that is not ICDEV /mcp/v1
+  user_file_upload           users may upload files into Open WebUI's own store
+                             (CUI at rest outside ICDEV; owui-rag-02)
   no_icdev_connection        nothing points at ICDEV at all (not a bypass, but broken)
 
 Modes:
@@ -62,6 +64,7 @@ OPENAI_CONFIG = "/openai/config"
 OLLAMA_CONFIG = "/ollama/config"
 CONNECTIONS_CONFIG = "/api/v1/configs/connections"
 TOOL_SERVERS_CONFIG = "/api/v1/configs/tool_servers"
+DEFAULT_PERMISSIONS = "/api/v1/users/default/permissions"
 
 # (method, url, body) -> parsed JSON. Injectable so tests never touch a network.
 Http = Callable[[str, str, Optional[dict]], Any]
@@ -100,7 +103,8 @@ def read_state(owui_url: str, http: Http) -> Dict[str, Any]:
     base = _norm(owui_url)
     state = {}
     for key, path in (("openai", OPENAI_CONFIG), ("ollama", OLLAMA_CONFIG),
-                      ("connections", CONNECTIONS_CONFIG), ("tool_servers", TOOL_SERVERS_CONFIG)):
+                      ("connections", CONNECTIONS_CONFIG), ("tool_servers", TOOL_SERVERS_CONFIG),
+                      ("permissions", DEFAULT_PERMISSIONS)):
         try:
             state[key] = http("GET", base + path, None) or {}
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -145,6 +149,12 @@ def find_bypasses(state: Dict[str, Any], icdev_url: str) -> List[Dict[str, str]]
         if not url.startswith(mcp):
             findings.append({"rule": "foreign_tool_server", "target": conn.get("url", "")})
 
+    # owui-rag-02. Open WebUI 0.13 enforces this permission in the UI only -- its
+    # upload API does not check it -- so it narrows the path, it is not a wall:
+    # its data volume must still be counted inside the ATO boundary.
+    if ((state.get("permissions") or {}).get("chat") or {}).get("file_upload", True):
+        findings.append({"rule": "user_file_upload", "target": "permissions.chat.file_upload"})
+
     if not icdev_connected:
         findings.append({"rule": "no_icdev_connection", "target": v1})
     return findings
@@ -183,6 +193,9 @@ def desired_writes(state: Dict[str, Any], icdev_url: str, icdev_key: str,
                  "headers": {"X-ICDEV-Client": "openwebui"},
                  "info": {"id": "icdev", "name": "ICDEV", "description": f"ICDEV tools ({toolset})"}}]
     writes.append({"path": TOOL_SERVERS_CONFIG, "body": {"TOOL_SERVER_CONNECTIONS": kept}})
+    permissions = json.loads(json.dumps(state.get("permissions") or {}))
+    permissions.setdefault("chat", {})["file_upload"] = False
+    writes.append({"path": DEFAULT_PERMISSIONS, "body": permissions})
     return writes
 
 
@@ -213,6 +226,7 @@ def env_block(icdev_url: str) -> Dict[str, str]:
         "OPENAI_API_KEY": f"${{{ICDEV_KEY_ENV}}}",
         "ENABLE_DIRECT_CONNECTIONS": "false",
         "BYPASS_EMBEDDING_AND_RETRIEVAL": "true",
+        "USER_PERMISSIONS_CHAT_FILE_UPLOAD": "false",
         "SCARF_NO_ANALYTICS": "true",
         "DO_NOT_TRACK": "true",
         "ANONYMIZED_TELEMETRY": "false",
