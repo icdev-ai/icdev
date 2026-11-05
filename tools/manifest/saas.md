@@ -10,3 +10,4 @@
 
 | OpenAI-compatible endpoint | tools/saas/openai_compat.py | Governed /v1/models + /v1/chat/completions over LLMRouter for Open WebUI and other OpenAI clients (owui-api-01, D-OWUI-1); capabilities in args/openai_compat.yaml | (blueprint on SaaS gateway) | OpenAI chat.completion / SSE |
 | MCP Authz Survey | tools/saas/mcp_authz_survey.py | Would-deny rate of MCPToolAuthorizer for one MCP HTTP client (X-ICDEV-Client), from per-call mcp.tool.call rows in audit_platform; exit 2 when unmeasurable (owui-mcp-02) | --caller, --days, --json | Survey JSON |
+| OpenAI Workflow Models | tools/saas/openai_workflows.py | Governed ICDEV workflows exposed as /v1 model ids: icdev/intake (requirements -> SAFe -> staged HITL review, never seeds kanban) and icdev/kanban (read-only board status); role-gated via required_roles (owui-flow-01) | (library, called by openai_compat) | Text + details |

@@ -111,7 +111,8 @@ def _chat(client, model="icdev/general", headers=None, **extra):
 def test_every_capability_maps_to_a_declared_router_function():
     cfg = openai_compat.load_config()
     routing = yaml.safe_load((BASE_DIR / "args" / "llm_config.yaml").read_text(encoding="utf-8"))["routing"]
-    models = cfg["models"]
+    # Workflow models (owui-flow-01) have their own contract in test_owui_openai_workflows.py.
+    models = [m for m in cfg["models"] if m.get("kind") != "workflow"]
     assert models, "openai_compat.yaml exposes no models"
     for m in models:
         assert m["llm_function"] in routing, (
