@@ -14,6 +14,20 @@ clicking through the UI is how it drifts back:
   user_file_upload           users may upload files into Open WebUI's own store
                              (CUI at rest outside ICDEV; owui-rag-02)
   no_icdev_connection        nothing points at ICDEV at all (not a bypass, but broken)
+  native_tool_calling        the default model params are not ``function_calling: legacy``.
+                             Open WebUI 0.13 defaults to native calling, which sends its OWN
+                             built-in tools (chat search, memory, notes over its store) and
+                             which ICDEV /v1 refuses -- so every chat fails (owui-ship-02)
+  shared_identity            (--identity oidc) a connection to ICDEV presents one shared
+                             key, so every user reaches ICDEV as the same principal
+                             (owui-idp-01)
+
+Identity (--identity):
+  key   (default) Open WebUI presents one scoped ``icdev_`` key for everyone.
+  oidc  Open WebUI and ICDEV trust the same IdP; Open WebUI forwards each user's
+        own access token (``auth_type: system_oauth``), so ICDEV RBAC, workflow
+        roles and tenant RLS apply per person. Open WebUI must itself log users
+        in through that IdP (the OAUTH_* / OPENID_* env from ``--env --identity oidc``).
 
 Modes:
   --plan   (default) read the live config and print what --apply would change.
@@ -65,6 +79,8 @@ OLLAMA_CONFIG = "/ollama/config"
 CONNECTIONS_CONFIG = "/api/v1/configs/connections"
 TOOL_SERVERS_CONFIG = "/api/v1/configs/tool_servers"
 DEFAULT_PERMISSIONS = "/api/v1/users/default/permissions"
+MODELS_CONFIG = "/api/v1/configs/models"
+GOVERNED_MODEL_PARAMS = {"function_calling": "legacy"}
 
 # (method, url, body) -> parsed JSON. Injectable so tests never touch a network.
 Http = Callable[[str, str, Optional[dict]], Any]
@@ -104,7 +120,7 @@ def read_state(owui_url: str, http: Http) -> Dict[str, Any]:
     state = {}
     for key, path in (("openai", OPENAI_CONFIG), ("ollama", OLLAMA_CONFIG),
                       ("connections", CONNECTIONS_CONFIG), ("tool_servers", TOOL_SERVERS_CONFIG),
-                      ("permissions", DEFAULT_PERMISSIONS)):
+                      ("permissions", DEFAULT_PERMISSIONS), ("models", MODELS_CONFIG)):
         try:
             state[key] = http("GET", base + path, None) or {}
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -117,7 +133,7 @@ def _enabled(configs: dict, idx: int) -> bool:
     return cfg.get("enable", True) is not False
 
 
-def find_bypasses(state: Dict[str, Any], icdev_url: str) -> List[Dict[str, str]]:
+def find_bypasses(state: Dict[str, Any], icdev_url: str, identity: str = "key") -> List[Dict[str, str]]:
     """Every setting that lets a chat turn or tool call reach something other than ICDEV."""
     findings: List[Dict[str, str]] = []
     v1, mcp = icdev_v1(icdev_url), icdev_mcp(icdev_url)
@@ -136,6 +152,9 @@ def find_bypasses(state: Dict[str, Any], icdev_url: str) -> List[Dict[str, str]]
                 continue
             if _norm(url) == v1:
                 icdev_connected = True
+                auth = ((configs.get(str(idx)) or configs.get(idx) or {}).get("auth_type") or "bearer")
+                if identity == "oidc" and auth != "system_oauth":
+                    findings.append({"rule": "shared_identity", "target": url})
             else:
                 findings.append({"rule": "openai_non_icdev", "target": url})
 
@@ -148,12 +167,18 @@ def find_bypasses(state: Dict[str, Any], icdev_url: str) -> List[Dict[str, str]]
         url = _norm(conn.get("url", ""))
         if not url.startswith(mcp):
             findings.append({"rule": "foreign_tool_server", "target": conn.get("url", "")})
+        elif identity == "oidc" and conn.get("auth_type") != "system_oauth":
+            findings.append({"rule": "shared_identity", "target": conn.get("url", "")})
 
     # owui-rag-02. Open WebUI 0.13 enforces this permission in the UI only -- its
     # upload API does not check it -- so it narrows the path, it is not a wall:
     # its data volume must still be counted inside the ATO boundary.
     if ((state.get("permissions") or {}).get("chat") or {}).get("file_upload", True):
         findings.append({"rule": "user_file_upload", "target": "permissions.chat.file_upload"})
+
+    params = (state.get("models") or {}).get("DEFAULT_MODEL_PARAMS") or {}
+    if params.get("function_calling") != "legacy":
+        findings.append({"rule": "native_tool_calling", "target": "DEFAULT_MODEL_PARAMS.function_calling"})
 
     if not icdev_connected:
         findings.append({"rule": "no_icdev_connection", "target": v1})
@@ -164,8 +189,15 @@ def find_bypasses(state: Dict[str, Any], icdev_url: str) -> List[Dict[str, str]]
 # Desired state
 # ---------------------------------------------------------------------------
 def desired_writes(state: Dict[str, Any], icdev_url: str, icdev_key: str,
-                   with_tools: bool = False, toolset: str = DEFAULT_TOOLSET) -> List[Dict[str, Any]]:
-    """The admin-API writes that make ICDEV the only backend. Keys are passed through, never logged."""
+                   with_tools: bool = False, toolset: str = DEFAULT_TOOLSET,
+                   identity: str = "key") -> List[Dict[str, Any]]:
+    """The admin-API writes that make ICDEV the only backend. Keys are passed through, never logged.
+
+    With ``identity="oidc"`` no key is written: each connection forwards the
+    signed-in user's own IdP token instead.
+    """
+    oidc = identity == "oidc"
+    auth = {"auth_type": "system_oauth"} if oidc else {}
     ollama = state.get("ollama") or {}
     connections = state.get("connections") or {}
     writes = [
@@ -176,8 +208,8 @@ def desired_writes(state: Dict[str, Any], icdev_url: str, icdev_key: str,
         {"path": OPENAI_CONFIG + "/update", "body": {
             "ENABLE_OPENAI_API": True,
             "OPENAI_API_BASE_URLS": [icdev_v1(icdev_url)],
-            "OPENAI_API_KEYS": [icdev_key],
-            "OPENAI_API_CONFIGS": {"0": {"enable": True, "tags": [{"name": "icdev"}]}}}},
+            "OPENAI_API_KEYS": ["" if oidc else icdev_key],
+            "OPENAI_API_CONFIGS": {"0": {"enable": True, "tags": [{"name": "icdev"}], **auth}}}},
         {"path": CONNECTIONS_CONFIG, "body": {
             "ENABLE_DIRECT_CONNECTIONS": False,
             "ENABLE_DIRECT_INTEGRATIONS": False,
@@ -186,9 +218,12 @@ def desired_writes(state: Dict[str, Any], icdev_url: str, icdev_key: str,
     mcp = icdev_mcp(icdev_url)
     kept = [c for c in (state.get("tool_servers") or {}).get("TOOL_SERVER_CONNECTIONS") or []
             if _norm(c.get("url", "")).startswith(mcp)]
+    if oidc:
+        kept = [{**c, "auth_type": "system_oauth", "key": ""} for c in kept]
     if with_tools and not kept:
-        kept = [{"url": f"{mcp}/?toolset={toolset}", "path": "", "type": "mcp", "auth_type": "bearer",
-                 "key": icdev_key, "config": {"enable": True},
+        kept = [{"url": f"{mcp}/?toolset={toolset}", "path": "", "type": "mcp",
+                 "auth_type": "system_oauth" if oidc else "bearer",
+                 "key": "" if oidc else icdev_key, "config": {"enable": True},
                  # owui-mcp-02: tags every call so mcp_authz_survey can measure this client.
                  "headers": {"X-ICDEV-Client": "openwebui"},
                  "info": {"id": "icdev", "name": "ICDEV", "description": f"ICDEV tools ({toolset})"}}]
@@ -196,6 +231,9 @@ def desired_writes(state: Dict[str, Any], icdev_url: str, icdev_key: str,
     permissions = json.loads(json.dumps(state.get("permissions") or {}))
     permissions.setdefault("chat", {})["file_upload"] = False
     writes.append({"path": DEFAULT_PERMISSIONS, "body": permissions})
+    models = json.loads(json.dumps(state.get("models") or {}))
+    models["DEFAULT_MODEL_PARAMS"] = {**(models.get("DEFAULT_MODEL_PARAMS") or {}), **GOVERNED_MODEL_PARAMS}
+    writes.append({"path": MODELS_CONFIG, "body": models})
     return writes
 
 
@@ -217,16 +255,46 @@ def apply(owui_url: str, writes: List[Dict[str, Any]], http: Http) -> None:
         http("POST", _norm(owui_url) + w["path"], w["body"])
 
 
-def env_block(icdev_url: str) -> Dict[str, str]:
-    """Environment for a container deployment that starts governed (owui-ship-01)."""
+# Open WebUI's own OIDC login against the shared IdP (owui-idp-01). The values are
+# the operator's; only their names are fixed here.
+OIDC_ENV = {
+    "ENABLE_OAUTH_SIGNUP": "true",
+    "ENABLE_LOGIN_FORM": "false",
+    "OAUTH_PROVIDER_NAME": "${OPENWEBUI_OIDC_PROVIDER_NAME}",
+    "OPENID_PROVIDER_URL": "${OPENWEBUI_OIDC_DISCOVERY_URL}",
+    "OAUTH_CLIENT_ID": "${OPENWEBUI_OIDC_CLIENT_ID}",
+    "OAUTH_CLIENT_SECRET": "${OPENWEBUI_OIDC_CLIENT_SECRET}",
+    "OAUTH_SCOPES": "openid email profile",
+    "OAUTH_GROUPS_CLAIM": "groups",
+    "ENABLE_OAUTH_GROUP_MANAGEMENT": "true",
+    # Open WebUI shows a model with no access entry to admins only. Under OIDC the
+    # authority is ICDEV, per user, from the forwarded token (a role-gated model is
+    # refused there), so Open WebUI must not hold a second, divergent model ACL.
+    "BYPASS_MODEL_ACCESS_CONTROL": "true",
+}
+
+
+def env_block(icdev_url: str, identity: str = "key") -> Dict[str, str]:
+    """Environment for a container deployment that starts governed (owui-ship-01).
+
+    Open WebUI has no env for a connection's ``auth_type``, so an OIDC deployment
+    still needs one ``--apply --identity oidc`` after first start; ``--check
+    --identity oidc`` reports ``shared_identity`` until it has run.
+    """
+    if identity == "oidc":
+        return {**_common_env(icdev_url), **OIDC_ENV}
+    return {**_common_env(icdev_url), "OPENAI_API_KEY": f"${{{ICDEV_KEY_ENV}}}"}
+
+
+def _common_env(icdev_url: str) -> Dict[str, str]:
     return {
         "ENABLE_OLLAMA_API": "false",
         "ENABLE_OPENAI_API": "true",
         "OPENAI_API_BASE_URL": icdev_v1(icdev_url),
-        "OPENAI_API_KEY": f"${{{ICDEV_KEY_ENV}}}",
         "ENABLE_DIRECT_CONNECTIONS": "false",
         "BYPASS_EMBEDDING_AND_RETRIEVAL": "true",
         "USER_PERMISSIONS_CHAT_FILE_UPLOAD": "false",
+        "DEFAULT_MODEL_PARAMS": json.dumps(GOVERNED_MODEL_PARAMS),
         "SCARF_NO_ANALYTICS": "true",
         "DO_NOT_TRACK": "true",
         "ANONYMIZED_TELEMETRY": "false",
@@ -246,11 +314,13 @@ def main(argv: Optional[List[str]] = None, http: Optional[Http] = None) -> int:
     mode.add_argument("--apply", action="store_true", help="write the governed config")
     mode.add_argument("--env", action="store_true", help="print the container env block and exit")
     ap.add_argument("--with-tools", action="store_true", help=f"also register ICDEV /mcp/v1 ({DEFAULT_TOOLSET})")
+    ap.add_argument("--identity", choices=("key", "oidc"), default="key",
+                    help="how users reach ICDEV: one shared icdev_ key, or each user's own IdP token")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
     if args.env:
-        print(json.dumps(env_block(args.icdev_url), indent=2))
+        print(json.dumps(env_block(args.icdev_url, args.identity), indent=2))
         return 0
 
     if http is None:
@@ -265,7 +335,7 @@ def main(argv: Optional[List[str]] = None, http: Optional[Http] = None) -> int:
     except ConfigReadError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    findings = find_bypasses(state, args.icdev_url)
+    findings = find_bypasses(state, args.icdev_url, args.identity)
 
     if args.check:
         bypasses = [f for f in findings if f["rule"] != "no_icdev_connection"]
@@ -275,14 +345,15 @@ def main(argv: Optional[List[str]] = None, http: Optional[Http] = None) -> int:
         return 1 if findings else 0
 
     icdev_key = os.environ.get(ICDEV_KEY_ENV, "")
-    if args.apply and not icdev_key:
+    if args.apply and not icdev_key and args.identity == "key":
         print(f"error: set {ICDEV_KEY_ENV} to the icdev_ key Open WebUI should present", file=sys.stderr)
         return 2
-    writes = desired_writes(state, args.icdev_url, icdev_key or "<unset>", with_tools=args.with_tools)
+    writes = desired_writes(state, args.icdev_url, icdev_key or "<unset>", with_tools=args.with_tools,
+                            identity=args.identity)
 
     if args.apply:
         apply(args.owui_url, writes, http)
-        after = find_bypasses(read_state(args.owui_url, http), args.icdev_url)
+        after = find_bypasses(read_state(args.owui_url, http), args.icdev_url, args.identity)
         print(json.dumps({"applied": len(writes), "remaining_findings": after}, indent=2))
         return 1 if after else 0
 

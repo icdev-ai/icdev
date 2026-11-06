@@ -77,6 +77,8 @@ spec:
             - {name: USER_PERMISSIONS_CHAT_FILE_UPLOAD, value: "false"}
             - {name: ENABLE_WEB_SEARCH, value: "false"}
             - {name: ENABLE_IMAGE_GENERATION, value: "false"}
+            # Prompt-based tool calling; native sends Open WebUI's own tools (owui-ship-02).
+            - {name: DEFAULT_MODEL_PARAMS, value: '{"function_calling": "legacy"}'}
             # -- accounts: admin-provisioned only --
             - {name: WEBUI_AUTH, value: "true"}
             - {name: ENABLE_SIGNUP, value: "false"}

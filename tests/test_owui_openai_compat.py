@@ -92,6 +92,7 @@ def client():
     def _set_principal():
         g.tenant_id = request.headers.get("X-Test-Tenant", "tenant-1")
         g.user_id = "user-1"
+        g.user_role = request.headers.get("X-Test-Role", "tenant_admin")
 
     app.register_blueprint(openai_compat.openai_bp)
     return app.test_client()
