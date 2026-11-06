@@ -22,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-jwt = pytest.importorskip("jwt")
+import jwt  # noqa: E402  -- PyJWT[crypto] is a requirement (owui-idp-01), not optional
 from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
 from flask import Flask  # noqa: E402
 
