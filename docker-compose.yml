@@ -1537,6 +1537,9 @@ services:
       USER_PERMISSIONS_CHAT_FILE_UPLOAD: "false"
       ENABLE_WEB_SEARCH: "false"
       ENABLE_IMAGE_GENERATION: "false"
+      # Prompt-based tool calling: native mode sends Open WebUI's own built-in tools,
+      # which /v1 refuses (owui-ship-02). configure.py --check: native_tool_calling.
+      DEFAULT_MODEL_PARAMS: '{"function_calling": "legacy"}'
       # -- accounts: admin-provisioned only --
       WEBUI_AUTH: "true"
       ENABLE_SIGNUP: "false"

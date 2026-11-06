@@ -4499,6 +4499,8 @@ python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --check --
 python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --plan             # read-only: what --apply would change
 python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --apply --with-tools  # ICDEV /v1 + /mcp/v1 (chat_readonly) only
 python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --env              # container env block that starts governed
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --apply --with-tools --identity oidc  # forward each user's IdP token (system_oauth), no shared key
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --env --identity oidc  # env for Open WebUI login through the shared IdP
 python tools/saas/mcp_authz_survey.py --caller openwebui --days 14 --json             # would-deny rate before arming MCP authz enforce (exit 2 = unmeasurable)
 
 # Xacta 360 Integration

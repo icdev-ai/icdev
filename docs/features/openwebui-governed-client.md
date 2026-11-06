@@ -103,6 +103,64 @@ deployment therefore records no `ai_telemetry` at all. This is tracked as a sepa
 issue `%s`-placeholder SQL against SQLite, so API-key auth works only when the platform DB is
 PostgreSQL (`PLATFORM_DB_URL`). The behaviour predates this card.
 
+## Identity (owui-idp-01) — each person reaches ICDEV as themselves
+
+With one shared `icdev_` key every Open WebUI user is the SAME ICDEV principal, so
+RBAC, workflow roles and tenant RLS cannot tell them apart. In OIDC mode:
+
+1. Open WebUI logs users in through the shared IdP (its own login form is off).
+2. Its ICDEV connections use `auth_type: system_oauth`, which forwards the signed-in
+   user's own access token as `Authorization: Bearer`.
+3. `tools/saas/auth/oauth_auth.py` verifies that token -- signature against the
+   tenant IdP's JWKS, issuer, audience, expiry -- and refuses on any doubt.
+4. The role comes from the token's group claim through the tenant's `group_role_map`
+   (most privileged mapped group wins; no mapped group -> refused).
+
+Tenant `idp_config` (platform DB, `tenants.idp_config`):
+
+```json
+{"issuer_url": "https://idp.example/realms/icdev",
+ "jwks_uri": "https://idp.example/realms/icdev/protocol/openid-connect/certs",
+ "audience": "icdev-gateway", "groups_claim": "groups",
+ "group_role_map": {"icdev-admins": "tenant_admin", "icdev-developers": "developer",
+                    "icdev-compliance": "compliance_officer"}}
+```
+
+Each user row needs `users.oauth_sub` = their IdP `sub` (column added by
+`platform_db.py --init`). IdP side: an audience mapper putting `icdev-gateway` in the
+access token's `aud`, and a group-membership mapper emitting `groups`.
+
+Open WebUI side: start it with `configure.py --env --identity oidc`, then once
+`configure.py --apply --identity oidc --with-tools` (Open WebUI has no env for a
+connection's `auth_type`). `--check --identity oidc` reports `shared_identity` while
+any ICDEV connection still presents a shared key.
+
+**Fixed on the way (fail-open):** `validate_oauth_token` used to skip signature
+verification when PyJWT was not installed or the IdP had no `jwks_uri`, and then
+trusted the unverified payload -- any token naming a tenant's issuer got in. PyJWT
+was commented out of `requirements.txt`, so that was the deployed behaviour. It now
+fails closed and PyJWT is a requirement. `/v1/*` also has its own RBAC category
+(`chat`): it fell to `projects`, which refused compliance officers a chat POST.
+
+**Verified live (2026-11-05):** local Keycloak 26.3 + gateway on a throwaway PG
+database. `alice` (`icdev-admins`) lists `icdev/kanban`; `bob` (`icdev-developers`)
+does not; forged `X-OpenWebUI-User-*` headers and a tampered token are 401.
+
+**Not done:** `tenant_manager.py --add-user` cannot set `oauth_sub`, and on
+PostgreSQL that CLI fails before reaching it (`connection` has no `execute`; it also
+writes non-UUID user ids into a UUID column) -- pre-existing, tracked separately.
+Link users with SQL until then.
+
+## End-to-end test (owui-ship-02)
+
+`tests/e2e/openwebui_governed.spec.ts` signs in through the IdP, picks an ICDEV
+capability, checks the reply renders, then reads ICDEV's database for an audit row
+whose actor is that user and an `openai_compat_*` telemetry row. It skips unless
+`OWUI_E2E_URL` is set; the stack it needs is: an IdP realm as above, the gateway on
+a THROWAWAY PostgreSQL database (`ICDEV_PG_DATABASE` and `PLATFORM_DB_URL` both
+pointing at it, schema from `tools/db/bootstrap_pg.py` + `platform_db.py --init`),
+and an Open WebUI started from the pinned image with the `--identity oidc` env.
+
 ## Uploads (owui-rag-02) — a narrowed path, not a wall
 
 Open WebUI stores an uploaded file on its own data volume **before** any filter or
@@ -131,14 +189,17 @@ ICDEV data.
 | 0 Decision & boundary | `owui-dec-01` (this doc, D-OWUI-1, sandbox-coverage Gap 78) |
 | 1 Governed model endpoint | `owui-api-01` ✅, `owui-api-02` streaming parity, `owui-api-03` Open WebUI configurator + bypass `--check` |
 | 2 Tools via MCP | `owui-mcp-01` read-only toolset profile, `owui-mcp-02` caller_source + authorizer enforce survey |
-| 3 Identity | `owui-idp-01` shared-IdP OIDC + token passthrough (held by `owui-gate-00`) |
+| 3 Identity | `owui-idp-01` ✅ shared-IdP OIDC + token passthrough |
 | 4 Knowledge stays in ICDEV | `owui-rag-01` citations → Open WebUI `sources`, `owui-rag-02` upload filter → document intelligence |
 | 5 Governed workflows from chat | `owui-flow-01` `icdev/intake` + `icdev/kanban`, `owui-flow-02` per-exchange audit |
 | 6 Productize | `owui-ship-01` compose profile + Helm, digest pin; `owui-ship-02` Playwright E2E |
 
-## Operator decisions held by `owui-gate-00`
+## Operator decisions held by `owui-gate-00` (recorded 2026-11-05)
 
-1. **Identity provider.** Choose the IdP that Open WebUI and ICDEV will both trust (Keycloak,
-   Entra, or a CAC-backed IdP). Put its issuer, client id and secret in `.env`.
-2. **Licence review.** Review Open WebUI's licence (it has a branding clause) before
-   redistributing the image in `deploy/offline/` or Helm.
+1. **Identity provider: Keycloak (OIDC).** Open WebUI and ICDEV trust the same Keycloak
+   realm. A local lab realm (`icdev`, loopback only, dev mode) proves the path; a
+   production deployment points the same settings at the enterprise Keycloak (or any
+   OIDC IdP: Entra, a CAC-backed broker) -- only issuer, client and group names change.
+2. **Licence review: accepted by the operator.** Open WebUI is deployed unmodified from
+   the pinned upstream image, so its branding clause is satisfied; re-review before
+   rebranding or redistributing a modified image.

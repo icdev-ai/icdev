@@ -402,6 +402,9 @@ def init_platform_db(force=False):
         # Safe column additions for existing installs
         _ensure_column(cursor, backend, "tenants", "compartments", "JSONB DEFAULT '[]'", "TEXT DEFAULT '[]'")
         _ensure_column(cursor, backend, "users", "compartments", "JSONB DEFAULT '[]'", "TEXT DEFAULT '[]'")
+        # owui-idp-01: oauth_auth looks users up by the IdP's verified `sub`; the
+        # column it queried never existed, so no OAuth login could ever match.
+        _ensure_column(cursor, backend, "users", "oauth_sub", "VARCHAR(256)", "TEXT")
 
         conn.commit()
 

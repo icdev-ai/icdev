@@ -100,6 +100,13 @@ def test_helm_env_matches_the_governed_compose_env(helm, svc):
             f"{key} in the Helm template must equal the compose profile's {expected!r}")
 
 
+def test_tool_calling_is_prompt_based_in_compose_and_helm(helm, svc):
+    # owui-ship-02: Open WebUI 0.13's native mode sends its own built-in tools.
+    assert json.loads(svc["environment"]["DEFAULT_MODEL_PARAMS"]) == {"function_calling": "legacy"}
+    _, template = helm
+    assert """{name: DEFAULT_MODEL_PARAMS, value: '{"function_calling": "legacy"}'}""" in template
+
+
 def test_helm_secrets_come_only_from_a_secret_ref(helm):
     _, template = helm
     for key in ("OPENAI_API_KEY", "WEBUI_SECRET_KEY"):

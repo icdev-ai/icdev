@@ -126,8 +126,8 @@ prometheus_client>=0.20  # Prometheus metrics exposition (tools/observability/me
 # PostgreSQL is the primary backend (ICDEV_STORAGE_BACKEND=postgresql).
 # SQLite is a local fallback only. psycopg2-binary is required.
 psycopg2-binary>=2.9        # PostgreSQL adapter — primary DB backend
-# PyJWT>=2.12.0          # JWT validation for OAuth 2.0/OIDC auth (CVE-2026-32597)
-# cryptography>=42.0     # RSA license keys, artifact signing, TLS
+PyJWT[crypto]>=2.12.0    # JWT validation for OAuth 2.0/OIDC auth (CVE-2026-32597); fail-closed without it (owui-idp-01)
+# cryptography>=42.0     # RSA license keys, artifact signing, TLS (pulled in by PyJWT[crypto])
 # gunicorn>=22.0         # Production WSGI server for API gateway (Linux only)
 # redis>=5.0             # Rate limiting, session cache, pub/sub
 

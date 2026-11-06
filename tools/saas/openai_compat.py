@@ -198,10 +198,14 @@ def list_models():
     if not getattr(g, "tenant_id", None):
         return openai_error(401, "authentication required", "invalid_request_error", "unauthenticated")
     created = int(time.time())
+    role = str(getattr(g, "user_role", "") or "")
+    # A workflow model the caller's role may not run is not advertised (owui-idp-01);
+    # the call itself is still refused in _run_workflow, so hiding it is not the gate.
     data = [
         {"id": mid, "object": "model", "created": created, "owned_by": "icdev",
          "description": m.get("description", "")}
         for mid, m in _served_models(load_config()).items()
+        if m.get("kind") != "workflow" or role in [str(r) for r in (m.get("required_roles") or [])]
     ]
     return jsonify({"object": "list", "data": data})
 
@@ -234,8 +238,9 @@ def chat_completions():
     if body.get("tools"):
         # Refused, not ignored: a client that sends tools and gets back plain text
         # would believe the model chose not to call one. Tool calling arrives with
-        # the MCP surface (owui-mcp-01); Open WebUI's default function-calling mode
-        # does not send this field.
+        # the MCP surface (owui-mcp-01). Open WebUI 0.13 defaults to NATIVE calling
+        # and sends this field; configure.py sets function_calling: legacy, which
+        # does not (owui-ship-02).
         return openai_error(400, "native tool calling is not supported on this endpoint",
                             "invalid_request_error", "tools_unsupported")
 

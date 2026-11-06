@@ -83,6 +83,16 @@ PERMISSIONS = {
         "auditor": "R",
         "viewer": "R",
     },
+    # Governed OpenAI-compatible endpoint (owui-idp-01). It fell to the default
+    # "projects" category, which refused compliance officers a chat POST. Each
+    # capability still applies its own gates (routing policy, workflow roles).
+    "chat": {
+        "tenant_admin": "RW",
+        "developer": "RW",
+        "compliance_officer": "RW",
+        "auditor": "R",
+        "viewer": "R",
+    },
 }
 
 # Map REST endpoint prefixes to permission categories
@@ -109,6 +119,7 @@ ENDPOINT_CATEGORY_MAP = {
     "/api/v1/usage": "billing",
     "/api/v1/tenants": "tenant_settings",
     "/mcp/v1": "compliance",  # MCP tools default to compliance category
+    "/v1/": "chat",
 }
 
 

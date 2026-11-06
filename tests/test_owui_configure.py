@@ -25,7 +25,8 @@ ICDEV = "http://icdev.test:8443"
 
 
 class FakeOpenWebUI:
-    def __init__(self, openai=None, ollama=None, connections=None, tool_servers=None, permissions=None):
+    def __init__(self, openai=None, ollama=None, connections=None, tool_servers=None, permissions=None,
+                 models=None):
         self.store = {
             configure.OPENAI_CONFIG: openai or {"ENABLE_OPENAI_API": False, "OPENAI_API_BASE_URLS": [],
                                                 "OPENAI_API_KEYS": [], "OPENAI_API_CONFIGS": {}},
@@ -35,6 +36,9 @@ class FakeOpenWebUI:
                                                           "ENABLE_BASE_MODELS_CACHE": False},
             configure.TOOL_SERVERS_CONFIG: tool_servers or {"TOOL_SERVER_CONNECTIONS": []},
             configure.DEFAULT_PERMISSIONS: permissions or {"chat": {"file_upload": False, "delete": True}},
+            configure.MODELS_CONFIG: models or {"DEFAULT_MODELS": "", "DEFAULT_PINNED_MODELS": "",
+                                                "MODEL_ORDER_LIST": [],
+                                                "DEFAULT_MODEL_PARAMS": {"function_calling": "legacy"}},
         }
         self.calls = []
 
@@ -58,6 +62,8 @@ def bypassing():
         connections={"ENABLE_DIRECT_CONNECTIONS": True, "ENABLE_BASE_MODELS_CACHE": False},
         tool_servers={"TOOL_SERVER_CONNECTIONS": [{"url": "http://mcpo.local:8000", "config": {"enable": True}}]},
         permissions={"chat": {"file_upload": True, "delete": True}},
+        models={"DEFAULT_MODELS": "icdev/general", "DEFAULT_PINNED_MODELS": "", "MODEL_ORDER_LIST": [],
+                "DEFAULT_MODEL_PARAMS": {"temperature": 0.2}},
     )
 
 
@@ -76,6 +82,7 @@ def test_check_names_every_bypass(capsys):
         ("user_direct_connections", "ENABLE_DIRECT_CONNECTIONS"),
         ("foreign_tool_server", "http://mcpo.local:8000"),
         ("user_file_upload", "permissions.chat.file_upload"),
+        ("native_tool_calling", "DEFAULT_MODEL_PARAMS.function_calling"),
         ("no_icdev_connection", ICDEV + "/v1"),
     }
 
@@ -94,7 +101,8 @@ def test_a_disabled_connection_is_not_a_bypass():
     state = {"openai": {"ENABLE_OPENAI_API": True,
                         "OPENAI_API_BASE_URLS": [ICDEV + "/v1", "https://api.openai.com/v1"],
                         "OPENAI_API_CONFIGS": {"1": {"enable": False}}},
-             "permissions": {"chat": {"file_upload": False}}}
+             "permissions": {"chat": {"file_upload": False}},
+             "models": {"DEFAULT_MODEL_PARAMS": {"function_calling": "legacy"}}}
     assert configure.find_bypasses(state, ICDEV) == []
 
 
@@ -155,3 +163,52 @@ def test_env_block_starts_governed():
 def test_no_admin_token_is_exit_2(monkeypatch, capsys, missing_env):
     monkeypatch.delenv(missing_env, raising=False)
     assert configure.main(["--icdev-url", ICDEV, "--check"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# owui-idp-01: --identity oidc forwards each user's own IdP token
+# ---------------------------------------------------------------------------
+def test_shared_key_is_a_finding_only_under_oidc(monkeypatch, capsys):
+    monkeypatch.setenv(configure.ICDEV_KEY_ENV, "icdev_secret_value")
+    fake = bypassing()
+    assert _run(fake, "--apply", "--with-tools", capsys=capsys)[0] == 0
+    assert _run(fake, "--check", capsys=capsys)[0] == 0
+    code, out = _run(fake, "--check", "--identity", "oidc", "--json", capsys=capsys)
+    assert code == 1
+    rules = [f["rule"] for f in json.loads(out)["findings"]]
+    assert rules == ["shared_identity", "shared_identity"]   # the /v1 connection and the MCP server
+
+
+def test_apply_oidc_writes_no_key_and_forwards_the_user_token(monkeypatch, capsys):
+    monkeypatch.delenv(configure.ICDEV_KEY_ENV, raising=False)
+    fake = bypassing()
+    code, out = _run(fake, "--apply", "--with-tools", "--identity", "oidc", capsys=capsys)
+    assert code == 0, out
+    assert json.loads(out)["remaining_findings"] == []
+    openai = fake.store[configure.OPENAI_CONFIG]
+    assert openai["OPENAI_API_KEYS"] == [""]
+    assert openai["OPENAI_API_CONFIGS"]["0"]["auth_type"] == "system_oauth"
+    (tool,) = fake.store[configure.TOOL_SERVERS_CONFIG]["TOOL_SERVER_CONNECTIONS"]
+    assert tool["auth_type"] == "system_oauth" and tool["key"] == ""
+
+
+def test_oidc_env_block_logs_in_through_the_idp_and_carries_no_key():
+    env = configure.env_block(ICDEV, identity="oidc")
+    assert "OPENAI_API_KEY" not in env
+    assert env["ENABLE_LOGIN_FORM"] == "false"
+    assert env["BYPASS_MODEL_ACCESS_CONTROL"] == "true"   # ICDEV, not Open WebUI, decides per user
+    assert "BYPASS_MODEL_ACCESS_CONTROL" not in configure.env_block(ICDEV)
+    assert env["OPENID_PROVIDER_URL"].startswith("${") and env["OAUTH_CLIENT_SECRET"].startswith("${")
+
+
+def test_native_tool_calling_is_found_and_apply_sets_legacy_keeping_other_params(monkeypatch, capsys):
+    # owui-ship-02: Open WebUI 0.13 defaults to native calling, whose built-in tools /v1 refuses.
+    monkeypatch.setenv(configure.ICDEV_KEY_ENV, "icdev_secret_value")
+    fake = bypassing()
+    assert "native_tool_calling" in [f["rule"] for f in configure.find_bypasses(
+        configure.read_state(OWUI, fake), ICDEV)]
+    assert _run(fake, "--apply", capsys=capsys)[0] == 0
+    models = fake.store[configure.MODELS_CONFIG]
+    assert models["DEFAULT_MODEL_PARAMS"] == {"temperature": 0.2, "function_calling": "legacy"}
+    assert models["DEFAULT_MODELS"] == "icdev/general"
+    assert json.loads(configure.env_block(ICDEV)["DEFAULT_MODEL_PARAMS"]) == {"function_calling": "legacy"}
