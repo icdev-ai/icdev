@@ -187,6 +187,22 @@ exemptions:
       Scoped to this one file; it runs in Test (PostgreSQL) via
       tests/pg_tier_allowlist.txt and is excluded from CI gating for the reason
       written in args/test_gating_gate.yaml.
+  - pattern: "tests/pg_tier/test_tenant_manager_pg.py"
+    reason: >-
+      THE GATE CANNOT SEE THIS FILE: a module-level `skipif` on ICDEV_PYTEST_PG,
+      which the gate does not set, so both runs are "1 skipped". THE RED WAS
+      TAKEN BY HAND AGAINST A LIVE POSTGRESQL AND IS RECORDED (2026-11-07,
+      PostgreSQL 16, in a throwaway database the test creates and drops): with
+      tools/saas/tenant_manager.py restored to its merge-base content,
+      test_create_tenant_add_user_and_validate_key_on_postgres FAILED at
+      tenant_manager.py:197 with `AttributeError: 'psycopg2.extensions.connection'
+      object has no attribute 'execute'`; with this branch's tenant_manager it
+      passes, in either order beside tests/pg_tier/test_pg_backend_sentinel.py.
+      The discriminating proof the gate CAN see is the gated SQLite sibling
+      tests/test_owui_tenant_manager_backends.py (main fails it on `near "%"`).
+      Scoped to this one file; it runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt and is excluded from CI gating for the reason
+      written in args/test_gating_gate.yaml.
   - pattern: "tests/llm/test_role_invoke_redaction.py"
     reason: >-
       A CONSUMER SWEEP OVER A SEAM ANOTHER PR CLOSED FIRST, so nothing here can
