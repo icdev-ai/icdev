@@ -133,6 +133,71 @@ def _new_id():
     return str(uuid.uuid4())
 
 
+def _tenant_db_on_postgres():
+    """Tenants get a PostgreSQL database when the platform itself is on PostgreSQL."""
+    return platform_db._is_postgres()
+
+
+def _pg_tenant_db_name(slug):
+    """A PostgreSQL database name for the tenant: lower-case [a-z0-9_], within the 63-byte limit."""
+    return "icdev_tenant_" + re.sub(r"[^a-z0-9_]", "_", slug.lower())[:50]
+
+
+def _create_pg_tenant_db(slug):
+    """Create the tenant's own PostgreSQL database and load the ICDEV schema into it (owui-api-08).
+
+    The database lives on the platform's cluster and is reached with the platform's
+    credentials (PLATFORM_DB_URL). An existing database is reused, so a failed
+    provisioning can be retried. The schema comes from tools/db/bootstrap_pg.py, the
+    sanctioned fresh-PostgreSQL path (consolidated snapshot, then every later
+    migration), run as a child process because the migration runner binds to the
+    process-wide pool of ICDEV_PG_DATABASE. Raises RuntimeError naming the cause;
+    returns {db_host, db_port, db_name}.
+    """
+    import os
+    import subprocess  # nosec B404 -- fixed argv, no user input
+
+    import psycopg2
+    from psycopg2 import sql
+    from psycopg2.extensions import parse_dsn
+
+    dsn = parse_dsn(platform_db._get_db_url())
+    host, port = dsn.get("host", "localhost"), int(dsn.get("port", 5432))
+    name = _pg_tenant_db_name(slug)
+
+    try:
+        admin = psycopg2.connect(platform_db._get_db_url(), connect_timeout=10)
+    except psycopg2.Error as exc:
+        raise RuntimeError(f"tenant database {name}: cannot reach the platform PostgreSQL: {exc}") from exc
+    try:
+        admin.autocommit = True
+        cur = admin.cursor()
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
+        if not cur.fetchone():
+            cur.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    except psycopg2.Error as exc:
+        raise RuntimeError(f"tenant database {name}: CREATE DATABASE failed: {exc}") from exc
+    finally:
+        admin.close()
+
+    env = dict(os.environ, ICDEV_STORAGE_BACKEND="postgresql", ICDEV_PG_HOST=host, ICDEV_PG_PORT=str(port),
+               ICDEV_PG_USER=dsn.get("user", ""), ICDEV_PG_PASSWORD=dsn.get("password", ""),
+               ICDEV_PG_DATABASE=name, PYTHONPATH=str(BASE_DIR))
+    env.pop("ICDEV_DATABASE_URL", None)  # would win over ICDEV_PG_DATABASE and load the wrong database
+    proc = subprocess.run(  # nosec B603
+        [sys.executable, str(BASE_DIR / "tools" / "db" / "bootstrap_pg.py"), "--json"],
+        env=env, capture_output=True, text=True, timeout=900, check=False,
+    )
+    try:
+        result = json.loads(proc.stdout[proc.stdout.index("{"):])
+    except ValueError:
+        result = {}
+    if proc.returncode != 0 or not result or result.get("failed"):
+        why = result.get("failed") or (proc.stderr or proc.stdout).strip()[-400:] or f"rc={proc.returncode}"
+        raise RuntimeError(f"tenant database {name}: schema bootstrap failed: {why}")
+    return {"db_host": host, "db_port": port, "db_name": name}
+
+
 def _utcnow():
     """Return current UTC timestamp as ISO-8601 string."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -333,8 +398,10 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None, compar
 def provision_tenant(tenant_id):
     """Provision infrastructure for a tenant.
 
-    Creates the tenant's isolated SQLite database, initialises its schema
-    using init_icdev_db.init_db(), and sets k8s_namespace.
+    Creates the tenant's isolated database and sets k8s_namespace: on a PostgreSQL
+    platform its own PostgreSQL database (_create_pg_tenant_db), otherwise a SQLite
+    file initialised by init_icdev_db.init_db(). The tenant becomes 'active' only
+    once that database exists; on failure it stays 'provisioning' and the error says why.
 
     Requires tenant status to be 'provisioning'.
     """
@@ -351,20 +418,27 @@ def provision_tenant(tenant_id):
                 "Use approve_tenant() first for IL5+/Enterprise tenants.".format(tenant_id, status)
             )
 
-        TENANTS_DIR.mkdir(parents=True, exist_ok=True)
-        db_name = slug + ".db"
-        db_path = TENANTS_DIR / db_name
-        init_icdev_db.init_db(db_path)
+        if _tenant_db_on_postgres():
+            # owui-api-08: init_db is SQLite-only and REFUSES on PostgreSQL, yet the
+            # tenant used to be marked active anyway, pointing at a file never created.
+            target = _create_pg_tenant_db(slug)
+            db_host, db_port, db_name = target["db_host"], target["db_port"], target["db_name"]
+            db_path = None
+        else:
+            TENANTS_DIR.mkdir(parents=True, exist_ok=True)
+            db_host, db_port, db_name = "localhost-sqlite", None, slug + ".db"
+            db_path = TENANTS_DIR / db_name
+            init_icdev_db.init_db(db_path)
 
         k8s_namespace = "icdev-tenant-" + slug
         now = _utcnow()
 
         conn.execute(
             """UPDATE tenants
-               SET db_host = %s, db_name = %s, k8s_namespace = %s,
+               SET db_host = %s, db_name = %s, db_port = %s, k8s_namespace = %s,
                    status = %s, updated_at = %s
                WHERE id = %s""",
-            ("localhost-sqlite", db_name, k8s_namespace, TenantStatus.ACTIVE.value, now, tenant_id),
+            (db_host, db_name, db_port or 5432, k8s_namespace, TenantStatus.ACTIVE.value, now, tenant_id),
         )
 
         _audit_platform(
@@ -374,7 +448,8 @@ def provision_tenant(tenant_id):
             "tenant.provisioned",
             "tenant",
             tenant_id,
-            details={"db_path": str(db_path), "k8s_namespace": k8s_namespace, "impact_level": il},
+            details={"db_host": db_host, "db_name": db_name, "db_path": str(db_path) if db_path else None,
+                     "k8s_namespace": k8s_namespace, "impact_level": il},
         )
 
         conn.commit()
@@ -411,8 +486,9 @@ def provision_tenant(tenant_id):
             "id": tenant_id,
             "slug": slug,
             "status": TenantStatus.ACTIVE.value,
+            "db_host": db_host,
             "db_name": db_name,
-            "db_path": str(db_path),
+            "db_path": str(db_path) if db_path else None,
             "k8s_namespace": k8s_namespace,
         }
     except Exception:

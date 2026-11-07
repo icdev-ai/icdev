@@ -200,6 +200,15 @@ exemptions:
       passes, in either order beside tests/pg_tier/test_pg_backend_sentinel.py.
       The discriminating proof the gate CAN see is the gated SQLite sibling
       tests/test_owui_tenant_manager_backends.py (main fails it on `near "%"`).
+      owui-api-08 extended this file, and its red was taken the same way
+      (2026-11-07, live PostgreSQL 16, throwaway platform + tenant databases):
+      with tools/saas/tenant_manager.py and tools/saas/tenant_db_adapter.py
+      restored to their merge-base content BOTH tests FAILED with `Failed:
+      SQLite init_db reached on a PostgreSQL platform` -- provisioning ran the
+      SQLite-only initialiser and would have marked the tenant active against a
+      file never created; with this branch all 3 (with the sentinel) pass, in
+      either order, and no database is left behind. The gated sibling the gate
+      CAN see is tests/test_owui_tenant_pg_provisioning.py.
       Scoped to this one file; it runs in Test (PostgreSQL) via
       tests/pg_tier_allowlist.txt and is excluded from CI gating for the reason
       written in args/test_gating_gate.yaml.
