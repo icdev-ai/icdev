@@ -145,7 +145,9 @@ def _log_auth_event(tenant_id: Optional[str], user_id: Optional[str], event_type
     """Log authentication event to platform audit trail."""
     try:
         platform_db = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")))
-        if not platform_db.exists():
+        # owui-idp-04: on PostgreSQL there is no platform.db file, and this used to
+        # return here -- every auth refusal on a PG deployment went unaudited.
+        if not os.environ.get("PLATFORM_DB_URL") and not platform_db.exists():
             return
         conn = get_connection()
         conn.execute(
