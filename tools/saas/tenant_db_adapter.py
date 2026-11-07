@@ -114,8 +114,12 @@ def _is_sqlite_host(db_host: str) -> bool:
 # Platform DB helpers
 # ---------------------------------------------------------------------------
 def _get_platform_conn() -> sqlite3.Connection:
-    """Open a connection to the platform database."""
-    if not PLATFORM_DB_PATH.exists():
+    """Open a connection to the platform database.
+
+    The SQLite file is only required when there is no PostgreSQL platform DB:
+    demanding it under PLATFORM_DB_URL made every tenant look inactive (owui-mcp-05).
+    """
+    if not os.environ.get("PLATFORM_DB_URL") and not PLATFORM_DB_PATH.exists():
         raise FileNotFoundError(
             "Platform database not found at {}. Run: python tools/saas/platform_db.py --init".format(PLATFORM_DB_PATH)
         )
