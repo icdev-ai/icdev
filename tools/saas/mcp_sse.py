@@ -120,7 +120,7 @@ TOOL_REGISTRY = [
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Project name"},
-                "type": {"type": "string", "description": "Project type"},
+                "project_type": {"type": "string", "description": "Project type"},
                 "classification": {"type": "string", "default": "CUI"},
                 "impact_level": {"type": "string", "default": "IL4"},
             },
@@ -187,7 +187,6 @@ TOOL_REGISTRY = [
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
-                "project_dir": {"type": "string"},
             },
             "required": ["project_id"],
         },
@@ -201,7 +200,6 @@ TOOL_REGISTRY = [
             "type": "object",
             "properties": {
                 "project_id": {"type": "string"},
-                "project_dir": {"type": "string"},
             },
             "required": ["project_id"],
         },
@@ -210,13 +208,13 @@ TOOL_REGISTRY = [
         "name": "nist_lookup",
         "description": "Look up a NIST 800-53 control",
         "module": "tools.compliance.nist_lookup",
-        "function": "lookup_control",
+        "function": "lookup",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "control": {"type": "string", "description": "Control ID (e.g. AC-2)"},
+                "control_id": {"type": "string", "description": "Control ID (e.g. AC-2)"},
             },
-            "required": ["control"],
+            "required": ["control_id"],
         },
     },
     {
@@ -254,9 +252,9 @@ TOOL_REGISTRY = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "project_dir": {"type": "string"},
+                "project_path": {"type": "string"},
             },
-            "required": ["project_dir"],
+            "required": ["project_path"],
         },
     },
     {
@@ -267,9 +265,9 @@ TOOL_REGISTRY = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "project_dir": {"type": "string"},
+                "project_path": {"type": "string"},
             },
-            "required": ["project_dir"],
+            "required": ["project_path"],
         },
     },
 ]
