@@ -11,8 +11,8 @@ early whenever data/platform.db was absent, i.e. always on PostgreSQL.
 """
 import pytest
 
-from icdev.tools.saas.auth import middleware, rbac
 from icdev.tools.saas import mcp_http
+from icdev.tools.saas.auth import middleware, rbac
 
 READ_ROLES = ("auditor", "viewer")
 WRITE_ROLES = ("tenant_admin", "developer", "compliance_officer")
