@@ -227,10 +227,16 @@ def get_tenant_db_connection(tenant_id: str) -> sqlite3.Connection:
             import psycopg2
             import psycopg2.extras
 
+            from psycopg2.extensions import parse_dsn
+
             db_port = config.get("db_port") or 5432
             db_name = config.get("db_name") or config["slug"]
-            dsn = "host={} port={} dbname={}".format(db_host, db_port, db_name)
-            conn = psycopg2.connect(dsn)
+            # owui-api-08: tenant databases live on the platform's cluster and are reached
+            # with ITS credentials. The DSN used to carry none, so a provisioned tenant
+            # connected only if the environment happened to supply PGUSER/PGPASSWORD.
+            creds = parse_dsn(os.environ["PLATFORM_DB_URL"]) if os.environ.get("PLATFORM_DB_URL") else {}
+            conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name,
+                                    user=creds.get("user"), password=creds.get("password"), connect_timeout=10)
             conn.cursor_factory = psycopg2.extras.RealDictCursor
             logger.debug("Connected to PG for tenant %s", tenant_id)
             return conn
