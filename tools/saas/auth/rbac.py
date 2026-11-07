@@ -122,6 +122,14 @@ ENDPOINT_CATEGORY_MAP = {
     "/v1/": "chat",
 }
 
+# owui-idp-03: chat completions and MCP Streamable HTTP are RPC over POST, so a
+# method check alone left the read-only roles (auditor, viewer) able to list
+# models and nothing else. What such a POST may DO is gated further in:
+# per-model required_roles for chat (args/openai_compat.yaml), per-tool
+# required_roles for MCP (tools/saas/mcp_http.authorize_tool).
+RPC_POST_CATEGORIES = frozenset({"chat"})
+MCP_PATH = "/mcp/v1"
+
 
 def get_endpoint_category(path: str) -> str:
     """Resolve the permission category for a request path."""
@@ -163,6 +171,8 @@ def check_permission(
         return False
 
     if perm == "R":
+        if method == "POST" and category in RPC_POST_CATEGORIES:
+            return True
         return method in ("GET", "HEAD", "OPTIONS")
 
     if perm == "RW":
@@ -183,4 +193,11 @@ def require_permission(
 ) -> bool:
     """Convenience: resolve category from path, then check permission."""
     category = get_endpoint_category(path)
-    return check_permission(role, category, method, user_id, resource_owner_id)
+    if check_permission(role, category, method, user_id, resource_owner_id):
+        return True
+    # A read role's MCP POST is admitted only while per-tool authorization ENFORCES:
+    # in monitor mode nothing would stop it calling a write tool.
+    if method == "POST" and path.startswith(MCP_PATH) and PERMISSIONS.get(category, {}).get(role) == "R":
+        from tools.saas.mcp_http import AUTHZ_MODE_ENFORCE, get_authz_mode
+        return get_authz_mode() == AUTHZ_MODE_ENFORCE
+    return False

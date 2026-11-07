@@ -141,7 +141,7 @@ def test_v1_has_its_own_chat_category_and_mcp_keeps_compliance():
     assert rbac.get_endpoint_category("/v1/chat/completions") == "chat"
     assert rbac.get_endpoint_category("/mcp/v1/") == "compliance"
     assert rbac.require_permission("compliance_officer", "/v1/chat/completions", "POST")
-    assert not rbac.require_permission("viewer", "/v1/chat/completions", "POST")
+    assert rbac.require_permission("viewer", "/v1/chat/completions", "POST")  # owui-idp-03
     assert rbac.require_permission("viewer", "/v1/models", "GET")
 
 
@@ -182,7 +182,7 @@ def test_forged_open_webui_identity_headers_grant_nothing(gateway):
     assert "icdev/kanban" not in dev
 
 
-def test_compliance_officer_may_chat_and_viewer_may_only_list(gateway, monkeypatch):
+def test_compliance_officer_and_viewer_may_chat(gateway, monkeypatch):
     monkeypatch.setattr(openai_compat, "_router", lambda: (_ for _ in ()).throw(RuntimeError("no router")))
     body = {"model": "icdev/nope", "messages": [{"role": "user", "content": "hi"}]}
     officer = gateway.post("/v1/chat/completions", json=body,
@@ -197,6 +197,6 @@ def test_compliance_officer_may_chat_and_viewer_may_only_list(gateway, monkeypat
              "status": "active", "idp": idp_less}))
         viewer = gateway.post("/v1/chat/completions", json=body,
                               headers={"Authorization": f"Bearer {_token(sub='sub-carol')}"})
-        assert viewer.status_code == 403
+        assert viewer.status_code != 403        # owui-idp-03: a read role may chat
     finally:
         del USERS["sub-carol"]
