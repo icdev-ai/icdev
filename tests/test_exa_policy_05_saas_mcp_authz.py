@@ -155,9 +155,9 @@ DENY_CASES = [
     ("developer", "sbom_generate"),  # no matching rule -> default deny
     ("compliance_officer", "project_create"),  # isso: not on the allow list
     ("isso", "project_create"),
-    ("viewer", "project_create"),  # unmapped role -> unknown -> default deny
+    ("viewer", "project_create"),  # read-only role (owui-mcp-04) -> no write tool
     ("viewer", "sast_scan"),
-    ("auditor", "ssp_generate"),  # unmapped role -> unknown -> default deny
+    ("auditor", "ssp_generate"),  # read-only role (owui-mcp-04) -> no write tool
     ("", "project_list"),  # no role at all is never treated as admin
 ]
 
@@ -274,13 +274,14 @@ def test_convenience_tools_endpoint_is_filtered_too(client, enforce, audited):
 def test_list_filter_is_audited_as_one_row_not_one_per_tool(client, enforce, audited):
     """A deny-all role must not emit an audit row per tool on every list call.
 
-    ``viewer`` is denied all 19 registry tools.  One row per withheld tool
-    would be 19 DB round-trips on a read, and would bury the ``tools/call``
-    denials that actually matter.
+    An unknown role (``guest``) is denied all 19 registry tools.  One row per
+    withheld tool would be 19 DB round-trips on a read, and would bury the
+    ``tools/call`` denials that actually matter.  (``viewer`` was the example
+    until owui-mcp-04 made it a read-only role.)
     """
-    session_id = _session(client, "viewer")
+    session_id = _session(client, "guest")
     headers = dict(MCP_HEADERS)
-    headers["X-Test-Role"] = "viewer"
+    headers["X-Test-Role"] = "guest"
     headers["Mcp-Session-Id"] = session_id
     resp = client.post(
         "/mcp/v1/",

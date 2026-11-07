@@ -9629,8 +9629,10 @@ def list_tools() -> list:
 # into a generated entry is a field the next regeneration drops.
 
 #: Canonical role vocabulary (D261). ``admin`` holds every privilege; the other
-#: four are the roles the platform actually issues.
-ROLES = ("admin", "pm", "developer", "isso", "co")
+#: six are the roles the platform actually issues. ``viewer`` and ``auditor`` are
+#: READ-ONLY (owui-mcp-04): no tool lists them in ``required_roles``, so they reach
+#: exactly the tools that declare no role limit, and never a write tool.
+ROLES = ("admin", "pm", "developer", "isso", "co", "viewer", "auditor")
 
 #: The role that is never refused. Kept as a named constant because "admin can
 #: do anything" is a policy decision, not an implementation detail -- it used to
@@ -9641,10 +9643,11 @@ ADMIN_ROLE = "admin"
 #: (``tools/saas/models.py::UserRole``) are the same vocabulary once these are
 #: folded in; ``tools/saas/mcp_http.py`` used to carry its own copy of this map.
 #:
-#: ``viewer`` and ``auditor`` are deliberately ABSENT. They have no D261
-#: equivalent, and an unrecognised role resolves to no privileges at all, which
-#: is the safe direction. Adding them is a policy change that belongs in a card
-#: with the traffic evidence to justify it, not in an alias table.
+#: ``viewer`` and ``auditor`` need no alias: they are canonical roles in
+#: :data:`ROLES` with the SaaS names. They were once absent, which denied them
+#: every tool -- read-only ones included -- once per-user identity reached the
+#: MCP surface (owui-mcp-04, operator decision 2026-11-07). They are deliberately
+#: NOT aliased to ``co``: a future contracting grant must not leak to viewers.
 ROLE_ALIASES = MappingProxyType({
     "tenant_admin": "admin",
     "compliance_officer": "isso",

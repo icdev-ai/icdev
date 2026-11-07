@@ -147,10 +147,21 @@ def test_an_unmapped_category_denies_everyone_but_admin(monkeypatch):
         reg.reset_authorization_cache()
 
 
-@pytest.mark.parametrize("role", ["viewer", "auditor", "hacker", "", None])
+# viewer and auditor left this list in owui-mcp-04: they are canonical READ-ONLY
+# roles now (tests/test_owui_mcp_read_roles.py pins their reach).
+@pytest.mark.parametrize("role", ["hacker", "", None])
 def test_an_unrecognised_role_normalises_to_nothing(role):
     assert reg.normalize_role(role) == ""
     assert reg.tools_for_role(role) == []
+
+
+@pytest.mark.parametrize("role", ["viewer", "auditor"])
+def test_read_only_saas_roles_are_canonical(role):
+    """owui-mcp-04: recognised, and reaching only tools that declare no role limit."""
+    assert reg.normalize_role(role) == role
+    reach = reg.tools_for_role(role)
+    assert reach
+    assert all(not reg.tool_authorization(t)["required_roles"] for t in reach)
 
 
 @pytest.mark.parametrize("alias,canonical", sorted(reg.ROLE_ALIASES.items()))

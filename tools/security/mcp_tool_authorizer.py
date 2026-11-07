@@ -52,6 +52,8 @@ Roles (``tool_registry.ROLES``):
     developer — build, test, data and model state
     isso      — compliance, assurance and security posture state
     co        — read-only tiers only
+    viewer    — read-only tiers only (SaaS viewer; owui-mcp-04)
+    auditor   — read-only tiers only (SaaS auditor; owui-mcp-04)
 
 CLI:
     python tools/security/mcp_tool_authorizer.py --check --role developer --tool scaffold --json
@@ -277,7 +279,7 @@ class MCPToolAuthorizer:
         """
         errors: List[str] = []
         warnings: List[str] = []
-        expected_roles = {"admin", "pm", "developer", "isso", "co"}
+        expected_roles = {"admin", "pm", "developer", "isso", "co", "viewer", "auditor"}
 
         if not self._matrix_mode:
             reg = _registry()
