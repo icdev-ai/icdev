@@ -161,6 +161,23 @@ a THROWAWAY PostgreSQL database (`ICDEV_PG_DATABASE` and `PLATFORM_DB_URL` both
 pointing at it, schema from `tools/db/bootstrap_pg.py` + `platform_db.py --init`),
 and an Open WebUI started from the pinned image with the `--identity oidc` env.
 
+## Operating a governed demo (owui-ship-05, owui-ship-09)
+
+Two operator scripts keep a long-running demo current and prove its roles. Neither prints a secret;
+each reads its credentials from 0600 files and takes every path from the environment.
+
+- `tools/openwebui/refresh_gateway.sh` moves the gateway to `origin/main` without risking the live
+  one: it exports to `src.new`, starts it on a spare port, checks `/v1/models`, one local chat and an
+  MCP `nist_lookup`, and only then swaps it in and restarts the service. A failed check leaves the
+  running gateway untouched. The deployment's `run.sh` must honour `GATEWAY_SRC` and `GATEWAY_PORT`.
+- `tools/openwebui/verify_roles.sh` signs each demo user in and reports, per role, the model list,
+  chat, the admin-only `icdev/kanban`, read-only MCP tools and a write tool (denied below admin; not
+  called for admin, where it would write), then three 401 controls: a tampered token, forged
+  `X-OpenWebUI-User-*` headers and no auth. It needs the Keycloak password grant, which the
+  `open-webui` client keeps **off** -- Open WebUI never uses it, and left on it is a way to guess
+  passwords around the login page -- so the script turns it on for its own run and an EXIT trap
+  turns it off again.
+
 ## Uploads (owui-rag-02) — a narrowed path, not a wall
 
 Open WebUI stores an uploaded file on its own data volume **before** any filter or
