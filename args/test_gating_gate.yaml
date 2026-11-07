@@ -139,6 +139,20 @@ exclusions:
       file, and skip_census is closed.
     review: aisg-audit-pg-immutable
 
+  - pattern: "tests/pg_tier/test_tenant_manager_pg.py"
+    reason: >-
+      Needs a LIVE PostgreSQL. It runs tools/saas/tenant_manager's create_tenant ->
+      add_user -> list_users -> api_key_auth.validate_api_key against a real
+      PostgreSQL platform database, which is where both owui-api-07 defects lived:
+      a psycopg2 connection has no `execute`, and platform_db declares every id
+      UUID. No SQLite run reaches either -- sqlite3 connections DO have `execute`
+      and TEXT ids accept "tenant-xxxx". The gated SQLite half is
+      tests/test_owui_tenant_manager_backends.py. Runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt. Excluded rather than gated for the same reason
+      as the local_database entry above: its module-level skipif would put a skip
+      into a CI-gated file, and skip_census is closed.
+    review: owui-api-07
+
 # --------------------------------------------------------------------------- #
 # BACKLOG — the grandfathered census
 # --------------------------------------------------------------------------- #

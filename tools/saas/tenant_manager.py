@@ -63,7 +63,9 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Imports from sibling SaaS modules
 # ---------------------------------------------------------------------------
+from tools.saas import platform_db  # noqa: E402
 from tools.saas.platform_db import get_platform_connection  # noqa: E402
+from tools.db.storage import StorageConnection  # noqa: E402
 from tools.saas.models import (  # noqa: E402
     TenantStatus,
     SubscriptionTier,
@@ -113,6 +115,22 @@ def _generate_api_key():
     prefix = random_hex[:8]
     key_hash = hashlib.sha256(full_key.encode("utf-8")).hexdigest()
     return full_key, prefix, key_hash
+
+
+def _platform_conn():
+    """The platform DB behind one interface on both backends (owui-api-07).
+
+    get_platform_connection() hands back a raw psycopg2 or sqlite3 connection, and
+    this module's ``conn.execute(... %s ...)`` worked on neither: psycopg2 has no
+    ``execute`` on the connection, and sqlite3 rejects ``%s``.
+    """
+    raw = get_platform_connection()
+    return StorageConnection(raw, "postgresql" if platform_db._is_postgres() else "sqlite")
+
+
+def _new_id():
+    """A UUID string: platform_db declares every id UUID on PostgreSQL (TEXT on SQLite)."""
+    return str(uuid.uuid4())
 
 
 def _utcnow():
@@ -181,10 +199,10 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None, compar
     if not slug:
         raise ValueError("Cannot generate a valid slug from name: '{}'".format(name))
 
-    tenant_id = "tenant-" + uuid.uuid4().hex[:12]
-    user_id = "user-" + uuid.uuid4().hex[:12]
-    key_id = "key-" + uuid.uuid4().hex[:12]
-    subscription_id = "sub-" + uuid.uuid4().hex[:12]
+    tenant_id = _new_id()
+    user_id = _new_id()
+    key_id = _new_id()
+    subscription_id = _new_id()
     now = _utcnow()
 
     auto_approve = il in ("IL2", "IL4") and tier_lower in ("starter", "professional")
@@ -192,7 +210,7 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None, compar
 
     full_key, key_prefix, key_hash = _generate_api_key()
 
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute("SELECT id FROM tenants WHERE slug = %s AND status != 'deleted'", (slug,)).fetchone()
         if row:
@@ -320,7 +338,7 @@ def provision_tenant(tenant_id):
 
     Requires tenant status to be 'provisioning'.
     """
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute("SELECT id, slug, status, impact_level FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
@@ -410,7 +428,7 @@ def approve_tenant(tenant_id, approver_id):
     Required for IL5+/Enterprise tenants that do not auto-approve.
     Sets approved_by, approved_at, transitions to provisioning, then provisions.
     """
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute("SELECT id, status FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
@@ -446,7 +464,7 @@ def list_tenants(status=None):
 
     Returns list of tenant dicts (excludes soft-deleted unless status='deleted').
     """
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         if status:
             rows = conn.execute(
@@ -486,7 +504,7 @@ def list_tenants(status=None):
 
 def get_tenant(tenant_id):
     """Get full details for a single tenant, or None if not found."""
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute(
             """SELECT id, name, slug, status, tier,
@@ -549,7 +567,7 @@ def update_tenant(tenant_id, **kwargs):
     if not kwargs:
         raise ValueError("No fields provided to update.")
 
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         existing = conn.execute(
             """SELECT id, settings, artifact_config, bedrock_config,
@@ -612,7 +630,7 @@ def update_tenant(tenant_id, **kwargs):
 
 def suspend_tenant(tenant_id):
     """Suspend a tenant.  Sets status to 'suspended'.  Reversible."""
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute("SELECT id, status FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
@@ -649,7 +667,7 @@ def suspend_tenant(tenant_id):
 
 def delete_tenant(tenant_id):
     """Soft-delete a tenant.  Sets status to 'deleted'.  Data is retained."""
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute("SELECT id, status FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
@@ -708,7 +726,7 @@ def get_tenant_db_path(tenant_id):
 
     For local development this is data/tenants/{slug}.db.
     """
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute("SELECT slug, db_host, db_name FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
@@ -734,7 +752,7 @@ def rotate_api_key(key_id, user_id):
 
     Returns the new key details (full key shown once).
     """
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute("SELECT id, tenant_id, user_id, status FROM api_keys WHERE id = %s", (key_id,)).fetchone()
         if not row:
@@ -747,7 +765,7 @@ def rotate_api_key(key_id, user_id):
 
         conn.execute("UPDATE api_keys SET status = 'revoked' WHERE id = %s", (key_id,))
 
-        new_key_id = "key-" + uuid.uuid4().hex[:12]
+        new_key_id = _new_id()
         full_key, key_prefix, key_hash = _generate_api_key()
 
         conn.execute(
@@ -790,7 +808,7 @@ def rotate_api_key(key_id, user_id):
 
 def list_users(tenant_id):
     """List all users in a tenant."""
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute("SELECT id FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not row:
@@ -837,7 +855,7 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key", compar
     if auth_lower not in valid_auth:
         raise ValueError("Invalid auth method: {}. Valid: {}".format(auth_lower, valid_auth))
 
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         tenant_row = conn.execute("SELECT id, status FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
         if not tenant_row:
@@ -877,7 +895,7 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key", compar
         if dup:
             raise ValueError("User with email '{}' already exists in tenant {}.".format(email, tenant_id))
 
-        user_id = "user-" + uuid.uuid4().hex[:12]
+        user_id = _new_id()
         now = _utcnow()
 
         compartments_json = json.dumps(compartments or [])
@@ -916,7 +934,7 @@ def remove_user(tenant_id, user_id):
 
     Does not delete the record - sets status='deactivated' and revokes API keys.
     """
-    conn = get_platform_connection()
+    conn = _platform_conn()
     try:
         row = conn.execute(
             """SELECT id, email, role, status FROM users
