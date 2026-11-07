@@ -13,6 +13,11 @@ clicking through the UI is how it drifts back:
   foreign_tool_server        a tool server that is not ICDEV /mcp/v1
   user_file_upload           users may upload files into Open WebUI's own store
                              (CUI at rest outside ICDEV; owui-rag-02)
+  builtin_retrieval          Open WebUI's own retrieval is on: it embeds and stores content
+                             itself (owui-rag-03)
+  embedding_direct           its embedding engine reaches something other than ICDEV /v1
+                             -- by default Ollama, directly; /process/text embeds even with
+                             retrieval bypassed, so the engine must fail closed (owui-rag-03)
   no_icdev_connection        nothing points at ICDEV at all (not a bypass, but broken)
   native_tool_calling        the default model params are not ``function_calling: legacy``.
                              Open WebUI 0.13 defaults to native calling, which sends its OWN
@@ -80,6 +85,8 @@ CONNECTIONS_CONFIG = "/api/v1/configs/connections"
 TOOL_SERVERS_CONFIG = "/api/v1/configs/tool_servers"
 DEFAULT_PERMISSIONS = "/api/v1/users/default/permissions"
 MODELS_CONFIG = "/api/v1/configs/models"
+RETRIEVAL_CONFIG = "/api/v1/retrieval/config"           # routers/retrieval.py, admin only
+RETRIEVAL_EMBEDDING = "/api/v1/retrieval/embedding"
 GOVERNED_MODEL_PARAMS = {"function_calling": "legacy"}
 
 # (method, url, body) -> parsed JSON. Injectable so tests never touch a network.
@@ -120,7 +127,8 @@ def read_state(owui_url: str, http: Http) -> Dict[str, Any]:
     state = {}
     for key, path in (("openai", OPENAI_CONFIG), ("ollama", OLLAMA_CONFIG),
                       ("connections", CONNECTIONS_CONFIG), ("tool_servers", TOOL_SERVERS_CONFIG),
-                      ("permissions", DEFAULT_PERMISSIONS), ("models", MODELS_CONFIG)):
+                      ("permissions", DEFAULT_PERMISSIONS), ("models", MODELS_CONFIG),
+                      ("retrieval", RETRIEVAL_CONFIG), ("embedding", RETRIEVAL_EMBEDDING)):
         try:
             state[key] = http("GET", base + path, None) or {}
         except (urllib.error.URLError, OSError, ValueError) as exc:
@@ -175,6 +183,21 @@ def find_bypasses(state: Dict[str, Any], icdev_url: str, identity: str = "key") 
     # its data volume must still be counted inside the ATO boundary.
     if ((state.get("permissions") or {}).get("chat") or {}).get("file_upload", True):
         findings.append({"rule": "user_file_upload", "target": "permissions.chat.file_upload"})
+
+    # owui-rag-03. Open WebUI's built-in retrieval embeds content itself -- through
+    # Ollama directly on a default install -- and keeps the vectors in its own store.
+    # The bypass flag stops file processing from embedding; it does NOT stop
+    # /api/v1/retrieval/process/text, which any signed-in user may call. So the
+    # embedding engine must point at ICDEV /v1, which refuses embeddings: any
+    # attempt then fails closed instead of reaching a model outside ICDEV.
+    if not (state.get("retrieval") or {}).get("BYPASS_EMBEDDING_AND_RETRIEVAL"):
+        findings.append({"rule": "builtin_retrieval", "target": "BYPASS_EMBEDDING_AND_RETRIEVAL"})
+    emb = state.get("embedding") or {}
+    engine = emb.get("RAG_EMBEDDING_ENGINE") or ""
+    if engine != "openai" or _norm((emb.get("openai_config") or {}).get("url", "")) != v1:
+        where = ((emb.get(f"{engine}_config") or {}).get("url") if engine else None) \
+            or f"{engine or 'local'}:{emb.get('RAG_EMBEDDING_MODEL') or ''}"
+        findings.append({"rule": "embedding_direct", "target": where})
 
     params = (state.get("models") or {}).get("DEFAULT_MODEL_PARAMS") or {}
     if params.get("function_calling") != "legacy":
@@ -234,6 +257,15 @@ def desired_writes(state: Dict[str, Any], icdev_url: str, icdev_key: str,
     models = json.loads(json.dumps(state.get("models") or {}))
     models["DEFAULT_MODEL_PARAMS"] = {**(models.get("DEFAULT_MODEL_PARAMS") or {}), **GOVERNED_MODEL_PARAMS}
     writes.append({"path": MODELS_CONFIG, "body": models})
+    # owui-rag-03: no built-in retrieval, and an embedding engine that can only reach
+    # ICDEV -- which refuses embeddings -- so nothing is embedded outside ICDEV. No key
+    # is sent: the refusal is the point. config/update takes partial bodies (exclude_none).
+    writes.append({"path": RETRIEVAL_CONFIG + "/update", "body": {"BYPASS_EMBEDDING_AND_RETRIEVAL": True}})
+    emb = state.get("embedding") or {}
+    writes.append({"path": RETRIEVAL_EMBEDDING + "/update", "body": {
+        "RAG_EMBEDDING_ENGINE": "openai",
+        "RAG_EMBEDDING_MODEL": emb.get("RAG_EMBEDDING_MODEL") or "icdev-refuses-embeddings",
+        "openai_config": {"url": icdev_v1(icdev_url), "key": ""}}})
     return writes
 
 

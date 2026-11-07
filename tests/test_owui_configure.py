@@ -22,11 +22,13 @@ from tools.openwebui import configure  # noqa: E402
 
 OWUI = "http://owui.test"
 ICDEV = "http://icdev.test:8443"
+GOVERNED_EMBEDDING = {"RAG_EMBEDDING_ENGINE": "openai", "RAG_EMBEDDING_MODEL": "nomic-embed-text",
+                      "openai_config": {"url": ICDEV + "/v1", "key": ""}, "ollama_config": {"url": "", "key": ""}}
 
 
 class FakeOpenWebUI:
     def __init__(self, openai=None, ollama=None, connections=None, tool_servers=None, permissions=None,
-                 models=None):
+                 models=None, retrieval=None, embedding=None):
         self.store = {
             configure.OPENAI_CONFIG: openai or {"ENABLE_OPENAI_API": False, "OPENAI_API_BASE_URLS": [],
                                                 "OPENAI_API_KEYS": [], "OPENAI_API_CONFIGS": {}},
@@ -39,6 +41,8 @@ class FakeOpenWebUI:
             configure.MODELS_CONFIG: models or {"DEFAULT_MODELS": "", "DEFAULT_PINNED_MODELS": "",
                                                 "MODEL_ORDER_LIST": [],
                                                 "DEFAULT_MODEL_PARAMS": {"function_calling": "legacy"}},
+            configure.RETRIEVAL_CONFIG: retrieval or {"BYPASS_EMBEDDING_AND_RETRIEVAL": True},
+            configure.RETRIEVAL_EMBEDDING: embedding or GOVERNED_EMBEDDING,
         }
         self.calls = []
 
@@ -64,6 +68,11 @@ def bypassing():
         permissions={"chat": {"file_upload": True, "delete": True}},
         models={"DEFAULT_MODELS": "icdev/general", "DEFAULT_PINNED_MODELS": "", "MODEL_ORDER_LIST": [],
                 "DEFAULT_MODEL_PARAMS": {"temperature": 0.2}},
+        # owui-rag-03: measured on the :3000 demo -- built-in retrieval on, embedding via Ollama directly
+        retrieval={"BYPASS_EMBEDDING_AND_RETRIEVAL": False},
+        embedding={"RAG_EMBEDDING_ENGINE": "ollama", "RAG_EMBEDDING_MODEL": "nomic-embed-text",
+                   "openai_config": {"url": "", "key": ""},
+                   "ollama_config": {"url": "http://localhost:11434", "key": ""}},
     )
 
 
@@ -83,6 +92,8 @@ def test_check_names_every_bypass(capsys):
         ("foreign_tool_server", "http://mcpo.local:8000"),
         ("user_file_upload", "permissions.chat.file_upload"),
         ("native_tool_calling", "DEFAULT_MODEL_PARAMS.function_calling"),
+        ("builtin_retrieval", "BYPASS_EMBEDDING_AND_RETRIEVAL"),
+        ("embedding_direct", "http://localhost:11434"),
         ("no_icdev_connection", ICDEV + "/v1"),
     }
 
@@ -102,7 +113,8 @@ def test_a_disabled_connection_is_not_a_bypass():
                         "OPENAI_API_BASE_URLS": [ICDEV + "/v1", "https://api.openai.com/v1"],
                         "OPENAI_API_CONFIGS": {"1": {"enable": False}}},
              "permissions": {"chat": {"file_upload": False}},
-             "models": {"DEFAULT_MODEL_PARAMS": {"function_calling": "legacy"}}}
+             "models": {"DEFAULT_MODEL_PARAMS": {"function_calling": "legacy"}},
+             "retrieval": {"BYPASS_EMBEDDING_AND_RETRIEVAL": True}, "embedding": GOVERNED_EMBEDDING}
     assert configure.find_bypasses(state, ICDEV) == []
 
 
@@ -132,6 +144,11 @@ def test_apply_leaves_icdev_as_the_only_backend(monkeypatch, capsys):
     assert tool["headers"] == {"X-ICDEV-Client": "openwebui"}
     # owui-rag-02: uploads off, every other permission preserved
     assert fake.store[configure.DEFAULT_PERMISSIONS] == {"chat": {"file_upload": False, "delete": True}}
+    # owui-rag-03: no built-in retrieval; embeddings can only reach ICDEV, which refuses them
+    assert fake.store[configure.RETRIEVAL_CONFIG] == {"BYPASS_EMBEDDING_AND_RETRIEVAL": True}
+    emb = fake.store[configure.RETRIEVAL_EMBEDDING]
+    assert emb["RAG_EMBEDDING_ENGINE"] == "openai"
+    assert emb["openai_config"] == {"url": ICDEV + "/v1", "key": ""}
     assert "icdev_secret_value" not in out
 
 
@@ -212,3 +229,23 @@ def test_native_tool_calling_is_found_and_apply_sets_legacy_keeping_other_params
     assert models["DEFAULT_MODEL_PARAMS"] == {"temperature": 0.2, "function_calling": "legacy"}
     assert models["DEFAULT_MODELS"] == "icdev/general"
     assert json.loads(configure.env_block(ICDEV)["DEFAULT_MODEL_PARAMS"]) == {"function_calling": "legacy"}
+
+
+@pytest.mark.parametrize("embedding, target", [
+    ({"RAG_EMBEDDING_ENGINE": "", "RAG_EMBEDDING_MODEL": "all-MiniLM-L6-v2"}, "local:all-MiniLM-L6-v2"),
+    ({"RAG_EMBEDDING_ENGINE": "openai", "RAG_EMBEDDING_MODEL": "text-embedding-3-small",
+      "openai_config": {"url": "https://api.openai.com/v1", "key": "sk-x"}}, "https://api.openai.com/v1"),
+])
+def test_any_embedding_engine_not_at_icdev_is_direct(embedding, target):
+    """owui-rag-03: in-process or foreign, an embedding Open WebUI computes itself is outside ICDEV."""
+    findings = configure.find_bypasses({"retrieval": {"BYPASS_EMBEDDING_AND_RETRIEVAL": True},
+                                        "embedding": embedding}, ICDEV)
+    assert {"rule": "embedding_direct", "target": target} in findings
+
+
+def test_the_bypass_flag_alone_is_not_enough():
+    """Open WebUI 0.13's /retrieval/process/text embeds whatever the flag says, so the engine is judged too."""
+    findings = configure.find_bypasses({"retrieval": {"BYPASS_EMBEDDING_AND_RETRIEVAL": True},
+                                        "embedding": {"RAG_EMBEDDING_ENGINE": "ollama",
+                                                      "ollama_config": {"url": "http://localhost:11434"}}}, ICDEV)
+    assert [f["rule"] for f in findings if f["rule"] in ("builtin_retrieval", "embedding_direct")] == ["embedding_direct"]

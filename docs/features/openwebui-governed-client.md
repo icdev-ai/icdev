@@ -170,8 +170,16 @@ Open WebUI. What ships instead:
 - `USER_PERMISSIONS_CHAT_FILE_UPLOAD=false` in the compose profile, and
   `configure.py --check` reports `user_file_upload` when the permission is on
   (`--apply` turns it off and keeps every other permission).
-- `BYPASS_EMBEDDING_AND_RETRIEVAL=true`: nothing is embedded into Open WebUI's
-  vector store.
+- No embedding happens outside ICDEV (owui-rag-03). `BYPASS_EMBEDDING_AND_RETRIEVAL=true`
+  alone was not enough, and on an existing install it was never written: `--apply` set it
+  only through the container env, and `--check` did not read it. Measured on the :3000 demo
+  (2026-11-07, `--check` clean): built-in retrieval was on and its embedding engine called
+  Ollama directly (`nomic-embed-text` at `127.0.0.1:11434`, which answers anyone). And in
+  Open WebUI 0.13 the flag stops only *file* processing: `POST /api/v1/retrieval/process/text`,
+  open to any signed-in user, embeds and stores regardless. So `--check` now reports
+  `builtin_retrieval` (flag off) and `embedding_direct` (an embedding engine that is not ICDEV
+  `/v1`), and `--apply` sets the flag and points the embedding engine at ICDEV `/v1` with no
+  key. ICDEV refuses embeddings, so any attempt fails closed instead of reaching a model.
 - Documents go to ICDEV document intelligence (dashboard) where entitlement,
   provenance and markings apply.
 
