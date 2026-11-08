@@ -31,11 +31,14 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from icdev.core.paths import repo_root
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory -- bootstrap the import root first.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from icdev.core.paths import repo_root  # noqa: E402
 
 _BASE = repo_root(__file__)
-if str(_BASE) not in sys.path:
-    sys.path.insert(0, str(_BASE))
 
 DEFAULT_VALID_DAYS = 30
 
