@@ -2,7 +2,7 @@
 """STIG NLP Extractor — Phase 512.
 
 Replaces raw ``re.search()`` calls in the STIG compliance pillar with an
-NLP extractor backed by ``claude-haiku-4-5-20251001``.
+NLP extractor (the model is chosen by the LLM router).
 
 Public API
 ----------
@@ -42,7 +42,7 @@ _STIG_DOC_PATTERN = r"STIG|Security\s+Technical\s+Implementation\s+Guide|DISA\s+
 _CAT_PATTERN = r"\bCAT\s*[I]{1,3}\b|\bCAT-[123]\b|\bCategory\s+[I]{1,3}\b"
 
 # Model wired to the nlp_extractor paradigm (engine.py _PARADIGM_TO_MODEL)
-_NLP_MODEL = "claude-haiku-4-5-20251001"
+_NLP_MODEL = ""  # icx-doc-01: the router's chain for the function decides; no model ID in code
 
 _SYSTEM_PROMPT = (
     "You are a STIG compliance marker extractor. "

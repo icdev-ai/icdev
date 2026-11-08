@@ -307,10 +307,9 @@ challenges:
   domain: Platform & Workflow
   challenge: Business processes are executed manually, undocumented, and impossible to audit
   business_impact: Process variance causes inconsistent outputs, untracked decisions, and audit gaps sprint over sprint.
-  solution: 'Process-Ify implements 14 workflow enhancement capabilities on the Workflow Canvas: live DAG visualization, process
-    mining, bottleneck detection, SLA tracking, HITL gate insertion, compliance annotation, and automated process documentation
-    generation.'
-  modules: tools/workflow_canvas/ (Process-Ify, 14 capabilities), Workflow Canvas, HITL gates, compliance annotation engine
+  solution: 'The Workflow Canvas provides Process-Ify capture of a process from its documents or from an observed run, conformance checking, SLA checks, HITL gate insertion, BPMN export, workflow diff and chain simulation, and process documentation regeneration. Event-log process mining and bottleneck detection are not built (icx-doc-01).'
+  modules: tools/workflow_canvas/ (processify, observed_processify, conformance_checker, sla_checker, bpmn_export, workflow_diff,
+    chain_simulator, doc_regenerator), Workflow Canvas, HITL gates
   compliance: NIST 800-53 CM, audit trail
   outcome: Undocumented processes to auditable, monitored, HITL-gated workflows with compliance annotations
   so_what: Processes that lived only in people's heads are now visible, auditable, and improvable - without waiting for a
@@ -664,9 +663,9 @@ capabilities:
   is_new: true
 - id: 29
   capability: Process-Ify Workflow Automation
-  what_it_does: '14 workflow enhancement capabilities on the Workflow Canvas: live DAG visualization, process mining, bottleneck
-    detection, SLA tracking, HITL gate insertion, compliance annotation, and automated process documentation generation.'
-  modules: tools/workflow_canvas/ (Process-Ify, 14 capabilities), Workflow Canvas, HITL gates, compliance annotation
+  what_it_does: 'Process-Ify capture of a process from its documents or from an observed run, conformance checking, SLA checks, HITL gate insertion, BPMN export, workflow diff and chain simulation, and process documentation regeneration. Event-log process mining and bottleneck detection are not built (icx-doc-01).'
+  modules: tools/workflow_canvas/ (processify, observed_processify, conformance_checker, sla_checker, bpmn_export, workflow_diff,
+    chain_simulator, doc_regenerator), Workflow Canvas, HITL gates
   compliance: NIST 800-53 CM, audit trail
   solves: '24'
   so_what: Processes that lived only in people's heads are now visible, auditable, and improvable - without waiting for a
@@ -871,9 +870,9 @@ canvases:
   route: /workflow-canvas
   use_case: Process owners and operations teams automating and auditing business workflows.
   challenge: Business processes are undocumented and unauditable - the same inefficiencies compound sprint over sprint.
-  how_it_solves: 14 Process-Ify capabilities bring live DAG visualization, process mining, bottleneck detection, SLA tracking,
-    HITL gate insertion, and compliance annotation to every workflow - turning undocumented execution into an auditable, governed
-    pipeline.
+  how_it_solves: Process-Ify captures a process from its documents or an observed run; conformance checking, SLA checks, HITL
+    gates, BPMN export and workflow diff turn undocumented execution into an auditable, governed pipeline. Event-log process
+    mining and bottleneck detection are not built (icx-doc-01).
   status: approved
   is_new: true
 - id: 21

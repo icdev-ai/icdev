@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """NLP extractor for regex_user_input patterns.
 
-Uses an LLM (default: claude-haiku-4-5-20251001) to enrich AST/Semgrep-detected
+Uses an LLM (named in args/aac_config.yaml) to enrich AST/Semgrep-detected
 regex call sites with semantic context: intent classification, inferred input
 type, user-facing flag, and a one-sentence NLP alternative recommendation.
 
@@ -23,7 +23,7 @@ _CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "args" / 
 
 _FALLBACK_MAX_ENRICH = 10
 _FALLBACK_SNIPPET_CTX = 10
-_FALLBACK_MODEL = "claude-haiku-4-5-20251001"
+_FALLBACK_MODEL = ""  # icx-doc-01: args/aac_config.yaml names it; empty lets the router decide
 
 _SYSTEM_PROMPT = (
     "You are a code-intelligence assistant. Analyze the provided code snippet "

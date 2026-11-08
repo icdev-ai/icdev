@@ -559,7 +559,7 @@ def _nlp_enrich_hits(hits: list[dict], source_lines: list[str], file_path: str) 
             LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
                 system_prompt=_NLP_REGEX_SYSTEM,
-                model="claude-haiku-4-5-20251001",
+                model="",  # icx-doc-01: the router's pattern_extraction chain decides
                 max_tokens=1024,
                 temperature=0.0,
                 effort="low",

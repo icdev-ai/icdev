@@ -82,7 +82,7 @@ _SCORE_ANOMALY_DEFAULTS: dict[str, Any] = {
     "min_passing_pct": 0.3,
     # Set to true to call Claude Haiku for natural-language remediation guidance.
     "ai_analysis_enabled": False,
-    "ai_model": "claude-haiku-4-5-20251001",
+    "ai_model": "",  # icx-doc-01: no model ID in code; the config names it, empty lets the router's chain decide
     "ai_max_tokens": 256,
 }
 

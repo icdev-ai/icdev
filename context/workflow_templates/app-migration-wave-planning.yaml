@@ -6,13 +6,13 @@ author: builtin
 steps:
   - id: discovery
     name: Application Portfolio Discovery
-    tool: tools/migration_canvas/portfolio_scanner.py
+    tool: tools/migration_canvas/inventory_scanner.py   # icx-doc-01: portfolio_scanner.py was never built
     node_type: tool
     required: true
     timeout: 300
   - id: classify_7r
     name: 7Rs Strategy Classification
-    tool: tools/migration_canvas/migration_classifier.py
+    tool: tools/modernization/seven_r_assessor.py   # icx-doc-01: migration_classifier.py was never built
     node_type: tool
     required: true
     timeout: 180
@@ -40,7 +40,7 @@ steps:
     depends_on: [compliance_gate]
   - id: export
     name: Export Migration Plan
-    tool: tools/migration_canvas/plan_exporter.py
+    tool: ""   # icx-doc-01: plan_exporter.py was never built; export from the canvas until it is
     node_type: tool
     required: false
     timeout: 120
