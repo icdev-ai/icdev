@@ -12277,6 +12277,9 @@ def main() -> None:
     )
     parser.add_argument("--check", type=str, default="", help=f"Specific check: {', '.join(CHECK_REGISTRY.keys())}")
     parser.add_argument("--changed-files", type=str, default="", help="Comma-separated list of changed file paths")
+    parser.add_argument("--target", type=str, default="",
+                        help="an APPLICATION's directory: run the generic checks there (icx-coh-01; needs --profile app)")
+    parser.add_argument("--profile", choices=("app",), default=None, help="with --target: the generic app profile")
     parser.add_argument(
         "--changed-files-from",
         type=str,
@@ -12301,6 +12304,11 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+    if args.target or args.profile:              # icx-coh-01: an application's directory, not ICDEV itself
+        if not (args.target and args.profile == "app"):
+            parser.error("--target and --profile app go together")
+        from tools.workflow import app_coherence
+        sys.exit(app_coherence.main(["--target", args.target] + (["--gate"] if args.gate else [])))
 
     selected = None
     if args.check:
