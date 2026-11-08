@@ -438,6 +438,7 @@ competitive_intel:
       category: platform_engineering
     - name: drata
       website: https://drata.com
+      changelog_url: https://drata.com/blog
       category: compliance_automation
     - name: vanta
       website: https://www.vanta.com
@@ -463,6 +464,7 @@ competitive_intel:
       category: agentic_sdlc
     - name: forward_networks
       website: https://www.forwardnetworks.com
+      changelog_url: https://www.forwardnetworks.com/blog/
       category: digital_twin_platform
     - name: intentionet
       website: https://www.intentionet.com
@@ -513,34 +515,74 @@ competitive_intel:
     # --- AI Data Mapping & ETL Integration competitors ---
     - name: mapforce
       website: https://www.altova.com/mapforce.html
+      changelog_url: https://www.altova.com/mapforce/whatsnew
       category: data_mapping
     - name: adeptia
       website: https://www.adeptia.com/products/artificial-intelligence-mapping
+      changelog_url: https://www.adeptia.com/blog
       category: data_mapping
     - name: mulesoft
       website: https://www.mulesoft.com
+      changelog_url: https://docs.mulesoft.com/release-notes/
       category: data_integration
     - name: talend
       website: https://www.talend.com
+      changelog_url: https://help.qlik.com/talend/en-US/release-notes/
       category: data_integration
     - name: informatica
       website: https://www.informatica.com
+      changelog_url: https://www.informatica.com/blogs.html  # docs.informatica.com refuses automated clients (403)
       category: data_integration
     - name: boomi
       website: https://boomi.com
+      changelog_url: https://boomi.com/blog/
       category: data_integration
     - name: snaplogic
       website: https://www.snaplogic.com
+      feed_url: https://www.snaplogic.com/feed
       category: data_integration
     - name: jitterbit
       website: https://www.jitterbit.com
+      changelog_url: https://www.jitterbit.com/blog/
       category: data_integration
     - name: airbyte
       repo: airbytehq/airbyte
       category: data_integration
     - name: fivetran
       website: https://www.fivetran.com
+      changelog_url: https://fivetran.com/docs/changelog
       category: data_integration
+    # Open-source and government data-pipeline references (ingest, normalise, quality, lineage, ML-ready data)
+    - name: apache_nifi
+      repo: apache/nifi
+      category: data_integration
+    - name: nsa_datawave
+      repo: NationalSecurityAgency/datawave
+      category: data_integration
+    - name: gchq_stroom
+      repo: gchq/stroom
+      category: data_mapping
+    - name: nasa_cumulus
+      repo: nasa/cumulus
+      category: data_integration
+    - name: dagster
+      repo: dagster-io/dagster
+      category: data_orchestration
+    - name: pathway
+      repo: pathwaycom/pathway
+      category: data_integration
+    - name: great_expectations
+      repo: great-expectations/great_expectations
+      category: data_quality
+    - name: openlineage
+      repo: OpenLineage/OpenLineage
+      category: data_lineage
+    - name: openmetadata
+      repo: open-metadata/OpenMetadata
+      category: data_lineage
+    - name: feast
+      repo: feast-dev/feast
+      category: feature_store
     # open-notebook / knowledge management family
     - name: open_notebook
       repo: lfnovo/open-notebook

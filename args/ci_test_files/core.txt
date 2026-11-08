@@ -207,6 +207,8 @@ tests/integration/test_dashboard_panels.py
 # unstubbed, so a cap that regresses to a silent slice fails here rather than on
 # the board. ~1.5s, pure Python, no DB service/LLM/network (xbm-promote-01).
 tests/innovation/test_innovation_kanban_promoter.py
+# Website competitor scanning (changelog/feed, robots fail-closed, DTD refusal) + gh token fallback. ~0.1s, no network.
+tests/innovation/test_competitive_intel_web.py
 
 tests/test_sbom_component_producer.py
 tests/test_sbom_component_license.py
