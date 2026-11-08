@@ -10,13 +10,17 @@ from __future__ import annotations
 
 Monitors competitor platforms (Backstage, Drata, Vanta, Snyk, Trivy, Checkov, Iron Bank)
 to identify features ICDEV™ should consider implementing. GitHub-based competitors are
-scanned for releases and enhancement issues; website-based competitors produce placeholder
-signals. Gap analysis compares features against ICDEV™ tools/manifest.md keywords.
+scanned for releases and enhancement issues; website-based competitors are scanned through their
+public changelog, release-notes page or RSS/Atom feed. Gap analysis compares features against
+ICDEV™ tools/manifest.md keywords.
 
 Architecture:
     - Competitors defined in args/innovation_config.yaml under competitive_intel.competitors
     - GitHub repos: fetch releases + enhancement/feature issues via REST API
-    - Website competitors: store URL + category, note scraping setup required
+    - Website competitors: fetch feed_url, then changelog_url, then the website (discovering an
+      RSS/Atom link on it); robots.txt is honoured (fail closed), pages are capped at 2 MB, and
+      feature-like headings and list items are kept (stdlib HTMLParser, feeds via defusedxml)
+    - GitHub auth: GITHUB_TOKEN / GH_TOKEN, else `gh auth token` (unauthenticated calls hit 403)
     - Gap analysis: keyword matching against manifest descriptions (append-only D6)
     - Results stored in innovation_competitor_scans; gaps as innovation_signals
 
@@ -32,10 +36,15 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
+import urllib.parse
+import urllib.robotparser
 import uuid
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 
 # -- PATH SETUP ---------------------------------------------------------------
@@ -66,6 +75,13 @@ except ImportError:
     _HAS_REQUESTS = False
     _http_request = None  # type: ignore[assignment]
 try:
+    from defusedxml import DefusedXmlException as _DefusedXmlException
+    from defusedxml import ElementTree as _SafeET
+
+    _HAS_DEFUSEDXML = True
+except ImportError:
+    _HAS_DEFUSEDXML = False
+try:
     from tools.audit.audit_logger import log_event as _audit_log
 
     _HAS_AUDIT = True  # noqa: E702
@@ -79,6 +95,9 @@ except ImportError:
 # -- CONSTANTS ----------------------------------------------------------------
 GITHUB_API = "https://api.github.com"
 _FEAT_RE = re.compile(r"(?:feat|add|new|support|introduc|implement|enabl)", re.I)
+_WEB_UA = "ICDEV-competitive-intel/1.0 (+https://github.com/icdev-ai/icdev)"
+_WEB_MAX_BYTES = 2 * 1024 * 1024
+_WEB_MAX_FEATURES = 25
 # Matches bare version strings like "3.2.508", "v3.2.508", "3.2.508-rc1" — no feature description
 _VERSION_TAG_RE = re.compile(r"^v?\d+(\.\d+)+([-._]\w+)?$")
 _STOPS = {
@@ -172,6 +191,44 @@ _CAT_FEATURES = {
         "OSCAL compliance export for ATO evidence",
         "network query engine (NQE) with custom checks",
     ],
+    "data_integration": [
+        "prebuilt source connectors with incremental sync",
+        "change data capture replication",
+        "schema drift detection and propagation",
+        "connector development kit",
+        "reverse ETL to operational systems",
+        "pipeline monitoring and alerting",
+    ],
+    "data_mapping": [
+        "visual schema-to-schema field mapping",
+        "AI-suggested field mappings",
+        "XML JSON EDI transformation",
+        "code-list and value crosswalks",
+        "mapping test with sample data",
+    ],
+    "data_quality": [
+        "declarative data quality expectations",
+        "data contracts between producers and consumers",
+        "anomaly detection on volume and distribution",
+        "data quality checks in CI",
+    ],
+    "data_orchestration": [
+        "asset-centric pipeline definitions",
+        "backfills and partitioned runs",
+        "retries with dead-letter handling",
+        "lineage from orchestrated assets",
+    ],
+    "data_lineage": [
+        "column-level lineage",
+        "metadata catalog with search",
+        "OpenLineage event ingestion",
+        "data ownership and stewardship",
+    ],
+    "feature_store": [
+        "point-in-time correct training sets",
+        "online and offline feature serving",
+        "feature definitions as code",
+    ],
 }
 
 
@@ -229,10 +286,31 @@ def _get_competitors():
     return _load_config().get("competitive_intel", {}).get("competitors", [])
 
 
+_GH_TOKEN_CACHE: list = []
+
+
+def _gh_token():
+    """GitHub token from GITHUB_TOKEN / GH_TOKEN, else the gh CLI's login; None when neither."""
+    tok = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if tok:
+        return tok
+    if not _GH_TOKEN_CACHE:
+        found = None
+        gh = shutil.which("gh")
+        if gh:
+            try:
+                out = subprocess.run([gh, "auth", "token"], capture_output=True, text=True, timeout=10, check=False)
+                found = (out.stdout.strip() or None) if out.returncode == 0 else None
+            except (OSError, subprocess.SubprocessError):
+                found = None
+        _GH_TOKEN_CACHE.append(found)
+    return _GH_TOKEN_CACHE[0]
+
+
 def _gh_headers():
     """Build GitHub API headers with optional auth token."""
     h = {"Accept": "application/vnd.github+json"}
-    tok = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    tok = _gh_token()
     if tok:
         h["Authorization"] = f"Bearer {tok}"
     return h
@@ -301,6 +379,177 @@ def _extract_features(releases):
                 if len(txt) > 5:
                     feats.append(f"[{tag}] {txt}")
     return feats
+
+
+# -- WEBSITE FETCHERS (changelog, release notes, RSS/Atom) --------------------
+_ROBOTS_CACHE: dict = {}
+
+
+def _robots_allows(url):
+    """True when robots.txt permits our user agent. No robots.txt (404) allows; any other failure refuses."""
+    parts = urllib.parse.urlsplit(url)
+    origin = f"{parts.scheme}://{parts.netloc}"
+    if origin not in _ROBOTS_CACHE:
+        rp = urllib.robotparser.RobotFileParser()
+        try:
+            resp = _http_request("GET", f"{origin}/robots.txt", headers={"User-Agent": _WEB_UA}, timeout=15)
+            if resp.status_code == 200:
+                rp.parse(resp.text.splitlines())
+            elif resp.status_code in (404, 410):
+                rp.parse([])
+            else:
+                rp = None
+        except _requests.exceptions.RequestException:
+            rp = None
+        _ROBOTS_CACHE[origin] = rp
+    rp = _ROBOTS_CACHE[origin]
+    return rp is not None and rp.can_fetch(_WEB_UA, url)
+
+
+def _fetch_page(url):
+    """GET a public page as text, honouring robots.txt and the size cap. Returns (text, content_type, error)."""
+    if not _HAS_REQUESTS:
+        return None, "", "requests library not installed"
+    if urllib.parse.urlsplit(url).scheme not in ("http", "https"):
+        return None, "", "unsupported_scheme"
+    if not _robots_allows(url):
+        return None, "", "robots_disallowed"
+    try:
+        resp = _http_request("GET", url, headers={"User-Agent": _WEB_UA}, timeout=30)
+    except _requests.exceptions.RequestException as e:
+        return None, "", str(e)
+    if resp.status_code in (403, 429):
+        return None, "", "rate_limited" if resp.status_code == 429 else "forbidden"
+    if resp.status_code == 404:
+        return None, "", "not_found"
+    if resp.status_code >= 400:
+        return None, "", f"http_{resp.status_code}"
+    if len(resp.content) > _WEB_MAX_BYTES:
+        return None, "", "too_large"
+    return resp.text, resp.headers.get("content-type", ""), None
+
+
+class _BlockExtractor(HTMLParser):
+    """Text of headings, list items, paragraphs and definition terms, outside script/style/nav/footer."""
+
+    _KEEP = frozenset({"h1", "h2", "h3", "h4", "li", "p", "dt"})
+    _SKIP = frozenset({"script", "style", "nav", "footer", "noscript", "svg", "form"})
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.blocks, self.feeds = [], []
+        self._skip, self._stack = 0, []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "link":
+            a = dict(attrs)
+            is_feed = (a.get("type") or "").lower() in ("application/rss+xml", "application/atom+xml")
+            if (a.get("rel") or "").lower() == "alternate" and is_feed and a.get("href"):
+                self.feeds.append(a["href"])
+        if tag in self._SKIP:
+            self._skip += 1
+        elif tag in self._KEEP:
+            self._stack.append([tag, []])
+
+    def handle_endtag(self, tag):
+        if tag in self._SKIP:
+            self._skip = max(0, self._skip - 1)
+        elif tag in self._KEEP and self._stack and self._stack[-1][0] == tag:
+            t, parts = self._stack.pop()
+            text = " ".join(" ".join(parts).split())
+            if text:
+                self.blocks.append((t, text))
+
+    def handle_data(self, data):
+        if not self._skip and self._stack:
+            self._stack[-1][1].append(data)
+
+
+def _parse_feed(xml_text):
+    """Entry titles from RSS or Atom (defusedxml; DTDs and entities refused)."""
+    if not _HAS_DEFUSEDXML:
+        return [], "defusedxml not installed"
+    try:
+        root = _SafeET.fromstring(xml_text)
+    except (_SafeET.ParseError, _DefusedXmlException) as e:
+        return [], f"feed_parse: {e.__class__.__name__}"
+    titles = []
+    for el in root.iter():
+        name = el.tag.rsplit("}", 1)[-1]
+        if name in ("item", "entry"):
+            for child in el:
+                if child.tag.rsplit("}", 1)[-1] == "title" and (child.text or "").strip():
+                    titles.append(" ".join(child.text.split()))
+                    break
+    return titles, None
+
+
+def _web_features(blocks, limit=_WEB_MAX_FEATURES):
+    """Feature-like lines from page blocks, each prefixed with the nearest heading."""
+    feats, seen, heading = [], set(), ""
+    for tag, text in blocks:
+        if tag in ("h1", "h2", "h3", "h4"):
+            heading = text[:60]
+            if not _FEAT_RE.search(text):
+                continue
+        if not (20 <= len(text) <= 300) or not _FEAT_RE.search(text):
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        feats.append(f"[{heading}] {text}" if heading and heading != text else text)
+        if len(feats) >= limit:
+            break
+    return feats
+
+
+def _looks_like_feed(text, content_type):
+    ct = content_type.lower()
+    if "rss" in ct or "atom" in ct or ct.startswith(("application/xml", "text/xml")):
+        return True
+    head = text.lstrip()[:200].lower()
+    return head.startswith(("<?xml", "<rss")) or "<feed" in head
+
+
+def _scan_website(comp):
+    """Scan feed_url, then changelog_url, then the website. Returns (features, source_url, errors)."""
+    errs = []
+    for key in ("feed_url", "changelog_url", "website"):
+        url = comp.get(key)
+        if not url:
+            continue
+        text, ctype, err = _fetch_page(url)
+        if err:
+            errs.append(f"{key}: {err}")
+            continue
+        if _looks_like_feed(text, ctype):
+            titles, err = _parse_feed(text)
+            if err:
+                errs.append(f"{key}: {err}")
+                continue
+            feats = _web_features([("li", t) for t in titles])
+            if feats:
+                return feats, url, errs
+            errs.append(f"{key}: no_feature_lines")
+            continue
+        parser = _BlockExtractor()
+        parser.feed(text)
+        feats = _web_features(parser.blocks)
+        if not feats and parser.feeds and key == "website":
+            feed = urllib.parse.urljoin(url, parser.feeds[0])
+            ftext, fct, ferr = _fetch_page(feed)
+            if not ferr and _looks_like_feed(ftext, fct):
+                titles, ferr = _parse_feed(ftext)
+                feats = _web_features([("li", t) for t in titles]) if not ferr else []
+                if feats:
+                    return feats, feed, errs
+            if ferr:
+                errs.append(f"discovered_feed: {ferr}")
+        if feats:
+            return feats, url, errs
+        errs.append(f"{key}: no_feature_lines")
+    return [], None, errs
 
 
 # -- MANIFEST ANALYSIS --------------------------------------------------------
@@ -387,18 +636,19 @@ def scan_competitor(competitor_name, db_path=None):
                         "reactions_thumbs_up": rx.get("+1", 0),
                     }
                 )
-    elif website:
-        feats.append(
-            f"[website] {competitor_name} ({website}) — "
-            f"category: {comp.get('category', 'unknown')}. "
-            f"Full feature scanning requires additional scraping setup."
-        )
+    web_source = None
+    if not feats and (comp.get("feed_url") or comp.get("changelog_url") or (website and not repo)):
+        web_feats, web_source, web_errs = _scan_website(comp)
+        feats.extend(web_feats)
+        errs.extend(web_errs)
 
     meta = {
         "category": comp.get("category"),
         "repo": repo,
         "website": website,
         "changelog_url": comp.get("changelog_url"),
+        "feed_url": comp.get("feed_url"),
+        "web_source": web_source,
         "releases": rels,
         "issues_count": len(issues),
         "errors": errs,
