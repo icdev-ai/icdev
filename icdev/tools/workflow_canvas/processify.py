@@ -25,11 +25,11 @@ import re
 import sys
 from typing import Callable
 
-from icdev.core.paths import repo_root  # noqa: E402
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory -- bootstrap the import root first.
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
-_BASE = repo_root(__file__)
-if str(_BASE) not in sys.path:
-    sys.path.insert(0, str(_BASE))
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.workflow_canvas.constants import MAX_EXTRACT_CHARS  # noqa: E402
