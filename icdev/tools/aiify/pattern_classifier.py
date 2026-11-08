@@ -78,7 +78,7 @@ _ML_NC_ENABLED: bool = (
     os.environ.get("ICDEV_AIIFY_ML_CLASSIFY", "").lower() in ("1", "true", "yes")
     or bool(_ml_nc_cfg.get("enabled", False))
 )
-_ML_NC_MODEL: str = str(_ml_nc_cfg.get("model", "claude-haiku-4-5-20251001"))
+_ML_NC_MODEL: str = str(_ml_nc_cfg.get("model", ""))  # icx-doc-01: config only
 _ML_NC_MAX_TOKENS: int = int(_ml_nc_cfg.get("max_tokens", 256))
 _ML_NC_CONTEXT_LINES: int = int(_ml_nc_cfg.get("context_lines", 5))
 
@@ -88,7 +88,7 @@ _ML_RUI_ENABLED: bool = (
     os.environ.get("ICDEV_AIIFY_NLP_REGEX", "").lower() in ("1", "true", "yes")
     or bool(_ml_rui_cfg.get("enabled", False))
 )
-_ML_RUI_MODEL: str = str(_ml_rui_cfg.get("model", "claude-haiku-4-5-20251001"))
+_ML_RUI_MODEL: str = str(_ml_rui_cfg.get("model", ""))  # icx-doc-01: config only
 _ML_RUI_MAX_TOKENS: int = int(_ml_rui_cfg.get("max_tokens", 256))
 _ML_RUI_CONTEXT_LINES: int = int(_ml_rui_cfg.get("context_lines", 5))
 

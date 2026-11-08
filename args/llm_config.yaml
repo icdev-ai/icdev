@@ -803,6 +803,23 @@ routing:
     chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local, vllm-local]
     effort: high
 
+  # icx-doc-01: functions AI-Ify, AI-Augmentation and Process-Ify invoke, which fell through to the default chain.
+  process_digitization:            # Process-Ify: a process document (untrusted) as a structured workflow draft
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  pattern_extraction:              # AI-Ify: enrich a detected code pattern (regex intent, user-facing input)
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    effort: low
+
+  nlp_extractor:                   # AI-Ify / AI-Augmentation: NLP enrichment of an input reference or snippet
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    effort: low
+
+  stig_nlp_extractor:              # AI-Augmentation: STIG marker extraction from code or documentation
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    effort: low
+
   saas_proxy:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash]
     effort: medium

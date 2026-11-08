@@ -194,3 +194,16 @@ govchain_anchor:
     enabled: false
     model: claude-haiku-4-5-20251001
     max_tokens: 256
+
+# icx-doc-01: the model AI-Ify RECOMMENDS for an opportunity of each paradigm (tools/aiify/model_choice.py), and the
+# model its own NLP enrichment calls. Moved here from code; values unchanged. A paradigm left out gets no
+# recommendation (null), never a default from code.
+paradigm_models:
+  ml_classifier: claude-haiku-4-5-20251001
+  nlp_extractor: claude-haiku-4-5-20251001
+  llm_generation: claude-sonnet-4-6
+  agentic_trigger: claude-sonnet-4-6
+  anomaly_detection: claude-haiku-4-5-20251001
+  embedding_search: claude-haiku-4-5-20251001
+  decision_agent: claude-opus-4-7
+nlp_model: claude-haiku-4-5-20251001

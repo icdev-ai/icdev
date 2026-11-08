@@ -37,15 +37,10 @@ _LAYER_TITLE = {
     "Agentic": "Agentic AI Layer",
 }
 
-_PARADIGM_MODEL = {
-    "ml_classifier": "claude-haiku-4-5",
-    "nlp_extractor": "claude-haiku-4-5",
-    "llm_generation": "claude-sonnet-4-6",
-    "agentic_trigger": "claude-sonnet-4-6",
-    "anomaly_detection": "claude-haiku-4-5",
-    "embedding_search": "claude-haiku-4-5",
-    "decision_agent": "claude-opus-4-7",
-}
+# icx-doc-01: the recommended model per paradigm comes from config (args/aiify_config.yaml paradigm_models).
+from tools.aiify import model_choice as _model_choice  # noqa: E402
+
+_PARADIGM_MODEL: dict[str, str] = _model_choice.paradigm_models()
 
 
 def _san(text: str) -> str:
@@ -95,7 +90,7 @@ def build_architecture_mermaid(scan: dict, opps: list[dict], title: str | None =
         layer = _PARADIGM_LAYER.get(paradigm, "GenAI")
         p_node = f"P_{paradigm}"
         layers[layer][p_node] = _PARADIGM_LABEL.get(paradigm, paradigm)
-        model = opp.get("il_recommended_model") or _PARADIGM_MODEL.get(paradigm, "claude-sonnet-4-6")
+        model = opp.get("il_recommended_model") or _PARADIGM_MODEL.get(paradigm) or "unassigned"
         m_node = "M_" + model.replace(".", "_").replace("-", "_").replace(":", "_")
         models[m_node] = model
         paradigm_model[p_node] = m_node

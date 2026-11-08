@@ -80,15 +80,10 @@ _PATTERN_TO_PARADIGM: dict[str, str] = {
     "large_rule_table": "decision_agent",
 }
 
-_PARADIGM_TO_MODEL: dict[str, str] = {
-    "ml_classifier": "claude-haiku-4-5-20251001",
-    "nlp_extractor": "claude-haiku-4-5-20251001",
-    "llm_generation": "claude-sonnet-4-6",
-    "agentic_trigger": "claude-sonnet-4-6",
-    "anomaly_detection": "claude-haiku-4-5-20251001",
-    "embedding_search": "claude-haiku-4-5-20251001",
-    "decision_agent": "claude-opus-4-7",
-}
+# icx-doc-01: the model recommended per paradigm is CONFIG (paradigm_models in args/), never code.
+from tools.aiify import model_choice as _model_choice  # noqa: E402
+
+_PARADIGM_TO_MODEL: dict[str, str] = _model_choice.paradigm_models(_model_choice.AAC_CONFIG)
 
 # Toggle for the optional NLP reference extractor.  Disabled by default so unit
 # tests that mock the router can opt-in explicitly.
@@ -108,7 +103,7 @@ def _nlp_classify_ref(ref: str) -> tuple[bool, str]:
     """
     try:
         from tools.llm.router import LLMRouter, LLMRequest
-        model = _PARADIGM_TO_MODEL.get("nlp_extractor", "claude-haiku-4-5-20251001")
+        model = _model_choice.nlp_model(_model_choice.AAC_CONFIG)
         router = LLMRouter()
         req = LLMRequest(
             function="nlp_extractor",
@@ -551,7 +546,7 @@ def _nlp_extract_ref_info(ref: str, ref_type: str) -> dict:
     except Exception:
         return {}
 
-    model = _PARADIGM_TO_MODEL.get("nlp_extractor", "claude-haiku-4-5-20251001")
+    model = _model_choice.nlp_model(_model_choice.AAC_CONFIG)
     router = LLMRouter()
     prompt = (
         f"Analyze this input reference: {ref!r} (type: {ref_type})\n"
@@ -708,7 +703,7 @@ def run_scan(
         try:
             for pat in patterns:
                 paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
-                il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
+                il_model = _PARADIGM_TO_MODEL.get(paradigm)
 
                 opp_id: int = _insert(
                     conn,

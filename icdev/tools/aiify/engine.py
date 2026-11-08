@@ -66,7 +66,7 @@ _NLP_REF_ENABLED: bool = (
     os.environ.get("ICDEV_AIIFY_NLP_REF", "").lower() in ("1", "true", "yes")
     or bool(_nlp_ref_cfg.get("enabled", False))
 )
-_NLP_REF_MODEL: str = str(_nlp_ref_cfg.get("model", "claude-haiku-4-5-20251001"))
+_NLP_REF_MODEL: str = str(_nlp_ref_cfg.get("model", ""))  # icx-doc-01: config only
 _NLP_REF_MAX_TOKENS: int = int(_nlp_ref_cfg.get("max_tokens", 128))
 
 _NLP_REF_PROMPT = """\
@@ -121,15 +121,10 @@ _PATTERN_TO_PARADIGM: dict[str, str] = {
     "large_rule_table": "decision_agent",
 }
 
-_PARADIGM_TO_MODEL: dict[str, str] = {
-    "ml_classifier": "claude-haiku-4-5-20251001",
-    "nlp_extractor": "claude-haiku-4-5-20251001",
-    "llm_generation": "claude-sonnet-4-6",
-    "agentic_trigger": "claude-sonnet-4-6",
-    "anomaly_detection": "claude-haiku-4-5-20251001",
-    "embedding_search": "claude-haiku-4-5-20251001",
-    "decision_agent": "claude-opus-4-7",
-}
+# icx-doc-01: the model recommended per paradigm is CONFIG (paradigm_models in args/), never code.
+from tools.aiify import model_choice as _model_choice  # noqa: E402
+
+_PARADIGM_TO_MODEL: dict[str, str] = _model_choice.paradigm_models(_model_choice.AIIFY_CONFIG)
 
 
 def _now() -> str:
@@ -981,7 +976,7 @@ def run_scan(
             # (penta-aiify-06 — atomic per scan, far fewer fsyncs).
             for pat in patterns:
                 paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
-                il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
+                il_model = _PARADIGM_TO_MODEL.get(paradigm)
 
                 opp_id: int = _insert(
                     conn,

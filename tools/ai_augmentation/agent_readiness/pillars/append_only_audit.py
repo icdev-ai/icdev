@@ -40,7 +40,7 @@ _KNOWN_APPEND_ONLY = {
 _ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
     "nlp_extractor_enabled": True,
-    "nlp_extractor_model": "claude-haiku-4-5-20251001",
+    "nlp_extractor_model": "",  # icx-doc-01: no model ID in code; the config names it, empty lets the router's chain decide
     "nlp_extractor_max_tokens": 256,
     "nlp_extractor_confidence_threshold": 0.7,
     "nlp_extractor_text_sample_chars": 2000,
