@@ -136,7 +136,11 @@ def handle_assess_seven_r(args: dict) -> dict:
         if weights_path and Path(weights_path).exists():
             with open(weights_path) as f:
                 custom_weights = json.load(f)
-        return assess(project_id, app_id, custom_weights=custom_weights)
+        redundancy = None
+        if args.get("redundancy_path"):                      # icx-rtr-01: retire's measured functional_redundancy
+            load = _import_tool("tools.modernization.seven_r_assessor", "load_redundancy")
+            redundancy = load(args["redundancy_path"]).get(app_id) if load else None
+        return assess(project_id, app_id, custom_weights=custom_weights, redundancy=redundancy)
     except Exception as e:
         return {"error": str(e), "traceback": traceback.format_exc()}
 
@@ -396,6 +400,7 @@ def create_server() -> MCPServer:
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "app_id": {"type": "string", "description": "Legacy application ID"},
                 "weights_path": {"type": "string", "description": "Optional path to custom scoring weights JSON"},
+                "redundancy_path": {"type": "string", "description": "Optional measured-redundancy JSON (retire's functional_redundancy)"},
             },
             "required": ["project_id", "app_id"],
         },

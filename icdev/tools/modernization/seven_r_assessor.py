@@ -658,51 +658,65 @@ def _check_repurchase_fitness(profile):
     return scores
 
 
-def _check_retire_fitness(profile):
-    """Evaluate retire (decommission) fitness.
+def _check_retire_fitness(profile, redundancy=None):
+    """Evaluate retire (decommission) fitness, keyed by the catalog's own retire criteria (icx-rtr-01).
+
+    A criterion with no evidence is ``None`` -- UNMEASURED -- and ``_score_strategy`` leaves it out of the score
+    and says so; it is never a neutral 0.5 (the old defaults made every unmeasured application look half-retirable,
+    and their names matched no catalog criterion, so they were scored POSITIONALLY as other criteria).
 
     Criteria:
-        low_usage              — default 0.5 (needs usage data)
-        redundant_functionality — default 0.5
-        eol_dependencies       — framework/language at end-of-life
-        no_active_development  — default 0.5
+        functional_redundancy -- the share of this application's features another application also provides,
+                                 MEASURED elsewhere (``redundancy``: e.g. ICDEV[OS]'s cross-app overlap); else None
+        risk_reduction        -- removing it removes end-of-life dependencies (framework/language at EOL): 1.0/0.0
+        dependency_analysis, data_disposition, cost_savings, stakeholder_alignment -- need a dependency map, a
+                                 records plan, cost data and stakeholder sign-off this tool does not have: None
+
+    Args:
+        profile:    the application profile (legacy_* tables).
+        redundancy: optional ``{"share": float in [0, 1], "source": str}``.
 
     Returns:
-        Dict mapping criterion name to float score in [0.0, 1.0].
+        Dict mapping criterion name to a float in [0.0, 1.0], or None when unmeasured.
     """
-    scores = {}
-
-    # low_usage: requires usage telemetry, default 0.5
-    scores["low_usage"] = 0.5
-
-    # redundant_functionality: default 0.5
-    scores["redundant_functionality"] = 0.5
-
-    # eol_dependencies: check if framework or language version is EOL
-    framework = profile.get("framework", "").lower().strip().replace(" ", "-").replace("_", "-")
+    framework = (profile.get("framework") or "").lower().strip().replace(" ", "-").replace("_", "-")
     lang = profile.get("primary_language", "")
-    lang_ver = profile.get("language_version", "")
+    lang_ver = profile.get("language_version") or ""
     lang_ver_major = lang_ver.split(".")[0] if lang_ver else ""
 
-    is_eol = False
-    if framework in EOL_FRAMEWORKS:
-        is_eol = True
-    if (lang, lang_ver_major) in EOL_LANGUAGES:
-        is_eol = True
+    is_eol = framework in EOL_FRAMEWORKS or (lang, lang_ver_major) in EOL_LANGUAGES
     # Also check framework + major version combos
     if framework and not is_eol:
-        fw_ver = profile.get("framework_version", "")
+        fw_ver = profile.get("framework_version") or ""
         fw_ver_major = fw_ver.split(".")[0] if fw_ver else ""
-        combined = f"{framework}{fw_ver_major}"
-        if combined in EOL_FRAMEWORKS:
-            is_eol = True
+        is_eol = f"{framework}{fw_ver_major}" in EOL_FRAMEWORKS
 
-    scores["eol_dependencies"] = 1.0 if is_eol else 0.0
+    share = None
+    if isinstance(redundancy, dict) and redundancy.get("share") is not None:
+        share = max(0.0, min(1.0, float(redundancy["share"])))
+    return {
+        "dependency_analysis": None,
+        "data_disposition": None,
+        "cost_savings": None,
+        "risk_reduction": 1.0 if is_eol else 0.0,
+        "stakeholder_alignment": None,
+        "functional_redundancy": share,
+    }
 
-    # no_active_development: default 0.5
-    scores["no_active_development"] = 0.5
 
-    return scores
+def load_redundancy(path):
+    """A measured-redundancy file: ``{"applications": {app_id: {"share": 0.62, "source": "..."}}}`` (or the bare
+    mapping, or ``app_id: share``). Returns ``{app_id: {"share", "source"}}``."""
+    with open(path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    apps = raw.get("applications", raw) if isinstance(raw, dict) else {}
+    out = {}
+    for app_id, v in apps.items():
+        if isinstance(v, (int, float)):
+            out[app_id] = {"share": float(v), "source": raw.get("source") if isinstance(raw, dict) else None}
+        elif isinstance(v, dict) and v.get("share") is not None:
+            out[app_id] = {"share": float(v["share"]), "source": v.get("source") or raw.get("source")}
+    return out
 
 
 def _check_retain_fitness(profile):
@@ -819,6 +833,8 @@ def _score_strategy(strategy_id, check_results, catalog_criteria, weights=None):
         # Direct name match first
         if cat_crit in check_results:
             score = check_results[cat_crit]
+            if score is None:                  # UNMEASURED (icx-rtr-01): left out of the score, never 0.5
+                continue
         elif i < len(check_crit_names):
             # Positional fallback: map i-th catalog criterion to i-th check result
             score = check_results[check_crit_names[i]]
@@ -1166,7 +1182,7 @@ def _apply_ui_complexity_adjustment(strategy_scores, ui_complexity):
     return adjusted
 
 
-def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None):
+def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None, redundancy=None):
     """Orchestrate a full 7R assessment for one legacy application.
 
     Steps:
@@ -1186,6 +1202,7 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
         app_id:         The legacy application ID to assess.
         custom_weights: Optional dict of custom weights per strategy.
         db_path:        Optional database path override.
+        redundancy:     Optional measured redundancy for this app, ``{"share", "source"}`` (``load_redundancy``).
 
     Returns:
         Dict containing the full assessment: scores, ranking, recommendation,
@@ -1201,7 +1218,7 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
         "refactor": _check_refactor_fitness(profile),
         "rearchitect": _check_rearchitect_fitness(profile),
         "repurchase": _check_repurchase_fitness(profile),
-        "retire": _check_retire_fitness(profile),
+        "retire": _check_retire_fitness(profile, redundancy=redundancy),
         "retain": _check_retain_fitness(profile),
     }
 
@@ -1253,7 +1270,12 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
 
     # Compile evidence
     evidence = {
-        "fitness_results": {k: {ck: round(cv, 4) for ck, cv in v.items()} for k, v in fitness_results.items()},
+        "fitness_results": {k: {ck: (None if cv is None else round(cv, 4)) for ck, cv in v.items()}
+                            for k, v in fitness_results.items()},
+        # icx-rtr-01: what each strategy's score could NOT rest on, by name (left out of the score, never 0.5)
+        "unmeasured": {k: sorted(ck for ck, cv in v.items() if cv is None) for k, v in fitness_results.items()
+                       if any(cv is None for cv in v.values())},
+        "redundancy": redundancy,
         "strategy_scores": {k: round(v, 4) for k, v in strategy_scores.items()},
         "ranking": ranking,
         "profile_summary": {
@@ -1648,6 +1670,10 @@ def main():
         action="store_true",
         help="Print the decision matrix table",
     )
+    parser.add_argument(
+        "--redundancy",
+        help="A measured-redundancy JSON (e.g. ICDEV[OS] cross-application overlap): retire's functional_redundancy",
+    )
 
     args = parser.parse_args()
 
@@ -1663,10 +1689,12 @@ def main():
 
     # Run the assessment
     try:
+        redundancy = load_redundancy(args.redundancy).get(args.app_id) if args.redundancy else None
         assessment = run_seven_r_assessment(
             project_id=args.project_id,
             app_id=args.app_id,
             custom_weights=custom_weights,
+            redundancy=redundancy,
         )
     except FileNotFoundError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)

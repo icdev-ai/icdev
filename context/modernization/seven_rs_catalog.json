@@ -288,24 +288,28 @@
       ],
       "scoring_criteria": {
         "dependency_analysis": {
-          "weight": 0.30,
+          "weight": 0.24,
           "description": "Completeness of upstream and downstream dependency mapping and migration planning"
         },
         "data_disposition": {
-          "weight": 0.25,
+          "weight": 0.20,
           "description": "Compliance of data archival plan with DoD 5015.02 records management and CUI handling"
         },
         "cost_savings": {
-          "weight": 0.20,
+          "weight": 0.16,
           "description": "Projected annual savings from decommissioning including infrastructure, licensing, and personnel"
         },
         "risk_reduction": {
-          "weight": 0.15,
+          "weight": 0.12,
           "description": "Reduction in organizational attack surface and compliance burden from system removal"
         },
         "stakeholder_alignment": {
-          "weight": 0.10,
+          "weight": 0.08,
           "description": "Confirmation from all stakeholders that retirement is acceptable and alternatives are in place"
+        },
+        "functional_redundancy": {
+          "weight": 0.20,
+          "description": "Share of the application's features another authorized application also provides, measured across the portfolio (e.g. ICDEV[OS] cross-application overlap; icx-rtr-01); unmeasured is left out of the score"
         }
       },
       "effort_multiplier": 0.5,
