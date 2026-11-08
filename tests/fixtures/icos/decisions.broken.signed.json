@@ -1,0 +1,27 @@
+{
+ "document": {
+  "baselines": [],
+  "chain": {
+   "broken_at": 1,
+   "head": "d8e45990c41860d477c4419d62cb478ebeeda44e4b5e75384e3bc6108405ff17",
+   "rows": 2,
+   "verifies": false
+  },
+  "current": {
+   "refused": "the audit chain does not verify"
+  },
+  "cutovers": [],
+  "exported_at": 1794100001.0,
+  "issuer": "https://icos.example",
+  "marking": "internal",
+  "schema": "icos-portfolio-decisions/v1",
+  "withheld": {
+   "baselines": 0,
+   "cutovers": 0
+  }
+ },
+ "signature": {
+  "protected": "eyJhbGciOiJFUzM4NCIsInR5cCI6Imljb3MtcG9ydGZvbGlvLWRlY2lzaW9ucytqd3MiLCJraWQiOiIwNTY0ODA4MzUwYTkwOTAzIn0",
+  "signature": "xQ5_7yqX63P7WWT1TbtyUDi7d5oQ5pUP1MOIJxSZ65LD7NGzxcU9ZtMFEhPyKvocnlfFMS32BWAdvxzmsI_29t_ONDn5dJDj1LikSvSN-2MoM0hkMaRBiD-48PiKORTw"
+ }
+}
