@@ -1,0 +1,99 @@
+{
+ "document": {
+  "baselines": [
+   {
+    "approved_by": "ao",
+    "at": 1794151047.3728516,
+    "changes": [
+     {
+      "branch_id": "2b6db92b55d66396ea4f",
+      "conditions": [],
+      "departing": [
+       "syn-supply-c"
+      ],
+      "item": "chg-1",
+      "ops": [
+       {
+        "application": "syn-supply-c",
+        "feature_map": {
+         "portal-submit": "syn-supply-a:submit-request",
+         "portal-track": "syn-supply-a:submit-request"
+        },
+        "op": "retire"
+       }
+      ],
+      "survivors": [
+       "syn-supply-a"
+      ],
+      "whatif_digest": "6460983d38d5881224f361f5f449958877c9a4f40d3c2c212f1165b853dc42b4"
+     }
+    ],
+    "decision": "d-approve",
+    "departing": [
+     "syn-supply-c"
+    ],
+    "digest": "e0fbaf39e7a3b01b6465c73bea1bc4801227967d7f724afa3b5c83b973c92e23",
+    "endorsed_by": "mo",
+    "endorsement": "d-endorse",
+    "item": "chg-1",
+    "marking": "internal",
+    "parent": "6297740a26defdfea9a8c76506875f53d6fafbe22c43a5a2f81f913b0402906b",
+    "version": 1
+   }
+  ],
+  "chain": {
+   "broken_at": null,
+   "head": "d8e45990c41860d477c4419d62cb478ebeeda44e4b5e75384e3bc6108405ff17",
+   "rows": 2,
+   "verifies": true
+  },
+  "current": {
+   "digest": "e0fbaf39e7a3b01b6465c73bea1bc4801227967d7f724afa3b5c83b973c92e23",
+   "version": 1
+  },
+  "cutovers": [
+   {
+    "approved_by": "ao",
+    "assurance": {},
+    "at": 1794151047.3730276,
+    "baseline": {
+     "digest": "e0fbaf39e7a3b01b6465c73bea1bc4801227967d7f724afa3b5c83b973c92e23",
+     "version": 1
+    },
+    "change": "chg-1",
+    "conditions": null,
+    "confirmation": "d-confirm",
+    "confirmed_by": "mo",
+    "decision": "d-cut",
+    "departing": [
+     "syn-supply-c"
+    ],
+    "item": "cut-1",
+    "marking": "internal",
+    "parity": {
+     "counts": {
+      "parity": 2
+     },
+     "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+     "score": 1.0
+    },
+    "survivors": [
+     "syn-supply-a"
+    ],
+    "whatif": "6460983d38d5881224f361f5f449958877c9a4f40d3c2c212f1165b853dc42b4"
+   }
+  ],
+  "exported_at": 1794100000.0,
+  "issuer": "https://icos.example",
+  "marking": "internal",
+  "schema": "icos-portfolio-decisions/v1",
+  "withheld": {
+   "baselines": 0,
+   "cutovers": 0
+  }
+ },
+ "signature": {
+  "protected": "eyJhbGciOiJFUzM4NCIsInR5cCI6Imljb3MtcG9ydGZvbGlvLWRlY2lzaW9ucytqd3MiLCJraWQiOiIwNTY0ODA4MzUwYTkwOTAzIiwiamt1IjoiaHR0cHM6Ly9pY29zLmV4YW1wbGUvb2F1dGgvandrcyJ9",
+  "signature": "DrtqRa-eTIsAVMA4jKvkUGXNlM3Rn-1wB75V_1niND9kkpiwH5Wb_VzevTEeU97yKQuM0iGSNiFIjSKP2luoZemxg1hFGL8WS4tFYqvBXXDP_EmDPNxixDZFIiIYnXS8"
+ }
+}

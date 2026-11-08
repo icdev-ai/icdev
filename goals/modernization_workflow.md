@@ -211,6 +211,17 @@ ATO impact: <description>
 
 **Verify:** All scoreable strategies have complete rows. Recommendation aligns with highest score. Customer approval logged.
 
+**If the application is in an ICDEV[OS] application portfolio** (it was exported as an `icos-apptwin/v1` bundle), the
+approved strategy is ICDEV[OS]'s signed portfolio baseline, not a decision recorded here. Fetch the signed export
+(`GET /api/v1/portfolio/decisions/export`) and verify it against the ICDEV[OS] JWKS you pinned:
+
+**Tool:** `python tools/modernization/icos_decisions.py --export decisions.json --jwks icos_jwks.json may-plan --app <bundle application id>`
+
+Exit 0 means a baseline the mission owner and the AO signed names the application (departing or surviving), and its
+output cites the baseline and both decisions: record those as the approval. Exit 1: plan no migration. Exit 2: the
+export cannot be trusted (not signed by the pinned key, changed, or exported from a broken audit chain); stop. Before
+switching a departing application off, `may-retire` must also exit 0 (a cutover is recorded).
+
 ---
 
 ### Step 5: Create Migration Plan
