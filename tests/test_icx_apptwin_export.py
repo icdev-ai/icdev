@@ -20,27 +20,54 @@ from tools.modernization import apptwin_export as ex
 AT = "2026-11-07T00:00:00Z"
 
 
+_TABLES = ("projects", "legacy_applications", "legacy_components", "legacy_dependencies", "legacy_apis", "legacy_db_schemas")
+
+
+def _canonical_ddl() -> list[str]:
+    """The legacy_* definitions of record, read from tools/db/init_icdev_db.py (never a hand-written copy)."""
+    import re
+    from pathlib import Path
+    text = (Path(ex._BASE) / "tools" / "db" / "init_icdev_db.py").read_text(encoding="utf-8")
+    out = []
+    for t in _TABLES:
+        m = re.search(rf"CREATE TABLE IF NOT EXISTS {t} \(.*?\n\);", text, re.S)
+        assert m, f"no canonical DDL for {t}"
+        out.append(m.group(0))
+    return out
+
+
 @pytest.fixture
 def conn(tmp_path, monkeypatch):
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
     monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "icdev.db"))
     from tools.db.storage import get_connection
     c = get_connection()
-    for stmt in """
-    CREATE TABLE legacy_applications (id TEXT, name TEXT, primary_language TEXT, framework TEXT);
-    CREATE TABLE legacy_components (id TEXT, legacy_app_id TEXT, name TEXT, qualified_name TEXT, component_type TEXT, file_path TEXT);
-    CREATE TABLE legacy_apis (legacy_app_id TEXT, method TEXT, path TEXT, handler_function TEXT);
-    CREATE TABLE legacy_db_schemas (legacy_app_id TEXT, table_name TEXT, column_name TEXT);
-    CREATE TABLE legacy_dependencies (legacy_app_id TEXT, source_component_id TEXT, target_component_id TEXT, dependency_type TEXT);
-    INSERT INTO legacy_applications VALUES ('app-a', 'Depot stock', 'java', 'spring');
-    INSERT INTO legacy_components VALUES ('c2', 'app-a', 'StockRepo', 'depot.StockRepo', 'repository', 'src/StockRepo.java'),
-                                         ('c1', 'app-a', 'StockController', 'depot.StockController', 'controller', 'src/StockController.java');
-    INSERT INTO legacy_apis VALUES ('app-a', 'POST', '/stock/receive', 'receive'), ('app-a', 'GET', '/stock', NULL);
-    INSERT INTO legacy_db_schemas VALUES ('app-a', 'stock', 'qty'), ('app-a', 'stock', 'depot'), ('app-a', 'depot', 'id');
-    INSERT INTO legacy_dependencies VALUES ('app-a', 'c1', 'c2', 'injection'), ('app-a', 'c1', NULL, 'external_service');
-    """.split(";"):
-        if stmt.strip():
-            c.execute(stmt)
+    for ddl in _canonical_ddl():
+        c.execute(ddl)
+    rows = [
+        ("INSERT INTO projects (id, name, type, directory_path) VALUES (%s, %s, %s, %s)",
+         ("proj-1", "depot", "webapp", "/src/depot")),
+        ("INSERT INTO legacy_applications (id, project_id, name, source_path, primary_language, framework) "
+         "VALUES (%s, %s, %s, %s, %s, %s)", ("app-a", "proj-1", "Depot stock", "/src/depot", "java", "spring")),
+        ("INSERT INTO legacy_components (id, legacy_app_id, name, qualified_name, component_type, file_path) "
+         "VALUES (%s, %s, %s, %s, %s, %s)", ("c2", "app-a", "StockRepo", "depot.StockRepo", "repository", "src/StockRepo.java")),
+        ("INSERT INTO legacy_components (id, legacy_app_id, name, qualified_name, component_type, file_path) "
+         "VALUES (%s, %s, %s, %s, %s, %s)", ("c1", "app-a", "StockController", "depot.StockController", "controller",
+                                             "src/StockController.java")),
+        ("INSERT INTO legacy_apis (id, legacy_app_id, method, path, handler_function) VALUES (%s, %s, %s, %s, %s)",
+         ("a1", "app-a", "POST", "/stock/receive", "receive")),
+        ("INSERT INTO legacy_apis (id, legacy_app_id, method, path, handler_function) VALUES (%s, %s, %s, %s, %s)",
+         ("a2", "app-a", "GET", "/stock", None)),
+    ]
+    for i, (tbl, col) in enumerate((("stock", "qty"), ("stock", "depot"), ("depot", "id"))):
+        rows.append(("INSERT INTO legacy_db_schemas (id, legacy_app_id, db_type, table_name, column_name, data_type) "
+                     "VALUES (%s, %s, %s, %s, %s, %s)", (f"s{i}", "app-a", "postgresql", tbl, col, "text")))
+    rows += [("INSERT INTO legacy_dependencies (legacy_app_id, source_component_id, target_component_id, dependency_type) "
+              "VALUES (%s, %s, %s, %s)", ("app-a", "c1", "c2", "injection")),
+             ("INSERT INTO legacy_dependencies (legacy_app_id, source_component_id, target_component_id, dependency_type) "
+              "VALUES (%s, %s, %s, %s)", ("app-a", "c1", None, "external_service"))]
+    for sql, params in rows:
+        c.execute(sql, params)
     c.commit()
     yield c
     c.close()
