@@ -589,10 +589,12 @@ class _CapabilityVisitor(ast.NodeVisitor):
 # --------------------------------------------------------------------------- #
 
 def extract(source: str) -> list[dict[str, Any]]:
-    """Return a capability manifest for a Python file or directory tree.
+    """Return a capability manifest for a source file or directory tree.
 
-    For a directory, only ``.py`` files are scanned; ``__pycache__`` and hidden
-    VCS directories are skipped. Unparseable files are silently ignored.
+    Python is read through its AST; Java, C#, JavaScript/TypeScript and Go lexically
+    (``polyglot_extractor``; icx-sipa-01). ``__pycache__`` and hidden VCS directories
+    are skipped. Unparseable files are silently ignored; a language neither reads is
+    listed by ``polyglot_extractor.coverage`` as unassessed.
     """
     path = Path(source)
     if not path.exists():
@@ -611,13 +613,17 @@ def extract(source: str) -> list[dict[str, Any]]:
         records.extend(visitor.records)
 
     if path.is_file():
-        _scan_file(path, "")
+        if path.suffix == ".py":
+            _scan_file(path, "")
     elif path.is_dir():
         for py_file in path.rglob("*.py"):
             if any(part.startswith(".") or part == "__pycache__" for part in py_file.relative_to(path).parts):
                 continue
             _scan_file(py_file, str(path))
 
+    # icx-sipa-01: Java, C#, JavaScript/TypeScript and Go, by lexical match (each record says method: lexical).
+    from tools.integrity import polyglot_extractor
+    records.extend(polyglot_extractor.extract(source))
     return records
 
 

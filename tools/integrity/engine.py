@@ -353,6 +353,10 @@ def assess(
         #    re-parse the whole tree).
         manifest = capability_extractor.extract(staged_path)
         capability_extractor._persist(conn, assessment_id, manifest)
+        # icx-sipa-01: which languages were read (and how), and the source files no extractor can read --
+        # reported beside the verdict, so a verdict over unread code is never taken for a clean one.
+        from tools.integrity import polyglot_extractor
+        coverage = polyglot_extractor.coverage(staged_path)
 
         # 5. Reconciliation — capability manifest vs. intent.
         #    * provenance_blind: disclosed (claim) vs exercised (manifest) ->
@@ -460,6 +464,10 @@ def assess(
         "mode": resolved_mode,
         "scanners": scan_summary.get("scanners", {}),
         "provenance": prov_result,
+        "coverage": coverage,
+        "verdict_basis": ("partial: {} source file(s) in languages SIPA cannot read ({})".format(
+            sum(coverage["unassessed"].values()), ", ".join(sorted(coverage["unassessed"])))
+            if coverage["unassessed"] else "every source file found was read"),
     }
 
 
