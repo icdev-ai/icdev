@@ -30,11 +30,14 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from icdev.core.paths import repo_root
+# kax-conflict-05: run by path, sys.path[0] is this file's own directory -- bootstrap the import root first.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from icdev.core.paths import repo_root  # noqa: E402
 
 _BASE = repo_root(__file__)
-if str(_BASE) not in sys.path:
-    sys.path.insert(0, str(_BASE))
 
 SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "__pycache__", "dist", "build", "target", ".tox", "vendor"}
 SOURCE_EXT = {".py", ".java", ".cs", ".js", ".ts", ".tsx", ".jsx", ".go", ".rb", ".php", ".kt", ".scala", ".sql",
