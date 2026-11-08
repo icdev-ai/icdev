@@ -877,6 +877,9 @@ def run_scan(
     input_type: str,
     input_ref: str,
     scan_context: dict | None = None,
+    *,
+    promote: bool = True,
+    report: bool = False,
 ) -> dict:
     """Run the full AI-ify pipeline for a given source input.
 
@@ -884,6 +887,9 @@ def run_scan(
         input_type:   e.g. 'local_path', 'git_url', 'upload'
         input_ref:    Path or URL to the source to analyze.
         scan_context: Optional; il_level defaults to 'il4'.
+        promote:      False skips every side effect beyond the scan's own rows: no kanban cards, no
+                      innovation signals (a CLI run for ICDEV[OS] must not seed the board; icx-cli-01).
+        report:       True adds ``opportunities``: each with its score and disqualifiers.
 
     Returns:
         {"scan_id", "opportunities_count", "scores_count", "roadmap_id",
@@ -1069,11 +1075,12 @@ def run_scan(
             conn.close()
 
         # 5. Promote top opportunities to kanban (top-5 [AI Opp] + all-phase [Phase])
-        kanban_promoted = _promote_top_opportunities(opp_rows, score_rows, scan_id, roadmap["roadmap_id"])
-        phase_promoted = _promote_phase_opportunities(roadmap, opp_rows, score_rows, scan_id)
-
-        # 5a. Option C: register high-scoring opps as innovation signals
-        _register_innovation_signals(opp_rows, score_rows, scan_id)
+        kanban_promoted = phase_promoted = 0
+        if promote:
+            kanban_promoted = _promote_top_opportunities(opp_rows, score_rows, scan_id, roadmap["roadmap_id"])
+            phase_promoted = _promote_phase_opportunities(roadmap, opp_rows, score_rows, scan_id)
+            # 5a. Option C: register high-scoring opps as innovation signals
+            _register_innovation_signals(opp_rows, score_rows, scan_id)
 
         # 6. Mark scan completed + final audit entry
         conn = get_connection()
@@ -1110,6 +1117,8 @@ def run_scan(
             "overall_readiness_score": readiness_result["overall_readiness_score"],
             "icdev_checks": readiness_result["icdev_checks"],
         }
+        if report:
+            scan_result["opportunities"] = opportunity_report(opp_rows, score_rows)
         if observed:
             scan_result["basis"] = observed_inventory.BASIS_OBSERVED
             scan_result["observed_inventory"] = inventory
@@ -1133,3 +1142,46 @@ def run_scan(
     finally:
         if cloned_path:
             shutil.rmtree(cloned_path, ignore_errors=True)
+
+
+
+def opportunity_report(opp_rows: list[dict], score_rows: list[dict]) -> list[dict]:
+    """Every opportunity of a scan with its score and disqualifiers (which the tables do not keep), for the CLI."""
+    scores = {r["opportunity_id"]: r for r in score_rows}
+    keep = ("value_score", "feasibility_score", "risk_score", "composite_score", "verdict", "ai_readiness", "category")
+    out = []
+    for o in opp_rows:
+        sc = scores.get(o["opportunity_id"]) or {}
+        out.append({**{k: o.get(k) for k in ("opportunity_id", "module_path", "function_name", "line_start", "line_end",
+                                              "language", "pattern_type", "ai_paradigm")},
+                    "score": {k: sc.get(k) for k in keep} if sc else None,
+                    "disqualifiers": list(sc.get("disqualifiers") or [])})
+    return out
+
+def main(argv: list[str] | None = None) -> int:
+    """``python -m tools.aiify.engine scan --input-type local_path --input-ref <dir> --json`` (icx-cli-01).
+
+    Prints the scan summary and every opportunity with its score. Without ``--promote`` the scan writes only its
+    own rows: no kanban card, no innovation signal.
+    """
+    import argparse
+    ap = argparse.ArgumentParser(description="AI-Ify: scan a source for AI opportunities (JSON out)")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sc = sub.add_parser("scan")
+    sc.add_argument("--input-type", default="local_path")
+    sc.add_argument("--input-ref", required=True)
+    sc.add_argument("--il-level", default="il4")
+    sc.add_argument("--promote", action="store_true", help="also seed kanban cards and innovation signals")
+    sc.add_argument("--json", action="store_true", help="JSON out (the default; kept for CLI parity)")
+    a = ap.parse_args(argv)
+    try:
+        res = run_scan(a.input_type, a.input_ref, {"il_level": a.il_level}, promote=a.promote, report=True)
+    except (ValueError, OSError) as exc:
+        print(json.dumps({"status": "error", "error": str(exc)}))
+        return 1
+    print(json.dumps(res, indent=2, default=str))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
