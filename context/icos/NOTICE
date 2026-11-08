@@ -1,0 +1,12 @@
+ICDEV[OS] published contract (interfaces only)
+Copyright 2026 ICDEV
+
+This directory -- the JSON Schemas, the ontology export, the key grammar, the OpenAPI
+document, the capability catalogue, the interface register and the examples -- is licensed
+under the Apache License, Version 2.0 (see LICENSE). It is the machine-readable definition of
+ICDEV[OS]'s modular system interfaces, published so that any party (including the U.S.
+Government) may implement, test against and integrate with them (10 U.S.C. 4401; FY2021 NDAA
+section 804).
+
+The ICDEV[OS] IMPLEMENTATION (everything outside contracts/) is proprietary and is NOT covered
+by this licence.

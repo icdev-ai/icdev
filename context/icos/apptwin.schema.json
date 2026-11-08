@@ -1,0 +1,1170 @@
+{
+  "$defs": {
+    "AiIfy": {
+      "additionalProperties": false,
+      "properties": {
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "opportunities": {
+          "items": {
+            "$ref": "#/$defs/Opportunity"
+          },
+          "title": "Opportunities",
+          "type": "array"
+        },
+        "overall_verdict": {
+          "enum": [
+            "ai_ready",
+            "partial",
+            "not_suitable"
+          ],
+          "title": "Overall Verdict",
+          "type": "string"
+        },
+        "pillars": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Pillar"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pillars"
+        },
+        "posture_grade": {
+          "anyOf": [
+            {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "F"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Posture Grade"
+        },
+        "readiness_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Readiness Score"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "overall_verdict"
+      ],
+      "title": "AiIfy",
+      "type": "object"
+    },
+    "Api": {
+      "additionalProperties": false,
+      "properties": {
+        "handler": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Handler"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "path"
+      ],
+      "title": "Api",
+      "type": "object"
+    },
+    "Application": {
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "$ref": "#/$defs/Environment"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "languages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Languages",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "title": "Application",
+      "type": "object"
+    },
+    "Check": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "warn",
+            "skip"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "Check",
+      "type": "object"
+    },
+    "Coherence": {
+      "additionalProperties": false,
+      "properties": {
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/Check"
+          },
+          "minItems": 1,
+          "title": "Checks",
+          "type": "array"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "checks"
+      ],
+      "title": "Coherence",
+      "type": "object"
+    },
+    "Component": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "title": "Component",
+      "type": "object"
+    },
+    "Consumer": {
+      "additionalProperties": false,
+      "description": "Another application that calls one of this one's APIs (Phase 150): what a retirement must reroute.",
+      "properties": {
+        "api": {
+          "title": "Api",
+          "type": "string"
+        },
+        "application": {
+          "title": "Application",
+          "type": "string"
+        }
+      },
+      "required": [
+        "application",
+        "api"
+      ],
+      "title": "Consumer",
+      "type": "object"
+    },
+    "Dependency": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "kind"
+      ],
+      "title": "Dependency",
+      "type": "object"
+    },
+    "Environment": {
+      "additionalProperties": false,
+      "properties": {
+        "ato_boundary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ato Boundary"
+        },
+        "hosting": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hosting"
+        },
+        "impact_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "il2",
+                "il4",
+                "il5",
+                "il6"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Impact Level"
+        },
+        "security_domain": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Security Domain"
+        }
+      },
+      "title": "Environment",
+      "type": "object"
+    },
+    "Feature": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "enum": [
+            "source",
+            "decompiled",
+            "observed",
+            "document"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "signatures": {
+          "$ref": "#/$defs/Signatures"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "basis"
+      ],
+      "title": "Feature",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "minLength": 1,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "met",
+            "not_met",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "evidence"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "Integrity": {
+      "additionalProperties": false,
+      "description": "SIPA: the admission gate.",
+      "properties": {
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "risk_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Risk Score"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "ALLOW",
+            "REVIEW",
+            "QUARANTINE"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "verdict"
+      ],
+      "title": "Integrity",
+      "type": "object"
+    },
+    "Ivv": {
+      "additionalProperties": false,
+      "description": "IEEE 1012 IV&V. ``kind`` says whether it verified process automatically or a person independent of the developer assessed.",
+      "properties": {
+        "areas": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Areas",
+          "type": "object"
+        },
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "assessor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Assessor"
+        },
+        "critical_findings": {
+          "minimum": 0,
+          "title": "Critical Findings",
+          "type": "integer"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "automated",
+            "independent"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "overall_score": {
+          "title": "Overall Score",
+          "type": "number"
+        },
+        "recommendation": {
+          "enum": [
+            "CERTIFY",
+            "CONDITIONAL",
+            "DENY"
+          ],
+          "title": "Recommendation",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "recommendation",
+        "overall_score",
+        "critical_findings",
+        "kind",
+        "expires_at"
+      ],
+      "title": "Ivv",
+      "type": "object"
+    },
+    "Opportunity": {
+      "additionalProperties": false,
+      "properties": {
+        "ai_readiness": {
+          "enum": [
+            "ai_ready",
+            "partial",
+            "not_suitable"
+          ],
+          "title": "Ai Readiness",
+          "type": "string"
+        },
+        "composite_score": {
+          "title": "Composite Score",
+          "type": "number"
+        },
+        "disqualifiers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Disqualifiers",
+          "type": "array"
+        },
+        "module_path": {
+          "title": "Module Path",
+          "type": "string"
+        },
+        "pattern_type": {
+          "title": "Pattern Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pattern_type",
+        "module_path",
+        "ai_readiness",
+        "composite_score"
+      ],
+      "title": "Opportunity",
+      "type": "object"
+    },
+    "Pillar": {
+      "additionalProperties": false,
+      "properties": {
+        "passed": {
+          "minimum": 0,
+          "title": "Passed",
+          "type": "integer"
+        },
+        "percentage": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Percentage",
+          "type": "number"
+        },
+        "total": {
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "passed",
+        "total",
+        "percentage"
+      ],
+      "title": "Pillar",
+      "type": "object"
+    },
+    "Process": {
+      "additionalProperties": false,
+      "properties": {
+        "basis": {
+          "enum": [
+            "source",
+            "decompiled",
+            "observed",
+            "document"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "basis",
+        "steps"
+      ],
+      "title": "Process",
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    },
+    "Readiness": {
+      "additionalProperties": false,
+      "description": "How the application stands as found against what an AI-native system needs: registered interfaces, data products\nwith column markings, append-only audit, access through a PDP with MFA, events on a mesh, one capability registry, and\nevery model call through a governed router.",
+      "properties": {
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "checks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Finding"
+          },
+          "minProperties": 1,
+          "propertyNames": {
+            "enum": [
+              "interfaces",
+              "data_products",
+              "audit",
+              "access",
+              "events",
+              "registry",
+              "llm"
+            ]
+          },
+          "title": "Checks",
+          "type": "object"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "checks"
+      ],
+      "title": "Readiness",
+      "type": "object"
+    },
+    "Requirement": {
+      "additionalProperties": false,
+      "properties": {
+        "features": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Features",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "tests": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tests",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Requirement",
+      "type": "object"
+    },
+    "Rtm": {
+      "additionalProperties": false,
+      "properties": {
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "coverage_pct": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Coverage Pct",
+          "type": "number"
+        },
+        "requirements": {
+          "items": {
+            "$ref": "#/$defs/Requirement"
+          },
+          "title": "Requirements",
+          "type": "array"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "coverage_pct"
+      ],
+      "title": "Rtm",
+      "type": "object"
+    },
+    "Sbd": {
+      "additionalProperties": false,
+      "description": "CISA Secure by Design.",
+      "properties": {
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "critical_not_satisfied": {
+          "minimum": 0,
+          "title": "Critical Not Satisfied",
+          "type": "integer"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "score",
+        "critical_not_satisfied"
+      ],
+      "title": "Sbd",
+      "type": "object"
+    },
+    "SevenR": {
+      "additionalProperties": false,
+      "properties": {
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "ranked": {
+          "items": {
+            "$ref": "#/$defs/Strategy"
+          },
+          "minItems": 1,
+          "title": "Ranked",
+          "type": "array"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "ranked"
+      ],
+      "title": "SevenR",
+      "type": "object"
+    },
+    "Signatures": {
+      "additionalProperties": false,
+      "properties": {
+        "apis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Apis",
+          "type": "array"
+        },
+        "routes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Routes",
+          "type": "array"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "tables": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tables",
+          "type": "array"
+        }
+      },
+      "title": "Signatures",
+      "type": "object"
+    },
+    "Step": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "title": "Step",
+      "type": "object"
+    },
+    "Strategy": {
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "strategy": {
+          "enum": [
+            "rehost",
+            "replatform",
+            "refactor",
+            "rearchitect",
+            "repurchase",
+            "retire",
+            "retain"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy",
+        "score"
+      ],
+      "title": "Strategy",
+      "type": "object"
+    },
+    "Table": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Table",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:apptwin:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "aiify": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AiIfy"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "apis": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Api"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Apis"
+    },
+    "application": {
+      "$ref": "#/$defs/Application"
+    },
+    "coherence": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Coherence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "components": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Component"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Components"
+    },
+    "consumers": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Consumer"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Consumers"
+    },
+    "data": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Table"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Data"
+    },
+    "dependencies": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Dependency"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dependencies"
+    },
+    "features": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Feature"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Features"
+    },
+    "integrity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Integrity"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "ivv": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Ivv"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "processes": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/Process"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Processes"
+    },
+    "produced_at": {
+      "format": "date-time",
+      "title": "Produced At",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "readiness": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Readiness"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "rtm": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Rtm"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "sbd": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Sbd"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema": {
+      "const": "icos-apptwin/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "seven_r": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SevenR"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "schema",
+    "application",
+    "producer",
+    "produced_at"
+  ],
+  "title": "AppTwin",
+  "type": "object",
+  "x-icos-contract": "1.111.0",
+  "x-license": "Apache-2.0"
+}
