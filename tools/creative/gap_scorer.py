@@ -703,10 +703,24 @@ def identify_feature_gaps(db_path=None):
         gaps_identified = 0
         now = now_iso()
 
+        # A pain point is versioned append-only (D6): every re-score inserts a NEW row (new id, same
+        # keyword_fingerprint). A gap is per pain point, so it is keyed on the fingerprint -- checking only
+        # the latest version's id gave every new version its own gap, and then its own spec.
+        gapped = {
+            dict(r)["keyword_fingerprint"]
+            for r in conn.execute(
+                """SELECT DISTINCT p.keyword_fingerprint FROM creative_feature_gaps g
+                   JOIN creative_pain_points p ON p.id = g.pain_point_id
+                   WHERE p.keyword_fingerprint IS NOT NULL"""
+            ).fetchall()
+        }
+
         for pp in by_fingerprint.values():
             pp_id = pp["id"]
 
-            # Check if a feature gap already exists for this pain point
+            # Check if a feature gap already exists for this pain point (any version of it)
+            if pp.get("keyword_fingerprint") and pp["keyword_fingerprint"] in gapped:
+                continue
             existing = conn.execute(
                 "SELECT id FROM creative_feature_gaps WHERE pain_point_id = %s",
                 (pp_id,),

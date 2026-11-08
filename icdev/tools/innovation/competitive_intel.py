@@ -562,6 +562,10 @@ def _load_manifest_keywords():
     return {t for t in re.findall(r"[a-z][a-z_-]{2,}", content) if t not in _STOPS and len(t) > 3}
 
 
+_NAMED_VERSION_RE = re.compile(r"^[A-Za-z][\w .+-]*?\s+v?\d+(\.\d+)+[\w.+-]*$")
+_LEADING_VERSION_RE = re.compile(r"^(?:[A-Za-z][\w .+-]*?\s+)?v?\d+(\.\d+)+[\w.+-]*\s*[-:\u2013\u2014|]\s*")
+
+
 def _is_version_release_noise(name: str, tag: str) -> bool:
     """Return True when a release name adds no feature signal beyond a bare version number.
 
@@ -579,6 +583,17 @@ def _is_version_release_noise(name: str, tag: str) -> bool:
         return True
     # Name is just the tag, possibly with a leading "v" stripped
     if name_clean == tag_clean or name_clean == tag_clean.lstrip("vV"):
+        return True
+    # A nightly / development build ("3.9.1.dev7: Nightly Development Release")
+    if re.search(r"\bnightly\b", name_clean, re.IGNORECASE) or re.search(r"\bdev(elopment)? (build|release)\b", name_clean, re.IGNORECASE):
+        return True
+    # A product name and a version and nothing else ("Airbyte 2.0", "Feast v0.49.0")
+    if _NAMED_VERSION_RE.match(name_clean):
+        return True
+    # A version (after an optional product name), then a codename or quip with no feature word
+    # ("3.9.2 - It's okay to let go of a lock", "Hermes Agent v0.22.0 — The Threshold Release")
+    m = _LEADING_VERSION_RE.match(name_clean)
+    if m and not _FEAT_RE.search(name_clean[m.end():]):
         return True
     return False
 

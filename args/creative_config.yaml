@@ -692,6 +692,9 @@ sources:
         # Per-domain keyword filters — keyed by `domain.name` from the active
         # config section. When the engine runs with --domain "network design",
         # only the matching list applies, eliminating cross-domain noise.
+        subreddits_by_domain:             # the subreddits for an active domain (else `subreddits`)
+          "data pipeline": [dataengineering, ETL, datascience, MachineLearning, mlops]
+          "AI data mapping": [dataengineering, ETL, BusinessIntelligence]
         keyword_filter_by_domain:
           "network design":
             - network diagram
@@ -847,6 +850,9 @@ sources:
   producthunt:
     enabled: true
     scan_interval_hours: 168             # weekly
+    topics_by_domain:                    # the feed categories for an active domain (else `topics`)
+      "data pipeline": [data-engineering, data-integration, developer-tools, artificial-intelligence]
+      "AI data mapping": [data-integration, developer-tools]
     topics:
       - file-sync
       - file-sharing
@@ -990,6 +996,31 @@ scheduling:
   scan_timeout_seconds: 300
 
 # AI Data Mapping domain — visual schema mapping, AI field suggestions, ETL transformation
+# Data pipeline domain -- disparate providers to MLOps-ready data: ingest, map, clean, lineage, datasets
+# (ICDEV[OS] phases 167-177, docs/programmes/icdev-os-data-pipeline.md in icdev_os)
+data_pipeline:
+  name: "data pipeline"
+  g2_category_url: "https://www.g2.com/categories/etl-tools"
+  capterra_category_url: "https://www.capterra.com/etl-software/"
+  trustradius_category_url: ""          # trustradius.com answers robots.txt with 403: refused (fail closed)
+  producthunt_topic: "data-engineering"
+  keywords:
+    - data pipeline
+    - data ingestion
+    - etl
+    - elt
+    - data integration
+    - data quality
+    - data contract
+    - schema drift
+    - data lineage
+    - data catalog
+    - data cleaning
+    - feature store
+    - mlops
+    - training data
+    - change data capture
+
 data_mapping:
   name: "AI data mapping"
   g2_category_url: "https://www.g2.com/categories/data-integration"
