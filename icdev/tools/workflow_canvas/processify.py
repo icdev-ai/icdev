@@ -25,7 +25,9 @@ import re
 import sys
 from typing import Callable
 
-_BASE = pathlib.Path(__file__).resolve().parents[2]
+from icdev.core.paths import repo_root  # noqa: E402
+
+_BASE = repo_root(__file__)
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
