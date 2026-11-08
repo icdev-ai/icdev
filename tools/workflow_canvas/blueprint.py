@@ -749,10 +749,8 @@ Form description: {text}"""
     @bp.route("/api/workflows/processify", methods=["POST"])
     def api_processify_workflow():
         """Upload a process document and AI-convert it into a structured workflow definition."""
-        import re
         import tempfile
         import pathlib
-        import json as _json
 
         file = request.files.get("file")
         manual_text = (request.form.get("text") or "").strip()
@@ -809,88 +807,11 @@ Form description: {text}"""
             logger.info("digitize: truncating extracted text %d -> %d chars", len(text), MAX_EXTRACT_CHARS)
             text = text[:MAX_EXTRACT_CHARS]
 
-        prompt = f"""You are a business process analyst. Analyze the following process document and convert it into a structured digital workflow.
-
-Industry: {industry}
-Document: {source_name}
-
-Return a JSON object with this exact structure:
-{{
-  "workflow_name": "concise workflow name",
-  "workflow_description": "one sentence describing the process",
-  "industry": "{industry}",
-  "estimated_duration_days": 30,
-  "steps": [
-    {{
-      "id": "step-1",
-      "title": "Step title",
-      "phase": "Phase name (Initiation|Review|Approval|Completion etc.)",
-      "description": "What happens in this step",
-      "checklist_items": ["Item from document 1", "Item from document 2"],
-      "form_fields": [
-        {{"label": "Field label", "type": "text", "required": true, "options": null}}
-      ],
-      "assignee_role": "Who performs this step",
-      "reviewer_role": "Who reviews (or empty string)",
-      "approver_role": "Who approves (or empty string)",
-      "sla_days": 5,
-      "dependencies": [],
-      "ace_role": "snake_case_ai_coworker_role_specific_to_this_step"
-    }}
-  ]
-}}
-
-Rules:
-- Extract ALL steps/tasks/requirements found in the document
-- checklist_items should be concrete, verbatim items from the document
-- form_fields: REQUIRED — provide 2-5 meaningful data fields that the assignee must fill in to complete this step. Never leave form_fields empty.
-- assignee_role/reviewer_role/approver_role are human job titles (e.g. "Provider", "Network Director")
-- dependencies lists step ids that must complete first (first step has empty [])
-- Aim for 5-15 steps covering the full process
-- field type must be one of: text textarea number date select multiselect checkbox email file
-- ace_role: suggest a specific, domain-appropriate AI coworker role in snake_case (e.g. credentialing_specialist, dhcs_compliance_auditor, loan_underwriter, permit_reviewer, safety_inspector) — be specific to the industry, not generic
-- Return ONLY valid JSON. No markdown fences, no explanation.
-
-Process Document:
-{text[:8000]}"""
-
         try:
-            # Route through the governed Cortex facade (input injection screen,
-            # output redaction, provenance, budget). The uploaded document text
-            # is UNTRUSTED, so trusted_content stays False (the default) — the
-            # injection screen runs. This mirrors docgen's cortex_api.complete
-            # usage but without the trusted_content=True flag. (cnr-wfc-02)
-            from tools.cortex import api as cortex_api
-            from tools.cortex.schemas import CortexContext
-            cx = cortex_api.complete(
-                prompt,
-                function="process_digitization",
-                ctx=CortexContext(domain="workflow", agent_id="wfc-processify",
-                                  trusted_content=False),
-                max_tokens=4096,
-                temperature=0.2,
-            )
-            raw = (cx.text or "") if cx is not None else ""
-
-            match = re.search(r'\{[\s\S]*\}', raw)
-            if not match:
-                raise ValueError(f"LLM did not return valid JSON. Raw: {raw[:300]}")
-            workflow_def = _json.loads(match.group())
-
-            steps = workflow_def.get("steps", [])
-            for i, step in enumerate(steps):
-                if "id" not in step:
-                    step["id"] = f"step-{i + 1}"
-                # Use LLM-suggested role first; keyword-hint map is the fallback
-                if not step.get("ace_role"):
-                    step["ace_role"] = _suggest_ace_role(
-                        step.get("title", ""), step.get("description", "")
-                    )
-                step["form_fields"] = _validate_fields(step.get("form_fields") or [])
-                step.setdefault("checklist_items", [])
-                step.setdefault("dependencies", [])
-            workflow_def["steps"] = steps
-            workflow_def["source_name"] = source_name
+            # One implementation for the route and the CLI (icx-cli-01): the governed Cortex facade under
+            # process_digitization, with the injection screen on (the document is untrusted; cnr-wfc-02).
+            from tools.workflow_canvas import processify
+            workflow_def = processify.digitize(text, industry=industry, source_name=source_name)
             return jsonify({"status": "ok", "workflow": workflow_def, "source_doc_text": text})
         except Exception as exc:
             logger.error("wfc processify error: %s", exc)
