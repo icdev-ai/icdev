@@ -1,0 +1,302 @@
+{
+ "schema": "icos-apptwin/v1",
+ "application": {
+  "id": "syn-isr-d",
+  "title": "SYNTHETIC collection requirements manager D (Java, lifted and shifted)",
+  "version": "7.1",
+  "languages": [
+   "java"
+  ],
+  "environment": {
+   "impact_level": "il4",
+   "security_domain": "syn-unclass",
+   "ato_boundary": "syn-isr-ato",
+   "hosting": "cloud-rehosted"
+  }
+ },
+ "producer": {
+  "tool": "icdev-it/apptwin-export",
+  "version": "0.0-synthetic"
+ },
+ "produced_at": "2026-11-08T09:00:00Z",
+ "components": [
+  {
+   "id": "requirement-svc",
+   "kind": "service",
+   "path": "src/main/java/syn/crm"
+  },
+  {
+   "id": "tasking-svc",
+   "kind": "service",
+   "path": "src/main/java/syn/tasking"
+  }
+ ],
+ "dependencies": [
+  {
+   "source": "requirement-svc",
+   "target": "tasking-svc",
+   "kind": "calls"
+  }
+ ],
+ "apis": [
+  {
+   "method": "POST",
+   "path": "/collection-requirements",
+   "handler": "RequirementController.create"
+  },
+  {
+   "method": "GET",
+   "path": "/collection-requirements/{id}",
+   "handler": "RequirementController.get"
+  },
+  {
+   "method": "POST",
+   "path": "/collection-requirements/{id}/tasking",
+   "handler": "TaskingController.task"
+  }
+ ],
+ "data": [
+  {
+   "name": "collection_requirement",
+   "columns": [
+    "id",
+    "sensor",
+    "priority",
+    "aoi",
+    "requested_by",
+    "status"
+   ]
+  },
+  {
+   "name": "tasking",
+   "columns": [
+    "requirement_id",
+    "sensor",
+    "window",
+    "status"
+   ]
+  }
+ ],
+ "consumers": [
+  {
+   "application": "syn-isr-f",
+   "api": "GET /collection-requirements/{id}"
+  }
+ ],
+ "processes": [
+  {
+   "id": "crm",
+   "title": "Collection requirement",
+   "basis": "document",
+   "steps": [
+    {
+     "id": "submit",
+     "title": "Submit a collection requirement",
+     "role": "requester"
+    },
+    {
+     "id": "task",
+     "title": "Task a sensor",
+     "role": "collection manager"
+    }
+   ]
+  }
+ ],
+ "features": [
+  {
+   "id": "submit-requirement",
+   "title": "Submit a collection requirement",
+   "basis": "source",
+   "signatures": {
+    "apis": [
+     "POST /collection-requirements"
+    ],
+    "tables": [
+     "collection_requirement"
+    ],
+    "steps": [
+     "crm.submit"
+    ]
+   }
+  },
+  {
+   "id": "task-sensor",
+   "title": "Task a sensor against a collection requirement",
+   "basis": "source",
+   "signatures": {
+    "apis": [
+     "POST /collection-requirements/{id}/tasking"
+    ],
+    "tables": [
+     "tasking"
+    ],
+    "steps": [
+     "crm.task"
+    ]
+   }
+  }
+ ],
+ "integrity": {
+  "assessed_at": "2026-11-08T05:00:00Z",
+  "tool": "sipa",
+  "verdict": "ALLOW",
+  "risk_score": 0.09,
+  "capabilities": [
+   "network_egress"
+  ]
+ },
+ "aiify": {
+  "assessed_at": "2026-11-08T06:00:00Z",
+  "tool": "aiify",
+  "overall_verdict": "partial",
+  "readiness_score": 0.66,
+  "posture_grade": "B",
+  "opportunities": [
+   {
+    "pattern_type": "priority_scoring",
+    "module_path": "src/main/java/syn/crm/Priority.java",
+    "ai_readiness": "ai_ready",
+    "composite_score": 0.74
+   }
+  ],
+  "pillars": {
+   "code-quality": {
+    "passed": 4,
+    "total": 5,
+    "percentage": 80.0
+   },
+   "testing": {
+    "passed": 4,
+    "total": 5,
+    "percentage": 80.0
+   },
+   "append-only-audit": {
+    "passed": 2,
+    "total": 2,
+    "percentage": 100.0
+   }
+  }
+ },
+ "readiness": {
+  "assessed_at": "2026-11-08T06:00:00Z",
+  "tool": "app-coherence",
+  "checks": {
+   "interfaces": {
+    "status": "met",
+    "evidence": "openapi/crm-d.yaml covers 3 of 3 APIs"
+   },
+   "data_products": {
+    "status": "not_met",
+    "evidence": "requirements reached only through the service"
+   },
+   "audit": {
+    "status": "met",
+    "evidence": "audit table is insert-only (trigger)"
+   },
+   "access": {
+    "status": "met",
+    "evidence": "OIDC with a second factor"
+   },
+   "events": {
+    "status": "not_met",
+    "evidence": "no event stream"
+   },
+   "registry": {
+    "status": "not_met",
+    "evidence": "no capability listing"
+   },
+   "llm": {
+    "status": "not_applicable",
+    "evidence": "no model-backed feature found"
+   }
+  }
+ },
+ "seven_r": {
+  "assessed_at": "2026-11-08T06:00:00Z",
+  "tool": "seven_r_assessor",
+  "ranked": [
+   {
+    "strategy": "refactor",
+    "score": 0.71
+   },
+   {
+    "strategy": "retain",
+    "score": 0.55
+   }
+  ]
+ },
+ "ivv": {
+  "assessed_at": "2026-11-08T07:00:00Z",
+  "tool": "ivv_assessor",
+  "recommendation": "CERTIFY",
+  "overall_score": 84.0,
+  "critical_findings": 0,
+  "areas": {
+   "Requirements Verification": 86.0,
+   "Test Verification": 81.0
+  },
+  "kind": "automated",
+  "expires_at": "2027-11-08T07:00:00Z",
+  "subject": {
+   "version": "7.1",
+   "inventory_digest": "de270ffe7a35e9d64665a2a26cbc49b04494fb1b3bf3bf8f2637a9a8b51ef6e1"
+  }
+ },
+ "sbd": {
+  "assessed_at": "2026-11-08T07:00:00Z",
+  "tool": "sbd_assessor",
+  "score": 81.0,
+  "critical_not_satisfied": 0,
+  "subject": {
+   "version": "7.1",
+   "inventory_digest": "de270ffe7a35e9d64665a2a26cbc49b04494fb1b3bf3bf8f2637a9a8b51ef6e1"
+  }
+ },
+ "rtm": {
+  "assessed_at": "2026-11-08T07:00:00Z",
+  "tool": "traceability_matrix",
+  "coverage_pct": 100.0,
+  "requirements": [
+   {
+    "id": "REQ-ISR-1",
+    "features": [
+     "submit-requirement"
+    ],
+    "tests": [
+     "RequirementControllerTest.create"
+    ]
+   },
+   {
+    "id": "REQ-ISR-2",
+    "features": [
+     "task-sensor"
+    ],
+    "tests": [
+     "TaskingControllerTest.task"
+    ]
+   }
+  ],
+  "subject": {
+   "version": "7.1",
+   "inventory_digest": "de270ffe7a35e9d64665a2a26cbc49b04494fb1b3bf3bf8f2637a9a8b51ef6e1"
+  }
+ },
+ "coherence": {
+  "assessed_at": "2026-11-08T07:00:00Z",
+  "tool": "coherence (application profile)",
+  "checks": [
+   {
+    "id": "schema_code",
+    "status": "pass"
+   },
+   {
+    "id": "api_wiring",
+    "status": "pass"
+   }
+  ],
+  "subject": {
+   "version": "7.1",
+   "inventory_digest": "de270ffe7a35e9d64665a2a26cbc49b04494fb1b3bf3bf8f2637a9a8b51ef6e1"
+  }
+ }
+}

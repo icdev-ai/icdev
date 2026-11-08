@@ -269,10 +269,15 @@ def run(target: str | Path) -> dict:
             "counts": {s: sum(1 for r in results if r.status == s) for s in ("pass", "fail", "warn", "skip")}}
 
 
-def bundle_section(report: dict) -> dict:
-    """The ``coherence`` section of an icos-apptwin/v1 bundle (id + status per check; evidence stays in the report)."""
-    return {"tool": "icdev-it/app_coherence", "assessed_at": report["assessed_at"],
-            "checks": [{"id": c["id"], "status": c["status"]} for c in report["checks"]]}
+def bundle_section(report: dict, bundle: dict | None = None) -> dict:
+    """The ``coherence`` section of an icos-apptwin/v1 bundle (id + status per check; evidence stays in the report).
+    With ``bundle`` (the bundle of the code this run checked), it records that as its ``subject`` (icx-sub-01)."""
+    sec = {"tool": "icdev-it/app_coherence", "assessed_at": report["assessed_at"],
+           "checks": [{"id": c["id"], "status": c["status"]} for c in report["checks"]]}
+    if bundle is not None:
+        from tools.modernization.apptwin_export import subject
+        sec["subject"] = subject(bundle)
+    return sec
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -281,13 +286,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true", help="JSON out (the default)")
     ap.add_argument("--bundle-section", action="store_true", help="print the bundle's coherence section only")
     ap.add_argument("--gate", action="store_true", help="exit 1 if any check fails")
+    ap.add_argument("--bundle", default=None, help="with --bundle-section: the bundle of the code checked (its subject)")
     a = ap.parse_args(argv)
     try:
         rep = run(a.target)
     except ValueError as exc:
         print(json.dumps({"status": "error", "error": str(exc)}))
         return 2
-    print(json.dumps(bundle_section(rep) if a.bundle_section else rep, indent=2))
+    bundle = json.loads(Path(a.bundle).read_text(encoding="utf-8")) if a.bundle else None
+    print(json.dumps(bundle_section(rep, bundle) if a.bundle_section else rep, indent=2))
     return 1 if a.gate and rep["counts"]["fail"] else 0
 
 
