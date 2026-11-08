@@ -13,6 +13,10 @@ produced, so every section is traceable to the tool that made it:
     --seven-r     seven_r                                python tools/modernization/seven_r_assessor.py --json
     --ivv/--sbd/--rtm/--coherence/--readiness            already in the bundle's section shape
 
+A verification result (``--ivv``/``--sbd``/``--rtm``/``--coherence``) is passed through as it was made, with the
+``subject`` its tool recorded (``tools/compliance/portable_result.py --bundle``, ``tools/workflow/app_coherence.py
+--bundle``): this module never stamps a subject on one, because only the run that assessed the code knows what it saw.
+
 A section with no input stays ``null``: ICDEV[OS] reads null as UNVERIFIED, never as a pass, so nothing here
 fills a gap with a default. Nothing is invented either: no feature is guessed from code, and ``consumers`` (which
 needs every other application) is left to ICDEV[OS]. The bundle is validated against the vendored contract
@@ -30,6 +34,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
 # kax-conflict-05: run by path, sys.path[0] is this file's own directory -- bootstrap the import root first.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
@@ -41,14 +46,46 @@ _BASE = repo_root(__file__)
 
 SCHEMA = "icos-apptwin/v1"
 SCHEMA_PATH = _BASE / "context" / "icos" / "apptwin.schema.json"
-#: The digest of the vendored ICDEV[OS] contract (1.111.0). A changed file is refused, never silently used.
-SCHEMA_SHA256 = "9f565b1486176fdc11e0ba3704a9af6092d0a62c92e6f71ad0bf53a79ff07f9e"
+#: The digest of the vendored ICDEV[OS] contract (1.120.0). A changed file is refused, never silently used.
+SCHEMA_SHA256 = "ec980a9759edcbb26714edd243ac8c4539b1b64dc8b52f6ce21818bd00cfcf51"
 PRODUCER = "icdev-it/apptwin_export"
 PASSTHROUGH = ("ivv", "sbd", "rtm", "coherence", "readiness")
 
 
+#: The inventory sections ICDEV[OS]'s ``inventory_digest`` covers (its icdev_os/twin/apptwin.py INVENTORY), in order.
+INVENTORY = ("components", "apis", "data", "dependencies", "consumers", "features", "processes")
+
+
 class BundleError(ValueError):
     pass
+
+
+def _pruned(x):
+    """Null, [] and {} dropped at every depth: a field left out and a field given empty are the same."""
+    if isinstance(x, dict):
+        out = {k: _pruned(v) for k, v in x.items()}
+        return {k: v for k, v in out.items() if v not in (None, [], {})}
+    if isinstance(x, list):
+        return [_pruned(v) for v in x]
+    return x
+
+
+def inventory_digest(bundle: dict) -> str:
+    """ICDEV[OS]'s inventory digest of ``bundle`` (icos-apptwin/v1, contract 1.120.0): SHA-256 over the canonical JSON of
+    ``{section: [item, ...] | null}`` for each INVENTORY section, each item pruned (``_pruned``), each list of items
+    sorted by its canonical JSON, keys sorted, no whitespace. ICDEV[OS] recomputes it from the bundle it imports; a
+    verification result whose ``subject`` names another digest was taken before a significant change, and counts for
+    nothing there."""
+    def canon(x) -> str:
+        return json.dumps(x, sort_keys=True, separators=(",", ":"))
+    doc = {s: None if bundle.get(s) is None else sorted((_pruned(i) for i in bundle[s]), key=canon) for s in INVENTORY}
+    return hashlib.sha256(canon(doc).encode()).hexdigest()
+
+
+def subject(bundle: dict) -> dict:
+    """What a verification result run on the code ``bundle`` describes assessed: its version (if any) and digest."""
+    v = (bundle.get("application") or {}).get("version")
+    return {**({"version": v} if v else {}), "inventory_digest": inventory_digest(bundle)}
 
 
 def _slug(s: str) -> str:

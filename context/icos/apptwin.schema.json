@@ -196,6 +196,17 @@
           "title": "Checks",
           "type": "array"
         },
+        "subject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Subject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "tool": {
           "title": "Tool",
           "type": "string"
@@ -519,6 +530,17 @@
           "title": "Recommendation",
           "type": "string"
         },
+        "subject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Subject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "tool": {
           "title": "Tool",
           "type": "string"
@@ -753,6 +775,17 @@
           "title": "Requirements",
           "type": "array"
         },
+        "subject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Subject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "tool": {
           "title": "Tool",
           "type": "string"
@@ -783,6 +816,17 @@
         "score": {
           "title": "Score",
           "type": "number"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Subject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "tool": {
           "title": "Tool",
@@ -919,6 +963,39 @@
         "score"
       ],
       "title": "Strategy",
+      "type": "object"
+    },
+    "Subject": {
+      "additionalProperties": false,
+      "description": "What a verification result assessed (Phase 162): the application's version and/or the ``inventory_digest`` of its\nbundle at the time. ICOS recomputes the digest from the bundle; a mismatch means the application changed since.",
+      "properties": {
+        "inventory_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inventory Digest"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "title": "Subject",
       "type": "object"
     },
     "Table": {
@@ -1165,6 +1242,6 @@
   ],
   "title": "AppTwin",
   "type": "object",
-  "x-icos-contract": "1.111.0",
+  "x-icos-contract": "1.120.0",
   "x-license": "Apache-2.0"
 }

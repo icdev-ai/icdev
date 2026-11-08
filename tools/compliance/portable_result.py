@@ -13,13 +13,18 @@ cutover gates read them, so each result says what it is:
     recommendation / score / coverage, from the SAME rules the reports use (``ivv_report_generator`` and
                   ``sbd_report_generator``), never re-derived differently here.
 
+    subject       (icx-sub-01) with ``--bundle``, the bundle of the code this run assessed: its version and ICDEV[OS]
+                  inventory digest (``apptwin_export.subject``). ICDEV[OS] counts a result whose subject is not the
+                  bundle it imports as taken before a significant change; one without a subject still counts there,
+                  but a cutover refuses it.
+
 The three assessors need a row in ``projects``. ``register`` creates one for an imported application from its
 bundle (``application.id`` / ``title``) and the directory its source was unpacked into, through the canonical
 ``project_create.create_project`` (no scaffold), so an application registered from a bundle is assessed like any
 other.
 
     python tools/compliance/portable_result.py register --bundle app.json --project-dir /src/app --json
-    python tools/compliance/portable_result.py ivv --project-id <id> --emit-json ivv.json [--valid-days 30]
+    python tools/compliance/portable_result.py ivv --project-id <id> --emit-json ivv.json [--valid-days 30] [--bundle app.json]
     python tools/compliance/portable_result.py sbd --project-id <id> --emit-json sbd.json
     python tools/compliance/portable_result.py rtm --project-id <id> --emit-json rtm.json
 """
@@ -125,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--project-id", required=True)
         p.add_argument("--project-dir", default=None)
         p.add_argument("--emit-json", type=Path, required=True, help="write the bundle section here")
+        p.add_argument("--bundle", type=Path, default=None,
+                       help="the icos-apptwin bundle of the code assessed: the result records it as its subject")
         if name == "ivv":
             p.add_argument("--valid-days", type=int, default=DEFAULT_VALID_DAYS)
     for p in sub.choices.values():
@@ -148,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, KeyError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}))
         return 1
+    if a.bundle is not None:
+        from tools.modernization.apptwin_export import subject
+        sec["subject"] = subject(json.loads(a.bundle.read_text(encoding="utf-8")))
     a.emit_json.write_text(json.dumps(sec, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"status": "ok", "section": a.cmd, "out": str(a.emit_json)}))
     return 0
