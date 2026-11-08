@@ -865,6 +865,50 @@ def generate_spec(feature_gap_id, db_path=None, divergence=None):
         conn.close()
 
 
+def dedupe_specs(apply=False, db_path=None):
+    """Reject the extra specs made for one pain point (kept: the earliest), dry run unless ``apply``.
+
+    Before the fingerprint fix, every re-scored version of a pain point (append-only, D6: a new row and id
+    per version) got its own feature gap and so its own spec. This marks each extra spec ``rejected`` with
+    ``metadata.duplicate_of`` naming the spec kept. Nothing is deleted: the rows and their content stay,
+    and the reason is in the metadata and the audit trail.
+    """
+    conn = _get_db(db_path)
+    try:
+        rows = [
+            dict(r)
+            for r in conn.execute("""
+            SELECT cs.id, cs.status, cs.created_at, cs.metadata, p.keyword_fingerprint, p.title
+            FROM creative_specs cs JOIN creative_pain_points p ON p.id = cs.pain_point_id
+            WHERE p.keyword_fingerprint IS NOT NULL
+            ORDER BY cs.created_at ASC, cs.id ASC
+        """).fetchall()
+        ]
+        kept, extra = {}, []
+        for r in rows:
+            fp = r["keyword_fingerprint"]
+            if fp not in kept:
+                kept[fp] = r
+            elif r["status"] != "rejected":
+                extra.append({"spec_id": r["id"], "duplicate_of": kept[fp]["id"], "title": r["title"], "status": r["status"]})
+        if apply and extra:
+            now = now_iso()
+            for x in extra:
+                old = conn.execute("SELECT metadata FROM creative_specs WHERE id = %s", (x["spec_id"],)).fetchone()
+                meta = _safe_json_loads(dict(old).get("metadata") if old else None, {}) or {}
+                meta.update({"duplicate_of": x["duplicate_of"], "rejected_reason": "duplicate spec for one pain point"})
+                conn.execute(
+                    "UPDATE creative_specs SET status = 'rejected', reviewer = %s, reviewed_at = %s, metadata = %s WHERE id = %s",
+                    ("creative-engine:dedupe", now, json.dumps(meta), x["spec_id"]),
+                )
+            conn.commit()
+            _audit("creative.spec.dedupe", f"Rejected {len(extra)} duplicate specs", {"specs": extra})
+    finally:
+        conn.close()
+    return {"pain_points": len(kept), "specs": len(rows), "duplicates": len(extra), "applied": bool(apply and extra),
+            "duplicates_detail": extra}
+
+
 def generate_all_eligible(db_path=None, divergence=None):
     """Generate specs for all eligible feature gaps.
 
@@ -901,6 +945,29 @@ def generate_all_eligible(db_path=None, divergence=None):
             ORDER BY fg.gap_score DESC
         """).fetchall()
         ]
+        # One spec per pain point, not per version of it: pain points are append-only (D6), so a gap made for
+        # an older version must not yield a second spec when a newer version's gap comes round.
+        specced = {
+            dict(r)["keyword_fingerprint"]
+            for r in conn.execute("""
+            SELECT DISTINCT p.keyword_fingerprint FROM creative_specs cs
+            JOIN creative_pain_points p ON p.id = cs.pain_point_id
+            WHERE p.keyword_fingerprint IS NOT NULL
+        """).fetchall()
+        }
+        fingerprint = {
+            dict(r)["id"]: dict(r)["keyword_fingerprint"]
+            for r in conn.execute("SELECT id, keyword_fingerprint FROM creative_pain_points").fetchall()
+        }
+        kept, seen = [], set(specced)
+        for g in gaps:
+            fp = fingerprint.get(g.get("pain_point_id"))
+            if fp and fp in seen:
+                continue
+            if fp:
+                seen.add(fp)
+            kept.append(g)
+        gaps = kept
     finally:
         conn.close()
 
@@ -1256,6 +1323,9 @@ def main():
     actions.add_argument("--generate-all", action="store_true", help="Generate specs for all eligible feature gaps")
     actions.add_argument("--list", action="store_true", help="List generated specs")
     actions.add_argument("--get", action="store_true", help="Get full spec content by ID")
+    actions.add_argument(
+        "--dedupe", action="store_true", help="Reject extra specs made for one pain point (dry run unless --apply)"
+    )
 
     # Parameters
     parser.add_argument("--feature-gap-id", type=str, default=None, help="Feature gap ID (for --generate)")
@@ -1264,6 +1334,7 @@ def main():
         "--status", type=str, default=None, choices=list(VALID_STATUSES), help="Filter by status (for --list)"
     )
     parser.add_argument("--limit", type=int, default=20, help="Max results (for --list, default 20)")
+    parser.add_argument("--apply", action="store_true", help="With --dedupe: write the rejections (default: dry run)")
 
     # Output
     parser.add_argument("--json", action="store_true", help="JSON output")
@@ -1290,6 +1361,9 @@ def main():
                 parser.error("--get requires --spec-id")
             result = get_spec(args.spec_id, db_path)
             action = "get"
+        elif args.dedupe:
+            result = dedupe_specs(apply=args.apply, db_path=db_path)
+            action = "dedupe"
         else:
             result = {"error": "No action specified"}
             action = "unknown"

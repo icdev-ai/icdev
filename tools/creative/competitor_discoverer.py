@@ -136,9 +136,13 @@ def _safe_get(url, headers=None, params=None, as_text=False):
     """
     if not _HAS_REQUESTS:
         return None, "requests library not installed"
+    from tools.http.robots import allows
+
+    hdrs = headers or {}
+    hdrs.setdefault("User-Agent", "Mozilla/5.0 (compatible; ICDEVBot/1.0; +https://icdev.local)")
+    if not allows(url, hdrs["User-Agent"]):        # review-site pages are crawled: their robots.txt decides (fail closed)
+        return None, "robots_disallowed"
     try:
-        hdrs = headers or {}
-        hdrs.setdefault("User-Agent", "Mozilla/5.0 (compatible; ICDEVBot/1.0; +https://icdev.local)")
         resp = _http_request("GET", url, headers=hdrs, params=params, timeout=30)
         if resp.status_code in (403, 429):
             return None, "rate_limited" if resp.status_code == 429 else "forbidden"
@@ -742,12 +746,20 @@ def run_discovery(domain=None, db_path=None):
         # don't have to guess which one the config uses.
         primary_name = domain_config.get("name", "")
         if primary_name and domain.lower() != primary_name.lower():
+            match = None
             for key, val in config.items():
                 if not isinstance(val, dict):
                     continue
                 if key.lower() == domain.lower() or val.get("name", "").lower() == domain.lower():
-                    domain_config = val
+                    match = val
                     break
+            if match is None:
+                # An unknown domain used to fall through to the primary domain's (or no) category URLs and
+                # report "no category URLs configured", which hid the typo. Name the domains that exist.
+                known = sorted(k for k, v in config.items() if isinstance(v, dict) and v.get("name") and
+                               any(u in v for u in ("g2_category_url", "capterra_category_url", "trustradius_category_url")))
+                return {"error": f"Unknown domain {domain!r}. Use a config key or name: {', '.join(known)}"}
+            domain_config = match
     else:
         domain = domain_config.get("name", "")
     if not domain:

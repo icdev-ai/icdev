@@ -32,6 +32,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -95,6 +96,7 @@ G2_BASE_URL = "https://www.g2.com"
 CAPTERRA_BASE_URL = "https://www.capterra.com"
 TRUSTRADIUS_BASE_URL = "https://www.trustradius.com"
 REDDIT_BASE_URL = "https://www.reddit.com"
+REDDIT_OAUTH_URL = "https://oauth.reddit.com"
 GITHUB_API = "https://api.github.com"
 PRODUCTHUNT_BASE_URL = "https://www.producthunt.com"
 MAX_BODY_LENGTH = 4000
@@ -632,6 +634,83 @@ def scan_trustradius(config, competitors=None):
     return signals
 
 
+_SCANNER_UA = "ICDEV-CreativeEngine/1.0 (+https://github.com/icdev-ai/icdev)"
+
+
+def _domain_names(config):
+    """The active domain as every spelling a per-domain table may use: the --domain value, and the
+    matching config section's key and display name (lower case)."""
+    active = str(config.get("_active_domain") or "").strip().lower()
+    if not active:
+        return set()
+    names = {active}
+    for key, val in config.items():
+        if isinstance(val, dict) and (key.lower() == active or str(val.get("name", "")).lower() == active):
+            names |= {key.lower(), str(val.get("name", "")).lower()}
+    return names - {""}
+
+
+def _by_domain(config, table, default):
+    """``table`` is {domain: list}; the list for the active domain, else ``default``."""
+    names = _domain_names(config)
+    if names and isinstance(table, dict):
+        for key, val in table.items():
+            if str(key).strip().lower() in names:
+                return val
+    return default
+
+
+def _parse_atom_or_rss(xml_text):
+    """Entries of an Atom or RSS feed as dicts (title, url, body, author), via defusedxml (DTDs refused)."""
+    from defusedxml import DefusedXmlException
+    from defusedxml import ElementTree as SafeET
+
+    try:
+        root = SafeET.fromstring(xml_text)
+    except (SafeET.ParseError, DefusedXmlException) as exc:
+        raise ValueError(f"feed_parse: {exc.__class__.__name__}") from exc
+    out = []
+    for el in root.iter():
+        name = el.tag.rsplit("}", 1)[-1]
+        if name not in ("entry", "item"):
+            continue
+        entry = {"title": "", "url": "", "body": "", "author": None}
+        for child in el:
+            tag = child.tag.rsplit("}", 1)[-1]
+            text = (child.text or "").strip()
+            if tag == "title":
+                entry["title"] = " ".join(text.split())
+            elif tag == "link":
+                entry["url"] = child.get("href") or text
+            elif tag in ("content", "summary", "description") and not entry["body"]:
+                entry["body"] = re.sub(r"<[^>]+>", " ", text)
+            elif tag == "author":
+                nm = next((c.text for c in child if c.tag.rsplit("}", 1)[-1] == "name"), None)
+                entry["author"] = (nm or text or None)
+        if entry["title"]:
+            out.append(entry)
+    return out
+
+
+def _reddit_token():
+    """An app-only OAuth token for Reddit's Data API (REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET), or None.
+
+    Reddit's robots.txt disallows every automated client, so the scanner never reads reddit.com
+    anonymously; it reads only the official API, under Reddit's Data API terms, with credentials an
+    operator registered."""
+    cid, secret = os.environ.get("REDDIT_CLIENT_ID"), os.environ.get("REDDIT_CLIENT_SECRET")
+    if not (cid and secret) or not _HAS_REQUESTS:
+        return None, "reddit.com's robots.txt disallows automated access: set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET to use Reddit's Data API"
+    try:
+        resp = _http_request("POST", "https://www.reddit.com/api/v1/access_token", auth=(cid, secret),
+                             data={"grant_type": "client_credentials"}, headers={"User-Agent": _SCANNER_UA}, timeout=20)
+        if resp.status_code != 200:
+            return None, f"reddit oauth: http_{resp.status_code}"
+        return resp.json().get("access_token"), None
+    except Exception as exc:  # noqa: BLE001 -- recorded as one scan error, never raised
+        return None, f"reddit oauth: {exc.__class__.__name__}"
+
+
 def scan_reddit(config, competitors=None):
     """Scan Reddit subreddits for community discussions and pain points.
 
@@ -659,8 +738,13 @@ def scan_reddit(config, competitors=None):
     if not reddit_cfg:
         return signals
 
-    subreddits = reddit_cfg.get("subreddits", [])
+    subreddits = _by_domain(config, reddit_cfg.get("subreddits_by_domain"), reddit_cfg.get("subreddits", []))
     if not subreddits:
+        return signals
+    token, why = _reddit_token()
+    if not token:
+        # One reason, not one error per subreddit: nothing was fetched.
+        signals.append(_error_signal("reddit", "data_api", why))
         return signals
 
     sort_by = reddit_cfg.get("sort", "hot")
@@ -682,12 +766,10 @@ def scan_reddit(config, competitors=None):
     keyword_filter = [kw.lower() for kw in raw_keywords]
     delay = _rate_delay(config, "community_forums")
 
-    headers = {
-        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research; CUI // SP-CTI)",
-    }
+    headers = {"User-Agent": _SCANNER_UA, "Authorization": f"Bearer {token}"}
 
     for subreddit in subreddits:
-        url = f"{REDDIT_BASE_URL}/r/{subreddit}/{sort_by}.json"
+        url = f"{REDDIT_OAUTH_URL}/r/{subreddit}/{sort_by}"
         params = {"limit": min(max_results, 100)}
 
         data, err = _safe_get(url, headers=headers, params=params)
@@ -787,7 +869,9 @@ def scan_github_issues(config, competitors=None):
     delay_seconds = gh_config.get("rate_limit", {}).get("delay_between_requests_seconds", 2)
 
     headers = {"Accept": "application/vnd.github+json"}
-    gh_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    from tools.http.github_token import github_token
+
+    gh_token = github_token()
     if gh_token:
         headers["Authorization"] = f"Bearer {gh_token}"
 
@@ -858,10 +942,13 @@ def scan_github_issues(config, competitors=None):
 
 
 def scan_producthunt(config, competitors=None):
-    """Scan Product Hunt for recent launches in configured topics.
+    """Scan Product Hunt's public Atom feed for recent launches in the configured topics.
 
-    Constructs topic listing URLs and fetches product data.  Each launch
-    is normalized into a creative signal.
+    Topic pages answer automated clients with 403, so the scanner reads ``/feed?category=<topic>``,
+    which robots.txt allows (checked, fail closed). Topics come from ``topics_by_domain`` for the active
+    domain, else ``topics``. The ``category`` parameter is not a reliable filter (an unknown one returns
+    the whole feed), so entries are also held to the active domain's ``keywords`` when it declares any,
+    and each launch is kept once however many topics return it.
 
     Args:
         config: Full creative_config.yaml dict.
@@ -870,89 +957,66 @@ def scan_producthunt(config, competitors=None):
     Returns:
         List of normalized signal dicts.
     """
+    from tools.http.robots import allows
+
     signals = []
     ph_config = config.get("sources", {}).get("producthunt", {})
     if not ph_config.get("enabled", False):
         return signals
 
-    topics = ph_config.get("topics", [])
+    topics = _by_domain(config, ph_config.get("topics_by_domain"), ph_config.get("topics", []))
     if not topics:
         return signals
 
     max_results = ph_config.get("max_results", 20)
-
-    headers = {
-        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
-        "Accept": "application/json, text/html",
-    }
+    headers = {"User-Agent": _SCANNER_UA, "Accept": "application/atom+xml, application/rss+xml"}
+    names = _domain_names(config)
+    domain_cfg = next((v for k, v in config.items() if isinstance(v, dict) and
+                       (k.lower() in names or str(v.get("name", "")).lower() in names)), {}) if names else {}
+    keywords = [str(k).lower() for k in (domain_cfg.get("keywords") or [])]
+    seen = set()
 
     for topic in topics:
         topic_slug = _slug(topic)
-        url = f"{PRODUCTHUNT_BASE_URL}/topics/{topic_slug}"
-
-        data, err = _safe_get(url, headers=headers)
-        if err:
-            signals.append(_error_signal("producthunt", f"topic_{topic_slug}", err))
-            time.sleep(2)
+        url = f"{PRODUCTHUNT_BASE_URL}/feed?category={topic_slug}"
+        if not allows(url, _SCANNER_UA):
+            signals.append(_error_signal("producthunt", f"feed_{topic_slug}", "robots_disallowed"))
+            continue
+        try:
+            resp = _http_request("GET", url, headers=headers, timeout=DEFAULT_TIMEOUT)
+            if resp.status_code != 200:
+                signals.append(_error_signal("producthunt", f"feed_{topic_slug}", f"http_{resp.status_code}"))
+                time.sleep(2)
+                continue
+            launches = _parse_atom_or_rss(resp.text)
+        except ValueError as exc:
+            signals.append(_error_signal("producthunt", f"feed_{topic_slug}", str(exc)))
+            continue
+        except Exception as exc:  # noqa: BLE001 -- one scan error per topic, never raised
+            signals.append(_error_signal("producthunt", f"feed_{topic_slug}", exc.__class__.__name__))
             continue
 
-        launches = []
-        if isinstance(data, dict):
-            if "_raw" in data:
-                # HTML page -- create a single summary signal
-                raw_text = data["_raw"][:50000]
-                launches.append(
-                    {
-                        "title": f"Product Hunt topic: {topic}",
-                        "body": raw_text[:MAX_BODY_LENGTH],
-                        "url": url,
-                        "author": None,
-                        "upvotes": 0,
-                        "tagline": "",
-                    }
-                )
-            else:
-                # Structured JSON -- iterate 'posts' or 'data' key
-                items = data.get("posts", data.get("data", data.get("products", [])))
-                if isinstance(items, list):
-                    for item in items[:max_results]:
-                        launches.append(
-                            {
-                                "title": item.get("name", item.get("title", f"PH launch in {topic}")),
-                                "body": (item.get("description", item.get("tagline", "")) or "")[:MAX_BODY_LENGTH],
-                                "url": item.get("url", item.get("discussion_url", url)),
-                                "author": item.get(
-                                    "maker_name",
-                                    item.get("user", {}).get("name") if isinstance(item.get("user"), dict) else None,
-                                ),
-                                "upvotes": item.get("votes_count", item.get("upvotes", 0)),
-                                "tagline": item.get("tagline", ""),
-                            }
-                        )
-
+        if keywords:
+            launches = [x for x in launches if any(k in f"{x['title']} {x.get('body', '')}".lower() for k in keywords)]
+        launches = [x for x in launches if (x.get("url") or x["title"]) not in seen]
+        seen.update(x.get("url") or x["title"] for x in launches)
         for launch in launches[:max_results]:
-            hash_input = f"producthunt_{topic_slug}_{launch.get('title', '')}"
+            hash_input = f"producthunt_{launch.get('url') or launch.get('title', '')}"
             signals.append(
                 {
                     "id": _signal_id(),
                     "source": "producthunt",
                     "source_type": "launch",
                     "competitor_id": None,
-                    "title": launch.get("title", f"Product Hunt: {topic}"),
+                    "title": launch["title"][:500],
                     "body": launch.get("body", "")[:MAX_BODY_LENGTH],
-                    "url": launch.get("url", url),
+                    "url": launch.get("url") or url,
                     "author": launch.get("author"),
                     "rating": None,
-                    "upvotes": launch.get("upvotes", 0) or 0,
+                    "upvotes": 0,
                     "sentiment": None,
                     "content_hash": _content_hash(hash_input),
-                    "metadata": json.dumps(
-                        {
-                            "topic": topic,
-                            "tagline": launch.get("tagline", ""),
-                            "site": "producthunt",
-                        }
-                    ),
+                    "metadata": json.dumps({"topic": topic, "site": "producthunt", "via": "atom_feed"}),
                     "discovered_at": now_iso(),
                 }
             )
