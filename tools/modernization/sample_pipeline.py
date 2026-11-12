@@ -39,7 +39,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-BASE = Path(__file__).resolve().parents[2]
+from icdev.core.paths import repo_root
+
+BASE = repo_root(__file__)
 PY = sys.executable
 UPGRADE_TO = {"java": "17", "csharp": "8.0"}
 FRAMEWORK_TO = {"ejb": "spring", "struts": "spring-boot", "wcf": "aspnet-core-grpc", "webforms": "razor"}
