@@ -92,7 +92,7 @@ def test_inventory_only_gives_a_valid_bundle_with_every_other_section_unverified
     assert b["data"] == [{"name": "depot", "columns": ["id"]}, {"name": "stock", "columns": ["depot", "qty"]}]
     assert b["dependencies"] == [{"source": "depot.StockController", "target": "depot.StockRepo", "kind": "injection"}]
     unverified = {"features", "processes", "consumers", "aiify", "integrity", "seven_r", "ivv", "sbd", "rtm",
-                  "coherence", "readiness"}
+                  "coherence", "readiness", "migration", "refactor"}
     assert {k for k, v in b.items() if v is None} == unverified
     assert ex.validate(b) == []
 
@@ -147,3 +147,20 @@ def test_the_same_inputs_give_the_same_bytes(conn, tmp_path, monkeypatch, capsys
     assert outs[0] == outs[1]
     said = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert said["status"] == "ok" and "integrity" in said["unverified"] and "aiify" not in said["unverified"]
+
+
+def test_the_7r_detail_waves_and_refactor_jobs_are_carried_as_given(conn):
+    """ICDEV[OS] Phase 247: the 7R estimates, the canvas's waves and CAM's jobs; an artefact with no file has no digest."""
+    seven = {"created_at": "2026-11-07T00:00:00Z", "recommended_strategy": "refactor", "cost_estimate_hours": 1840,
+             "risk_score": 0.42, "timeline_weeks": 26, "ato_impact": "medium", "tech_debt_reduction": 0.55,
+             "scoring_weights": json.dumps({"technical": 0.3, "cost": 0.2}),
+             "evidence": json.dumps({"ranking": [{"strategy_id": "refactor", "score": 0.71}, {"strategy_id": "retain", "score": 0.55}],
+                                     "rationale": ["two bounded contexts"]})}
+    b = ex.build("app-a", conn, at=AT, seven_r=seven, refactor=[{"id": "j1", "refactor_type": "code_scaffold",
+                                                                  "component_name": "StockRepo", "status": "completed",
+                                                                  "artifacts_json": json.dumps(["data/no-such-file"])}])
+    s = b["seven_r"]
+    assert (s["recommended"], s["cost_estimate_hours"], s["ato_impact"], s["evidence"]) == ("refactor", 1840.0, "medium", ["two bounded contexts"])
+    assert b["refactor"]["jobs"] == [{"id": "j1", "kind": "code_scaffold", "component": "StockRepo", "status": "completed"}]
+    assert b["migration"] is None, "no plan recorded: unverified, never an empty plan"
+    assert ex.validate(b) == []

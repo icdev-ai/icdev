@@ -1,5 +1,41 @@
 {
   "$defs": {
+    "AiDecision": {
+      "additionalProperties": false,
+      "description": "A person's decision in ICDEV[IT]'s AI-Ify review, carried; ICOS's own decision is its ai-enable workflow.",
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "title": "At",
+          "type": "string"
+        },
+        "by": {
+          "title": "By",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "accepted",
+            "rejected",
+            "deferred"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "opportunity": {
+          "title": "Opportunity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "opportunity",
+        "decision",
+        "by",
+        "at"
+      ],
+      "title": "AiDecision",
+      "type": "object"
+    },
     "AiIfy": {
       "additionalProperties": false,
       "properties": {
@@ -7,6 +43,13 @@
           "format": "date-time",
           "title": "Assessed At",
           "type": "string"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/$defs/AiDecision"
+          },
+          "title": "Decisions",
+          "type": "array"
         },
         "opportunities": {
           "items": {
@@ -39,6 +82,13 @@
           "default": null,
           "title": "Pillars"
         },
+        "posture_dimensions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Posture Dimensions",
+          "type": "object"
+        },
         "posture_grade": {
           "anyOf": [
             {
@@ -58,6 +108,18 @@
           "default": null,
           "title": "Posture Grade"
         },
+        "prd_readiness": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prd Readiness"
+        },
         "readiness_score": {
           "anyOf": [
             {
@@ -69,6 +131,13 @@
           ],
           "default": null,
           "title": "Readiness Score"
+        },
+        "roadmap": {
+          "items": {
+            "$ref": "#/$defs/RoadmapPhase"
+          },
+          "title": "Roadmap",
+          "type": "array"
         },
         "tool": {
           "title": "Tool",
@@ -178,6 +247,49 @@
         "status"
       ],
       "title": "Check",
+      "type": "object"
+    },
+    "Coa": {
+      "additionalProperties": false,
+      "properties": {
+        "effort_days": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effort Days"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "technology": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Technology"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "title": "Coa",
       "type": "object"
     },
     "Coherence": {
@@ -558,6 +670,108 @@
       "title": "Ivv",
       "type": "object"
     },
+    "Migration": {
+      "additionalProperties": false,
+      "description": "ICDEV[IT]'s migration plan for the application, carried (Phase 247): its strategy, approach, waves and strangler\nstatus. ICOS decides nothing from it alone: a strategy is accepted, a plan approved and a wave opened by its own\nsigned workflows (Phase 249).",
+      "properties": {
+        "approach": {
+          "title": "Approach",
+          "type": "string"
+        },
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "controls_lost": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Controls Lost",
+          "type": "array"
+        },
+        "plan_id": {
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "strangler": {
+          "items": {
+            "$ref": "#/$defs/StranglerComponent"
+          },
+          "title": "Strangler",
+          "type": "array"
+        },
+        "strategy": {
+          "enum": [
+            "rehost",
+            "replatform",
+            "refactor",
+            "rearchitect",
+            "repurchase",
+            "retire",
+            "retain"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        },
+        "target_architecture": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Architecture"
+        },
+        "tasks_by_type": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Tasks By Type",
+          "type": "object"
+        },
+        "tasks_done": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Tasks Done",
+          "type": "integer"
+        },
+        "tasks_total": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Tasks Total",
+          "type": "integer"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "waves": {
+          "items": {
+            "$ref": "#/$defs/Wave"
+          },
+          "title": "Waves",
+          "type": "array"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "plan_id",
+        "strategy",
+        "approach",
+        "status"
+      ],
+      "title": "Migration",
+      "type": "object"
+    },
     "Opportunity": {
       "additionalProperties": false,
       "properties": {
@@ -581,6 +795,42 @@
           "title": "Disqualifiers",
           "type": "array"
         },
+        "effort_days": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effort Days"
+        },
+        "feasibility": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Feasibility"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id"
+        },
         "module_path": {
           "title": "Module Path",
           "type": "string"
@@ -588,6 +838,30 @@
         "pattern_type": {
           "title": "Pattern Type",
           "type": "string"
+        },
+        "risk": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Risk"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
         }
       },
       "required": [
@@ -726,6 +1000,90 @@
       "title": "Readiness",
       "type": "object"
     },
+    "Refactor": {
+      "additionalProperties": false,
+      "description": "ICDEV[IT]'s refactor optimisation (CAM): the jobs it queued and the courses of action, carried (Phase 247).",
+      "properties": {
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "coas": {
+          "items": {
+            "$ref": "#/$defs/Coa"
+          },
+          "title": "Coas",
+          "type": "array"
+        },
+        "jobs": {
+          "items": {
+            "$ref": "#/$defs/RefactorJob"
+          },
+          "title": "Jobs",
+          "type": "array"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool"
+      ],
+      "title": "Refactor",
+      "type": "object"
+    },
+    "RefactorJob": {
+      "additionalProperties": false,
+      "properties": {
+        "artefact_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artefact Digest"
+        },
+        "component": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Component"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "status"
+      ],
+      "title": "RefactorJob",
+      "type": "object"
+    },
     "Requirement": {
       "additionalProperties": false,
       "properties": {
@@ -752,6 +1110,44 @@
         "id"
       ],
       "title": "Requirement",
+      "type": "object"
+    },
+    "RoadmapPhase": {
+      "additionalProperties": false,
+      "properties": {
+        "effort_days": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effort Days"
+        },
+        "opportunities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Opportunities",
+          "type": "array"
+        },
+        "phase": {
+          "title": "Phase",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "title"
+      ],
+      "title": "RoadmapPhase",
       "type": "object"
     },
     "Rtm": {
@@ -850,6 +1246,38 @@
           "title": "Assessed At",
           "type": "string"
         },
+        "ato_impact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ato Impact"
+        },
+        "cost_estimate_hours": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Estimate Hours"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
         "ranked": {
           "items": {
             "$ref": "#/$defs/Strategy"
@@ -858,9 +1286,74 @@
           "title": "Ranked",
           "type": "array"
         },
+        "recommended": {
+          "anyOf": [
+            {
+              "enum": [
+                "rehost",
+                "replatform",
+                "refactor",
+                "rearchitect",
+                "repurchase",
+                "retire",
+                "retain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recommended"
+        },
+        "risk_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Risk Score"
+        },
+        "tech_debt_reduction": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tech Debt Reduction"
+        },
+        "timeline_weeks": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeline Weeks"
+        },
         "tool": {
           "title": "Tool",
           "type": "string"
+        },
+        "weights": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Weights",
+          "type": "object"
         }
       },
       "required": [
@@ -935,6 +1428,44 @@
         "title"
       ],
       "title": "Step",
+      "type": "object"
+    },
+    "StranglerComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "component": {
+          "title": "Component",
+          "type": "string"
+        },
+        "routed_pct": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Routed Pct"
+        },
+        "status": {
+          "enum": [
+            "legacy",
+            "routing",
+            "migrated"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "status"
+      ],
+      "title": "StranglerComponent",
       "type": "object"
     },
     "Strategy": {
@@ -1017,6 +1548,85 @@
         "name"
       ],
       "title": "Table",
+      "type": "object"
+    },
+    "Wave": {
+      "additionalProperties": false,
+      "properties": {
+        "backout": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backout"
+        },
+        "components": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Components",
+          "type": "array"
+        },
+        "ends": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ends"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "order": {
+          "minimum": 1,
+          "title": "Order",
+          "type": "integer"
+        },
+        "starts": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starts"
+        },
+        "status": {
+          "enum": [
+            "planned",
+            "in_progress",
+            "closed",
+            "backed_out"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "order",
+        "status"
+      ],
+      "title": "Wave",
       "type": "object"
     }
   },
@@ -1161,6 +1771,17 @@
       ],
       "default": null
     },
+    "migration": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Migration"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "processes": {
       "anyOf": [
         {
@@ -1188,6 +1809,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/Readiness"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "refactor": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Refactor"
         },
         {
           "type": "null"
@@ -1242,6 +1874,6 @@
   ],
   "title": "AppTwin",
   "type": "object",
-  "x-icos-contract": "1.120.0",
+  "x-icos-contract": "1.169.0",
   "x-license": "Apache-2.0"
 }

@@ -61,3 +61,14 @@ def test_the_cli_exits_by_what_it_may_do(tmp_path, capsys):
     bad.write_text(json.dumps(copy.deepcopy(_signed()) | {"signature": {"protected": "e30", "signature": "AA"}}))
     assert dec.main(["--export", str(bad), "--jwks", str(FIX / "icos_jwks.json"), "may-plan", "--app", "syn-supply-c"]) == 2
     assert '"status": "untrusted"' in capsys.readouterr().out
+
+
+def test_an_accepted_strategy_lets_a_plan_be_made_only_for_that_strategy():
+    """ICDEV[OS] Phase 250: the export carries the 7R strategies its mission owner accepted (signed by ICDEV[OS]'s code)."""
+    signed = json.loads((FIX / "decisions-strategy.signed.json").read_text(encoding="utf-8"))
+    doc = dec.verify(signed, dec.pinned(json.loads((FIX / "icos_jwks_strategy.json").read_text(encoding="utf-8"))))
+    ok = dec.may_plan(doc, "syn-isr-d", "refactor")
+    assert ok["allowed"] and ok["strategy"] == "refactor" and ok["accepted_by"] == "demo-owner"
+    other = dec.may_plan(doc, "syn-isr-d", "rehost")
+    assert not other["allowed"] and "accepted refactor" in other["reason"]
+    assert not dec.may_plan(doc, "syn-isr-e")["allowed"]

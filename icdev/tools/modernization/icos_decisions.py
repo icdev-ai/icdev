@@ -16,8 +16,10 @@ This module trusts that export only after:
 
 Then it answers, deterministically:
 
-    may-plan    an approved baseline names the application as departing or surviving a change: a migration may be
-                planned for it (goals/modernization_workflow.md Step 5). Anything else: no.
+    may-plan    an approved baseline names the application as departing or surviving a change, or ICDEV[OS]'s mission
+                owner accepted its 7R strategy (``strategies``, ICDEV[OS] Phase 250): a migration may be planned for it
+                (goals/modernization_workflow.md Step 5) -- with ``--strategy``, only the strategy accepted. Anything
+                else: no.
     may-retire  a recorded cutover names the application as departing: it may be switched off. Anything else: no.
 
     python tools/modernization/icos_decisions.py --export decisions.json --jwks icos_jwks.json may-plan --app <id>
@@ -155,8 +157,23 @@ def verify(signed: dict, keys: dict) -> dict:
 
 # --- the questions ---------------------------------------------------------------------------------
 
-def may_plan(doc: dict, app: str) -> dict:
-    """Whether an approved baseline decided ``app``'s future (departing or surviving a change)."""
+def accepted_strategy(doc: dict, app: str) -> dict | None:
+    """The 7R strategy ICDEV[OS]'s mission owner accepted for ``app`` (``migration-assessment``, ICDEV[OS] Phase 250),
+    the latest one; None when none is accepted."""
+    rows = [x for x in doc.get("strategies") or [] if x.get("application") == app]
+    return max(rows, key=lambda x: float(x.get("at") or 0)) if rows else None
+
+
+def may_plan(doc: dict, app: str, strategy: str | None = None) -> dict:
+    """Whether ``app`` may have a migration planned: an approved baseline decided its future (departing or surviving a
+    change), or ICDEV[OS]'s mission owner accepted its strategy. With ``strategy``, it must be the one accepted."""
+    acc = accepted_strategy(doc, app)
+    if strategy and acc and acc.get("strategy") != strategy:
+        return {"allowed": False, "application": app,
+                "reason": f"ICDEV[OS] accepted {acc.get('strategy')} for this application, not {strategy}", "accepted": acc}
+    if acc:
+        return {"allowed": True, "application": app, "role": "strategy accepted", "strategy": acc.get("strategy"),
+                "item": acc.get("item"), "accepted_by": acc.get("accepted_by"), "decisions": [acc.get("decision")]}
     for b in doc.get("baselines") or []:
         for c in b.get("changes") or []:
             role = "departing" if app in (c.get("departing") or []) else "surviving" if app in (c.get("survivors") or []) else None
@@ -188,14 +205,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true", help="JSON out (the default)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("may-plan", "may-retire"):
-        sub.add_parser(name).add_argument("--app", required=True, help="the application's id in its icos-apptwin bundle")
+        sp = sub.add_parser(name)
+        sp.add_argument("--app", required=True, help="the application's id in its icos-apptwin bundle")
+        if name == "may-plan":
+            sp.add_argument("--strategy", help="the plan's strategy: it must be the one ICDEV[OS] accepted, if one was")
     a = ap.parse_args(argv)
     try:
         doc = verify(json.loads(a.export.read_text(encoding="utf-8")), pinned(json.loads(a.jwks.read_text(encoding="utf-8"))))
     except (Untrusted, OSError, ValueError) as exc:
         print(json.dumps({"status": "untrusted", "error": str(exc)}))
         return 2
-    out = (may_plan if a.cmd == "may-plan" else may_retire)(doc, a.app)
+    out = may_plan(doc, a.app, a.strategy) if a.cmd == "may-plan" else may_retire(doc, a.app)
     print(json.dumps({"status": "ok", "issuer": doc.get("issuer"), **out}, sort_keys=True))
     return 0 if out["allowed"] else 1
 
