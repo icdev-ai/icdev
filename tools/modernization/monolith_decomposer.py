@@ -539,7 +539,7 @@ def generate_decomposition_plan(app_id, target_architecture="microservices", db_
     plan = {
         "app_id": app_id,
         "target_architecture": target_architecture,
-        "generated_at": datetime.now(timezone.utc).isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "total_services": len(boundaries),
         "phases": [],
         "summary": {},
@@ -1174,7 +1174,7 @@ def create_migration_plan(
         app_name = app_row["name"]
         plan_id = _gen_id("mplan-")
         plan_name = f"{strategy}_{app_name}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
-        now = datetime.now(timezone.utc).isoformat() + "Z"
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         tasks = []
 

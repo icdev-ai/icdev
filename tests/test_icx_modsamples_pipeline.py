@@ -137,3 +137,25 @@ def test_aiify_export_carries_the_enum_relative_paths_and_disqualifiers(tmp_path
     assert o["disqualifiers"] == ["safety-critical"]
     with pytest.raises(ax.BundleError):
         ax.aiify_from_scan({"overall_verdict": "Sort of ready"}, at="2026-11-12T00:00:00Z")
+
+
+def test_every_timestamp_in_the_bundle_parses(run):
+    """monolith_decomposer wrote "...+00:00Z" (an offset AND a Z); ICDEV[OS] refused the whole bundle."""
+    from datetime import datetime
+
+    def walk(v, path=""):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                yield from walk(x, f"{path}.{k}")
+        elif isinstance(v, list):
+            for i, x in enumerate(v):
+                yield from walk(x, f"{path}[{i}]")
+        elif isinstance(v, str) and path.endswith(("_at", ".at")):
+            yield path, v
+
+    stamps = list(walk(run["bundle"]))
+    assert stamps
+    for path, v in stamps:
+        datetime.fromisoformat(v.replace("Z", "+00:00")), path
+    assert ax._iso("2026-11-12T04:38:13.113247+00:00Z") == "2026-11-12T04:38:13.113247+00:00"
+    assert "/" not in json.dumps(run["report"]["source"])

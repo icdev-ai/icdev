@@ -103,6 +103,7 @@ def _iso(ts) -> str | None:
     if isinstance(ts, (int, float)):
         return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     s = str(ts).replace(" ", "T")
+    s = re.sub(r"([+-]\d\d:?\d\d)Z$", r"\1", s)  # "+00:00Z" (an offset AND a Z) is not a timestamp
     if not re.search(r"(Z|[+-]\d\d:?\d\d)$", s):
         s += "Z"
     return s

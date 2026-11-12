@@ -59,6 +59,12 @@ def _last_json(text: str):
     return None
 
 
+def _summary(res) -> dict:
+    """A tool's scalar results, without the local paths it reports (a report never says where it ran)."""
+    return {k: v for k, v in (res or {}).items()
+            if not isinstance(v, (list, dict)) and not (isinstance(v, str) and v.startswith(("/", "\\")))}
+
+
 def _digests(root: Path) -> list[dict]:
     if not root.exists():
         return []
@@ -163,7 +169,7 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
                             str(v_out), "--language", lang, "--from", frm, "--to", UPGRADE_TO[lang], "--json")
         res = _last_json(so) if rc == 0 else None
         r.note("version", rc == 0, None, None if rc == 0 else _why(se, so), from_version=frm, to_version=UPGRADE_TO[lang],
-               summary={k: v for k, v in (res or {}).items() if not isinstance(v, (list, dict))},
+               summary=_summary(res),
                artefacts=len(_digests(v_out)))
     else:
         r.note("version", False, None, f"no upgrade rule for {lang} at a declared level ({ver or 'none declared'})")
@@ -174,7 +180,7 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
                             str(f_out), "--from", fw, "--to", FRAMEWORK_TO[fw], "--report", "--json")
         res = _last_json(so) if rc == 0 else None
         r.note("framework", rc == 0, None, None if rc == 0 else _why(se, so), migration=f"{fw} -> {FRAMEWORK_TO[fw]}",
-               summary={k: v for k, v in (res or {}).items() if not isinstance(v, (list, dict))},
+               summary=_summary(res),
                artefacts=len(_digests(f_out)))
     else:
         r.note("framework", False, None, f"no framework migrator for {a['framework'] or 'an undetected framework'}")
@@ -242,7 +248,7 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
     if (bundle.get("migration") or {}) and not (bundle["migration"].get("waves")):
         gaps["migration.waves"] = ("the wave planner plans server inventory sessions, not an application's migration "
                                    "plan: no waves, so ICDEV[OS]'s migration-plan gate will block")
-    report = {"application": name, "source": str(source), "app_id": app, "project_id": project,
+    report = {"application": name, "source": source.name, "app_id": app, "project_id": project,
               "bundle": bundle_path.name, "bundle_sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
               "produced": sorted(produced - {"schema", "producer", "produced_at"}), "gaps": gaps, "steps": r.steps,
               "at": at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
