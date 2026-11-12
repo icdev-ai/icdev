@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -56,7 +57,7 @@ if str(BASE_DIR) not in sys.path:
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 
 logger = get_logger("icdev.modernization.ui_analyzer")
 

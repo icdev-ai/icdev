@@ -14,6 +14,7 @@ NIST: SC-7 (Boundary Protection), SA-8 (Security Engineering Principles)
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 import uuid
@@ -36,7 +37,7 @@ from pathlib import Path
 # Paths
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 PATTERNS_PATH = BASE_DIR / "context" / "modernization" / "decomposition_patterns.json"
 
 # ---------------------------------------------------------------------------
@@ -538,7 +539,7 @@ def generate_decomposition_plan(app_id, target_architecture="microservices", db_
     plan = {
         "app_id": app_id,
         "target_architecture": target_architecture,
-        "generated_at": datetime.now(timezone.utc).isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "total_services": len(boundaries),
         "phases": [],
         "summary": {},
@@ -1173,7 +1174,7 @@ def create_migration_plan(
         app_name = app_row["name"]
         plan_id = _gen_id("mplan-")
         plan_name = f"{strategy}_{app_name}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
-        now = datetime.now(timezone.utc).isoformat() + "Z"
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         tasks = []
 

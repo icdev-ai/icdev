@@ -50,6 +50,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import sqlite3
 import textwrap
 import uuid
@@ -73,7 +74,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 
 # Valid cutover statuses for the strangler fig lifecycle
 CUTOVER_STATUSES = ("legacy", "parallel", "modern", "decommissioned")

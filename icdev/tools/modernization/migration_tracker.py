@@ -53,6 +53,7 @@ Compliance:     NIST 800-53 Rev 5 / RMF
 import argparse
 import json
 import math
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -73,7 +74,7 @@ from pathlib import Path
 # Paths
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 
 # ---------------------------------------------------------------------------
 # Constants

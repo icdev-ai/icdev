@@ -59,7 +59,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 
 # File extensions mapped to language identifiers
 LANGUAGE_EXTENSIONS = {
@@ -968,6 +968,8 @@ def analyze_java(app_id, source_path):
                 if class_rm:
                     class_path_prefix = class_rm.group(1)
 
+                servlet_paths = _webservlet_paths(source_code)
+
                 # Classes
                 for cm in re_class.finditer(source_code):
                     kind = cm.group(1)  # class, interface, enum
@@ -1010,6 +1012,7 @@ def analyze_java(app_id, source_path):
                             json.dumps(props),
                         ),
                     )
+                    comp_id = _stored_component_id(conn, app_id, qualified, comp_id)
                     components_added += 1
 
                     # Inheritance dependency
@@ -1069,6 +1072,19 @@ def analyze_java(app_id, source_path):
                             )
                             apis_added += 1
 
+                    # Servlet 3 endpoints (@WebServlet), once per file, on its first class
+                    for endpoint_path in servlet_paths:
+                        conn.execute(
+                            """INSERT OR IGNORE INTO legacy_apis
+                               (id, legacy_app_id, component_id, method, path,
+                                handler_function)
+                               VALUES (%s, %s, %s, %s, %s, %s)""",
+                            (f"lapi-{uuid.uuid4().hex[:12]}", app_id, comp_id, "ALL",
+                             "/" + endpoint_path.strip("/"), f"{class_name}.service"),
+                        )
+                        apis_added += 1
+                    servlet_paths = []
+
         # Detect Struts actions from struts-config.xml
         struts_apis = _detect_struts_actions(source_path, app_id)
         apis_added += struts_apis
@@ -1111,6 +1127,94 @@ def _estimate_complexity_regex(source_code):
         complexity += len(re.findall(pattern, source_code))
     return complexity
 
+
+
+
+def _stored_component_id(conn, app_id, qualified, comp_id):
+    """The id the component is stored under. ``INSERT OR IGNORE`` keeps the first row for a qualified name (the same
+    class in two modules, or a re-analysis), so a fresh ``comp_id`` may never have been stored; anything that points at
+    the component (dependencies, APIs) must use the stored id, or it fails the foreign key."""
+    row = conn.execute(
+        "SELECT id FROM legacy_components WHERE legacy_app_id = %s AND qualified_name = %s", (app_id, qualified)
+    ).fetchone()
+    return row[0] if row else comp_id
+
+
+def _resolve_dependency_targets(app_id):
+    """Set ``target_component_id`` on dependencies whose evidence names one of this application's components.
+
+    ``import a.b.C`` (Java) or ``using``-style evidence resolves by qualified name; ``extends C`` /
+    ``implements C`` / ``inherits C`` by simple name only when exactly one component has it. Anything else -- a
+    library, a wildcard import, an ambiguous name -- stays unresolved (an external dependency), never guessed.
+    Returns how many were resolved.
+    """
+    conn = _get_db()
+    try:
+        comps = conn.execute(
+            "SELECT id, name, qualified_name FROM legacy_components WHERE legacy_app_id = %s", (app_id,)
+        ).fetchall()
+        by_q = {c["qualified_name"]: c["id"] for c in comps if c["qualified_name"]}
+        simple = {}
+        for c in comps:
+            simple.setdefault(c["name"], []).append(c["id"])
+        rows = conn.execute(
+            "SELECT id, source_component_id, dependency_type, evidence FROM legacy_dependencies "
+            "WHERE legacy_app_id = %s AND target_component_id IS NULL",
+            (app_id,),
+        ).fetchall()
+        seen = {
+            (d["source_component_id"], d["target_component_id"], d["dependency_type"])
+            for d in conn.execute(
+                "SELECT source_component_id, target_component_id, dependency_type FROM legacy_dependencies "
+                "WHERE legacy_app_id = %s AND target_component_id IS NOT NULL",
+                (app_id,),
+            ).fetchall()
+        }
+        n = 0
+        for r in rows:
+            m = re.match(r"(import|extends|implements|inherits)\s+([\w.$]+)", r["evidence"] or "")
+            if not m:
+                continue
+            word, ref = m.groups()
+            ref = ref.split("<")[0]
+            if word == "import":
+                target = by_q.get(ref)
+            else:
+                ids = simple.get(ref.rsplit(".", 1)[-1], [])
+                target = by_q.get(ref) or (ids[0] if len(ids) == 1 else None)
+            key = (r["source_component_id"], target, r["dependency_type"])
+            if target and target != r["source_component_id"] and key not in seen:
+                seen.add(key)  # one edge per (source, target, type): the table holds it unique
+                conn.execute("UPDATE legacy_dependencies SET target_component_id = %s WHERE id = %s", (target, r["id"]))
+                n += 1
+        conn.commit()
+        return n
+    finally:
+        conn.close()
+
+
+def _mvc_actions(class_name, base_types, source_code):
+    """Public action methods of an ASP.NET MVC controller (a ``*Controller`` deriving from ``Controller``), which the
+    conventional ``{controller}/{action}`` route exposes. Not a controller: none."""
+    bases = [b.strip().split("<")[0].rsplit(".", 1)[-1] for b in (base_types or "").split(",")]
+    if not class_name.endswith("Controller") or class_name == "Controller" or "Controller" not in bases:
+        return []
+    pat = re.compile(r"public\s+(?:virtual\s+|async\s+)*(?:Task<\s*)?(?:ActionResult|ViewResult|JsonResult|"
+                     r"PartialViewResult|RedirectToRouteResult|IActionResult|FileResult)\w*\s*>?\s+(\w+)\s*\(")
+    return sorted(set(pat.findall(source_code)))
+
+def _webservlet_paths(source_code: str) -> list[str]:
+    """URL patterns of a Servlet 3 ``@WebServlet``: positional (``@WebServlet("/x")``) or named
+    (``urlPatterns = {"/a", "/b"}`` / ``value = "/a"``). ``name = "..."`` is not a path."""
+    m = re.search(r"@WebServlet\s*\(([^)]*)\)", source_code, re.DOTALL)
+    if not m:
+        return []
+    args = m.group(1)
+    named = re.search(r"\b(?:urlPatterns|value)\s*=\s*(\{[^}]*\}|[\"'][^\"']*[\"'])", args)
+    if named:
+        return re.findall(r"[\"']([^\"']+)[\"']", named.group(1))
+    lead = re.match(r"\s*(\{[^}]*\}|[\"'][^\"']*[\"'])", args)
+    return re.findall(r"[\"']([^\"']+)[\"']", lead.group(1)) if lead else []
 
 def _detect_struts_actions(source_path, app_id):
     """Parse struts-config.xml for Action mappings if present."""
@@ -1335,6 +1439,7 @@ def analyze_csharp(app_id, source_path):
                             json.dumps(props),
                         ),
                     )
+                    comp_id = _stored_component_id(conn, app_id, qualified, comp_id)
                     components_added += 1
 
                     # Inheritance / implementation dependencies
@@ -1396,6 +1501,18 @@ def analyze_csharp(app_id, source_path):
                                 (api_id, app_id, comp_id, http_method, full_path, class_name),
                             )
                             apis_added += 1
+
+                    # ASP.NET MVC conventional routing: {controller}/{action} for each public action method
+                    for action in _mvc_actions(class_name, base_types_str, source_code):
+                        conn.execute(
+                            """INSERT OR IGNORE INTO legacy_apis
+                               (id, legacy_app_id, component_id, method, path,
+                                handler_function)
+                               VALUES (%s, %s, %s, %s, %s, %s)""",
+                            (f"lapi-{uuid.uuid4().hex[:12]}", app_id, comp_id, "ALL",
+                             f"/{class_name[: -len('Controller')]}/{action}", f"{class_name}.{action}"),
+                        )
+                        apis_added += 1
 
                     # Route attribute on methods
                     route_method_pattern = re.compile(
@@ -1557,6 +1674,10 @@ def _detect_framework(source_path, language):
 
                         if "Microsoft.NET.Sdk.Web" in content:
                             return ("ASP.NET Core", fw_version)
+                        # ASP.NET MVC on the .NET Framework: a System.Web.Mvc reference (MVC 3-5)
+                        mvc = re.search(r'Include="System\.Web\.Mvc,\s*Version=(\d+(?:\.\d+)*)', content)
+                        if mvc:
+                            return ("ASP.NET MVC", mvc.group(1))
                     except (OSError, IOError):
                         pass
 
@@ -1590,6 +1711,34 @@ def _detect_framework(source_path, language):
 
     return (None, None)
 
+
+
+def _detect_language_version(source_path, language):
+    """The language level the build declares, in the form the 7R upgrade table keys on, or None.
+
+    Java: ``maven.compiler.release``, ``maven.compiler.source``, ``java.version`` or ``<release>``/``<source>`` in any
+    ``pom.xml`` (the lowest wins: the module that would hold the upgrade back), ``1.8`` read as ``8``; Gradle
+    ``sourceCompatibility``. C#: ``<TargetFrameworkVersion>v4.x`` in a ``.csproj`` is ``framework-4``; an SDK-style
+    ``<TargetFramework>net8.0`` is ``8``. Nothing declared is None, never a guess.
+    """
+    root = Path(source_path)
+    found = []
+    if language == "java":
+        pat = re.compile(r"<(?:maven\.compiler\.(?:release|source)|java\.version|release|source)>\s*(1\.)?(\d+)\s*<")
+        for f in list(root.rglob("pom.xml")) + list(root.rglob("build.gradle")):
+            text = f.read_text(encoding="utf-8", errors="replace")
+            found += [int(m.group(2)) for m in pat.finditer(text)]
+            found += [int(m.group(2)) for m in re.finditer(r"sourceCompatibility\s*=\s*['\"]?(1\.)?(\d+)", text)]
+        return str(min(found)) if found else None
+    if language == "csharp":
+        for f in root.rglob("*.csproj"):
+            text = f.read_text(encoding="utf-8", errors="replace")
+            if m := re.search(r"<TargetFrameworkVersion>\s*v(\d+)", text):
+                found.append(f"framework-{m.group(1)}")
+            elif m := re.search(r"<TargetFramework>\s*net(\d+)\.", text):
+                found.append(m.group(1))
+        return min(found) if found else None
+    return None
 
 def _detect_version_from_requirements(source_path, package_name):
     """Try to extract a package version from requirements.txt or Pipfile."""
@@ -1942,6 +2091,9 @@ def analyze_full(project_id, app_id, source_path_override=None):
             conn.close()
         raise
 
+    # Point each dependency at the component it names, where that component is this application's own
+    analysis_result["dependencies_resolved"] = _resolve_dependency_targets(app_id)
+
     # Update dependency counts on components
     _update_dependency_counts(app_id)
 
@@ -1972,6 +2124,7 @@ def analyze_full(project_id, app_id, source_path_override=None):
         conn.execute(
             """UPDATE legacy_applications
                SET framework = %s, framework_version = %s,
+                   language_version = COALESCE(%s, language_version),
                    tech_debt_hours = %s, maintainability_index = %s,
                    complexity_score = %s, analysis_status = 'analyzed',
                    analyzed_at = %s
@@ -1979,6 +2132,7 @@ def analyze_full(project_id, app_id, source_path_override=None):
             (
                 framework,
                 framework_version,
+                _detect_language_version(source_path, language),
                 tech_debt,
                 maintainability,
                 avg_complexity,
