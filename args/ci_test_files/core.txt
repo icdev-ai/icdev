@@ -2432,3 +2432,5 @@ tests/cortex/test_document_intelligence_lens.py
 # check goes back to noise that hides real zero-context renders like the
 # ZIG-pillar 404 it exposed. ~0.3s, pure stdlib, no DB/LLM/network.
 tests/test_coherence_template_variable_parity.py
+# ICDEV[OS] Phase 254: the modernisation tooling over real-app-shaped trees (scratch sqlite, no model; ~7s).
+tests/test_icx_modsamples_pipeline.py
