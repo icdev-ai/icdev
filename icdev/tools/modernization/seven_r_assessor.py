@@ -25,6 +25,7 @@ Compliance:     NIST 800-53 Rev 5 / RMF
 import argparse
 import json
 import math
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -45,7 +46,7 @@ from pathlib import Path
 # Paths
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 CATALOG_PATH = BASE_DIR / "context" / "modernization" / "seven_rs_catalog.json"
 
 # ---------------------------------------------------------------------------

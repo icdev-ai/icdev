@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import re
 import sqlite3
 import uuid
@@ -36,7 +37,7 @@ from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 CALL_GRAPH_DEP_TYPES = ("method_call", "import", "inheritance", "injection")
 COMPLEXITY_THRESHOLDS = {"low": 10, "medium": 20, "high": 50}
 LAYER_ORDER = [
@@ -132,7 +133,8 @@ _RE = {
     "ef_prop": re.compile(r"public\s+(\w+\??)\s+(\w+)\s*\{\s*get;\s*set;\s*\}"),
     "ef_h1": re.compile(r"\.HasOne<(\w+)>\("),
     "ef_hm": re.compile(r"\.HasMany<(\w+)>\("),
-    "sql_ct": re.compile(r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"\[]?(\w+)[`"\]]?', re.I),
+    # the table's own name: a schema prefix ([Production].[Product], dbo.x) is skipped, not taken as the table
+    "sql_ct": re.compile(r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:[`"\[]?\w+[`"\]]?\.)*[`"\[]?(\w+)[`"\]]?', re.I),
     "sql_cd": re.compile(r'^\s+[`"\[]?(\w+)[`"\]]?\s+([\w()]+)', re.M),
     "sql_pki": re.compile(r"(\w+)\s+\w+.*?PRIMARY\s+KEY", re.I),
     "sql_pkc": re.compile(r"PRIMARY\s+KEY\s*\(([^)]+)\)", re.I),
@@ -662,7 +664,7 @@ def _parse_sql(src: Path, tbls: dict, rels: list):
             content = sf.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        for stmt in re.split(r";\s*\n", content):
+        for stmt in re.split(r";\s*\n|^\s*GO\s*$", content, flags=re.M | re.I):  # T-SQL batches end with GO
             s = stmt.strip()
             if not s:
                 continue

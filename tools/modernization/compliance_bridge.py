@@ -44,6 +44,7 @@ Classification: CUI // SP-CTI
 import argparse
 import collections
 import json
+import os
 import sqlite3
 import textwrap
 import sys
@@ -66,7 +67,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 
 # CUI banner text for generated documents
 CUI_BANNER = (

@@ -132,6 +132,11 @@ def validate(bundle: dict) -> list[str]:
 
 # --- inventory: the legacy_* tables ---------------------------------------------------------------
 
+def _source_root(app_id: str, conn) -> str | None:
+    row = conn.execute("SELECT source_path FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
+    return row["source_path"] if row else None
+
+
 def inventory(app_id: str, conn) -> dict:
     """The application row and its components, APIs, tables and dependencies, in a stable order."""
     app = conn.execute("SELECT id, name, primary_language, framework FROM legacy_applications WHERE id = %s",
@@ -197,16 +202,50 @@ def process_from_processify(doc: dict) -> dict | None:
                        **({"role": s["assignee_role"]} if s.get("assignee_role") else {})} for i, s in enumerate(steps)]}
 
 
-def aiify_from_scan(scan: dict, *, at: str) -> dict:
+def _rel(path: str, root: str | None) -> str:
+    """A module path relative to the application's source root: a bundle never carries where it was analysed."""
+    if root:
+        try:
+            return Path(path).resolve().relative_to(Path(root).resolve()).as_posix()
+        except ValueError:
+            pass
+    return path
+
+
+def _disqualifiers(o: dict) -> list[str]:
+    d = o.get("disqualifiers")
+    if isinstance(d, str):
+        try:
+            d = json.loads(d)
+        except ValueError:
+            d = [d] if d.strip() else []
+    return [str(x) for x in d or []]
+
+
+VERDICTS = ("ai_ready", "partial", "not_suitable")
+
+
+def _verdict(scan: dict) -> str:
+    """AI-Ify's verdict as the contract's enum. A live scan puts the enum in ``overall_ai_readiness`` and a sentence
+    ("Partially AI-ready") in ``overall_verdict``; older outputs had the enum in ``overall_verdict``."""
+    for k in ("overall_ai_readiness", "overall_verdict"):
+        if scan.get(k) in VERDICTS:
+            return scan[k]
+    raise BundleError(f"AI-Ify reported no verdict in {VERDICTS}: {scan.get('overall_verdict')!r}")
+
+
+def aiify_from_scan(scan: dict, *, at: str, root: str | None = None) -> dict:
     """``python -m tools.aiify.engine scan --json`` output. AI-Ify's posture grade is database-wide, not this
-    application's, so it is never carried (null)."""
+    application's, so it is never carried (null). Module paths are relative to ``root`` (the application's source
+    path), and AI-Ify's disqualifiers are carried: ICDEV[OS] refuses to enable a disqualified opportunity."""
     pillars = {k: {"passed": int(v["passed"]), "total": int(v["total"]),
                    "percentage": round(float(v["percentage"]) * (100 if float(v["percentage"]) <= 1 else 1), 2)}
                for k, v in (scan.get("pillar_scores") or {}).items()} or None
     def sub(o, k):
         v = (o.get("score") or {}).get(k)
         return None if v is None else float(v)
-    opps = [{"pattern_type": o["pattern_type"], "module_path": o["module_path"],
+    opps = [{"pattern_type": o["pattern_type"], "module_path": _rel(o["module_path"], root),
+             **({"disqualifiers": dq} if (dq := _disqualifiers(o)) else {}),
              "ai_readiness": (o.get("score") or {}).get("ai_readiness"),
              "composite_score": (o.get("score") or {}).get("composite_score"),
              **({"id": str(o["opportunity_id"])} if o.get("opportunity_id") is not None else {}),
@@ -216,7 +255,7 @@ def aiify_from_scan(scan: dict, *, at: str) -> dict:
     opps = [o for o in opps if o["ai_readiness"] is not None and o["composite_score"] is not None]
     rs = scan.get("overall_readiness_score")
     return {"tool": "icdev-it/aiify", "assessed_at": _iso(scan.get("completed_at")) or at,
-            "overall_verdict": scan["overall_verdict"], "posture_grade": None,
+            "overall_verdict": _verdict(scan), "posture_grade": None,
             "readiness_score": None if rs is None else float(rs), "pillars": pillars,
             "opportunities": sorted(opps, key=lambda o: (o["module_path"], o["pattern_type"])),
             # ICDEV[OS] Phase 247: the roadmap and the decisions people made here, carried
@@ -329,7 +368,7 @@ def build(app_id: str, conn, *, at: str | None = None, features: dict | None = N
               "features": features_from_inventory(features) if features is not None else None,
               "processes": sorted(procs, key=lambda p: p["id"]) or None,   # no measured steps: unverified, never "none"
               "consumers": None,
-              "aiify": aiify_from_scan(aiify, at=at) if aiify is not None else None,
+              "aiify": aiify_from_scan(aiify, at=at, root=_source_root(app_id, conn)) if aiify is not None else None,
               "integrity": integrity_from_sipa(integrity, at=at) if integrity is not None else None,
               "seven_r": seven_r_from_assessment(seven_r, at=at) if seven_r is not None else None,
               "migration": migration_from_plan(app_id, conn, at=at, waves=waves, strangler=strangler),

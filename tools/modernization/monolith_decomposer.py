@@ -14,6 +14,7 @@ NIST: SC-7 (Boundary Protection), SA-8 (Security Engineering Principles)
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 import uuid
@@ -36,7 +37,7 @@ from pathlib import Path
 # Paths
 # ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 PATTERNS_PATH = BASE_DIR / "context" / "modernization" / "decomposition_patterns.json"
 
 # ---------------------------------------------------------------------------

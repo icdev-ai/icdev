@@ -51,7 +51,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")  # the rule tools/db/storage.py follows
 TYPE_MAPPINGS_PATH = BASE_DIR / "context" / "modernization" / "db_type_mappings.json"
 
 CUI_BANNER = "CUI // SP-CTI"
