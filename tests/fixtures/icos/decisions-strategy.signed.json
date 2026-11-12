@@ -1,0 +1,40 @@
+{
+ "document": {
+  "baselines": [],
+  "chain": {
+   "broken_at": null,
+   "head": "04bf80adfa9e9a8b3047eefd7f71ba74b74e62a5ba04b0e7f226483c71ecd262",
+   "rows": 1,
+   "verifies": true
+  },
+  "current": {
+   "digest": "6297740a26defdfea9a8c76506875f53d6fafbe22c43a5a2f81f913b0402906b",
+   "version": 0
+  },
+  "cutovers": [],
+  "exported_at": 1794470400.0,
+  "issuer": "https://icos.example",
+  "marking": "internal",
+  "schema": "icos-portfolio-decisions/v1",
+  "strategies": [
+   {
+    "accepted_by": "demo-owner",
+    "application": "syn-isr-d",
+    "at": 1794443283.7318978,
+    "decision": "dec-strat-1",
+    "item": "wi-strat-1",
+    "marking": "internal",
+    "strategy": "refactor"
+   }
+  ],
+  "withheld": {
+   "baselines": 0,
+   "cutovers": 0,
+   "strategies": 0
+  }
+ },
+ "signature": {
+  "protected": "eyJhbGciOiJFUzM4NCIsInR5cCI6Imljb3MtcG9ydGZvbGlvLWRlY2lzaW9ucytqd3MiLCJraWQiOiIwZWYwMDAxODc3NmI1MmE0Iiwiamt1IjoiaHR0cHM6Ly9pY29zLmV4YW1wbGUvb2F1dGgvandrcyJ9",
+  "signature": "LPVtyBg5t3UVl36DRMd2cjFns-fjekMw3iQMLmKDFth56JGWd5yWh5J-95qATadLFajQGMRg3_f6Y6llWl1ruZxGUgHX-94ze9QZHwRwBJkfmQsxZFMCSyJXUxQFlSpN"
+ }
+}

@@ -11,6 +11,10 @@ produced, so every section is traceable to the tool that made it:
     --aiify       aiify                                  python -m tools.aiify.engine scan --json
     --integrity   integrity                              python tools/integrity/engine.py --json (SIPA)
     --seven-r     seven_r                                python tools/modernization/seven_r_assessor.py --json
+    (database)    migration                              the latest migration_plans row and its migration_tasks
+    --waves       migration.waves                        the migration canvas wave planner's waves (JSON list)
+    --strangler   migration.strangler                    tools/modernization/strangler_fig_manager.py status (JSON)
+    --refactor    refactor                               tools/migration_canvas/cam_refactor_engine.py jobs (JSON list)
     --ivv/--sbd/--rtm/--coherence/--readiness            already in the bundle's section shape
 
 A verification result (``--ivv``/``--sbd``/``--rtm``/``--coherence``) is passed through as it was made, with the
@@ -46,8 +50,9 @@ _BASE = repo_root(__file__)
 
 SCHEMA = "icos-apptwin/v1"
 SCHEMA_PATH = _BASE / "context" / "icos" / "apptwin.schema.json"
-#: The digest of the vendored ICDEV[OS] contract (1.120.0). A changed file is refused, never silently used.
-SCHEMA_SHA256 = "ec980a9759edcbb26714edd243ac8c4539b1b64dc8b52f6ce21818bd00cfcf51"
+#: The digest of the vendored ICDEV[OS] contract (1.169.0: the migration and refactor sections, ICDEV[OS] Phase 247).
+#: A changed file is refused, never silently used.
+SCHEMA_SHA256 = "1d696d65f22958768d112bc6e90b33f7e90e833d340f5db97c50560c0bda515e"
 PRODUCER = "icdev-it/apptwin_export"
 PASSTHROUGH = ("ivv", "sbd", "rtm", "coherence", "readiness")
 
@@ -198,16 +203,30 @@ def aiify_from_scan(scan: dict, *, at: str) -> dict:
     pillars = {k: {"passed": int(v["passed"]), "total": int(v["total"]),
                    "percentage": round(float(v["percentage"]) * (100 if float(v["percentage"]) <= 1 else 1), 2)}
                for k, v in (scan.get("pillar_scores") or {}).items()} or None
+    def sub(o, k):
+        v = (o.get("score") or {}).get(k)
+        return None if v is None else float(v)
     opps = [{"pattern_type": o["pattern_type"], "module_path": o["module_path"],
              "ai_readiness": (o.get("score") or {}).get("ai_readiness"),
-             "composite_score": (o.get("score") or {}).get("composite_score")}
+             "composite_score": (o.get("score") or {}).get("composite_score"),
+             **({"id": str(o["opportunity_id"])} if o.get("opportunity_id") is not None else {}),
+             **{k: v for k, v in (("value", sub(o, "value_score")), ("feasibility", sub(o, "feasibility_score")),
+                                  ("risk", sub(o, "risk_score"))) if v is not None}}
             for o in scan.get("opportunities") or []]
     opps = [o for o in opps if o["ai_readiness"] is not None and o["composite_score"] is not None]
     rs = scan.get("overall_readiness_score")
     return {"tool": "icdev-it/aiify", "assessed_at": _iso(scan.get("completed_at")) or at,
             "overall_verdict": scan["overall_verdict"], "posture_grade": None,
             "readiness_score": None if rs is None else float(rs), "pillars": pillars,
-            "opportunities": sorted(opps, key=lambda o: (o["module_path"], o["pattern_type"]))}
+            "opportunities": sorted(opps, key=lambda o: (o["module_path"], o["pattern_type"])),
+            # ICDEV[OS] Phase 247: the roadmap and the decisions people made here, carried
+            "roadmap": [{"phase": str(ph.get("phase") or ph.get("id")), "title": str(ph.get("title") or ph.get("name") or ""),
+                         "opportunities": [str(x) for x in ph.get("opportunities") or []],
+                         **({"effort_days": float(ph["effort_days"])} if ph.get("effort_days") is not None else {})}
+                        for ph in ((scan.get("roadmap") or {}).get("phases") or [])],
+            "decisions": [{"opportunity": str(d["source_id"]), "decision": {"accept": "accepted", "reject": "rejected"}.get(d["decision"], d["decision"]),
+                           "by": str(d.get("actor") or "user"), "at": _iso(d.get("decided_at")) or at}
+                          for d in scan.get("hitl_decisions") or [] if d.get("decision") in ("accept", "reject", "accepted", "rejected", "deferred")]}
 
 
 def integrity_from_sipa(r: dict, *, at: str) -> dict:
@@ -219,17 +238,90 @@ def integrity_from_sipa(r: dict, *, at: str) -> dict:
                                     for c in caps})}
 
 
+def _json(v, default):
+    if isinstance(v, str):
+        try:
+            return json.loads(v)
+        except ValueError:
+            return default
+    return default if v is None else v
+
+
 def seven_r_from_assessment(a: dict, *, at: str) -> dict:
-    ranking = (a.get("evidence") or {}).get("ranking") or a.get("ranking") or []
-    if isinstance((a.get("evidence") or {}), str):
-        ranking = json.loads(a["evidence"]).get("ranking") or []
-    return {"tool": "icdev-it/seven_r_assessor", "assessed_at": _iso(a.get("assessed_at") or a.get("created_at")) or at,
-            "ranked": [{"strategy": r.get("strategy_id") or r.get("strategy"), "score": float(r["score"])} for r in ranking]}
+    """The 7R assessment, carried whole (ICDEV[OS] Phase 247): the ranking, the recommendation and its own estimates."""
+    ev = _json(a.get("evidence"), {})
+    ranking = (ev.get("ranking") if isinstance(ev, dict) else None) or a.get("ranking") or []
+    out = {"tool": "icdev-it/seven_r_assessor", "assessed_at": _iso(a.get("assessed_at") or a.get("created_at")) or at,
+           "ranked": [{"strategy": r.get("strategy_id") or r.get("strategy"), "score": float(r["score"])} for r in ranking]}
+    for k, src in (("recommended", "recommended_strategy"), ("ato_impact", "ato_impact")):
+        if a.get(src):
+            out[k] = str(a[src])
+    for k in ("cost_estimate_hours", "risk_score", "timeline_weeks", "tech_debt_reduction"):
+        if a.get(k) is not None:
+            out[k] = float(a[k])
+    w = _json(a.get("scoring_weights"), {})
+    if isinstance(w, dict) and w:
+        out["weights"] = {str(k): float(v) for k, v in w.items() if isinstance(v, int | float)}
+    notes = [str(x) for x in (ev.get("rationale") or ev.get("notes") or [])] if isinstance(ev, dict) else []
+    if notes:
+        out["evidence"] = notes[:20]
+    return out
+
+
+_WAVE = {"planned": "planned", "in_progress": "in_progress", "complete": "closed", "closed": "closed",
+         "backed_out": "backed_out", "blocked": "in_progress"}
+
+
+def migration_from_plan(app_id: str, conn, *, at: str, waves: list | None = None, strangler: list | None = None) -> dict | None:
+    """The application's latest migration plan (ICDEV[OS] Phase 247): strategy, approach, task counts by type, and the
+    waves and strangler status the planners produced. No plan recorded: null (unverified in ICDEV[OS])."""
+    try:
+        row = conn.execute("SELECT * FROM migration_plans WHERE legacy_app_id = ? ORDER BY created_at DESC LIMIT 1", (app_id,)).fetchone()
+        if row is None:
+            return None
+        p = dict(row)
+        tasks = [dict(t) for t in conn.execute("SELECT task_type, status FROM migration_tasks WHERE plan_id = ?", (p["id"],))]
+    except Exception as exc:  # no migration tables in this database: nothing was planned here
+        if "no such table" in str(exc) or "does not exist" in str(exc):
+            return None
+        raise
+    by: dict[str, int] = {}
+    for t in tasks:
+        by[t["task_type"]] = by.get(t["task_type"], 0) + 1
+    out = {"tool": "icdev-it/monolith_decomposer", "assessed_at": _iso(p.get("created_at")) or at, "plan_id": p["id"],
+           "strategy": p["strategy"], "approach": p.get("migration_approach") or "strangler_fig", "status": p.get("status") or "draft",
+           "tasks_total": len(tasks), "tasks_done": sum(t["status"] == "completed" for t in tasks), "tasks_by_type": by}
+    if p.get("target_architecture"):
+        out["target_architecture"] = p["target_architecture"]
+    out["waves"] = [{"id": str(w.get("id") or f"w{w.get('wave_number')}"), "title": str(w.get("name") or w.get("title")),
+                     "order": int(w.get("wave_number") or w.get("order") or i + 1),
+                     "status": _WAVE.get(str(w.get("status") or "planned"), "planned"),
+                     **({"backout": str(w["backout"])} if w.get("backout") else {}),
+                     **({"ends": str(w["cutover_date"])} if w.get("cutover_date") else {})} for i, w in enumerate(waves or [])]
+    out["strangler"] = [{"component": _slug(str(s["component"])), "status": s["status"],
+                         **({"routed_pct": float(s["routed_pct"])} if s.get("routed_pct") is not None else {})}
+                        for s in strangler or [] if s.get("status") in ("legacy", "routing", "migrated")]
+    return out
+
+
+def refactor_from_jobs(jobs: list, *, at: str) -> dict:
+    """CAM's refactor jobs (ICDEV[OS] Phase 247). An artefact is named by the SHA-256 of its first file when it exists
+    here; otherwise by nothing -- never a guessed digest."""
+    out = []
+    for j in jobs:
+        arts = _json(j.get("artifacts_json"), []) if "artifacts_json" in j else j.get("artifacts") or []
+        first = _BASE / str(arts[0]) if arts else None
+        dig = hashlib.sha256(first.read_bytes()).hexdigest() if first is not None and first.is_file() else None
+        out.append({"id": str(j["id"]), "kind": str(j.get("refactor_type") or j.get("kind")),
+                    **({"component": str(j["component_name"])} if j.get("component_name") else {}),
+                    "status": str(j.get("status") or "queued"), **({"artefact_digest": dig} if dig else {})})
+    return {"tool": "icdev-it/cam_refactor_engine", "assessed_at": at, "jobs": out}
 
 
 def build(app_id: str, conn, *, at: str | None = None, features: dict | None = None, processes: list[dict] = (),
           aiify: dict | None = None, integrity: dict | None = None, seven_r: dict | None = None,
-          sections: dict | None = None) -> dict:
+          sections: dict | None = None, waves: list | None = None, strangler: list | None = None,
+          refactor: list | None = None) -> dict:
     at = at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     inv = inventory(app_id, conn)
     procs = [p for p in (process_from_processify(d) for d in processes) if p is not None]
@@ -239,7 +331,9 @@ def build(app_id: str, conn, *, at: str | None = None, features: dict | None = N
               "consumers": None,
               "aiify": aiify_from_scan(aiify, at=at) if aiify is not None else None,
               "integrity": integrity_from_sipa(integrity, at=at) if integrity is not None else None,
-              "seven_r": seven_r_from_assessment(seven_r, at=at) if seven_r is not None else None}
+              "seven_r": seven_r_from_assessment(seven_r, at=at) if seven_r is not None else None,
+              "migration": migration_from_plan(app_id, conn, at=at, waves=waves, strangler=strangler),
+              "refactor": refactor_from_jobs(refactor, at=at) if refactor is not None else None}
     for k in PASSTHROUGH:
         bundle[k] = (sections or {}).get(k)
     errors = validate(bundle)
@@ -256,6 +350,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--aiify", type=Path, help="python -m tools.aiify.engine scan --json output")
     ap.add_argument("--integrity", type=Path, help="SIPA assessment (JSON)")
     ap.add_argument("--seven-r", type=Path, help="7R assessment (JSON)")
+    ap.add_argument("--waves", type=Path, help="the migration canvas's waves (JSON list)")
+    ap.add_argument("--strangler", type=Path, help="strangler-fig component status (JSON list)")
+    ap.add_argument("--refactor", type=Path, help="CAM refactor jobs (JSON list)")
     for k in PASSTHROUGH:
         ap.add_argument(f"--{k}", type=Path, help=f"the bundle's {k} section (JSON)")
     ap.add_argument("--at", help="produced_at (ISO 8601; default now), so a bundle can be re-made byte for byte")
@@ -269,7 +366,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         b = build(a.app_id, conn, at=_iso(a.at) if a.at else None, features=load(a.features),
                   processes=[load(p) for p in a.process], aiify=load(a.aiify), integrity=load(a.integrity),
-                  seven_r=load(a.seven_r), sections={k: load(getattr(a, k)) for k in PASSTHROUGH})
+                  seven_r=load(a.seven_r), sections={k: load(getattr(a, k)) for k in PASSTHROUGH},
+                  waves=load(a.waves), strangler=load(a.strangler), refactor=load(a.refactor))
     except (BundleError, OSError, KeyError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}))
         return 1

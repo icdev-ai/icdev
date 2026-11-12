@@ -40,7 +40,7 @@ steps:
     depends_on: [compliance_gate]
   - id: export
     name: Export Migration Plan
-    tool: ""   # icx-doc-01: plan_exporter.py was never built; export from the canvas until it is
+    tool: tools/modernization/apptwin_export.py   # carries the plan, its waves and CAM's jobs to ICDEV[OS] (its Phase 247)
     node_type: tool
     required: false
     timeout: 120
