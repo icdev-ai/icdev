@@ -8876,6 +8876,25 @@ RESOURCE_REGISTRY = {
             "required": ["bundle_dir"],
         },
     },
+    # -- conformance (icx-cnf-01 — the five rules, per feature) --------------
+    "feature_conformance": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_feature_conformance",
+        "description": "Read the feature-conformance report: each feature in args/feature_conformance.yaml (Cortex, ACE, Co-Workers, ...) judged against the five rules -- console GUI, declared workflow per decision, twin observation, architecture trace, AI-native tool -- with the evidence each verdict rests on and every open gap by id. Served from the committed snapshot tools/conformance/feature_audit.py --markdown writes; read-only, decides nothing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "feature": {"type": "string", "description": "Only this feature key (e.g. cortex.pmo)"},
+                "rule": {
+                    "type": "string",
+                    "enum": ["gui", "workflow", "twin", "architecture", "ai_native"],
+                    "description": "Only this rule's cells",
+                },
+                "gaps_only": {"type": "boolean", "default": False, "description": "Drop cells with no open gap"},
+            },
+        },
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -9545,6 +9564,9 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "case_timeline":                            True,
     "case_build":                               False,
     "case_verify":                              True,
+    # -- conformance -------------------------------------------------------
+    # Reads the committed snapshot; writes nothing.
+    "feature_conformance":                      True,
 })
 
 
@@ -9756,6 +9778,7 @@ CATEGORY_WRITE_ROLES = MappingProxyType({
     "ccc":               ("admin", "developer"),
     "pmc":               ("admin", "developer"),
     "conflict_mesh":     ("admin", "developer"),
+    "conformance":       ("admin", "developer"),
     # -- infrastructure, distribution, credentials: admin only -------------
     # These mutate things outside the platform's own boundary (cloud accounts,
     # clusters, remote agents, third-party code, key material) or rewrite the

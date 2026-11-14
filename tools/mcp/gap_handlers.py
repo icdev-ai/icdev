@@ -4392,3 +4392,49 @@ def handle_case_verify(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_case_verify: %s", exc)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# conformance (icx-cnf-01)
+# ---------------------------------------------------------------------------
+
+
+def handle_feature_conformance(args: dict) -> dict:
+    """MCP: the feature-conformance report, optionally narrowed to a feature or rule.
+
+    Pattern A. Reads the committed snapshot rather than re-running the audit,
+    which probes the whole url_map in a subprocess; ``--check`` keeps the
+    snapshot fresh.
+    """
+    try:
+        from tools.conformance.feature_audit import RULES, load_snapshot
+
+        report = load_snapshot()
+        feature = str(args.get("feature") or "").strip()
+        rule = str(args.get("rule") or "").strip()
+        if rule and rule not in RULES:
+            return {"error": f"unknown rule {rule!r}; one of {list(RULES)}"}
+        features = report["features"]
+        if feature:
+            features = [f for f in features if f["key"] == feature]
+            if not features:
+                return {"error": f"unknown feature {feature!r}"}
+        rules = [rule] if rule else list(RULES)
+        out = []
+        for f in features:
+            cells = {r: f["cells"][r] for r in rules
+                     if not args.get("gaps_only") or f["cells"][r]["gaps"]}
+            out.append({"key": f["key"], "label": f["label"], "component": f["component"],
+                        "cells": cells})
+        return {
+            "classification": CORTEX_CLASSIFICATION,
+            "summary": report["summary"],
+            "enforcement": report["enforcement"],
+            "features": out,
+            "config_errors": report["config_errors"],
+            "stale_reasons": report["stale_reasons"],
+            "source": report["source"],
+        }
+    except Exception as exc:
+        logger.warning("handle_feature_conformance: %s", exc)
+        return {"error": str(exc)}
