@@ -155,6 +155,44 @@ def lineage_graph():
     )
 
 
+@lineage_api.route("/platform-model", methods=["GET"])
+def platform_model_trace():
+    """GET /api/lineage/platform-model — ICDEV's own architecture, traced (icx-cnf-04).
+
+    ``model``: each feature's requirements from args/platform_model, every cited
+    test and code path checked against the repository. ``thread``: the same,
+    read back from the seeded digital thread (project icdev-platform) with
+    find_orphans/find_gaps, or why it is not there. A requirement no test covers
+    is a gap in both, never a pass.
+    """
+    from tools.mbse.platform_model import PROJECT_ID, trace, validate
+
+    feature = request.args.get("feature", "").strip() or None
+    report = validate()
+    features = report["features"]
+    if feature:
+        if feature not in features:
+            return jsonify({"error": f"unknown feature {feature!r}"}), 404
+        features = {feature: features[feature]}
+    try:
+        thread = trace(db_path=str(DB_PATH), feature=feature)
+    except Exception as exc:  # noqa: BLE001 — an unreadable thread is reported, not hidden
+        thread = {"seeded": False, "reason": f"digital thread unreadable: {exc}", "features": {}}
+    return jsonify(
+        {
+            "project_id": PROJECT_ID,
+            "model": {
+                "ok": report["ok"],
+                "summary": report["summary"],
+                "features": features,
+                "gaps": [g for g in report["gaps"] if not feature or feature in g["features"].split(", ")],
+                "errors": report["errors"],
+            },
+            "thread": thread,
+        }
+    )
+
+
 @lineage_api.route("/stats", methods=["GET"])
 def lineage_stats():
     """GET /api/lineage/stats — Lineage statistics across sources."""

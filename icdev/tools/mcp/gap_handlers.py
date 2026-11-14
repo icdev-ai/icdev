@@ -2223,7 +2223,7 @@ def handle_ace_abort(args: dict) -> dict:
     try:
         from icdev.tools.ace.controller import ACEController
 
-        ACEController.get_instance().abort(instance_id)
+        ACEController.get_instance().abort(instance_id, actor="mcp")
         return {"instance_id": instance_id, "state": "cancelled", "aborted": True}
     except ImportError:
         return {
@@ -4437,4 +4437,46 @@ def handle_feature_conformance(args: dict) -> dict:
         }
     except Exception as exc:
         logger.warning("handle_feature_conformance: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# platform model (icx-cnf-04)
+# ---------------------------------------------------------------------------
+
+
+def handle_platform_model_trace(args: dict) -> dict:
+    """MCP: ICDEV's platform model as requirement -> element -> code -> test, per feature.
+
+    Pattern A. By default reads ``args/platform_model`` and checks every cited
+    test and code path against the repository (no database). ``seeded`` reads
+    the digital thread ``tools/mbse/platform_model.py --seed`` wrote instead; an
+    unseeded thread says so rather than reading as clean.
+    """
+    try:
+        from tools.mbse.platform_model import trace, validate
+
+        feature = str(args.get("feature") or "").strip() or None
+        if args.get("seeded"):
+            result = trace(feature=feature)
+            result["classification"] = CORTEX_CLASSIFICATION
+            return result
+        report = validate()
+        features = report["features"]
+        if feature:
+            if feature not in features:
+                return {"error": f"unknown feature {feature!r}"}
+            features = {feature: features[feature]}
+        return {
+            "classification": CORTEX_CLASSIFICATION,
+            "ok": report["ok"],
+            "summary": report["summary"],
+            "features": features,
+            "gaps": [g for g in report["gaps"]
+                     if not feature or feature in g["features"].split(", ")],
+            "errors": report["errors"],
+            "source": "args/platform_model",
+        }
+    except Exception as exc:
+        logger.warning("handle_platform_model_trace: %s", exc)
         return {"error": str(exc)}

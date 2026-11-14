@@ -812,8 +812,15 @@ def api_abort(instance_id: str):
     (The schema CHECK constraint allows ``cancelled``, not ``aborted`` — the
     controller's ``abort()`` sets the canonical terminal state.)
     """
+    actor = "api"
     try:
-        ACEController.get_instance().abort(instance_id)
+        from flask import g
+
+        actor = str((getattr(g, "current_user", None) or {}).get("id") or "api")
+    except Exception:  # noqa: BLE001 - outside a request context the actor stays "api"
+        pass
+    try:
+        ACEController.get_instance().abort(instance_id, actor=actor)
     except LookupError:
         return jsonify({"error": "not_found", "instance_id": instance_id}), 404
     except Exception as exc:  # noqa: BLE001

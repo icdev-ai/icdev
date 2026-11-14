@@ -1,0 +1,29 @@
+{
+  "durations": {
+    "tests/bom/test_cortex_bom.py": 0.264,
+    "tests/cortex/test_agent_confirm.py": 0.358,
+    "tests/cortex/test_mcp_tools.py": 0.099,
+    "tests/cortex/test_metrics.py": 0.333,
+    "tests/cortex/test_rest_bom.py": 0.235,
+    "tests/cortex/test_service_keys.py": 0.297,
+    "tests/test_ace_abort.py": 0.149,
+    "tests/test_ace_eval_routes.py": 0.15,
+    "tests/test_ace_event_bus.py": 0.419,
+    "tests/test_ace_hitl_resolve_endpoint.py": 0.135,
+    "tests/test_ace_nova_state_endpoint.py": 0.288,
+    "tests/test_ace_persona_generator.py": 0.018,
+    "tests/test_ace_persona_query.py": 0.018,
+    "tests/test_ace_profile_generator.py": 0.086,
+    "tests/test_ace_runtime.py": 0.28,
+    "tests/test_ace_session_persistence.py": 0.021,
+    "tests/test_ace_team_proposal.py": 0.275,
+    "tests/test_agent_evaluator.py": 0.1,
+    "tests/test_coworkers_canvas.py": 0.076,
+    "tests/test_eval_trends.py": 0.141,
+    "tests/test_platform_model.py": 14.926
+  },
+  "generated_at": "2026-11-14T17:24:51Z",
+  "note": "icx-cnf-04: the 21 test files this card gated, measured locally (JUnit totals). The next shard-timings refresh supersedes it.",
+  "source": "local-icx-cnf-04 (tests promoted by this card, measured on the build host)",
+  "unit": "seconds"
+}

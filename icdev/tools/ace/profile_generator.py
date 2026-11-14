@@ -238,8 +238,17 @@ def generate_profile(
 
     Returns {role_id, files_written}.
     """
-    spec = spec_override if spec_override else preview_profile(name, description)
-    role_id = spec.get("role_id") or _slug(name)
+    spec = dict(spec_override) if spec_override else preview_profile(name, description)
+    # A spec from the caller (an edited /preview) gets the same treatment the
+    # model's output does: the role_id is re-slugged so it can only name a file
+    # in the roles directory, and the security-relevant fields are held to the
+    # allowlists, so a request body cannot claim "green" or Bash (icx-cnf-04).
+    role_id = _slug(str(spec.get("role_id") or name))
+    spec["role_id"] = role_id
+    spec["source"] = "generated"
+    spec["tool_permissions"] = _sanitize_tool_permissions(
+        spec.get("tool_permissions"), ["Read", "Grep", "Glob"])
+    spec["trust_tier"] = _sanitize_trust_tier(spec.get("trust_tier"), "yellow")
     out_path = _ROLES_DIR / f"{role_id}.yaml"
 
     # Protect built-in roles from accidental overwrite

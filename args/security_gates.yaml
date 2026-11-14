@@ -2229,3 +2229,22 @@ feature_conformance:
     A stated reason excuses only its own rule and goes stale when the rule
     holds without it. The census enumerates every open gap by name and its
     ceiling (census_max) may only go down.
+
+# Platform model trace gate (icx-cnf-04)
+#
+# ICDEV's own architecture (args/platform_model/*.yaml) for the features the
+# conformance audit judges: requirement -> element -> code -> EXISTING test.
+# ivv.rtm_completeness_pct is project-wide with no per-feature consumer, so these
+# features are held here instead.
+# Run: python tools/mbse/platform_model.py --check
+#      python tools/workflow/coherence_checker.py --check platform_model_trace --json
+platform_model_trace:
+  blocking:
+    - invented_test_or_code       # a cited test (file and function) or code path that does not exist
+    - orphan_platform_element     # an element no requirement of its feature names
+  warning:
+    - untested_requirement        # a requirement no test covers yet: a gap, never a pass
+    - feature_without_requirement # a feature in args/feature_conformance.yaml the model does not cover
+  note: >
+    Seeding the digital thread (--seed) refuses a model with a blocking
+    condition, so an invented test never reaches the RTM.

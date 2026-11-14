@@ -1,0 +1,557 @@
+# CUI // SP-CTI
+# ICDEV platform model: ICDEV Cortex (tools/cortex). icx-cnf-04.
+#
+# The reviewed source the MBSE digital thread is seeded from for this component:
+#   requirement -> element -> code -> test (-> NIST control)
+#
+#   python tools/mbse/platform_model.py --check            # every link resolves
+#   python tools/mbse/platform_model.py --seed --json      # write the digital thread
+#
+# Rules (held by tools/mbse/platform_model.py and the feature audit):
+#   * an element's `type` is a digital-thread artifact type (VALID_TYPES in
+#     tools/mbse/digital_thread.py) and every `code` path exists. A code entry
+#     may name a symbol (`path::func` or `path::Class.method`) when a file is
+#     shared, so a test is never linked to code it does not exercise;
+#   * a test is a pytest node id (`path::name` or `path::Class::name`) whose file
+#     and function exist. A requirement with no test is listed with `tests: []`
+#     and is a GAP, never a pass. Never cite a test that does not exist;
+#   * every element of a feature is named by at least one of its requirements
+#     (no orphans);
+#   * `features` keys are those in args/feature_conformance.yaml.
+
+component: cortex
+project_id: icdev-platform
+
+elements:
+  - id: cortex.search_ask
+    type: sysml_element
+    kind: block
+    name: Cortex search and ask
+    features: [cortex.search_ask]
+    code:
+      - tools/cortex/search_service.py::search
+      - tools/cortex/analyst.py::ask
+      - tools/cortex/intent_router.py
+      - tools/cortex/blueprint.py::_run_facade
+
+  - id: cortex.governed_verbs
+    type: sysml_element
+    kind: block
+    name: Cortex governed verbs (resolve, complete, reason, classify, extract)
+    features: [cortex.governed_verbs]
+    code:
+      - tools/cortex/api.py::complete
+      - tools/cortex/api.py::reason
+      - tools/cortex/api.py::classify
+      - tools/cortex/api.py::extract
+      - tools/cortex/resolver.py::resolve
+
+  - id: cortex.govern
+    type: sysml_element
+    kind: block
+    name: Cortex TRUST chain (govern)
+    features: [cortex.govern]
+    code:
+      - tools/cortex/governance.py
+      - tools/cortex/api.py::govern
+
+  - id: cortex.agent_launch
+    type: sysml_element
+    kind: block
+    name: Cortex agent launch
+    features: [cortex.agent_launch]
+    code:
+      - tools/cortex/api.py::agent
+      - tools/cortex/blueprint.py::_agent_proposal
+      - tools/cortex/blueprint.py::_launch_confirmed_agent
+
+  - id: cortex.findings
+    type: sysml_element
+    kind: block
+    name: Cortex resolution findings
+    features: [cortex.findings]
+    code:
+      - tools/cortex/finding_store.py
+      - tools/dashboard/templates/document_intelligence/explorer.html
+
+  - id: cortex.pmo.award
+    type: sysml_element
+    kind: block
+    name: Cortex PMO award
+    features: [cortex.pmo]
+    code:
+      - tools/cortex/rest_v1.py::api_v1_award
+
+  - id: cortex.pmo.evidence
+    type: sysml_element
+    kind: block
+    name: Cortex PMO evidence-bearing verbs (win themes, staffing, cost volume)
+    features: [cortex.pmo]
+    code:
+      - tools/cortex/rest_v1.py::api_v1_win_themes
+      - tools/cortex/rest_v1.py::api_v1_staffing_matrix
+      - tools/cortex/rest_v1.py::api_v1_cost_volume
+
+  - id: cortex.pmo.render
+    type: sysml_element
+    kind: block
+    name: Cortex PMO rendered artefacts (slides, dashboard)
+    features: [cortex.pmo]
+    code:
+      - tools/cortex/rest_v1.py::api_v1_slides
+      - tools/cortex/rest_v1.py::api_v1_dashboard
+
+  - id: cortex.pmo.bom
+    type: sysml_element
+    kind: block
+    name: Cortex PMO BOM credibility designation
+    features: [cortex.pmo]
+    code:
+      - tools/cortex/rest_v1.py::api_v1_bom
+
+  - id: cortex.intake
+    type: sysml_element
+    kind: block
+    name: Cortex intake bridge
+    features: [cortex.intake]
+    code:
+      - tools/cortex/rest_intake.py
+
+  - id: cortex.service_keys
+    type: sysml_element
+    kind: block
+    name: Cortex service keys
+    features: [cortex.service_keys]
+    code:
+      - tools/cortex/service_keys.py
+
+  - id: cortex.metrics
+    type: sysml_element
+    kind: block
+    name: Cortex metrics
+    features: [cortex.metrics]
+    code:
+      - tools/cortex/metrics.py
+      - tools/cortex/blueprint.py::metrics_page
+      - tools/dashboard/templates/cortex/metrics.html
+
+  - id: cortex.airgap_guard
+    type: sysml_element
+    kind: block
+    name: Cortex air-gap guard and health
+    features: [cortex.airgap_guard]
+    code:
+      - tools/cortex/config.py::airgap_active
+      - tools/cortex/config.py::airgap_exclusions
+      - tools/cortex/rest_v1.py::api_v1_health
+
+interfaces:
+  - id: if.cortex.rest_v1
+    type: sysml_element
+    kind: interface_block
+    name: REST /cortex/api/v1
+    features:
+      - cortex.search_ask
+      - cortex.governed_verbs
+      - cortex.govern
+      - cortex.agent_launch
+      - cortex.pmo
+      - cortex.intake
+      - cortex.service_keys
+      - cortex.airgap_guard
+    code:
+      - tools/cortex/rest_v1.py
+
+  - id: if.cortex.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP cortex_* tools
+    features: [cortex.search_ask, cortex.governed_verbs]
+    code:
+      - tools/mcp/cortex_server.py
+
+  - id: if.cortex.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /cortex
+    features: [cortex.search_ask]
+    code:
+      - tools/cortex/blueprint.py::index
+      - tools/dashboard/templates/cortex/index.html
+
+requirements:
+  # ── search and ask ──────────────────────────────────────────────────────
+  - id: PM-CTX-01
+    title: Search returns normalized rows through the REST surface
+    text: >-
+      POST /cortex/api/v1/search returns normalized result rows from the
+      governed search facade; ask returns a CortexResult, and a blocked query is
+      a 403, an unanswerable one a 422.
+    type: functional
+    priority: high
+    features: [cortex.search_ask]
+    elements: [cortex.search_ask, if.cortex.rest_v1]
+    controls: [AC-3, SI-10]
+    tests:
+      - tests/cortex/test_rest_api.py::test_search_returns_normalized_rows
+      - tests/cortex/test_rest_api.py::test_ask_returns_cortex_result
+      - tests/cortex/test_rest_api.py::test_ask_query_blocked_returns_403
+      - tests/cortex/test_rest_api.py::test_ask_unanswerable_returns_422
+
+  - id: PM-CTX-02
+    title: The /cortex chat routes a message by intent
+    text: >-
+      The console chat sends a search-shaped message to search and a data
+      question to ask; an explicit mode overrides routing; a facade error
+      degrades instead of a 500.
+    type: functional
+    priority: medium
+    features: [cortex.search_ask]
+    elements: [cortex.search_ask, if.cortex.console]
+    controls: [SI-11]
+    tests:
+      - tests/cortex/test_chat_routing.py::TestChatRouting::test_search_message_calls_cortex_search
+      - tests/cortex/test_chat_routing.py::TestChatRouting::test_data_question_calls_cortex_ask
+      - tests/cortex/test_chat_routing.py::TestChatRouting::test_explicit_mode_overrides_routing
+      - tests/cortex/test_chat_routing.py::TestChatRouting::test_facade_error_degrades_not_500
+      - tests/cortex/test_blueprint_routes.py::TestPageRoutes::test_index_returns_200_and_branding
+
+  - id: PM-CTX-03
+    title: The MCP search tool round-trips and reports backend errors
+    text: >-
+      cortex_search is registered with a resolvable handler, round-trips
+      results, requires a query and wraps a backend error.
+    type: interface
+    priority: medium
+    features: [cortex.search_ask]
+    elements: [cortex.search_ask, if.cortex.mcp]
+    controls: [AC-3]
+    tests:
+      - tests/cortex/test_mcp_tools.py::test_registry_lists_all_cortex_tools
+      - tests/cortex/test_mcp_tools.py::test_search_round_trips_results
+      - tests/cortex/test_mcp_tools.py::test_search_requires_query
+      - tests/cortex/test_mcp_tools.py::test_search_wraps_backend_error
+
+  # ── governed verbs ──────────────────────────────────────────────────────
+  - id: PM-CTX-04
+    title: Every generative verb runs through the governance pipeline
+    text: >-
+      complete, reason, classify and extract on the REST surface each run the
+      TRUST chain once; a schema refusal is a 422, not a 500.
+    type: security
+    priority: critical
+    features: [cortex.governed_verbs]
+    elements: [cortex.governed_verbs, if.cortex.rest_v1]
+    controls: [AC-4, AU-2, SI-10]
+    tests:
+      - tests/cortex/test_rest_api.py::test_complete_is_governed
+      - tests/cortex/test_rest_api.py::test_reason_is_governed
+      - tests/cortex/test_rest_api.py::test_classify_is_governed
+      - tests/cortex/test_rest_api.py::test_extract_is_governed
+      - tests/cortex/test_rest_api.py::test_a_schema_refusal_is_422_not_500
+      - tests/cortex/test_rest_single_governance.py::test_one_rest_call_enters_the_trust_chain_once
+
+  - id: PM-CTX-05
+    title: Resolve is deterministic and audited
+    text: >-
+      A resolution's verdict comes from the pack evaluation with no LLM call,
+      survives a router that raises, and is audited with a provenance id.
+    type: functional
+    priority: critical
+    features: [cortex.governed_verbs]
+    elements: [cortex.governed_verbs]
+    controls: [AU-3, SI-7]
+    tests:
+      - tests/cortex/test_resolve_facade.py::TestVerdictIsDeterministic::test_verdict_comes_from_pack_evaluate
+      - tests/cortex/test_resolve_facade.py::TestVerdictIsDeterministic::test_no_llm_call_is_made_at_all
+      - tests/cortex/test_resolve_facade.py::TestAuditAndProvenance::test_a_resolution_audits_with_a_provenance_id
+
+  - id: PM-CTX-06
+    title: Extract never returns a partly valid object
+    text: >-
+      Extract validates the model's output against the caller's schema, repairs
+      at most once, and refuses non-conforming output naming the defect.
+    type: functional
+    priority: high
+    features: [cortex.governed_verbs]
+    elements: [cortex.governed_verbs]
+    controls: [SI-10]
+    tests:
+      - tests/cortex/test_extract_validation.py::test_non_conforming_output_raises
+      - tests/cortex/test_extract_validation.py::test_a_partly_valid_object_is_never_returned
+      - tests/cortex/test_extract_validation.py::test_repair_stops_at_one_attempt
+
+  - id: PM-CTX-07
+    title: The MCP generative tools serialize the governance outcome
+    text: >-
+      cortex_complete and cortex_reason return their result with the governance
+      report, require a prompt, and surface a governance block.
+    type: interface
+    priority: medium
+    features: [cortex.governed_verbs]
+    elements: [cortex.governed_verbs, if.cortex.mcp]
+    controls: [AC-4]
+    tests:
+      - tests/cortex/test_mcp_tools.py::test_complete_serializes_result_with_governance
+      - tests/cortex/test_mcp_tools.py::test_complete_surfaces_governance_block
+      - tests/cortex/test_mcp_tools.py::test_reason_serializes_result_with_mode
+
+  # ── govern ──────────────────────────────────────────────────────────────
+  - id: PM-CTX-08
+    title: Govern runs the TRUST chain once and returns its report
+    text: >-
+      POST /cortex/api/v1/govern returns the governance report, runs the chain
+      exactly once, and a governance block is a 403.
+    type: security
+    priority: critical
+    features: [cortex.govern]
+    elements: [cortex.govern, if.cortex.rest_v1]
+    controls: [AC-4, AU-2]
+    tests:
+      - tests/cortex/test_rest_api.py::test_govern_returns_report
+      - tests/cortex/test_rest_api.py::test_governance_block_returns_403
+      - tests/cortex/test_rest_single_governance.py::test_the_govern_endpoint_still_runs_the_chain_once
+
+  - id: PM-CTX-09
+    title: The KG gate and gate timing are held
+    text: >-
+      The governance pipeline's knowledge-graph gate and per-gate timing are
+      recorded on the report.
+    type: non_functional
+    priority: medium
+    features: [cortex.govern]
+    elements: [cortex.govern]
+    controls: [AU-3]
+    tests:
+      - tests/cortex/test_governance_kg_gate.py
+      - tests/cortex/test_governance_timing.py
+
+  # ── agent launch ────────────────────────────────────────────────────────
+  - id: PM-CTX-10
+    title: A REST agent launch needs a scope no key holds by default
+    text: >-
+      The agent verb needs the `agent` scope, which is never in the default
+      grant; identity comes from the session, never the body; tools and
+      handlers are never forwarded.
+    type: security
+    priority: critical
+    features: [cortex.agent_launch]
+    elements: [cortex.agent_launch, if.cortex.rest_v1]
+    controls: [AC-3, AC-6, IA-2]
+    tests:
+      - tests/cortex/test_rest_agent.py::test_agent_is_not_in_the_default_grant
+      - tests/cortex/test_rest_agent.py::test_scope_missing_403
+      - tests/cortex/test_rest_agent.py::test_identity_comes_from_the_session_not_the_body
+      - tests/cortex/test_rest_agent.py::test_tools_and_handlers_are_never_forwarded
+
+  - id: PM-CTX-11
+    title: The chat never launches an agent without a confirm
+    text: >-
+      An agent-shaped message in /cortex chat returns a proposal naming the real
+      roster; only a confirmed turn launches, through the governed facade.
+    type: security
+    priority: critical
+    features: [cortex.agent_launch]
+    elements: [cortex.agent_launch]
+    controls: [AC-3, CM-3]
+    tests:
+      - tests/cortex/test_chat_routing.py::TestChatRouting::test_agent_intent_gated_behind_confirm
+      - tests/cortex/test_agent_confirm.py::test_unconfirmed_agent_does_not_launch
+      - tests/cortex/test_agent_confirm.py::test_confirmed_agent_launches_via_governed_facade
+      - tests/cortex/test_agent_confirm.py::test_proposal_names_the_actual_roster
+
+  # ── findings ────────────────────────────────────────────────────────────
+  - id: PM-CTX-12
+    title: A conflict keeps both sides and names no winner
+    text: >-
+      A resolution conflict is stored with both values, each with its own
+      source and as-of date; the store has no winner column.
+    type: functional
+    priority: high
+    features: [cortex.findings]
+    elements: [cortex.findings]
+    controls: [SI-7, AU-10]
+    tests:
+      - tests/cortex/test_finding_store.py::TestNoSilentWinner::test_no_winner_column_exists
+      - tests/cortex/test_finding_store.py::TestNoSilentWinner::test_both_values_are_kept
+      - tests/cortex/test_finding_store.py::TestConflictRoundTrip::test_each_side_keeps_its_own_source_and_as_of
+
+  - id: PM-CTX-13
+    title: The Explorer shows a conflict unresolved, both sides visible
+    text: >-
+      The Document Intelligence Explorer renders both sides of a conflict and
+      says it is unresolved by design; gaps are browsable.
+    type: functional
+    priority: high
+    features: [cortex.findings]
+    elements: [cortex.findings]
+    controls: [SI-7]
+    tests:
+      - tests/cortex/test_explorer_conflict_render.py::TestNoSilentResolution::test_the_page_says_it_is_unresolved_by_design
+      - tests/cortex/test_explorer_conflict_render.py::TestNoSilentResolution::test_neither_side_is_hidden
+      - tests/cortex/test_finding_store.py::TestGapBrowsing::test_all_gaps_are_browsable
+
+  # ── PMO verbs ───────────────────────────────────────────────────────────
+  - id: PM-CTX-14
+    title: Award needs its own scope; pricing a bid cannot declare it won
+    text: >-
+      The award verb needs a scope that is not in the default grant, and a key
+      that prices a bid cannot use it to declare the bid won.
+    type: security
+    priority: critical
+    features: [cortex.pmo]
+    elements: [cortex.pmo.award, if.cortex.rest_v1]
+    controls: [AC-5, AC-6]
+    tests:
+      - tests/cortex/test_rest_award.py::test_award_scope_exists_but_is_not_granted_by_default
+      - tests/cortex/test_rest_award.py::test_pricing_a_bid_does_not_let_you_declare_it_won
+      - tests/cortex/test_rest_award.py::test_award_requires_authentication
+
+  - id: PM-CTX-15
+    title: PMO verbs refuse unevidenced input rather than store it
+    text: >-
+      An uncited win theme and an unevidenced person are refused, not stored;
+      an unrated labour category refuses a price rather than guessing.
+    type: functional
+    priority: high
+    features: [cortex.pmo]
+    elements: [cortex.pmo.evidence]
+    controls: [SI-10]
+    tests:
+      - tests/cortex/test_rest_win_themes.py::test_uncited_theme_is_refused_not_stored
+      - tests/cortex/test_rest_staffing_matrix.py::test_an_unevidenced_person_is_REFUSED_not_stored
+      - tests/cortex/test_rest_cost_volume.py::test_an_unrated_lcat_refuses_the_price_rather_than_guessing
+
+  - id: PM-CTX-16
+    title: Rendered PMO artefacts never take a path from the caller
+    text: >-
+      A slide image path and a dashboard path-bearing key never reach the
+      renderer; the caller cannot mark its own export down.
+    type: security
+    priority: high
+    features: [cortex.pmo]
+    elements: [cortex.pmo.render]
+    controls: [SI-10, AC-16]
+    tests:
+      - tests/cortex/test_rest_slides.py::test_image_path_never_reaches_the_builder
+      - tests/cortex/test_rest_dashboard.py::test_a_path_bearing_key_NEVER_reaches_the_renderer
+      - tests/cortex/test_rest_dashboard.py::test_the_caller_cannot_mark_its_own_export_DOWN
+
+  - id: PM-CTX-17
+    title: A BOM credibility designation binds only when a person makes it
+    text: >-
+      POST /cortex/api/v1/bom needs a caller with the cortex:bom scope, which is
+      never in the default grant. A credibility tier the caller does not declare
+      comes back ai_proposed with a rationale; only the caller's declaration
+      binds (set_by human). Nothing uploaded is persisted.
+    type: security
+    priority: high
+    features: [cortex.pmo]
+    elements: [cortex.pmo.bom]
+    controls: [AC-3, AC-6]
+    tests:
+      - tests/cortex/test_rest_bom.py::test_the_route_needs_a_caller_and_the_bom_scope
+      - tests/cortex/test_rest_bom.py::test_an_undeclared_tier_is_proposed_never_self_approved
+      - tests/cortex/test_rest_bom.py::test_only_the_callers_declaration_binds
+      - tests/cortex/test_rest_bom.py::test_no_documents_is_a_400_naming_the_defect
+      - tests/bom/test_cortex_bom.py::TestTheScope::test_it_is_never_in_the_default_grant
+      - tests/bom/test_cortex_bom.py::TestSilenceIsNeverConfirmation::test_what_the_caller_omits_is_PROPOSED_and_says_so
+      - tests/bom/test_cortex_bom.py::TestTheSecurityPosture::test_nothing_the_caller_uploads_is_persisted
+
+  # ── intake ──────────────────────────────────────────────────────────────
+  - id: PM-CTX-18
+    title: The intake bridge keeps a session in its tenant
+    text: >-
+      Creating an intake session seeds the verbatim ask as the first turn; a
+      turn on another tenant's session is a 404; a session read whitelists its
+      fields.
+    type: security
+    priority: high
+    features: [cortex.intake]
+    elements: [cortex.intake, if.cortex.rest_v1]
+    controls: [AC-3, AC-4]
+    tests:
+      - tests/cortex/test_rest_intake.py::test_create_seeds_verbatim_ask_as_first_turn
+      - tests/cortex/test_rest_intake.py::test_turn_other_tenant_session_404
+      - tests/cortex/test_rest_intake.py::test_get_session_whitelists_fields
+      - tests/cortex/test_rest_intake.py::test_scope_missing_403
+
+  # ── service keys ────────────────────────────────────────────────────────
+  - id: PM-CTX-19
+    title: A service key is stored only as a hash and bound to its tenant
+    text: >-
+      The raw key is never stored; a revoked or unknown key is rejected; the
+      tenant comes from the key, never the request; classification is clamped
+      to the key's ceiling.
+    type: security
+    priority: critical
+    features: [cortex.service_keys]
+    elements: [cortex.service_keys]
+    controls: [IA-5, AC-3]
+    tests:
+      - tests/cortex/test_service_keys.py::test_raw_key_never_stored
+      - tests/cortex/test_service_keys.py::test_revoked_key_rejected
+      - tests/cortex/test_service_keys.py::test_tenant_never_from_request
+      - tests/cortex/test_service_keys.py::test_classification_clamped_to_ceiling
+
+  - id: PM-CTX-20
+    title: Every REST verb checks the key's scopes
+    text: >-
+      An unauthenticated call is a 401 and a key without the verb's scope a 403
+      on every REST v1 verb; a session user without a binding is unaffected.
+    type: security
+    priority: critical
+    features: [cortex.service_keys]
+    elements: [cortex.service_keys, if.cortex.rest_v1]
+    controls: [AC-3, IA-2]
+    tests:
+      - tests/cortex/test_rest_scopes.py::test_scope_missing_403
+      - tests/cortex/test_rest_scopes.py::test_unauthenticated_401
+      - tests/cortex/test_rest_api.py::test_unauthenticated_requests_rejected
+      - tests/security/test_canvas_guard_service_key.py::test_scope_enforcement_still_exists_for_the_exempted_principal
+
+  # ── metrics ─────────────────────────────────────────────────────────────
+  - id: PM-CTX-21
+    title: Metrics say unavailable or idle, never a false zero
+    text: >-
+      A missing accounting table reports unavailable, a healthy empty window
+      reports idle, and counts stay exact when the detail read is truncated.
+    type: non_functional
+    priority: medium
+    features: [cortex.metrics]
+    elements: [cortex.metrics]
+    controls: [SI-4]
+    tests:
+      - tests/cortex/test_metrics.py::test_missing_table_reports_unavailable
+      - tests/cortex/test_metrics.py::test_healthy_but_empty_window_reports_idle
+      - tests/cortex/test_metrics.py::test_counts_stay_exact_when_detail_is_truncated
+      - tests/cortex/test_metrics.py::test_metrics_page_discloses_a_truncated_detail_read
+
+  # ── air-gap guard ───────────────────────────────────────────────────────
+  - id: PM-CTX-22
+    title: Air-gapped calls exclude cloud models and the guard sees every function
+    text: >-
+      When air-gapped, the summarize path threads the model exclusions; the
+      guard sees every declared Cortex routing function.
+    type: security
+    priority: critical
+    features: [cortex.airgap_guard]
+    elements: [cortex.airgap_guard]
+    controls: [SC-7, AC-4]
+    tests:
+      - tests/cortex/test_summarize_routing_airgap.py::test_the_airgap_guard_can_see_this_function
+      - tests/cortex/test_summarize_routing_airgap.py::test_airgap_context_threads_exclude_model_ids
+      - tests/cortex/test_summarize_routing_airgap.py::test_every_declared_cortex_routing_function_exists_under_routing
+
+  - id: PM-CTX-23
+    title: The health probe needs no auth and returns status only
+    text: >-
+      GET /cortex/api/v1/health answers without a session or key, for external
+      availability probes.
+    type: interface
+    priority: medium
+    features: [cortex.airgap_guard]
+    elements: [cortex.airgap_guard, if.cortex.rest_v1]
+    controls: [SC-7]
+    tests:
+      - tests/cortex/test_rest_scopes.py::test_health_requires_no_auth

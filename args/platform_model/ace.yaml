@@ -1,0 +1,334 @@
+# CUI // SP-CTI
+# ICDEV platform model: ACE Co-Worker Engine (tools/ace). icx-cnf-04.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the
+# header of args/platform_model/cortex.yaml. A requirement with `tests: []` is a
+# GAP the audit and the digital thread both report, never a pass.
+
+component: ace
+project_id: icdev-platform
+
+elements:
+  - id: ace.runs
+    type: sysml_element
+    kind: block
+    name: ACE team runs (launch, run, rerun, sessions)
+    features: [ace.runs]
+    code:
+      - tools/ace/controller.py::ACEController.launch
+      - tools/ace/coworker_thread.py
+      - tools/ace/message_bus.py
+      - tools/ace/blueprint.py::api_launch
+
+  - id: ace.hitl
+    type: sysml_element
+    kind: block
+    name: ACE mid-run HITL checkpoint and suggested-team confirm
+    features: [ace.hitl]
+    code:
+      - tools/ace/coworker_thread.py
+      - tools/ace/chat_trigger.py
+      - tools/ace/blueprint.py::api_hitl_resolve
+      - tools/dashboard/templates/coworker/hitl.html
+
+  - id: ace.abort
+    type: sysml_element
+    kind: block
+    name: ACE abort
+    features: [ace.abort]
+    code:
+      - tools/ace/controller.py::ACEController.abort
+      - tools/ace/blueprint.py::api_abort
+      - tools/mcp/gap_handlers.py::handle_ace_abort
+
+  - id: ace.profiles.persona
+    type: sysml_element
+    kind: block
+    name: ACE personas (query, generate on demand)
+    features: [ace.profiles]
+    code:
+      - tools/ace/persona_query.py
+      - tools/ace/persona_generator.py
+
+  - id: ace.profiles.generator
+    type: sysml_element
+    kind: block
+    name: ACE role profile generator (preview, generate, delete)
+    features: [ace.profiles]
+    code:
+      - tools/ace/profile_generator.py
+      - tools/ace/blueprint.py::api_profiles_preview
+      - tools/ace/blueprint.py::api_profiles_generate
+      - tools/ace/blueprint.py::api_profiles_delete
+
+  - id: ace.trust
+    type: sysml_element
+    kind: block
+    name: ACE trust (NOVA state) and run events
+    features: [ace.trust_sessions]
+    code:
+      - tools/ace/blueprint.py::api_nova_state
+      - tools/ace/event_bus.py
+
+  - id: ace.evaluations
+    type: sysml_element
+    kind: block
+    name: ACE session evaluations and trends
+    features: [ace.trust_sessions]
+    code:
+      - tools/ace/evaluator.py
+      - tools/ace/eval_runner.py
+      - tools/ace/blueprint.py::api_session_eval_post
+      - tools/ace/blueprint.py::api_session_eval_get
+      - tools/ace/blueprint.py::api_evals_list
+      - tools/ace/blueprint.py::api_evals_trends
+
+interfaces:
+  - id: if.ace.api
+    type: sysml_element
+    kind: interface_block
+    name: REST /api/ace
+    features: [ace.runs, ace.hitl, ace.trust_sessions]
+    code:
+      - tools/ace/blueprint.py
+
+  - id: if.ace.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /coworker
+    features: [ace.runs]
+    code:
+      - tools/ace/blueprint.py::instance_detail
+      - tools/dashboard/templates/coworker/instance.html
+
+  - id: if.ace.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP ace_* and nova_* tools
+    features: [ace.profiles]
+    code:
+      - tools/mcp/gap_handlers.py::handle_ace_persona_query
+
+requirements:
+  # ── runs ────────────────────────────────────────────────────────────────
+  - id: PM-ACE-01
+    title: A launch returns an instance and runs the roles it was given
+    text: >-
+      The controller's launch returns an instance id and threads the requested
+      role ids to the run.
+    type: functional
+    priority: high
+    features: [ace.runs]
+    elements: [ace.runs, if.ace.api]
+    controls: [AU-2]
+    tests:
+      - tests/test_ace_runtime.py::test_controller_launch_returns_instance_id
+      - tests/test_ace_runtime.py::test_controller_launch_threads_role_ids_to_run
+
+  - id: PM-ACE-02
+    title: A session is resumable by its token
+    text: >-
+      A session row is found by its resume token, its turns append and reload,
+      a duplicate token is refused, and the instance page exposes the token.
+    type: functional
+    priority: medium
+    features: [ace.runs]
+    elements: [ace.runs, if.ace.console]
+    controls: [SC-23]
+    tests:
+      - tests/test_ace_session_persistence.py::test_select_by_resume_token_returns_one_row
+      - tests/test_ace_session_persistence.py::test_append_turn_and_reload
+      - tests/test_ace_session_persistence.py::test_duplicate_resume_token_raises
+      - tests/test_ace_instance_page_render.py::test_instance_page_with_session_exposes_resume_token
+
+  - id: PM-ACE-03
+    title: A /coworker page that fails says so
+    text: >-
+      A template failure on a /coworker page is an HTML 500, never a JSON 200;
+      an unknown instance is a 404; the audit endpoint returns its events.
+    type: non_functional
+    priority: medium
+    features: [ace.runs]
+    elements: [ace.runs, if.ace.console, if.ace.api]
+    controls: [SI-11]
+    tests:
+      - tests/test_ace_instance_page_render.py::test_template_failure_on_page_route_is_500_html_not_200_json
+      - tests/test_ace_instance_page_render.py::test_unknown_instance_is_404
+      - tests/test_ace_instance_page_render.py::test_audit_endpoint_returns_events_array_and_count
+
+  - id: PM-ACE-04
+    title: A co-worker step is refused when trust is denied
+    text: >-
+      A co-worker thread runs its steps in sequence and stops a step its trust
+      level does not allow.
+    type: security
+    priority: high
+    features: [ace.runs]
+    elements: [ace.runs]
+    controls: [AC-6]
+    tests:
+      - tests/test_ace_runtime.py::test_coworker_thread_step_sequence
+      - tests/test_ace_runtime.py::test_coworker_thread_trust_denied
+
+  # ── HITL ────────────────────────────────────────────────────────────────
+  - id: PM-ACE-05
+    title: A low-confidence step waits for a person
+    text: >-
+      The confidence gate sets the run pending and registers the checkpoint; a
+      person approves or rejects it through the resolve endpoint, which needs
+      every field; resolving wakes the thread.
+    type: functional
+    priority: critical
+    features: [ace.hitl]
+    elements: [ace.hitl, if.ace.api]
+    controls: [AC-3, CM-3]
+    tests:
+      - tests/test_ace_runtime.py::test_confidence_gate_fires_sets_pending_and_registers_event
+      - tests/test_ace_runtime.py::test_hitl_resolve_wakes_thread_under_poll_interval
+      - tests/test_ace_hitl_resolve_endpoint.py::test_hitl_resolve_endpoint_approves_confidence_gate
+      - tests/test_ace_hitl_resolve_endpoint.py::test_hitl_resolve_endpoint_rejects_confidence_gate
+      - tests/test_ace_hitl_resolve_endpoint.py::test_hitl_resolve_endpoint_requires_fields
+
+  - id: PM-ACE-06
+    title: A suggested team is proposed, never launched, until a person confirms
+    text: >-
+      An implicit message proposes a team without launching it; a declined
+      proposal cannot be confirmed; confirm is idempotent; every decision is
+      written to the append-only trail.
+    type: functional
+    priority: critical
+    features: [ace.hitl]
+    elements: [ace.hitl]
+    controls: [AC-3, AU-9]
+    tests:
+      - tests/test_ace_team_proposal.py::test_implicit_message_proposes_without_launching
+      - tests/test_ace_team_proposal.py::test_declined_proposal_cannot_be_confirmed
+      - tests/test_ace_team_proposal.py::test_confirm_is_idempotent
+      - tests/test_ace_team_proposal.py::test_decisions_are_written_to_the_append_only_trail
+
+  # ── abort ───────────────────────────────────────────────────────────────
+  - id: PM-ACE-07
+    title: Abort stops a running team at once, needs no approval, and is audited
+    text: >-
+      ACEController.abort, POST /api/ace/<instance_id>/abort and ace_abort stop
+      every coworker thread and mark the run cancelled in the same call, with no
+      approval step, and append an abort row naming the actor to ace_audit_log.
+      An unknown instance is a 404.
+    type: functional
+    priority: critical
+    features: [ace.abort]
+    elements: [ace.abort]
+    controls: [IR-4, AU-2]
+    tests:
+      - tests/test_ace_abort.py::test_abort_stops_every_thread_and_marks_the_run_cancelled
+      - tests/test_ace_abort.py::test_abort_is_audited_with_its_actor
+      - tests/test_ace_abort.py::test_abort_of_an_unknown_instance_raises_and_writes_nothing
+      - tests/test_ace_abort.py::test_the_route_stops_the_run_in_one_request_with_no_approval
+      - tests/test_ace_abort.py::test_the_route_returns_404_for_an_unknown_instance
+      - tests/test_ace_abort.py::test_the_mcp_tool_aborts_and_records_mcp_as_the_actor
+
+  # ── profiles ────────────────────────────────────────────────────────────
+  - id: PM-ACE-08
+    title: A persona answers in its role's identity
+    text: >-
+      ace_persona_query answers with the role's soul as the system prompt,
+      falls back to a generalist for an unknown role, and returns an error
+      object rather than raising.
+    type: functional
+    priority: medium
+    features: [ace.profiles]
+    elements: [ace.profiles.persona, if.ace.mcp]
+    controls: [SI-10]
+    tests:
+      - tests/test_ace_persona_query.py::TestQueryPersona::test_uses_soul_identity_as_system_prompt
+      - tests/test_ace_persona_query.py::TestQueryPersona::test_unknown_role_falls_back_to_generalist_system_prompt
+      - tests/test_ace_persona_query.py::TestHandleAcePersonaQuery::test_exception_is_caught_and_returns_error_dict
+
+  - id: PM-ACE-09
+    title: A subject-matter persona is generated once and reused
+    text: >-
+      A persona needs a domain description, is written and indexed once, and is
+      reused from the cache without a new model call.
+    type: functional
+    priority: medium
+    features: [ace.profiles]
+    elements: [ace.profiles.persona]
+    controls: [CM-2]
+    tests:
+      - tests/test_ace_persona_generator.py::test_get_or_generate_persona_requires_domain_description
+      - tests/test_ace_persona_generator.py::test_get_or_generate_persona_reuses_cached_persona_without_a_new_llm_call
+
+  - id: PM-ACE-10
+    title: A role profile is previewed before it is written, and deleted on request
+    text: >-
+      /api/ace/profiles/preview, /generate and DELETE /api/ace/profiles/<role_id>
+      go through tools/ace/profile_generator.py. Preview writes nothing; a
+      generated role (from the model or a caller's spec) is held to the
+      red/yellow tiers and Read/Grep/Glob, and its role_id cannot leave the
+      roles directory; a built-in role is never overwritten or deleted.
+    type: security
+    priority: high
+    features: [ace.profiles]
+    elements: [ace.profiles.generator]
+    controls: [CM-3, AC-6]
+    tests:
+      - tests/test_ace_profile_generator.py::test_preview_writes_nothing_and_holds_the_model_to_the_allowlists
+      - tests/test_ace_profile_generator.py::test_generate_writes_one_generated_role
+      - tests/test_ace_profile_generator.py::test_generate_refuses_to_overwrite_a_builtin_role
+      - tests/test_ace_profile_generator.py::test_a_caller_supplied_spec_is_held_to_the_same_allowlists
+      - tests/test_ace_profile_generator.py::test_delete_removes_generated_roles_and_candidates_only
+      - tests/test_ace_profile_generator.py::test_the_profile_routes_preview_generate_and_delete
+
+  # ── trust, sessions, evaluations ────────────────────────────────────────
+  - id: PM-ACE-11
+    title: NOVA trust state is reported honestly
+    text: >-
+      The NOVA state endpoint returns each co-worker's trust score, reports the
+      default when there is no ledger, and says an improvement has no evidence
+      when it has none.
+    type: functional
+    priority: high
+    features: [ace.trust_sessions]
+    elements: [ace.trust, if.ace.api]
+    controls: [SI-4]
+    tests:
+      - tests/test_ace_nova_state_endpoint.py::test_nova_state_trust_score_present
+      - tests/test_ace_nova_state_endpoint.py::test_nova_state_default_trust_when_no_ledger
+      - tests/test_ace_nova_state_endpoint.py::test_nova_state_legacy_improvement_reports_no_evidence_honestly
+
+  - id: PM-ACE-12
+    title: Run events reach only their own instance's subscribers
+    text: >-
+      The event bus delivers to every subscriber of an instance, isolates
+      instances, and drops an event on a full queue rather than blocking.
+    type: non_functional
+    priority: medium
+    features: [ace.trust_sessions]
+    elements: [ace.trust]
+    controls: [SC-5]
+    tests:
+      - tests/test_ace_event_bus.py::TestPublishSubscribe::test_different_instances_isolated
+      - tests/test_ace_event_bus.py::TestPublishSubscribe::test_full_queue_drops_event
+      - tests/test_ace_event_bus.py::TestThreadSafety::test_concurrent_publish_and_subscribe
+
+  - id: PM-ACE-13
+    title: A session evaluation is recorded and compared
+    text: >-
+      POST /api/ace/sessions/<session_id>/eval scores a stored session through
+      tools/ace/evaluator.py and persists it (an unknown session is a 404 and
+      writes nothing); the eval, list and trends routes read it back; the eval
+      runner loads its suite and reports a failing router as an error.
+    type: functional
+    priority: medium
+    features: [ace.trust_sessions]
+    elements: [ace.evaluations]
+    controls: [CA-7]
+    tests:
+      - tests/test_ace_eval_routes.py::test_post_scores_a_stored_session_and_persists_it
+      - tests/test_ace_eval_routes.py::test_an_unknown_session_is_a_404_and_writes_nothing
+      - tests/test_ace_eval_routes.py::test_the_read_side_returns_what_was_stored
+      - tests/test_agent_evaluator.py::TestScoreFromDB::test_score_existing_session
+      - tests/test_agent_evaluator.py::TestSaveAndGetEval::test_save_and_retrieve
+      - tests/test_agent_evaluator.py::TestEvalRunner::test_load_suite_parses_entries
+      - tests/test_agent_evaluator.py::TestEvalRunner::test_run_eval_router_failure
+      - tests/test_eval_trends.py::TestGetEvalTrends::test_fallback_query_used_when_join_fails

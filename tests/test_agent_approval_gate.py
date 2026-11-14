@@ -668,3 +668,11 @@ def test_classification_is_a_frozen_value():
     assert isinstance(cls, Classification)
     with pytest.raises(Exception):
         cls.tier = REVERSIBLE  # type: ignore[misc]
+
+
+def test_an_agent_aborting_an_ace_run_is_never_held_for_approval():
+    """A stop only lowers autonomy (owner, 2026-11-14): ace_abort is auto-allowed, never the default `unknown`
+    tier that halts, and it does not claim the reversible tier's "cannot act" exemption."""
+    cls = classify("ace_abort", {"instance_id": "ace-1"}, policy=load_policy(refresh=True))
+    assert cls.tier == RECOVERABLE
+    assert cls.requires_approval is False
