@@ -49,7 +49,7 @@ version: 1
 enforcement: warn
 
 # The ceiling on args/feature_conformance_census.txt. It may only go DOWN.
-census_max: 79
+census_max: 47
 
 doc: docs/audits/conformance-cortex-coworker.md
 snapshot: docs/audits/conformance-cortex-coworker.json
@@ -109,19 +109,26 @@ features:
       - cortex.api_v1_reason
       - cortex.api_v1_classify
       - cortex.api_v1_extract
+      - cortex.verbs_page
     mcp_tools: [cortex_resolve, cortex_complete, cortex_reason, cortex_classify, cortex_extract]
 
   - key: cortex.govern
     component: cortex
     label: "Cortex: govern (TRUST chain)"
-    endpoints: [cortex.api_v1_govern]
-    mcp_tools: [cortex_govern]
+    endpoints:
+      - cortex.api_v1_govern
+      - cortex.govern_page
+      - cortex.api_trust_chain
+    # cortex_govern RUNS the chain, which writes the cortex_audit, cortex_sessions
+    # and provenance rows, so it stays declared mutating. cortex_trust_chain is
+    # its read (icx-cnf-05).
+    mcp_tools: [cortex_govern, cortex_trust_chain]
 
   - key: cortex.agent_launch
     component: cortex
     label: "Cortex: agent launch"
-    endpoints: [cortex.api_v1_agent]
-    mcp_tools: [cortex_agent_launch]
+    endpoints: [cortex.api_v1_agent, cortex.api_agent_launches]
+    mcp_tools: [cortex_agent_launch, cortex_agent_launches]
     machine_endpoints:
       - endpoint: cortex.api_v1_agent
         reason: >-
@@ -155,7 +162,7 @@ features:
     endpoints:
       - dic.explorer
       - dic.api_explorer_cortex_findings
-    mcp_tools: []
+    mcp_tools: [cortex_findings_list]
     declared_decisions:
       - id: cortex.findings.adjudicate
         evidence:
@@ -173,7 +180,9 @@ features:
       - cortex.api_v1_dashboard
       - cortex.api_v1_award
       - cortex.api_v1_bom
-    mcp_tools: []
+      - cortex.pmo_page
+      - cortex.api_pmo_status
+    mcp_tools: [cortex_pmo_status]
     declared_decisions:
       - id: cortex.pmo.bom_designation
         endpoint: cortex.api_v1_bom
@@ -188,13 +197,15 @@ features:
       - cortex.api_v1_intake_session_create
       - cortex.api_v1_intake_turn
       - cortex.api_v1_intake_session_get
-    mcp_tools: []
+      - cortex.intake_page
+      - cortex.api_intake_sessions
+    mcp_tools: [cortex_intake_sessions]
 
   - key: cortex.service_keys
     component: cortex
     label: "Cortex: service keys"
-    endpoints: []
-    mcp_tools: []
+    endpoints: [cortex.service_keys_page, cortex.api_service_keys]
+    mcp_tools: [cortex_service_keys]
 
   - key: cortex.metrics
     component: cortex
@@ -203,13 +214,13 @@ features:
       - cortex.metrics_page
       - cortex.api_metrics
       - cortex.api_metrics_tile
-    mcp_tools: []
+    mcp_tools: [cortex_metrics]
 
   - key: cortex.airgap_guard
     component: cortex
     label: "Cortex: air-gap guard and health"
-    endpoints: [cortex.api_v1_health]
-    mcp_tools: []
+    endpoints: [cortex.api_v1_health, cortex.airgap_page, cortex.api_airgap]
+    mcp_tools: [cortex_airgap_posture]
 
   # ── ACE Co-Worker Engine (tools/ace) ──────────────────────────────────────
   - key: ace.runs
@@ -229,6 +240,7 @@ features:
       - ace_api.api_stream
       - ace_api.api_session_rerun
       - ace_api.api_ace_chat
+      - ace.chat_page
     mcp_tools: [ace_launch, ace_status]
 
   - key: ace.hitl
@@ -240,7 +252,7 @@ features:
       - ace_api.api_suggestion_get
       - ace_api.api_suggestion_confirm
       - ace_api.api_suggestion_decline
-    mcp_tools: []
+    mcp_tools: [ace_checkpoints]
     served_by:
       - endpoint: ace.instance_detail
         evidence:
@@ -308,7 +320,6 @@ features:
       - ace_api.api_coworker_stats
       - ace_api.api_nova_state
       - ace_api.api_ace_events
-      - ace_api.api_ace_events_emit
       - ace_api.api_ace_event_topics
       - ace_api.api_iqe_query
     mcp_tools:
@@ -325,7 +336,7 @@ features:
       - coworkers.index
       - coworkers.open_chat
       - coworkers.status
-    mcp_tools: []
+    mcp_tools: [coworkers_roster]
 
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit

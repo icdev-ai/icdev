@@ -1,0 +1,85 @@
+<!-- CUI // SP-CTI — ACE Chat -->
+{% extends "base.html" %}
+{% block title %}ACE Chat — Co-Worker Engine — ICDEV™{% endblock %}
+
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="padding:20px 28px;">
+  <div style="font-size:12px;margin-bottom:10px;">
+    <a href="/">Home</a> / <a href="/coworker">Co-Worker Engine</a> / <a href="/coworker/sessions">Agent Sessions</a> / <span>ACE Chat</span>
+  </div>
+  <h1 style="margin:0;font-size:22px;font-weight:700;">ACE Chat</h1>
+  <p style="margin:4px 0 16px;color:var(--text-secondary,#7a8cb0);font-size:13px;max-width:900px;">
+    A multi-turn conversation with the Co-Worker Engine. Each turn is kept in the session's history, so a later
+    turn can build on an earlier one; reopen a session by its id. A reply is an answer: chatting launches no team
+    and approves nothing. To run a team, use the Co-Worker Engine page.
+  </p>
+
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+    <label for="ace-chat-session" style="font-size:12px;color:var(--text-secondary,#7a8cb0);">Session id</label>
+    <input id="ace-chat-session" style="min-width:320px;background:var(--bg-secondary,#1a1a2e);border:1px solid var(--border-color,#2a2a4a);color:var(--text-primary,#e2e8f0);padding:6px 10px;border-radius:5px;font-size:12px;">
+    <button type="button" onclick="aceChatNew()" style="background:var(--bg-secondary,#1a1a2e);border:1px solid var(--border-color,#2a2a4a);color:var(--text-primary,#e2e8f0);padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px;">New session</button>
+  </div>
+
+  <div id="ace-chat-log" style="min-height:160px;max-height:480px;overflow:auto;background:var(--bg-secondary,#1a1a2e);border:1px solid var(--border-color,#2a2a4a);border-radius:8px;padding:12px;margin-bottom:10px;font-size:13px;"></div>
+
+  <div style="display:flex;gap:8px;">
+    <textarea id="ace-chat-input" rows="3" aria-label="Your message" style="flex:1;background:var(--bg-secondary,#1a1a2e);border:1px solid var(--border-color,#2a2a4a);color:var(--text-primary,#e2e8f0);padding:8px;border-radius:5px;font-size:13px;"></textarea>
+    <button type="button" id="ace-chat-send" onclick="aceChatSend()" style="background:var(--bg-secondary,#1a1a2e);border:1px solid var(--border-color,#2a2a4a);color:var(--text-primary,#e2e8f0);padding:6px 16px;border-radius:5px;cursor:pointer;font-size:13px;">Send</button>
+  </div>
+  <div id="ace-chat-status" style="font-size:11px;color:var(--text-secondary,#7a8cb0);margin-top:6px;"></div>
+
+  <div style="margin-top:32px;">
+    <h2 style="font-size:15px;font-weight:600;margin-bottom:12px;">Query Co-Worker data (IQE)</h2>
+    {% set iqe_canvas = "ace" %}
+    {% set iqe_api_route = "/api/ace/iqe-query" %}
+    {% include "includes/iqe_query_widget.html" %}
+  </div>
+</div>
+
+<script>
+function aceEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+  });
+}
+function aceChatNew() {
+  var id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now());
+  document.getElementById('ace-chat-session').value = 'chat-' + id;
+  document.getElementById('ace-chat-log').innerHTML = '';
+  document.getElementById('ace-chat-status').textContent = '';
+}
+function aceChatLine(who, text) {
+  var log = document.getElementById('ace-chat-log');
+  log.innerHTML += '<div style="margin-bottom:8px;"><strong>' + aceEsc(who) + ':</strong> ' +
+    '<span style="white-space:pre-wrap;">' + aceEsc(text) + '</span></div>';
+  log.scrollTop = log.scrollHeight;
+}
+function aceChatSend() {
+  var sid = document.getElementById('ace-chat-session').value.trim();
+  if (!sid) { aceChatNew(); sid = document.getElementById('ace-chat-session').value; }
+  var input = document.getElementById('ace-chat-input');
+  var msg = input.value.trim();
+  if (!msg) { return; }
+  aceChatLine('You', msg);
+  input.value = '';
+  document.getElementById('ace-chat-status').textContent = 'Waiting for the reply…';
+  fetch('/api/ace/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({session_id: sid, user_message: msg})
+  }).then(function(r) { return r.json().then(function(j) { return {status: r.status, json: j}; }); })
+    .then(function(res) {
+      if (res.status >= 400) {
+        document.getElementById('ace-chat-status').textContent = 'Error: ' + (res.json.error || res.status);
+        return;
+      }
+      aceChatLine('ACE', res.json.assistant_message);
+      document.getElementById('ace-chat-status').textContent = 'Turn ' + res.json.turn_count + ' saved.';
+    })
+    .catch(function(e) { document.getElementById('ace-chat-status').textContent = 'Request failed: ' + e; });
+}
+aceChatNew();
+</script>
+{% endblock %}

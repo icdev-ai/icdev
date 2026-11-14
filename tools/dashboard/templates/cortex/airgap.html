@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Cortex Air-Gap — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="margin-bottom:20px;">
+  <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🛰️ Cortex Air-Gap Posture</h2>
+  <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;max-width:900px;">
+    With <code style="color:#b8d0e8;">{{ posture.env_var }}=1</code> Cortex calls only local-tier models. The readiness
+    invariant says every Cortex routing chain keeps at least one local model, so the facade still answers offline.
+    This page reads the switch and checks the invariant now; it changes nothing.
+    · <a href="{{ url_for('cortex.index') }}" style="color:#5aa9e6;">← back to Cortex</a>
+  </p>
+</div>
+
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+  {% if posture.status == 'unavailable' %}
+  <div style="color:#f87171;font-size:12px;">The posture could not be read: {{ posture.error }}</div>
+  {% else %}
+  <p style="color:#c8d6ea;font-size:13px;margin:0 0 6px;">Air-gap: <strong style="color:{{ '#4ade80' if posture.airgap else '#7a8cb0' }};">{{ 'ON' if posture.airgap else 'off' }}</strong>
+    · fail-closed by default: {{ 'yes' if posture.fail_closed_default else 'no' }}</p>
+  <p style="color:#c8d6ea;font-size:13px;margin:0 0 6px;">Readiness invariant:
+    {% if posture.ready %}<strong style="color:#4ade80;">holds</strong>{% else %}<strong style="color:#f87171;">violated</strong>{% endif %}</p>
+  {% if posture.ready_error %}
+  <pre style="white-space:pre-wrap;color:#fca5a5;font-size:11px;margin:0 0 8px;">{{ posture.ready_error }}</pre>
+  {% endif %}
+  <p style="color:#7a8cb0;font-size:12px;margin:0 0 4px;">Routing functions checked: {{ posture.routing_functions | join(', ') }}</p>
+  <p style="color:#7a8cb0;font-size:12px;margin:0;">Models excluded while air-gapped: {{ posture.excluded_models | join(', ') if posture.excluded_models else ('none' if posture.airgap else 'not applied (air-gap off)') }}</p>
+  {% endif %}
+  <p style="color:#5a6b8a;font-size:11px;margin:10px 0 0;">The public liveness probe <code>/cortex/api/v1/health</code> reports the same switch to external callers.</p>
+</div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cortex" %}
+{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Cortex" %}
+{% set iqe_examples = [
+  {"label": "Governance audit", "query": "foreach a in cortex.audit select a.function, a.outcome, a.blocked, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

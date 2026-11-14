@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Cortex TRUST Chain — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="margin-bottom:20px;">
+  <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🛡️ Cortex TRUST Chain</h2>
+  <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;max-width:900px;">
+    Every governed Cortex call runs this chain of gates: injection screen, redaction in and out, citation and
+    content grounding, provenance, and one append-only audit row. Below: the chain as configured, what its gates
+    did in the last {{ chain.window_hours }}h, a dry run over your own text, and the governed agent launches.
+    · <a href="{{ url_for('cortex.metrics_page') }}" style="color:#5aa9e6;">Metrics</a>
+    · <a href="{{ url_for('cortex.index') }}" style="color:#5aa9e6;">← back to Cortex</a>
+  </p>
+</div>
+{% include "cortex/_rest_runner.html" %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:16px;margin-bottom:20px;">
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 8px;">Gates and profiles</h3>
+    <p style="color:#7a8cb0;font-size:12px;margin:0 0 6px;">Order: {{ chain.gate_order | join(' → ') }}</p>
+    <p style="color:#7a8cb0;font-size:12px;margin:0 0 6px;">Never skippable: {{ chain.mandatory | join(', ') }} · opt-in only: {{ chain.opt_in | join(', ') or 'none' }}</p>
+    {% if chain.profile_error %}
+    <div style="color:#f87171;font-size:12px;margin-bottom:6px;">The profiles block does not load: {{ chain.profile_error }}</div>
+    {% endif %}
+    <ul style="margin:0;padding-left:18px;color:#c8d6ea;font-size:12px;">
+      {% for name, gates in chain.profiles.items() %}
+      <li><code style="color:#b8d0e8;">{{ name }}</code>: {{ gates | join(', ') }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 8px;">Outcomes, last {{ chain.window_hours }}h</h3>
+    {% if chain.status == 'unavailable' %}
+    <div style="color:#f87171;font-size:12px;">The audit trail could not be read. This is a fault, not a quiet system.</div>
+    {% elif chain.status == 'idle' %}
+    <div style="color:#7a8cb0;font-size:12px;">No governed calls in this window{% if chain.last_call_at %} (last: {{ chain.last_call_at }}){% endif %}.</div>
+    {% else %}
+    <p style="color:#c8d6ea;font-size:12px;margin:0 0 6px;">{{ chain.calls }} calls · {{ chain.blocked }} blocked</p>
+    <ul style="margin:0;padding-left:18px;color:#c8d6ea;font-size:12px;">
+      {% for outcome, n in chain.by_outcome.items() %}<li>{{ outcome }}: {{ n }}</li>{% endfor %}
+    </ul>
+    {% if chain.by_gate %}
+    <p style="color:#7a8cb0;font-size:11px;margin:8px 0 2px;">Per gate (timed calls, average ms)</p>
+    <ul style="margin:0;padding-left:18px;color:#c8d6ea;font-size:12px;">
+      {% for g in chain.by_gate %}<li>{{ g.gate }}: {{ g.calls }} calls · {{ g.avg_ms }} ms</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;margin-bottom:20px;">
+  <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 4px;">Dry run</h3>
+  <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;">Run the chain over text you supply, optionally with the source ids it should be grounded in.
+    You get the governance report and the redacted text. The run is itself governed, so it writes one audit row.</p>
+  <label for="govern-body" style="color:#7a8cb0;font-size:11px;">Request body (JSON)</label>
+  <textarea id="govern-body" rows="6" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-family:monospace;font-size:12px;">{"text": "The SSP is current as of this quarter [source: ssp-2026q3].", "context_sources": ["ssp-2026q3"], "retrieval": true}</textarea>
+  <button type="button" onclick="cortexRun('/cortex/api/v1/govern', 'govern-body', 'govern-out')"
+    style="margin-top:8px;background:#0f2a4a;color:#b8d0e8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Run the chain</button>
+  <div id="govern-out" style="margin-top:10px;"></div>
+</div>
+
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+  <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 4px;">Governed agent launches</h3>
+  <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;">Each <code>cortex.agent</code> call the chain audited, newest first (read-only). Launching is done from the Cortex chat confirm card.</p>
+  <div id="govern-launches"><span style="color:#7a8cb0;font-size:12px;">Loading…</span></div>
+</div>
+<script>
+cortexGet('/cortex/api/agent-launches').then(function(res) {
+  var el = document.getElementById('govern-launches');
+  var j = res.json || {};
+  if (j.status === 'unavailable') {
+    el.innerHTML = '<span style="color:#f87171;font-size:12px;">Not readable: ' + cortexEsc(j.error) + '</span>';
+    return;
+  }
+  var rows = j.launches || [];
+  if (!rows.length) { el.innerHTML = '<span style="color:#7a8cb0;font-size:12px;">No governed agent launches yet.</span>'; return; }
+  el.innerHTML = '<ul style="margin:0;padding-left:18px;color:#c8d6ea;font-size:12px;">' + rows.map(function(r) {
+    return '<li>' + cortexEsc(r.created_at) + ' · ' + cortexEsc(r.user_id) + ' · ' + cortexEsc(r.outcome) +
+      (r.blocked ? ' <span style="color:#f87171;">[BLOCKED]</span>' : '') + ' · <code>' + cortexEsc(r.id) + '</code></li>';
+  }).join('') + '</ul>';
+});
+</script>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cortex" %}
+{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Cortex" %}
+{% set iqe_examples = [
+  {"label": "Blocked invocations", "query": "foreach a in cortex.audit where a.blocked == true select a.function, a.outcome, a.session_id, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

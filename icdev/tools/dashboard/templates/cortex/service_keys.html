@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Cortex Service Keys — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="margin-bottom:20px;">
+  <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🔑 Cortex Service Keys</h2>
+  <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;max-width:900px;">
+    External apps call the Cortex REST surface with an <code style="color:#b8d0e8;">icdev_ctx_</code> key. The key row, never
+    the request, decides the caller's tenant, classification ceiling and scopes. This page lists keys by label and
+    prefix; the key hash is never read. Granting a scope and revoking a key are decisions with their own workflow,
+    so neither is on this page. · <a href="{{ url_for('cortex.index') }}" style="color:#5aa9e6;">← back to Cortex</a>
+  </p>
+</div>
+
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;margin-bottom:20px;">
+  <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 8px;">Keys</h3>
+  {% if data.status == 'unavailable' %}
+  <div style="color:#f87171;font-size:12px;">The key table could not be read: {{ data.error }}. It is created with the first key.</div>
+  {% elif not data['keys'] %}
+  <div style="color:#7a8cb0;font-size:12px;">No service keys have been issued.</div>
+  {% else %}
+  <p style="color:#c8d6ea;font-size:12px;margin:0 0 8px;">{{ data.count }} keys · {{ data.active }} active</p>
+  {% for k in data['keys'] %}
+  <div style="border-top:1px solid #1e3a6e;padding:8px 0;font-size:12px;color:#c8d6ea;">
+    <strong style="color:#eaeaea;">{{ k.label }}</strong>
+    <code style="color:#b8d0e8;">icdev_ctx_{{ k.key_prefix }}…</code>
+    · tenant {{ k.tenant_id }} · ceiling {{ k.classification_ceiling }}
+    · <span style="color:{{ '#4ade80' if k.status == 'active' else '#f87171' }};">{{ k.status }}</span>
+    <div style="color:#7a8cb0;font-size:11px;">created {{ k.created_at }} · last used {{ k.last_used_at or 'never' }}{% if k.revoked_at %} · revoked {{ k.revoked_at }}{% endif %}</div>
+    <div style="color:#8fb0d8;font-size:11px;">scopes: {{ k.scopes | join(', ') }}</div>
+  </div>
+  {% endfor %}
+  {% endif %}
+</div>
+
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+  <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 8px;">Scope vocabulary</h3>
+  <p style="color:#7a8cb0;font-size:12px;margin:0 0 6px;">A new key gets the default scopes. Every other scope writes, prices, exports or launches, so it is granted explicitly.</p>
+  <p style="color:#c8d6ea;font-size:12px;margin:0 0 4px;">Default: {{ data.scopes.default | join(', ') }}</p>
+  <p style="color:#c8d6ea;font-size:12px;margin:0;">Explicit only: {{ data.scopes.explicit_only | join(', ') }}</p>
+</div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cortex" %}
+{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Cortex" %}
+{% set iqe_examples = [
+  {"label": "Governance audit", "query": "foreach a in cortex.audit select a.function, a.outcome, a.blocked, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}
