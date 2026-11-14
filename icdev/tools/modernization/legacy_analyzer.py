@@ -921,15 +921,6 @@ def analyze_java(app_id, source_path):
         "ManagedBean": "controller",
     }
 
-    # HTTP mapping annotations
-    http_mapping_annotations = {
-        "RequestMapping": None,  # method extracted from params
-        "GetMapping": "GET",
-        "PostMapping": "POST",
-        "PutMapping": "PUT",
-        "DeleteMapping": "DELETE",
-        "PatchMapping": "PATCH",
-    }
 
     try:
         for root, _dirs, files in os.walk(str(source_path)):
@@ -959,16 +950,10 @@ def analyze_java(app_id, source_path):
                 # All annotations in the file
                 file_annotations = [m.group(1) for m in re_annotation.finditer(source_code)]
 
-                # Class-level request mapping (prefix)
-                class_path_prefix = ""
-                class_rm = re.search(
-                    r"@RequestMapping\s*\(\s*(?:value\s*=\s*)?[\"']([^\"']+)[\"']",
-                    source_code,
-                )
-                if class_rm:
-                    class_path_prefix = class_rm.group(1)
-
-                servlet_paths = _webservlet_paths(source_code)
+                # osx-fth-12: the file's HTTP entry points belong to its PRIMARY class (the one named for the file),
+                # found with comments stripped, each with how it was found and the analyser's confidence
+                primary = fpath.stem
+                entry_points = _java_endpoints(source_code, primary)
 
                 # Classes
                 for cm in re_class.finditer(source_code):
@@ -994,6 +979,8 @@ def analyze_java(app_id, source_path):
                         "annotations": list(set(file_annotations)),
                         "kind": kind,
                     }
+                    if class_name == primary and entry_points:
+                        props["entry_points"] = entry_points
 
                     conn.execute(
                         """INSERT OR IGNORE INTO legacy_components
@@ -1041,49 +1028,18 @@ def analyze_java(app_id, source_path):
                             _insert_dependency(conn, app_id, comp_id, None, "injection", evidence=f"@{ann}")
                             dependencies_added += 1
 
-                    # HTTP endpoint extraction from annotations
-                    for ann_name, default_method in http_mapping_annotations.items():
-                        ann_pattern = re.compile(
-                            rf"@{ann_name}\s*\(\s*(?:value\s*=\s*)?[\"']([^\"']*)[\"']"
-                            rf"(?:\s*,\s*method\s*=\s*(?:RequestMethod\.)?(\w+))?",
-                            re.MULTILINE,
-                        )
-                        for am in ann_pattern.finditer(source_code):
-                            endpoint_path = am.group(1)
-                            http_method = am.group(2) or default_method or "ALL"
-
-                            full_path = class_path_prefix.rstrip("/") + "/" + endpoint_path.lstrip("/")
-                            full_path = "/" + full_path.strip("/")
-
-                            api_id = f"lapi-{uuid.uuid4().hex[:12]}"
+                    # HTTP entry points (osx-fth-12): once per file, on its primary class
+                    if class_name == primary:
+                        for e in entry_points:
                             conn.execute(
                                 """INSERT OR IGNORE INTO legacy_apis
                                    (id, legacy_app_id, component_id, method, path,
                                     handler_function)
                                    VALUES (%s, %s, %s, %s, %s, %s)""",
-                                (
-                                    api_id,
-                                    app_id,
-                                    comp_id,
-                                    http_method.upper(),
-                                    full_path,
-                                    f"{class_name}.{ann_name}",
-                                ),
+                                (f"lapi-{uuid.uuid4().hex[:12]}", app_id, comp_id, e["method"], e["path"],
+                                 e["handler"]),
                             )
                             apis_added += 1
-
-                    # Servlet 3 endpoints (@WebServlet), once per file, on its first class
-                    for endpoint_path in servlet_paths:
-                        conn.execute(
-                            """INSERT OR IGNORE INTO legacy_apis
-                               (id, legacy_app_id, component_id, method, path,
-                                handler_function)
-                               VALUES (%s, %s, %s, %s, %s, %s)""",
-                            (f"lapi-{uuid.uuid4().hex[:12]}", app_id, comp_id, "ALL",
-                             "/" + endpoint_path.strip("/"), f"{class_name}.service"),
-                        )
-                        apis_added += 1
-                    servlet_paths = []
 
         # Detect Struts actions from struts-config.xml
         struts_apis = _detect_struts_actions(source_path, app_id)
@@ -1215,6 +1171,112 @@ def _webservlet_paths(source_code: str) -> list[str]:
         return re.findall(r"[\"']([^\"']+)[\"']", named.group(1))
     lead = re.match(r"\s*(\{[^}]*\}|[\"'][^\"']*[\"'])", args)
     return re.findall(r"[\"']([^\"']+)[\"']", lead.group(1)) if lead else []
+
+#: How sure the analyser is that it found an HTTP entry point, by how it found it (ICDEV[OS] osx-fth-12). An
+#: annotation that states the path and the method is surest; one that leaves the method open is less so; a naming
+#: convention (ASP.NET MVC's ``{controller}/{action}``, Stripes' default binding) is a guess about deployment.
+ENTRY_CONFIDENCE = {"annotation": 0.9, "annotation_any_method": 0.75, "convention": 0.6}
+
+
+def _entry(method, path, handler, detected_by):
+    return {"method": method, "path": "/" + path.strip("/"), "handler": handler, "detected_by": detected_by,
+            "confidence": ENTRY_CONFIDENCE[detected_by]}
+
+
+def _strip_java_comments(code: str) -> str:
+    """Comments blanked, strings kept: a word in a comment (``... class to ...``) is not a declaration."""
+    return re.sub(r'"(?:\\.|[^"\\\n])*"|//[^\n]*|/\*.*?\*/',
+                  lambda m: m.group(0) if m.group(0).startswith('"') else " ", code, flags=re.DOTALL)
+
+
+def _annotation_values(args: str, names=("value", "path")) -> list[str]:
+    """The string values of an annotation's path argument: positional, ``{"a", "b"}``, or named (``value = ...``)."""
+    named = re.search(r"\b(?:" + "|".join(names) + r")\s*=\s*(\{[^}]*\}|\"[^\"]*\")", args or "")
+    if named:
+        return re.findall(r'"([^"]*)"', named.group(1))
+    lead = re.match(r"\s*(\{[^}]*\}|\"[^\"]*\")", args or "")
+    return re.findall(r'"([^"]*)"', lead.group(1)) if lead else []
+
+
+_SPRING_VERB = {"GetMapping": "GET", "PostMapping": "POST", "PutMapping": "PUT", "DeleteMapping": "DELETE",
+                "PatchMapping": "PATCH", "RequestMapping": None}
+_JAXRS_VERB = ("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")
+_ANN = re.compile(r"@(\w+)\b(?:\s*\(((?:[^()]|\([^()]*\))*)\))?")
+_METHOD_DECL = re.compile(r"\b(?:public|protected)\s+[^;{}()=@]*?\b(\w+)\s*\(")
+
+
+def _java_endpoints(source_code: str, class_name: str) -> list[dict]:
+    """The HTTP entry points one Java class declares, each with how it was found (``ENTRY_CONFIDENCE``):
+
+    * Spring MVC: ``@RequestMapping`` on the class is a PREFIX, never an endpoint; ``@GetMapping`` and friends, or
+      ``@RequestMapping(method = ...)``, on each public method, with array paths (``{"", "/"}``);
+    * JAX-RS: the class's ``@Path`` and each method's ``@GET``/``@POST``/... with its own ``@Path``;
+    * Servlet 3: ``@WebServlet`` URL patterns;
+    * Stripes: an ``ActionBean``'s ``@UrlBinding``, or its default binding by name (a convention).
+
+    The handler is ``Class.method``. Read from text, never compiled or run."""
+    code = _strip_java_comments(source_code)
+    cls = re.search(rf"\b(?:class|interface)\s+{re.escape(class_name)}\b", code)
+    if cls is None:
+        return []
+    head, body = code[:cls.start()], code[cls.end():]
+    head_ann = {}
+    for m in _ANN.finditer(head[-2000:]):
+        head_ann[m.group(1)] = m.group(2) or ""
+    out: list[dict] = []
+    for p in _webservlet_paths(code):
+        out.append(_entry("ALL", p, f"{class_name}.service", "annotation_any_method"))
+    decl = re.match(r"[^{]*", body).group(0)
+    if re.search(r"\bimplements\b[^{]*\bActionBean\b|\bextends\s+\w*ActionBean\b", decl):
+        if "UrlBinding" in head_ann:
+            for p in _annotation_values(head_ann["UrlBinding"]):
+                out.append(_entry("ALL", p, class_name, "annotation_any_method"))
+        else:
+            pkg = re.search(r"^\s*package\s+([\w.]+)\s*;", code, re.MULTILINE)
+            parts = (pkg.group(1) if pkg else "").split(".")
+            for marker in ("web", "www", "stripes", "action"):
+                if marker in parts:
+                    parts = parts[parts.index(marker) + 1:]
+                    break
+            else:
+                parts = []
+            name = re.sub(r"(ActionBean|Bean|Action)$", "", class_name)
+            out.append(_entry("ALL", "/".join([*parts, f"{name}.action"]), class_name, "convention"))
+    spring_prefix = _annotation_values(head_ann.get("RequestMapping", ""), ("value", "path")) or [""]
+    jaxrs_prefix = _annotation_values(head_ann.get("Path", "")) or [""]
+    pending: list[tuple[str, str]] = []
+    pos = 0
+    for md in _METHOD_DECL.finditer(body):
+        block = body[pos:md.start()]
+        pos = md.end()
+        anns = [(m.group(1), m.group(2) or "") for m in _ANN.finditer(block)]
+        pending = [a for a in anns if a[0] in _SPRING_VERB or a[0] in _JAXRS_VERB or a[0] == "Path"]
+        handler = f"{class_name}.{md.group(1)}"
+        for name, args in pending:
+            if name not in _SPRING_VERB:
+                continue
+            paths = _annotation_values(args) or [""]
+            verbs = [_SPRING_VERB[name]] if _SPRING_VERB[name] else \
+                re.findall(r"RequestMethod\.(\w+)", args) or [None]
+            for pre in spring_prefix:
+                for path in paths:
+                    for v in verbs:
+                        out.append(_entry((v or "ALL").upper(), pre.rstrip("/") + "/" + path.lstrip("/"), handler,
+                                          "annotation" if v else "annotation_any_method"))
+        verbs = [n for n, _ in pending if n in _JAXRS_VERB]
+        if verbs:
+            sub = next((_annotation_values(a) for n, a in pending if n == "Path"), None) or [""]
+            for pre in jaxrs_prefix:
+                for path in sub:
+                    for v in verbs:
+                        out.append(_entry(v, pre.rstrip("/") + "/" + path.lstrip("/"), handler, "annotation"))
+    seen, uniq = set(), []
+    for e in out:                       # one entry per (method, path): the first way it was found
+        if (e["method"], e["path"]) not in seen:
+            seen.add((e["method"], e["path"]))
+            uniq.append(e)
+    return uniq
+
 
 def _detect_struts_actions(source_path, app_id):
     """Parse struts-config.xml for Action mappings if present."""
@@ -1441,6 +1503,7 @@ def analyze_csharp(app_id, source_path):
                     )
                     comp_id = _stored_component_id(conn, app_id, qualified, comp_id)
                     components_added += 1
+                    entry_points = []  # osx-fth-12: each HTTP entry point, with how it was found
 
                     # Inheritance / implementation dependencies
                     for base in base_types:
@@ -1476,6 +1539,8 @@ def analyze_csharp(app_id, source_path):
                                 (api_id, app_id, comp_id, f"/{op.group(1)}", f"{class_name}.{op.group(1)}"),
                             )
                             apis_added += 1
+                            entry_points.append(_entry("ALL", f"/{op.group(1)}", f"{class_name}.{op.group(1)}",
+                                                       "annotation_any_method"))
 
                     # HTTP endpoint extraction from attributes
                     for attr_name, http_method in http_attr_map.items():
@@ -1501,6 +1566,7 @@ def analyze_csharp(app_id, source_path):
                                 (api_id, app_id, comp_id, http_method, full_path, class_name),
                             )
                             apis_added += 1
+                            entry_points.append(_entry(http_method, full_path, class_name, "annotation"))
 
                     # ASP.NET MVC conventional routing: {controller}/{action} for each public action method
                     for action in _mvc_actions(class_name, base_types_str, source_code):
@@ -1513,6 +1579,8 @@ def analyze_csharp(app_id, source_path):
                              f"/{class_name[: -len('Controller')]}/{action}", f"{class_name}.{action}"),
                         )
                         apis_added += 1
+                        entry_points.append(_entry("ALL", f"/{class_name[: -len('Controller')]}/{action}",
+                                                   f"{class_name}.{action}", "convention"))
 
                     # Route attribute on methods
                     route_method_pattern = re.compile(
@@ -1547,6 +1615,12 @@ def analyze_csharp(app_id, source_path):
                             ),
                         )
                         apis_added += 1
+                        entry_points.append(_entry(r_method.upper(), full_path, f"{class_name}.{r_handler}",
+                                                   "annotation" if r_method != "ALL" else "annotation_any_method"))
+
+                    if entry_points:
+                        conn.execute("UPDATE legacy_components SET properties = %s WHERE id = %s",
+                                     (json.dumps({**props, "entry_points": entry_points}), comp_id))
 
         conn.commit()
     finally:

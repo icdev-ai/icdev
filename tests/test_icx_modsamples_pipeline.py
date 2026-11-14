@@ -12,7 +12,8 @@ tests use small trees written in the shape those apps take, so each fix is pinne
 * a T-SQL script's ``[Schema].[Table]`` names collapsed into the schema, and its ``GO`` batches into one statement;
 * AI-Ify's verdict sentence was exported where the contract wants its enum; module paths leaked the analyst's
   checkout; disqualifiers were dropped;
-* most modernisation tools ignored ``ICDEV_DB_PATH`` and wrote ``data/icdev.db``.
+* most modernisation tools ignored ``ICDEV_DB_PATH`` and wrote ``data/icdev.db``;
+* (osx-fth-12) features were never reported: they are now, statically, from the entry points.
 """
 from __future__ import annotations
 
@@ -115,7 +116,16 @@ def test_every_section_not_produced_is_a_gap_with_its_reason(run):
         if v in (None, [], {}) and k != "schema":
             assert gaps.get(k), f"{k} is empty and the report does not say why"
     assert "--no-model" in gaps["processes"]
-    assert "running" in gaps["features"], "the source is never run"
+    assert "features" not in gaps, "reported statically, from the entry points (osx-fth-12)"
+
+
+def test_features_are_reported_statically_never_observed(run):
+    """osx-fth-12: the source is never run, so features come from its entry points, labelled static."""
+    [f] = run["bundle"]["features"]
+    assert f["id"] == "trade" and f["provenance"] == "static" and f["basis"] == "source"
+    assert f["signatures"]["apis"] == ["ALL /app", "ALL /trade"] and 0 < f["confidence"] <= 1
+    step = next(s for s in run["report"]["steps"] if s["step"] == "features")
+    assert step["ok"] and step["provenance"] == "static" and step["features"] == 1
 
 
 def test_the_scratch_database_must_be_new(tmp_path):
