@@ -41,6 +41,17 @@ signature rendering bug is a zero whose cause is a tooltip:
 
 ``conflicts``/``gaps`` are ``None`` — never ``0`` — for the first two, so a
 template cannot render "0 conflicts" for a surface that never looked.
+
+A PERSON ADJUDICATES, THE STORE RECORDS IT (icx-cnf-02)
+-------------------------------------------------------
+Each finding is ``open`` until a person rules on it through the declared
+template ``decl-wft-cortex-finding-adjudicate``: ``accept`` (the disagreement is
+real and a data fix is owed) or ``reject`` (it is not), with a reason. The ruling
+lands in ``cortex_finding_adjudications``, append-only, one per finding: a
+finding goes ``open`` -> ``adjudicated`` once. Still no winner: accepting a
+conflict says the sources disagree, never which one is right. A disagreement
+whose claims change gets a new ``finding_id`` (see :func:`finding_ident`), so it
+is open again.
 """
 from __future__ import annotations
 
@@ -55,6 +66,23 @@ logger = get_logger("icdev.cortex.finding_store")
 
 FINDINGS_TABLE = "cortex_entity_findings"
 RUNS_TABLE = "cortex_finding_runs"
+ADJUDICATIONS_TABLE = "cortex_finding_adjudications"
+
+#: A person's two rulings on a finding.
+ADJUDICATIONS = ("accept", "reject")
+STATE_OPEN = "open"
+STATE_ADJUDICATED = "adjudicated"
+#: The adjudication table could not be read, so the state is not known.
+STATE_UNKNOWN = "unknown"
+
+ADJUDICATION_COLUMNS = (
+    "adjudication_id", "finding_id", "decision", "reason", "adjudicated_by",
+    "step_id", "instance_id", "adjudicated_at",
+)
+
+
+class AlreadyAdjudicated(Exception):
+    """The finding already carries a person's ruling."""
 
 #: The two finding kinds this store carries. A conflict is "my sources
 #: disagree"; a gap is "nothing answered". Different fixes, never merged.
@@ -417,11 +445,134 @@ def list_findings(tenant_id: str = "default", finding_type: Optional[str] = None
                 pass
 
     out = [_inflate(r) for r in rows]
+    _attach_adjudications(out, tenant_id, None if own else conn)
     if reason:
         out = [r for r in out if reason in (r.get("reasons") or [])]
     if backend:
         out = [r for r in out if _mentions_backend(r, backend)]
     return out
+
+
+def _attach_adjudications(rows: list, tenant_id: str, conn=None) -> None:
+    """Give each row its ``state`` and ``adjudication`` (None while open)."""
+    if not rows:
+        return
+    try:
+        by_id = adjudications_for(tenant_id, [r["finding_id"] for r in rows], conn=conn)
+    except Exception as exc:  # noqa: BLE001 — unknown, never "open" by default
+        logger.warning("cortex finding store: adjudications unreadable: %s", exc)
+        for row in rows:
+            row["state"], row["adjudication"] = STATE_UNKNOWN, None
+        return
+    for row in rows:
+        ruling = by_id.get(row["finding_id"])
+        row["adjudication"] = ruling
+        row["state"] = STATE_ADJUDICATED if ruling else STATE_OPEN
+
+
+def adjudications_for(tenant_id: str, finding_ids: list, conn=None) -> dict:
+    """finding_id -> its ruling, for the ids given. Raises when unreadable."""
+    ids = [str(i) for i in finding_ids if i]
+    if not ids:
+        return {}
+    own = conn is None
+    if own:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+    try:
+        out = {}
+        for start in range(0, len(ids), 200):
+            chunk = ids[start:start + 200]
+            rows = conn.execute(
+                "SELECT " + ", ".join(ADJUDICATION_COLUMNS) + " FROM " + ADJUDICATIONS_TABLE
+                + " WHERE tenant_id = %s AND finding_id IN ("
+                + ", ".join(["%s"] * len(chunk)) + ")",
+                tuple([tenant_id] + chunk),
+            ).fetchall()
+            for r in rows:
+                row = dict(zip(ADJUDICATION_COLUMNS, tuple(r)))
+                at = row["adjudicated_at"]
+                row["adjudicated_at"] = at.isoformat() if hasattr(at, "isoformat") else str(at or "")
+                out[row["finding_id"]] = row
+        return out
+    finally:
+        if own:
+            conn.close()
+
+
+def get_finding(tenant_id: str, finding_id: str, conn=None) -> Optional[dict]:
+    """One finding of this tenant with its state, or None."""
+    own = conn is None
+    if own:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT " + ", ".join(FINDING_COLUMNS) + " FROM " + FINDINGS_TABLE
+            + " WHERE tenant_id = %s AND finding_id = %s", (tenant_id, finding_id),
+        ).fetchone()
+        if row is None:
+            return None
+        out = [_inflate(dict(zip(FINDING_COLUMNS, tuple(row))))]
+        _attach_adjudications(out, tenant_id, conn)
+        return out[0]
+    finally:
+        if own:
+            conn.close()
+
+
+def adjudicate(tenant_id: str, classification: str, finding_id: str, decision: str,
+               reason: str, step: dict, conn=None) -> dict:
+    """Record a person's ruling. ``step`` is the declared step they took.
+
+    Raises ``ValueError`` on a bad decision or an empty reason, ``LookupError``
+    when the finding is not this tenant's, and :class:`AlreadyAdjudicated` when
+    it already has a ruling (the table's unique key decides a race).
+    """
+    if decision not in ADJUDICATIONS:
+        raise ValueError(f"decision must be one of {', '.join(ADJUDICATIONS)}")
+    if not (reason or "").strip():
+        raise ValueError("a reason is required")
+    own = conn is None
+    if own:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+    try:
+        finding = get_finding(tenant_id, finding_id, conn=conn)
+        if finding is None:
+            raise LookupError(f"no finding {finding_id}")
+        if finding.get("adjudication"):
+            raise AlreadyAdjudicated(finding_id)
+        row = {
+            "adjudication_id": "cfa-" + hashlib.sha256(
+                f"{tenant_id}|{finding_id}".encode("utf-8")).hexdigest()[:24],
+            "finding_id": finding_id,
+            "decision": decision,
+            "reason": reason.strip(),
+            "adjudicated_by": str(step.get("decided_by") or ""),
+            "step_id": str(step.get("step_id") or ""),
+            "instance_id": str(step.get("instance_id") or ""),
+            "adjudicated_at": _now(),
+        }
+        try:
+            conn.execute(
+                "INSERT INTO " + ADJUDICATIONS_TABLE + " (adjudication_id, finding_id, tenant_id, "
+                "classification, decision, reason, adjudicated_by, step_id, instance_id, "
+                "adjudicated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (row["adjudication_id"], finding_id, tenant_id, classification or "CUI",
+                 decision, row["reason"], row["adjudicated_by"], row["step_id"],
+                 row["instance_id"], row["adjudicated_at"]),
+            )
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            text = str(exc).lower()
+            if "unique" in text or "duplicate" in text:
+                raise AlreadyAdjudicated(finding_id) from exc
+            raise
+        return row
+    finally:
+        if own:
+            conn.close()
 
 
 def _mentions_backend(row: dict, backend: str) -> bool:

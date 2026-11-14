@@ -349,8 +349,19 @@ def _launch_confirmed_agent(question: str, ctx) -> dict:
     Goes through ``cortex_api.agent`` rather than ``ACEController`` directly so
     the launch inherits the TRUST pipeline — governance matters most at the
     moment something is authorised to act.
+
+    The confirm click is the person's step of ``decl-wft-cortex-agent-launch``
+    (icx-cnf-02), taken here in the same request. A refused step launches
+    nothing and says why.
     """
     from tools.cortex import api as cortex_api
+    from tools.workflow_hitl import declared
+
+    try:
+        step = declared.take_step("decl-wft-cortex-agent-launch", surface="cortex.api_chat",
+                                  decision="launch", subject=question[:200])
+    except declared.StepRefused as exc:
+        return _degraded(f"The agent was not launched: {exc.message}.", "agent")
 
     roster = _propose_roles(question)
     role_ids = [r["role_id"] for r in roster if r.get("exists")]
@@ -373,6 +384,7 @@ def _launch_confirmed_agent(question: str, ctx) -> dict:
             "governance": {"gates_run": [], "outcomes": {}, "blocked": False},
             "requires_confirm": False,
             "degraded": True,
+            "decision_step": step,
         }
 
     data = getattr(result, "data", None) or {}
@@ -393,6 +405,7 @@ def _launch_confirmed_agent(question: str, ctx) -> dict:
         "instance_id": instance_id,
         "deep_link": deep_link,
         "launched_roles": role_ids,
+        "decision_step": step,
     }
 
 
@@ -587,6 +600,8 @@ def api_chat():
         "proposed_roles": outcome.get("proposed_roles", []),
         "instance_id": outcome.get("instance_id", ""),
         "deep_link": outcome.get("deep_link", ""),
+        # The person's recorded step when the confirm launched (icx-cnf-02).
+        "decision_step": outcome.get("decision_step"),
     })
 
 

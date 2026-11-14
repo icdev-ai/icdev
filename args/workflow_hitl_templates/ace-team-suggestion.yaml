@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+id: decl-wft-ace-team-suggestion
+name: "ACE: confirm or decline a suggested team"
+description: >-
+  Chat proposed a co-worker team. A person confirms it (the team launches) or
+  declines it (the proposal closes).
+decides: [ace_api.api_suggestion_confirm, ace_api.api_suggestion_decline]
+effect: chat_trigger.confirm_proposal or chat_trigger.decline_proposal, unchanged.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: The chat trigger proposed a team.
+  - name: confirm
+    step_type: manual
+    role: run_approver
+    holders: [admin, pm, developer, isso, co, cor, reviewer]
+    decisions: {confirm: affirm, decline: deny}
+    reason_required: []

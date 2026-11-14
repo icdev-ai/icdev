@@ -5059,6 +5059,53 @@ def api_explorer_cortex_findings():
         return jsonify({"error": str(exc)}), 500
 
 
+@dic_bp.route("/api/explorer/cortex-findings/<finding_id>/adjudicate", methods=["POST"])
+def api_explorer_cortex_finding_adjudicate(finding_id: str):
+    """A person adjudicates one Cortex finding (icx-cnf-02).
+
+    Body: ``{decision: accept|reject, reason}``. The decision is the person's step
+    of the declared template ``decl-wft-cortex-finding-adjudicate`` (held by a
+    role, a reason always required), then the store records the ruling,
+    append-only: the finding goes ``open`` -> ``adjudicated`` once. No winner is
+    recorded; accepting a conflict says the sources disagree, not which is right.
+    """
+    from tools.cortex import finding_store
+    from tools.workflow_hitl import declared
+
+    tenant_id, classification = _security_context()
+    data = request.get_json(silent=True) or {}
+    decision = str(data.get("decision") or "").strip().lower()
+    reason = str(data.get("reason") or "").strip()
+    try:
+        finding = finding_store.get_finding(tenant_id, finding_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: cortex finding read error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    if finding is None:
+        return jsonify({"error": f"no finding {finding_id}"}), 404
+    if finding.get("state") != finding_store.STATE_OPEN:
+        return jsonify({"error": f"finding {finding_id} is {finding.get('state')}",
+                        "adjudication": finding.get("adjudication")}), 409
+    try:
+        step = declared.take_step(
+            "decl-wft-cortex-finding-adjudicate",
+            surface="dic.api_explorer_cortex_finding_adjudicate",
+            decision=decision, subject=finding_id, reason=reason)
+    except declared.StepRefused as exc:
+        return jsonify(exc.to_dict()), exc.status
+    try:
+        ruling = finding_store.adjudicate(tenant_id, classification, finding_id, decision,
+                                          reason, step)
+    except finding_store.AlreadyAdjudicated:
+        return jsonify({"error": f"finding {finding_id} is already adjudicated",
+                        "decision_step": step}), 409
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dic: cortex finding adjudication error: %s", exc)
+        return jsonify({"error": str(exc), "decision_step": step}), 500
+    return jsonify({"finding_id": finding_id, "state": finding_store.STATE_ADJUDICATED,
+                    "adjudication": ruling, "decision_step": step})
+
+
 # ── Analytics Page + API ─────────────────────────────────────────────────────
 
 @dic_bp.route("/analytics")

@@ -127,6 +127,7 @@ tables:
   cortex_audit: core
   cortex_chat_sessions: core
   cortex_entity_findings: core
+  cortex_finding_adjudications: core
   cortex_finding_runs: core
   cortex_messages: core
   cortex_search_history: core
@@ -490,6 +491,7 @@ tables:
   watchdog_state: core
   wf_approvals: core
   wf_citations: core
+  wf_decision_steps: core
   wf_document_submissions: core
   wf_document_templates: core
   wf_external_steps: core

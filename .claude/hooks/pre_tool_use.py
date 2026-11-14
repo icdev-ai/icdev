@@ -675,6 +675,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wf_feedback",
         "wf_document_submissions",
         "wf_citations",
+        # icx-cnf-02, migration 20261114162849: the ledger of declared decision
+        # steps (proposed / decided / spent / withdrawn) and a person's ruling on a
+        # Cortex finding. A decision is a new row, never an edit.
+        "wf_decision_steps",
+        "cortex_finding_adjudications",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
         # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)

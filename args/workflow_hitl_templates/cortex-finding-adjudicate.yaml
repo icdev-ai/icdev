@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+id: decl-wft-cortex-finding-adjudicate
+name: "Cortex: adjudicate a resolution finding"
+description: >-
+  A conflict is a finding a person adjudicates. Accept: the disagreement is
+  real and a data fix is owed. Reject: it is not a real disagreement. The store
+  records the ruling, the reason and who made it. It never picks a winner.
+decides: [dic.api_explorer_cortex_finding_adjudicate]
+effect: finding_store.adjudicate (cortex_finding_adjudications, append-only).
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: cortex.resolve() recorded the finding.
+  - name: adjudicate
+    step_type: manual
+    role: data_adjudicator
+    holders: [admin, pm, isso, reviewer]
+    decisions: {accept: affirm, reject: deny}
+    reason_required: [accept, reject]

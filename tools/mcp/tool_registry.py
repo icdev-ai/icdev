@@ -8895,6 +8895,24 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    # -- declared decisions (icx-cnf-02 — every decision a person takes runs a template) --
+    "workflow_decision_steps": {
+        "category": "workflow",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_workflow_decision_steps",
+        "description": "Read the declared decision steps: the templates under args/workflow_hitl_templates/ (which Cortex/ACE surface each decides, the manual stage and the roles that hold it) and the ledger of steps proposed, decided, spent or withdrawn. Read-only: an agent can see what waits for a person; only a person decides, at /decisions or on the page that raised it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["", "pending", "decided", "spent", "withdrawn"],
+                    "description": "Only steps in this state ('' for all)",
+                },
+                "limit": {"type": "integer", "default": 100},
+            },
+        },
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -9567,6 +9585,9 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # -- conformance -------------------------------------------------------
     # Reads the committed snapshot; writes nothing.
     "feature_conformance":                      True,
+    # -- declared decisions (icx-cnf-02) -------------------------------------
+    # Reads the templates and the ledger; never takes or proposes a step.
+    "workflow_decision_steps":                  True,
 })
 
 

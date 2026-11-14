@@ -40,6 +40,27 @@
   whole with its own provenance and as-of date, because picking one here would
   delete the finding and report the survivor as fact.
 #}
+{#
+  icx-cnf-02 — a person adjudicates each finding through the declared workflow
+  decl-wft-cortex-finding-adjudicate: one click with a reason. The store records
+  the ruling, append-only; a finding goes open -> adjudicated once. No winner.
+#}
+{% macro adjudication(f) %}
+<div class="cortex-adjudication" data-finding="{{ f.finding_id }}" style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11px;">
+  {% if f.adjudication %}
+  <span class="adj-state" style="background:#0f2a1a;color:#86efac;padding:1px 8px;border-radius:10px;">adjudicated: {{ f.adjudication.decision }}</span>
+  <span style="color:#7a8cb0;">by {{ f.adjudication.adjudicated_by }} — {{ f.adjudication.reason }}</span>
+  {% elif f.state == 'unknown' %}
+  <span class="adj-state" style="color:#f87171;">adjudication state unreadable</span>
+  {% else %}
+  <span class="adj-state" style="background:#2a2410;color:#fbbf24;padding:1px 8px;border-radius:10px;">open</span>
+  <input type="text" data-adj-reason placeholder="Reason (required)" style="background:#050d1f;color:#eaeaea;border:1px solid #1a3560;border-radius:4px;padding:3px 8px;font-size:11px;min-width:220px;">
+  <button type="button" data-adj="accept" title="The disagreement is real; a data fix is owed" style="background:#0f2a1a;color:#86efac;border:1px solid #2e5a3e;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Accept</button>
+  <button type="button" data-adj="reject" title="Not a real disagreement" style="background:#2e0505;color:#fca5a5;border:1px solid #6e1e1e;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Reject</button>
+  <span data-adj-result style="color:#7a8cb0;"></span>
+  {% endif %}
+</div>
+{% endmacro %}
 {% set cortex = cortex or {"conflicts": [], "gaps": [], "stats": {"state": "unmeasured"}, "filters": {}, "actionable": {}} %}
 {% set cstats = cortex.stats or {} %}
 
@@ -173,6 +194,7 @@
           🛰️ Act on DocDrift{% if cortex.actionable.get(c.entity_label) %} · {{ cortex.actionable.get(c.entity_label) }} finding(s){% endif %} →
         </a>
       </div>
+      {{ adjudication(c) }}
     </div>
   </details>
   {% else %}
@@ -219,6 +241,7 @@
         {% if g.citation_basis %}· basis <span style="color:#9bb8d8;">{{ g.citation_basis | replace('_', ' ') }}</span>{% endif %}
         · seen {{ g.seen_count }}×
       </div>
+      {{ adjudication(g) }}
     </div>
     {% else %}
     <p style="color:#3a6080;font-size:12px;padding:10px 4px;">
@@ -274,9 +297,55 @@ function renderGaps(gaps) {
       + '<div style="color:#7a8cb0;font-size:11px;margin-top:4px;">consulted ' + esc((g.backends || []).join(', ') || '—')
       + ' · ' + ((g.citations || []).length) + ' citation(s)'
       + (g.citation_basis ? ' · basis ' + esc(String(g.citation_basis).replace(/_/g, ' ')) : '')
-      + ' · seen ' + esc(g.seen_count) + '×</div></div>';
+      + ' · seen ' + esc(g.seen_count) + '×</div>' + adjudicationHtml(g) + '</div>';
   }).join('');
 }
+
+// The same adjudication control the server renders (icx-cnf-02).
+function adjudicationHtml(f) {
+  var head = '<div class="cortex-adjudication" data-finding="' + esc(f.finding_id) + '" style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:11px;">';
+  if (f.adjudication) {
+    return head + '<span class="adj-state" style="background:#0f2a1a;color:#86efac;padding:1px 8px;border-radius:10px;">adjudicated: '
+      + esc(f.adjudication.decision) + '</span><span style="color:#7a8cb0;">by ' + esc(f.adjudication.adjudicated_by)
+      + ' — ' + esc(f.adjudication.reason) + '</span></div>';
+  }
+  if (f.state === 'unknown') {
+    return head + '<span class="adj-state" style="color:#f87171;">adjudication state unreadable</span></div>';
+  }
+  return head + '<span class="adj-state" style="background:#2a2410;color:#fbbf24;padding:1px 8px;border-radius:10px;">open</span>'
+    + '<input type="text" data-adj-reason placeholder="Reason (required)" style="background:#050d1f;color:#eaeaea;border:1px solid #1a3560;border-radius:4px;padding:3px 8px;font-size:11px;min-width:220px;">'
+    + '<button type="button" data-adj="accept" style="background:#0f2a1a;color:#86efac;border:1px solid #2e5a3e;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Accept</button>'
+    + '<button type="button" data-adj="reject" style="background:#2e0505;color:#fca5a5;border:1px solid #6e1e1e;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">Reject</button>'
+    + '<span data-adj-result style="color:#7a8cb0;"></span></div>';
+}
+
+// One click with a reason: the person's step, then the store records the ruling.
+document.addEventListener('click', function (ev) {
+  var btn = ev.target.closest('[data-adj]');
+  if (!btn) { return; }
+  var box = btn.closest('.cortex-adjudication');
+  var result = box.querySelector('[data-adj-result]');
+  var reason = (box.querySelector('[data-adj-reason]').value || '').trim();
+  if (!reason) { result.textContent = 'A reason is required.'; return; }
+  box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+  result.textContent = 'Recording…';
+  fetch('/document-intelligence/api/explorer/cortex-findings/' + encodeURIComponent(box.dataset.finding) + '/adjudicate', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({decision: btn.dataset.adj, reason: reason})
+  }).then(function (r) {
+    return r.json().then(function (d) { return {ok: r.ok, d: d}; });
+  }).then(function (res) {
+    if (!res.ok) {
+      result.textContent = res.d.error || 'Refused.';
+      box.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+      return;
+    }
+    box.outerHTML = adjudicationHtml({finding_id: res.d.finding_id, adjudication: res.d.adjudication});
+  }).catch(function () {
+    result.textContent = 'Network error.';
+    box.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+  });
+});
 </script>
 
 <!-- GraphRAG Themes -->

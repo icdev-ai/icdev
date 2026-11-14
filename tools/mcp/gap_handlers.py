@@ -4438,3 +4438,34 @@ def handle_feature_conformance(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_feature_conformance: %s", exc)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# declared decisions (icx-cnf-02)
+# ---------------------------------------------------------------------------
+
+
+def handle_workflow_decision_steps(args: dict) -> dict:
+    """MCP: declared decision templates and the steps ledger. Read-only.
+
+    An agent sees what waits for a person and who holds it. It cannot decide:
+    there is no tool for that, by design.
+    """
+    try:
+        from tools.workflow_hitl import declared
+
+        status = str(args.get("status") or "").strip()
+        if status and status not in ("pending", "decided", "spent", "withdrawn"):
+            return {"error": f"unknown status {status!r}"}
+        templates = []
+        for tid, tmpl in sorted(declared.load_templates().items()):
+            stage = declared.manual_stage(tmpl)
+            templates.append({"id": tid, "name": tmpl.get("name", ""),
+                              "decides": tmpl.get("decides") or [], "stage": stage["name"],
+                              "role": stage["role"], "holders": stage.get("holders") or []})
+        steps = declared.list_steps(status=status, limit=int(args.get("limit") or 100))
+        return {"classification": CORTEX_CLASSIFICATION, "templates": templates,
+                "steps": steps, "count": len(steps)}
+    except Exception as exc:
+        logger.warning("handle_workflow_decision_steps: %s", exc)
+        return {"error": str(exc)}

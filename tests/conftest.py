@@ -4716,6 +4716,147 @@ CREATE TABLE IF NOT EXISTS cortex_finding_runs (
     clean_resolutions INTEGER NOT NULL DEFAULT 0,
     last_run_at TIMESTAMP
 );
+
+-- icx-cnf-02: the HITL workflow engine's tables (migration 079), which every
+-- decision route in Cortex and ACE now writes through, and the declared-decision
+-- ledger plus Cortex finding adjudications (migration 20261114162849), both
+-- append-only.
+CREATE TABLE IF NOT EXISTS wf_templates (
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    canvas_type      TEXT,
+    stages_json      TEXT NOT NULL,
+    roles_json       TEXT NOT NULL,
+    approval_policy  TEXT NOT NULL DEFAULT 'any_one',
+    kickback_limit   INTEGER NOT NULL DEFAULT 3,
+    is_default       INTEGER NOT NULL DEFAULT 0,
+    is_system        INTEGER NOT NULL DEFAULT 0,
+    created_by       TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_teams (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    canvas_type TEXT,
+    created_by  TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_instances (
+    id             TEXT PRIMARY KEY,
+    template_id    TEXT NOT NULL REFERENCES wf_templates(id),
+    task_id        TEXT,
+    project_id     TEXT,
+    canvas_type    TEXT,
+    current_stage  TEXT NOT NULL DEFAULT 'build',
+    kickback_count INTEGER NOT NULL DEFAULT 0,
+    status         TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active','waiting_external','approved','rejected','escalated','cancelled')),
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_approvals (
+    id          TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL REFERENCES wf_instances(id),
+    stage       TEXT NOT NULL,
+    team_id     TEXT REFERENCES wf_teams(id),
+    assigned_to TEXT,
+    status      TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','approved','kickback','conditional','escalated','skipped')),
+    due_at      TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_feedback (
+    id               TEXT PRIMARY KEY,
+    approval_id      TEXT NOT NULL REFERENCES wf_approvals(id),
+    instance_id      TEXT NOT NULL REFERENCES wf_instances(id),
+    task_id          TEXT,
+    canvas_type      TEXT,
+    template_id      TEXT REFERENCES wf_templates(id),
+    stage            TEXT NOT NULL,
+    decision         TEXT NOT NULL CHECK(decision IN ('approve','kickback','conditional')),
+    feedback_types   TEXT,
+    rating           INTEGER CHECK(rating BETWEEN 1 AND 5),
+    comments         TEXT,
+    improvement_tags TEXT,
+    kickback_reason  TEXT,
+    citations_json   TEXT,
+    submitted_by     TEXT NOT NULL,
+    submitted_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_external_steps (
+    id              TEXT PRIMARY KEY,
+    instance_id     TEXT NOT NULL REFERENCES wf_instances(id),
+    stage_name      TEXT NOT NULL,
+    step_type       TEXT NOT NULL
+        CHECK(step_type IN ('manual','external_email','external_ticket','external_wiki')),
+    external_system TEXT,
+    external_ref    TEXT,
+    webhook_token   TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','sent','waiting','completed','failed','timed_out')),
+    notified_at     TEXT,
+    completed_at    TEXT,
+    completed_by    TEXT,
+    payload_json    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_citations (
+    id            TEXT PRIMARY KEY,
+    instance_id   TEXT NOT NULL REFERENCES wf_instances(id),
+    stage         TEXT NOT NULL,
+    source_doc    TEXT NOT NULL,
+    source_type   TEXT,
+    doc_version   TEXT,
+    section       TEXT,
+    page_number   INTEGER,
+    excerpt       TEXT,
+    cited_by      TEXT NOT NULL,
+    cited_in_type TEXT NOT NULL,
+    cited_in_id   TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_decision_steps (
+    event_id        TEXT PRIMARY KEY,
+    step_id         TEXT NOT NULL,
+    event           TEXT NOT NULL
+        CHECK(event IN ('proposed','decided','spent','withdrawn')),
+    template_id     TEXT NOT NULL,
+    surface         TEXT NOT NULL,
+    subject         TEXT NOT NULL DEFAULT '',
+    actor           TEXT NOT NULL,
+    actor_role      TEXT NOT NULL DEFAULT '',
+    decision        TEXT NOT NULL DEFAULT '',
+    affirmative     INTEGER NOT NULL DEFAULT 0,
+    reason          TEXT NOT NULL DEFAULT '',
+    instance_id     TEXT NOT NULL DEFAULT '',
+    payload_digest  TEXT NOT NULL DEFAULT '',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    created_at      TIMESTAMP NOT NULL,
+    UNIQUE(step_id, event)
+);
+CREATE INDEX IF NOT EXISTS idx_wf_decision_steps_event ON wf_decision_steps (event, created_at);
+CREATE INDEX IF NOT EXISTS idx_wf_decision_steps_template ON wf_decision_steps (template_id, surface);
+CREATE TABLE IF NOT EXISTS cortex_finding_adjudications (
+    adjudication_id TEXT PRIMARY KEY,
+    finding_id      TEXT NOT NULL,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    decision        TEXT NOT NULL CHECK(decision IN ('accept','reject')),
+    reason          TEXT NOT NULL,
+    adjudicated_by  TEXT NOT NULL,
+    step_id         TEXT NOT NULL,
+    instance_id     TEXT NOT NULL DEFAULT '',
+    adjudicated_at  TIMESTAMP NOT NULL,
+    UNIQUE(tenant_id, finding_id)
+);
+CREATE TRIGGER IF NOT EXISTS wf_decision_steps_no_update BEFORE UPDATE ON wf_decision_steps BEGIN SELECT RAISE(ABORT, 'wf_decision_steps is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS wf_decision_steps_no_delete BEFORE DELETE ON wf_decision_steps BEGIN SELECT RAISE(ABORT, 'wf_decision_steps is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS cortex_finding_adjudications_no_update BEFORE UPDATE ON cortex_finding_adjudications BEGIN SELECT RAISE(ABORT, 'cortex_finding_adjudications is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS cortex_finding_adjudications_no_delete BEFORE DELETE ON cortex_finding_adjudications BEGIN SELECT RAISE(ABORT, 'cortex_finding_adjudications is append-only'); END;
 """
 
 
@@ -4759,6 +4900,32 @@ def icdev_db(tmp_path, _icdev_db_template):
     db_path = tmp_path / "icdev.db"
     shutil.copyfile(_icdev_db_template, db_path)
     return db_path
+
+
+@pytest.fixture
+def wf_db(icdev_db, monkeypatch):
+    """The platform DB for a declared decision step (icx-cnf-02), on SQLite.
+
+    A decision route records its step in the wf_ tables and wf_decision_steps,
+    all in MINIMAL_ICDEV_SCHEMA. Modules that did ``from tools.db.storage import
+    get_connection`` WHILE an earlier test had storage patched keep that patched
+    callable forever (a closed connection, a deleted temp DB). So every loaded
+    workflow_hitl and cortex module is pointed back at the real function for this
+    test; monkeypatch restores whatever was there.
+    """
+    import sys
+
+    from tools.db import storage
+
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    real = storage.get_connection
+    for name, mod in list(sys.modules.items()):
+        bare = name[len("icdev."):] if name.startswith("icdev.") else name
+        if (mod is not None and bare.startswith(("tools.workflow_hitl", "tools.cortex"))
+                and getattr(mod, "get_connection", real) is not real):
+            monkeypatch.setattr(mod, "get_connection", real)
+    return icdev_db
 
 
 @pytest.fixture
