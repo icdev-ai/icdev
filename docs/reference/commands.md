@@ -4762,6 +4762,8 @@ python tools/modernization/framework_migrator.py --source /path --output /path -
 python tools/modernization/monolith_decomposer.py --app-id "app-1" --target microservices --json                       # Decompose monolith
 python tools/modernization/db_migration_planner.py --app-id "app-1" --target postgresql --json                         # DB migration DDL
 python tools/modernization/strangler_fig_manager.py --plan-id "plan-1" --status --json                                 # Strangler fig status
+python tools/modernization/app_wave_planner.py --app-id "app-1" --out waves.json                                     # An application's own waves (strangler order, backouts)
+python tools/modernization/refactor_jobs.py --app-id "app-1" --strategy rehost --out refactor.json                     # The migrators as CAM refactor jobs
 python tools/modernization/compliance_bridge.py --plan-id "plan-1" --validate --json                                   # ATO compliance bridge
 python tools/modernization/migration_code_generator.py --plan-id "plan-1" --generate-all --output /path                # Generate migration code
 python tools/modernization/migration_report_generator.py --app-id "app-1" --type assessment                            # Migration report

@@ -165,6 +165,16 @@ rules:
         target_version: "17"
         description: "Java 11 → 17 migration (version_migrator.py)"
 
+  # ICDEV[OS] osx-fth-13: the analyser records a .NET Framework 4.x project as "framework-4"
+  - match_language: csharp
+    match_version_prefix: "framework-4"
+    jobs:
+      - type: version_upgrade
+        source_language: csharp
+        source_version: "4.8"
+        target_version: "8.0"
+        description: ".NET Framework 4.8 → .NET 8 migration (version_migrator.py)"
+
   - match_framework: struts
     jobs:
       - type: framework_migration

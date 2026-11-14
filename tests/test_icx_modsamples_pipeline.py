@@ -169,3 +169,33 @@ def test_every_timestamp_in_the_bundle_parses(run):
         datetime.fromisoformat(v.replace("Z", "+00:00")), path
     assert ax._iso("2026-11-12T04:38:13.113247+00:00Z") == "2026-11-12T04:38:13.113247+00:00"
     assert "/" not in json.dumps(run["report"]["source"])
+
+
+def test_the_plan_has_waves_with_backouts_over_every_component(run):
+    """osx-fth-13: the application's own waves, so ICDEV[OS]'s migration-plan gate can pass."""
+    waves = run["bundle"]["migration"]["waves"]
+    assert waves and all(w["backout"] and w["status"] == "planned" for w in waves)
+    placed = [c for w in waves for c in w["components"]]
+    assert sorted(placed) == sorted({c["id"] for c in run["bundle"]["components"]})
+    assert "migration.waves" not in run["report"]["gaps"]
+    order = {c: w["order"] for w in waves for c in w["components"]}
+    assert order["com.acme.Util"] < order["com.acme.TradeServlet"], "a dependency moves before what depends on it"
+
+
+def test_the_migrators_ran_as_cam_jobs_bound_by_digest(run):
+    """osx-fth-13: the version migrator and the database planner as CAM jobs; each file by its SHA-256."""
+    import hashlib
+    jobs = {j["kind"]: j for j in run["bundle"]["refactor"]["jobs"]}
+    assert set(jobs) >= {"version_upgrade", "db_ddl_generation"}
+    for j in jobs.values():
+        assert j["status"] == "completed" and j["review"] == "unreviewed" and j["artefacts"]
+        assert all(not a["path"].startswith("/") for a in j["artefacts"]), "never where the job ran"
+        lines = "".join(f"{a['sha256']}  {a['path']}\n" for a in sorted(j["artefacts"], key=lambda a: a["path"]))
+        assert j["artefact_digest"] == hashlib.sha256(lines.encode()).hexdigest()
+    ref = json.loads((run["out"] / "refactor.json").read_text())
+    vj = next(j for j in ref["jobs"] if j["refactor_type"] == "version_upgrade")
+    a = vj["artifacts"][0]
+    assert Path(a["path"]).is_relative_to(run["out"] / "artefacts" / "cam"), "the run's own output, never data/"
+    assert hashlib.sha256(Path(a["path"]).read_bytes()).hexdigest() == next(
+        x["sha256"] for x in jobs["version_upgrade"]["artefacts"] if x["path"] == a["rel"])
+    assert "refactor" not in run["report"]["gaps"]
