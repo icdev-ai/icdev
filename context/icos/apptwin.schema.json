@@ -152,6 +152,65 @@
       "title": "AiIfy",
       "type": "object"
     },
+    "AiUseCaseDraft": {
+      "additionalProperties": false,
+      "description": "An AI use case DRAFTED from AI-Ify's opportunities of one pattern. A draft only: registering it is ICOS's\nai-use-case workflow, where people review its goals, data, evaluation and red team.",
+      "properties": {
+        "best_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Best Score"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "modules": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Modules",
+          "type": "array"
+        },
+        "opportunities": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Opportunities",
+          "type": "array"
+        },
+        "pattern_type": {
+          "title": "Pattern Type",
+          "type": "string"
+        },
+        "status": {
+          "const": "draft",
+          "default": "draft",
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "pattern_type",
+        "opportunities"
+      ],
+      "title": "AiUseCaseDraft",
+      "type": "object"
+    },
     "Api": {
       "additionalProperties": false,
       "properties": {
@@ -271,6 +330,164 @@
       "title": "Check",
       "type": "object"
     },
+    "CloudNative": {
+      "additionalProperties": false,
+      "description": "ICDEV[IT]'s cloud-native target for the application (osx-fth-14), from analysis only: the source is read, never\nbuilt or run. A container definition, a deployment manifest, the hard-coded configuration found (where, never its\nvalue) with an environment-variable mapping, a twelve-factor report, an event contract for its message-driven beans,\nand AI use cases DRAFTED from AI-Ify. Every file is generated and unreviewed, bound by SHA-256, and the section by the\ndigest of that list.",
+      "properties": {
+        "ai_use_cases": {
+          "items": {
+            "$ref": "#/$defs/AiUseCaseDraft"
+          },
+          "title": "Ai Use Cases",
+          "type": "array"
+        },
+        "artefact_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artefact Digest"
+        },
+        "artefacts": {
+          "items": {
+            "$ref": "#/$defs/GeneratedArtefact"
+          },
+          "title": "Artefacts",
+          "type": "array"
+        },
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "config": {
+          "items": {
+            "$ref": "#/$defs/ConfigFinding"
+          },
+          "title": "Config",
+          "type": "array"
+        },
+        "env": {
+          "items": {
+            "$ref": "#/$defs/EnvVar"
+          },
+          "title": "Env",
+          "type": "array"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/EventChannel"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "factors": {
+          "items": {
+            "$ref": "#/$defs/Factor"
+          },
+          "maxItems": 12,
+          "minItems": 12,
+          "title": "Factors",
+          "type": "array"
+        },
+        "stack": {
+          "$ref": "#/$defs/Stack"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/CloudTarget"
+          },
+          "title": "Targets",
+          "type": "array"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "stack",
+        "factors"
+      ],
+      "title": "CloudNative",
+      "type": "object"
+    },
+    "CloudTarget": {
+      "additionalProperties": false,
+      "description": "One item of the plan's cloud- or AI-native target, and what proposes it. ``generated``: a generated, unreviewed\nartefact or job proposes it; ``not_addressed``: no tool does. Nothing here says a target is reached: only running it\ncould show that.",
+      "properties": {
+        "by": {
+          "items": {
+            "type": "string"
+          },
+          "title": "By",
+          "type": "array"
+        },
+        "factors": {
+          "items": {
+            "enum": [
+              "codebase",
+              "dependencies",
+              "config",
+              "backing_services",
+              "build_release_run",
+              "processes",
+              "port_binding",
+              "concurrency",
+              "disposability",
+              "dev_prod_parity",
+              "logs",
+              "admin_processes"
+            ],
+            "type": "string"
+          },
+          "title": "Factors",
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "cloud",
+            "ai"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "generated",
+            "not_addressed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        },
+        "why": {
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "kind",
+        "status",
+        "why"
+      ],
+      "title": "CloudTarget",
+      "type": "object"
+    },
     "Coa": {
       "additionalProperties": false,
       "properties": {
@@ -385,6 +602,66 @@
       "title": "Component",
       "type": "object"
     },
+    "ConfigFinding": {
+      "additionalProperties": false,
+      "description": "A setting found hard-coded in the source: WHERE it is and what it is, never its value (a credential is never\ncopied). ``literal``: a value is written there, not a placeholder such as ``${...}``.",
+      "properties": {
+        "env": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Env"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        },
+        "kind": {
+          "enum": [
+            "jdbc_url",
+            "connection_string",
+            "credential",
+            "hostname",
+            "url",
+            "file_path",
+            "port"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "literal": {
+          "default": true,
+          "title": "Literal",
+          "type": "boolean"
+        },
+        "location": {
+          "minLength": 1,
+          "title": "Location",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "location"
+      ],
+      "title": "ConfigFinding",
+      "type": "object"
+    },
     "Consumer": {
       "additionalProperties": false,
       "description": "Another application that calls one of this one's APIs (Phase 150): what a retirement must reroute.",
@@ -427,6 +704,36 @@
         "kind"
       ],
       "title": "Dependency",
+      "type": "object"
+    },
+    "EnvVar": {
+      "additionalProperties": false,
+      "description": "One environment variable of the generated mapping: its name, whether it is a secret (from the secret store, never\na config map), and every location it replaces.",
+      "properties": {
+        "locations": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Locations",
+          "type": "array"
+        },
+        "name": {
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "secret": {
+          "default": false,
+          "title": "Secret",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "locations"
+      ],
+      "title": "EnvVar",
       "type": "object"
     },
     "Environment": {
@@ -488,6 +795,146 @@
         }
       },
       "title": "Environment",
+      "type": "object"
+    },
+    "EventChannel": {
+      "additionalProperties": false,
+      "description": "A message-driven bean's destination, proposed as an event channel: generated, unreviewed.",
+      "properties": {
+        "consumer": {
+          "title": "Consumer",
+          "type": "string"
+        },
+        "destination": {
+          "title": "Destination",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "queue",
+            "topic"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "messages": {
+          "items": {
+            "$ref": "#/$defs/EventMessage"
+          },
+          "title": "Messages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "destination",
+        "kind",
+        "consumer"
+      ],
+      "title": "EventChannel",
+      "type": "object"
+    },
+    "EventField": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "title": "EventField",
+      "type": "object"
+    },
+    "EventMessage": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "payload": {
+          "items": {
+            "$ref": "#/$defs/EventField"
+          },
+          "title": "Payload",
+          "type": "array"
+        },
+        "producers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Producers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "EventMessage",
+      "type": "object"
+    },
+    "Factor": {
+      "additionalProperties": false,
+      "description": "One twelve-factor factor, scored from evidence. ``unverified`` where static analysis cannot tell -- never ``met``\non nothing found.",
+      "properties": {
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "id": {
+          "enum": [
+            "codebase",
+            "dependencies",
+            "config",
+            "backing_services",
+            "build_release_run",
+            "processes",
+            "port_binding",
+            "concurrency",
+            "disposability",
+            "dev_prod_parity",
+            "logs",
+            "admin_processes"
+          ],
+          "title": "Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "met",
+            "not_met",
+            "unverified"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "why": {
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "why"
+      ],
+      "title": "Factor",
       "type": "object"
     },
     "Feature": {
@@ -583,6 +1030,51 @@
         "evidence"
       ],
       "title": "Finding",
+      "type": "object"
+    },
+    "GeneratedArtefact": {
+      "additionalProperties": false,
+      "description": "One generated file, by its path under the job's output and its SHA-256. Generated and unreviewed: a bundle cannot\nsay a person reviewed it (adopting a target in ICOS is a decision about the plan, not a review of the file).",
+      "properties": {
+        "job": {
+          "title": "Job",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "container_definition",
+            "deployment_manifest",
+            "config_mapping",
+            "twelve_factor_report",
+            "event_contract"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "review": {
+          "const": "unreviewed",
+          "default": "unreviewed",
+          "title": "Review",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "job",
+        "path",
+        "sha256"
+      ],
+      "title": "GeneratedArtefact",
       "type": "object"
     },
     "Integrity": {
@@ -951,6 +1443,39 @@
         "percentage"
       ],
       "title": "Pillar",
+      "type": "object"
+    },
+    "Port": {
+      "additionalProperties": false,
+      "properties": {
+        "found": {
+          "title": "Found",
+          "type": "boolean"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "port",
+        "found"
+      ],
+      "title": "Port",
       "type": "object"
     },
     "Process": {
@@ -1486,6 +2011,107 @@
       "title": "Signatures",
       "type": "object"
     },
+    "Stack": {
+      "additionalProperties": false,
+      "description": "What the analysis read the application to be, and the runtime its container definition targets.",
+      "properties": {
+        "build_tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Tool"
+        },
+        "config_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Config Files",
+          "type": "array"
+        },
+        "container_files": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Container Files",
+          "type": "array"
+        },
+        "framework": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Framework"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "packaging": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Packaging"
+        },
+        "ports": {
+          "items": {
+            "$ref": "#/$defs/Port"
+          },
+          "title": "Ports",
+          "type": "array"
+        },
+        "runtime": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "title": "Stack",
+      "type": "object"
+    },
     "Step": {
       "additionalProperties": false,
       "properties": {
@@ -1750,6 +2376,17 @@
     "application": {
       "$ref": "#/$defs/Application"
     },
+    "cloud_native": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CloudNative"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "coherence": {
       "anyOf": [
         {
@@ -1961,6 +2598,6 @@
   ],
   "title": "AppTwin",
   "type": "object",
-  "x-icos-contract": "1.181.0",
+  "x-icos-contract": "1.182.0",
   "x-license": "Apache-2.0"
 }
