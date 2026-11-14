@@ -1,0 +1,36 @@
+# CUI // SP-CTI
+# Governance twins — thresholds (icx-cnf-03).
+#
+# Read by tools/twin_core/governance.py::load_policy. Each observation COPIES the
+# section it is judged by into its evidence, so a replay judges with the
+# thresholds in force when it was recorded, not with whatever this file says now.
+#
+# Twins: cortex (TRUST chain, cortex_audit, findings, backends), ace (runs,
+# checkpoints, aborts, NOVA trust), cwk (Co-Workers roster sources),
+# twin_observatory (the feature-conformance audit). Docs:
+# docs/features/twx-cov-02-twin-coverage-audit.md section 5 and
+# docs/audits/conformance-cortex-coworker.md (Notes).
+
+# How far back an observation reads (hours).
+window_hours: 168
+
+# At most this many findings of one kind are listed; the rest are counted in one
+# summary finding so a busy deployment cannot hide the shape under a long list.
+max_findings: 50
+
+cortex:
+  # Newest cortex_audit rows read per observation (the evidence keeps them all).
+  audit_scan_limit: 500
+  # A conflict finding a person has not adjudicated, by age since first seen.
+  finding_warn_days: 7
+  finding_fail_days: 30
+
+ace:
+  # A run in assembling/pending/active/paused not updated for this long, with no
+  # checkpoint waiting on a person, is stuck.
+  stuck_after_hours: 4
+  # A checkpoint (hitl_pending) waiting on a person, by age.
+  checkpoint_warn_hours: 4
+  checkpoint_fail_hours: 24
+  # Newest rows read per table.
+  scan_limit: 500

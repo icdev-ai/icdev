@@ -9872,6 +9872,22 @@ python tools/workflow/coherence_checker.py --check feature_conformance --json
 
 Console: `/twin-observatory/conformance`. MCP: `feature_conformance` (read-only).
 
+## Governance twins — Cortex, ACE, Co-Workers, the conformance audit (icx-cnf-03)
+
+Observe a governed subsystem, record the evidence, replay it. Every finding names
+its thread. An unreadable source is unverified, never a pass. Doc:
+`docs/features/twx-cov-02-twin-coverage-audit.md` section 5.
+
+```bash
+python -m tools.twin_core.governance --observe --json               # observe and record every governance twin
+python -m tools.twin_core.governance --observe --canvas cortex --no-record --json
+python -m tools.twin_core.governance --list --canvas ace --json      # recorded observations, newest first
+python -m tools.twin_core.governance --replay <observation_id>      # exit 1 when it no longer matches
+python -m tools.twin_core.governance --thread cortex_audit:<id>     # a finding's record and provenance
+```
+
+Console: `/twin-observatory/governance`. MCP: `twin_governance` (read-only).
+
 ## Cards — the per-card incident records (xrv-docs-02)
 
 These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —
