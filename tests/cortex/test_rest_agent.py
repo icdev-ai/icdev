@@ -91,10 +91,9 @@ def calls(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _wf_db(icdev_db, monkeypatch):
+def _wf_db(wf_db):
     """The launch is a declared decision (icx-cnf-02): its steps need the wf tables."""
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    return wf_db
 
 
 class _DecidedClient:

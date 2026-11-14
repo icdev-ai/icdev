@@ -21,13 +21,11 @@ from tools.cortex import blueprint as bp
 
 
 @pytest.fixture(autouse=True)
-def _a_person_confirms(icdev_db, monkeypatch):
+def _a_person_confirms(wf_db):
     """The confirm click is a person's declared step (icx-cnf-02): it needs the wf
     tables and a signed-in person who holds decl-wft-cortex-agent-launch."""
     from flask import Flask, g
 
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
     with Flask(__name__).test_request_context("/"):
         g.current_user = {"id": "u1", "role": "developer"}
         yield

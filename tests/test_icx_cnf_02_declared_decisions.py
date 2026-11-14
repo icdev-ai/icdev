@@ -35,14 +35,6 @@ SERVICE = {"id": "cortex-svc:compass", "role": "service"}
 
 
 @pytest.fixture()
-def wf_db(icdev_db, monkeypatch):
-    """The platform DB (MINIMAL_ICDEV_SCHEMA carries the wf_ and ledger tables)."""
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
-    return icdev_db
-
-
-@pytest.fixture()
 def declared(wf_db):
     from tools.workflow_hitl import declared as mod
 

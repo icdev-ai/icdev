@@ -284,10 +284,9 @@ def test_the_rest_govern_endpoint_deliberately_does_not_call_the_facade():
 # 3b. agent() — ADOPTED. All three consumers must genuinely reach the facade.
 # --------------------------------------------------------------------------- #
 @pytest.fixture
-def _wf_db(icdev_db, monkeypatch):
+def _wf_db(wf_db):
     """A launch is a person's declared step (icx-cnf-02): it needs the wf tables."""
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    return wf_db
 
 
 def test_the_canvas_confirm_then_launch_path_reaches_the_facade(monkeypatch, _wf_db):

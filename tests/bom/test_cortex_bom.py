@@ -25,10 +25,9 @@ _PRICER = {"id": "u-pricing", "role": "contract_mgr"}
 
 
 @pytest.fixture(autouse=True)
-def _wf_db(icdev_db, monkeypatch):
+def _wf_db(wf_db):
     """A designation is a declared decision (icx-cnf-02): its step needs the wf tables."""
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    return wf_db
 
 
 def _bom(data, user=_PRICER):

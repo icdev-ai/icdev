@@ -4903,6 +4903,32 @@ def icdev_db(tmp_path, _icdev_db_template):
 
 
 @pytest.fixture
+def wf_db(icdev_db, monkeypatch):
+    """The platform DB for a declared decision step (icx-cnf-02), on SQLite.
+
+    A decision route records its step in the wf_ tables and wf_decision_steps,
+    all in MINIMAL_ICDEV_SCHEMA. Modules that did ``from tools.db.storage import
+    get_connection`` WHILE an earlier test had storage patched keep that patched
+    callable forever (a closed connection, a deleted temp DB). So every loaded
+    workflow_hitl and cortex module is pointed back at the real function for this
+    test; monkeypatch restores whatever was there.
+    """
+    import sys
+
+    from tools.db import storage
+
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    real = storage.get_connection
+    for name, mod in list(sys.modules.items()):
+        bare = name[len("icdev."):] if name.startswith("icdev.") else name
+        if (mod is not None and bare.startswith(("tools.workflow_hitl", "tools.cortex"))
+                and getattr(mod, "get_connection", real) is not real):
+            monkeypatch.setattr(mod, "get_connection", real)
+    return icdev_db
+
+
+@pytest.fixture
 def bom_db(tmp_path, monkeypatch):
     """SQLite DB with the BOM Evidence Engine tables (migration 267).
 

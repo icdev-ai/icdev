@@ -68,10 +68,9 @@ def _binding(scopes):
 
 
 @pytest.fixture(autouse=True)
-def _wf_db(icdev_db, monkeypatch):
+def _wf_db(wf_db):
     """The baseline's acceptance is a declared step (icx-cnf-02): it needs the wf tables."""
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    return wf_db
 
 
 @pytest.fixture
