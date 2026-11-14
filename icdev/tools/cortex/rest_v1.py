@@ -83,6 +83,54 @@ def _schema_error_classes() -> tuple:
     return tuple(found)
 
 
+def _step_refused_classes() -> tuple:
+    """Every live declared.StepRefused class, across namespaces and reloads.
+
+    Same hazard, same fix as ``_schema_error_classes`` above.
+    """
+    import importlib as _il
+
+    found = []
+    for _mod in ("tools.workflow_hitl.declared", "icdev.tools.workflow_hitl.declared"):
+        try:
+            _cls = getattr(_il.import_module(_mod), "StepRefused", None)
+        except Exception:  # noqa: BLE001 — a missing namespace is not an error
+            continue
+        if isinstance(_cls, type) and _cls not in found:
+            found.append(_cls)
+    return tuple(found)
+
+
+def _decision_gate(template_id: str, surface: str, *, decision: str, subject: str,
+                   payload, data) -> tuple[str, dict]:
+    """Run a decision through its declared template (icx-cnf-02).
+
+    Returns ``(how, step)``. ``how`` is:
+
+    * ``"spent"``    the body names a ``decision_step`` a person decided for this
+                     exact payload; it is used once.
+    * ``"decided"``  the caller is a person whose role holds the step; the step
+                     is taken in this request.
+    * ``"proposed"`` anyone else (a service key, a person without the role). A
+                     proposal is recorded and the effect must NOT run. A holder
+                     decides at ``/decisions``; the caller re-posts with the id.
+
+    A refusal raises ``StepRefused``, which the decorator maps to its status.
+    """
+    from tools.workflow_hitl import declared
+
+    step_id = str((data or {}).get("decision_step") or "").strip() if isinstance(data, dict) else ""
+    if step_id:
+        return "spent", declared.spend(step_id, template_id=template_id, surface=surface,
+                                       payload=payload)
+    actor = declared.current_actor()
+    if declared.can_hold(template_id, actor):
+        return "decided", declared.take_step(template_id, surface=surface, decision=decision,
+                                             subject=subject, actor=actor, payload=payload)
+    return "proposed", declared.propose(template_id, surface=surface, subject=subject,
+                                        payload=payload, actor=actor)
+
+
 def _resolution_blocked_classes() -> tuple:
     """Every live CortexResolutionBlocked class, across namespaces and reloads.
 
@@ -244,6 +292,10 @@ def _cortex_api(func: Callable) -> Callable:
             return jsonify(payload)
         except validators.CortexValidationError as exc:
             return jsonify({"error": str(exc)}), 400
+        except _step_refused_classes() as exc:
+            # The declared workflow refused the decision (icx-cnf-02): no person,
+            # wrong role, already spent, or a store that cannot record it.
+            return jsonify(exc.to_dict()), exc.status
         except GovernanceBlockedError as exc:
             return jsonify({
                 "error": exc.reason,
@@ -509,6 +561,22 @@ def api_v1_agent(data):
     if "llm_function" in params:
         kwargs["llm_function"] = params["llm_function"]
 
+    # The launch is a person's decision (decl-wft-cortex-agent-launch). A service
+    # key or a person without the role only proposes it.
+    how, step = _decision_gate("decl-wft-cortex-agent-launch", "cortex.api_v1_agent",
+                               decision="launch", subject=params["goal"][:200],
+                               payload=params, data=data)
+    if how == "proposed":
+        return {
+            "launched": False,
+            "degraded": False,
+            "pending": True,
+            "mode": params["mode"],
+            "reason": "a person must decide this launch; re-post with decision_step once decided",
+            "text": "",
+            "decision_step": step,
+        }
+
     unsupported = _agent_loop_unsupported()
     try:
         result = agent(params["goal"], ctx=ctx, **kwargs)
@@ -520,11 +588,13 @@ def api_v1_agent(data):
             "mode": params["mode"],
             "reason": str(exc)[:500],
             "text": "",
+            "decision_step": step,
         }
 
     payload = result.to_dict()
     payload["launched"] = True
     payload["degraded"] = False
+    payload["decision_step"] = step
     return payload
 
 
@@ -997,14 +1067,25 @@ def api_v1_award(data):
     if not opportunity_id:
         raise validators.CortexValidationError("opportunity_id is required")
 
+    # A won bid does not self-approve (decl-wft-cortex-award): the draft is the
+    # proposal, and a contracts person other than the proposer accepts it at
+    # /decisions. Recorded first, so a draft never exists without its pending step.
+    from tools.workflow_hitl import declared
+
+    acceptance = declared.propose("decl-wft-cortex-award", surface="cortex.api_v1_award",
+                                  subject=opportunity_id,
+                                  payload={"opportunity_id": opportunity_id})
+
     result = transition_from_opportunity(
         opportunity_id, created_by=str(data.get("created_by") or "compass")
     )
 
     if result.get("status") == "error":
+        declared.withdraw(acceptance["step_id"], result.get("message") or "cannot transition")
         # Not a 500. "The opportunity is not marked won" is a legitimate answer to a
         # legitimate question, and the caller needs the reason, not a stack trace.
         raise validators.CortexValidationError(result.get("message") or "cannot transition")
+    result["acceptance"] = acceptance
 
     logger.info("award: opportunity=%s contract=%s value=%s",
                 opportunity_id, result.get("contract_id"), result.get("total_value"))
@@ -1098,6 +1179,20 @@ def api_v1_bom(data):
                 "credibility_tier": str(doc.get("credibility_tier") or "").strip(),
             }
             extractions.append(extract_grid(path))
+
+        # Only a person's designation binds (decl-wft-cortex-bom-designation). A
+        # holder's bind in this request; anyone else's are proposals until a holder
+        # decides them and the caller re-posts with the decided step.
+        designations = {k: v for k, v in sorted(declared.items())
+                        if v.get("role") or v.get("credibility_tier")}
+        designation_step = None
+        if designations:
+            how, designation_step = _decision_gate(
+                "decl-wft-cortex-bom-designation", "cortex.api_v1_bom",
+                decision="designate", subject=",".join(designations),
+                payload=designations, data=data)
+            if how == "proposed":
+                declared = {}
 
         derivations = {d.derived: d for d in find_derivatives(extractions)}
 
@@ -1209,6 +1304,11 @@ def api_v1_bom(data):
         "pending_decisions": len(result.pending),
         "pivots": pivots,
         "llm_calls": result.llm_calls,
+        # None when nothing was designated; else the step, and when its status is
+        # "pending" the designations above did NOT bind (set_by ai_proposed).
+        "designation_step": designation_step,
+        "proposed_designations": (designations if designation_step
+                                  and designation_step.get("status") == "pending" else {}),
     }
 
 

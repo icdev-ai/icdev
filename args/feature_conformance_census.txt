@@ -13,18 +13,12 @@ ace.abort|twin:no-adapter
 ace.hitl|ai:no-read-tool
 ace.hitl|architecture:no-requirement
 ace.hitl|twin:no-adapter
-ace.hitl|workflow:undeclared:ace_api.api_hitl_resolve
-ace.hitl|workflow:undeclared:ace_api.api_suggestion_confirm
-ace.hitl|workflow:undeclared:ace_api.api_suggestion_decline
 ace.profiles|architecture:no-requirement
 ace.profiles|gui:uncalled:ace_api.api_profiles_delete
 ace.profiles|twin:no-adapter
-ace.profiles|workflow:undeclared:ace_api.api_profiles_delete
 ace.runs|architecture:no-requirement
 ace.runs|gui:uncalled:ace_api.api_ace_chat
 ace.runs|twin:no-adapter
-ace.runs|workflow:undeclared:ace_api.api_launch
-ace.runs|workflow:undeclared:ace_api.api_session_rerun
 ace.trust_sessions|architecture:no-requirement
 ace.trust_sessions|gui:uncalled:ace_api.api_ace_events_emit
 ace.trust_sessions|twin:no-adapter
@@ -33,8 +27,6 @@ conformance.audit|twin:no-adapter
 cortex.agent_launch|ai:no-read-tool
 cortex.agent_launch|architecture:no-requirement
 cortex.agent_launch|twin:no-adapter
-cortex.agent_launch|workflow:undeclared:cortex.api_chat
-cortex.agent_launch|workflow:undeclared:cortex.api_v1_agent
 cortex.airgap_guard|ai:no-read-tool
 cortex.airgap_guard|architecture:no-requirement
 cortex.airgap_guard|gui:no-page
@@ -42,7 +34,6 @@ cortex.airgap_guard|twin:no-adapter
 cortex.findings|ai:no-read-tool
 cortex.findings|architecture:no-requirement
 cortex.findings|twin:no-adapter
-cortex.findings|workflow:no-endpoint:cortex.findings.adjudicate
 cortex.governed_verbs|architecture:no-requirement
 cortex.governed_verbs|gui:no-page
 cortex.governed_verbs|gui:uncalled:cortex.api_v1_classify
@@ -76,8 +67,6 @@ cortex.pmo|gui:uncalled:cortex.api_v1_slides
 cortex.pmo|gui:uncalled:cortex.api_v1_staffing_matrix
 cortex.pmo|gui:uncalled:cortex.api_v1_win_themes
 cortex.pmo|twin:no-adapter
-cortex.pmo|workflow:undeclared:cortex.api_v1_award
-cortex.pmo|workflow:undeclared:cortex.api_v1_bom
 cortex.search_ask|architecture:no-requirement
 cortex.search_ask|twin:no-adapter
 cortex.service_keys|ai:no-read-tool

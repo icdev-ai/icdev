@@ -5178,17 +5178,53 @@ def check_hitl_workflow() -> CoherenceCheck:
     2. If ICDEV_HITL_KANBAN_GATE=true, HITLGate import resolves
     3. wf_ tables listed in APPEND_ONLY_TABLES (wf_feedback, wf_document_submissions, wf_citations)
     4. Blueprint registered at /api/v1/wf
+    5. (icx-cnf-02) Every declared decision template under args/workflow_hitl_templates/
+       is well formed (a manual stage held by a role, holders that are people), no
+       surface is decided by two templates, every template is RUN by code (its id is
+       named outside declared.py), and every decision endpoint the feature audit
+       found maps to one (no ``workflow:`` line in the conformance census).
     """
     import os
     issues: list[str] = []
     actual: list[str] = []
+
+    # Declared decision templates (icx-cnf-02)
+    try:
+        from tools.workflow_hitl.declared import load_templates, validate_template
+
+        templates = load_templates(PROJECT_ROOT / "args" / "workflow_hitl_templates")
+        owners: dict[str, str] = {}
+        code = "\n".join(
+            p.read_text(encoding="utf-8", errors="replace")
+            for p in (PROJECT_ROOT / "tools").rglob("*.py")
+            if p.name != "declared.py" and "__pycache__" not in p.parts
+        )
+        for tid, tmpl in sorted(templates.items()):
+            issues.extend(f"declared template: {e}" for e in validate_template(tmpl))
+            for surface in tmpl.get("decides") or []:
+                if surface in owners:
+                    issues.append(f"{surface} is decided by both {owners[surface]} and {tid}")
+                owners[surface] = tid
+            if f'"{tid}"' not in code:
+                issues.append(f"declared template {tid} is run by no code (no take_step/propose names it)")
+        actual.append(f"declared_templates={len(templates)}, surfaces={len(owners)}")
+        census = PROJECT_ROOT / "args" / "feature_conformance_census.txt"
+        if census.exists():
+            undeclared = [ln.strip() for ln in census.read_text(encoding="utf-8").splitlines()
+                          if "|workflow:" in ln]
+            issues.extend(f"decision without a declared template: {ln}" for ln in undeclared)
+            if not undeclared:
+                actual.append("every audited decision endpoint maps to a declared template")
+    except Exception as exc:  # noqa: BLE001
+        issues.append(f"declared template check failed: {exc}")
 
     # Check 1: append-only tables
     try:
         aot_path = PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
         if aot_path.exists():
             content = aot_path.read_text(encoding="utf-8")
-            for tbl in ("wf_feedback", "wf_document_submissions", "wf_citations"):
+            for tbl in ("wf_feedback", "wf_document_submissions", "wf_citations",
+                        "wf_decision_steps", "cortex_finding_adjudications"):
                 if tbl in content:
                     actual.append(f"append_only:{tbl}=OK")
                 else:
@@ -5231,7 +5267,8 @@ def check_hitl_workflow() -> CoherenceCheck:
         check_name="HITL Workflow Coherence",
         status=status,
         expected=["append_only tables registered", "HITLGate importable", "blueprint importable",
-                  "workflow_hitl_config.yaml exists"],
+                  "workflow_hitl_config.yaml exists",
+                  "every decision endpoint maps to a declared template (icx-cnf-02)"],
         actual=actual,
         missing=issues,
         extra=[],

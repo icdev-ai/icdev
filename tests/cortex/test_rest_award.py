@@ -67,6 +67,13 @@ def _binding(scopes):
     }
 
 
+@pytest.fixture(autouse=True)
+def _wf_db(icdev_db, monkeypatch):
+    """The baseline's acceptance is a declared step (icx-cnf-02): it needs the wf tables."""
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+
+
 @pytest.fixture
 def awarded(monkeypatch):
     """Capture what reaches portfolio_manager.transition_from_opportunity."""
@@ -148,6 +155,23 @@ def test_needs_attention_is_carried_not_swallowed(awarded):
     assert body["status"] == "proposed"
     assert body["needs_attention"], "the caller must be told what contracts staff owe"
     assert "period of performance" in body["needs_attention"][0]
+
+
+def test_a_won_bid_does_not_self_approve(awarded):
+    """icx-cnf-02: the draft carries a PENDING acceptance a contracts person other
+    than the proposer decides at /decisions (decl-wft-cortex-award)."""
+    from tools.workflow_hitl import declared
+
+    body = make_client().post("/cortex/api/v1/award",
+                              json={"opportunity_id": "opp-1"}).get_json()
+    step = body["acceptance"]
+    assert step["status"] == "pending" and step["decide_at"] == "/decisions"
+    with pytest.raises(declared.StepRefused) as err:
+        declared.decide(step["step_id"], decision="accept", actor={"id": "u1", "role": "admin"})
+    assert err.value.code == "separation"
+    decided = declared.decide(step["step_id"], decision="accept",
+                              actor={"id": "u-co", "role": "contract_mgr"})
+    assert decided["decided_by"] == "u-co"
 
 
 def test_created_by_defaults_to_compass_and_is_recorded(awarded):

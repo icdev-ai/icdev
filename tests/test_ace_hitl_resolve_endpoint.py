@@ -64,7 +64,7 @@ def _seed_pending(instance_id: str, coworker_id: str, detail: str) -> None:
 
 
 @pytest.fixture()
-def client(ace_env):
+def client(ace_env, icdev_db, monkeypatch):
     """Minimal Flask app mounting only the ACE blueprints (no dashboard auth).
 
     Mirrors tests/test_ace_nova_state_endpoint.py: a bare Flask app avoids the
@@ -77,6 +77,17 @@ def client(ace_env):
 
     app = Flask(__name__)
     app.config["TESTING"] = True
+
+    # Approve and reject are a person's declared step (icx-cnf-02,
+    # decl-wft-ace-hitl-resolve): a signed-in holder, and the wf tables to record it.
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+
+    @app.before_request
+    def _person():
+        from flask import g
+
+        g.current_user = {"id": "u-op", "role": "developer"}
 
     from icdev.tools.ace.blueprint import ace_api_bp, ace_bp
 

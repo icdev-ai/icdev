@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+id: decl-wft-cortex-agent-launch
+name: "Cortex: launch an agent"
+description: >-
+  Cortex proposes an agent or a team for a multi-step goal. A person launches
+  it, from the /cortex confirm card in one action. A service key or a person
+  without the role only proposes; a holder decides at /decisions, and the
+  caller re-posts with the decided step.
+decides: [cortex.api_chat, cortex.api_v1_agent]
+effect: cortex.api.agent (the governed facade), unchanged.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: Cortex classified the goal and proposed the roster.
+  - name: launch
+    step_type: manual
+    role: run_approver
+    holders: [admin, pm, developer, isso, co, cor, reviewer]
+    decisions: {launch: affirm, decline: deny}
+    reason_required: [decline]

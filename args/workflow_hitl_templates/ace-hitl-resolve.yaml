@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+id: decl-wft-ace-hitl-resolve
+name: "ACE: resolve a mid-run checkpoint"
+description: >-
+  A coworker paused at its HITL gate. A person approves it (the thread resumes)
+  or rejects it (the thread stops).
+decides: [ace_api.api_hitl_resolve]
+effect: HITLGate.resolve or HITLGate.reject (ace_audit_log), unchanged.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: The coworker reached its checkpoint and paused.
+  - name: resolve
+    step_type: manual
+    role: run_approver
+    holders: [admin, pm, developer, isso, co, cor, reviewer]
+    decisions: {approve: affirm, reject: deny}
+    reason_required: []

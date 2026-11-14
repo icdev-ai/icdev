@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI — Decisions (icx-cnf-02): declared decision steps a person takes. #}
+{% block title %}Decisions - ICDEV Dashboard{% endblock %}
+{% block content %}
+<div class="container" id="decisions-page">
+  <div class="dec-banner">CUI // SP-CTI &mdash; Decisions</div>
+
+  <h1 class="dec-title">Decisions</h1>
+  <p class="dec-help">
+    Every decision a person takes in Cortex and the Co-Worker Engine runs through a declared
+    workflow template (<code>args/workflow_hitl_templates/</code>): a manual step held by a role.
+    Most are taken in one click on their own page. The ones below were only <em>proposed</em> &mdash;
+    by a service key, by a person without the role, or by a won bid that may not approve itself &mdash;
+    and wait for a person who holds the step. Deciding here records your step; a machine caller then
+    re-posts with the step id, once.
+  </p>
+
+  <div class="dec-tabs" role="tablist">
+    <button type="button" class="dec-tab active" data-status="pending" role="tab">Pending</button>
+    <button type="button" class="dec-tab" data-status="decided" role="tab">Decided</button>
+    <button type="button" class="dec-tab" data-status="" role="tab">All</button>
+  </div>
+
+  <div id="decisions-error" class="dec-error" hidden></div>
+  <div id="decisions-empty" class="dec-empty" hidden>Nothing waiting for a decision.</div>
+  <div id="decisions-list"></div>
+
+  <h2 class="dec-subtitle">Declared templates</h2>
+  <p class="dec-help">Which surface each template decides, and which roles hold its step.</p>
+  <div id="decisions-templates"></div>
+</div>
+
+<style>
+#decisions-page { color: var(--text-primary); }
+.dec-banner { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px;
+              padding: 6px 12px; margin-bottom: 1rem; color: var(--text-muted); font-size: 0.8rem; text-align: center; }
+.dec-title { color: var(--text-primary); }
+.dec-subtitle { color: var(--text-primary); font-size: 1.05rem; margin-top: 2rem; }
+.dec-help { color: var(--text-secondary); font-size: 0.88rem; max-width: 70rem; }
+.dec-tabs { display: flex; gap: 0.4rem; margin: 1rem 0; }
+.dec-tab { background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border-color);
+           border-radius: 5px; padding: 0.3rem 0.9rem; cursor: pointer; font-size: 0.82rem; }
+.dec-tab.active { color: var(--text-primary); border-color: var(--status-blue); }
+.dec-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px;
+            padding: 0.8rem 1rem; margin-bottom: 0.7rem; }
+.dec-card h3 { margin: 0 0 0.3rem; font-size: 0.95rem; color: var(--text-primary); }
+.dec-meta { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.4rem; }
+.dec-meta code { color: var(--text-secondary); }
+.dec-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 0.4rem; }
+.dec-actions input { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-color);
+                     border-radius: 4px; padding: 0.3rem 0.5rem; min-width: 18rem; font-size: 0.82rem; }
+.dec-btn { padding: 0.3rem 0.85rem; border-radius: 5px; border: 1px solid var(--border-color);
+           font-size: 0.8rem; font-weight: 600; cursor: pointer; background: var(--bg-secondary); color: var(--text-primary); }
+.dec-btn.affirm { border-color: var(--status-green); color: var(--status-green); }
+.dec-btn.deny { border-color: var(--status-red); color: var(--status-red); }
+.dec-status { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+.dec-error { background: var(--status-red-bg); color: var(--status-red); border-radius: 6px; padding: 0.6rem 0.8rem; margin-bottom: 0.8rem; }
+.dec-empty { color: var(--text-muted); font-size: 0.88rem; padding: 0.6rem 0; }
+.dec-result { font-size: 0.8rem; }
+</style>
+
+<script>
+(function () {
+  var listEl = document.getElementById('decisions-list');
+  var errEl = document.getElementById('decisions-error');
+  var emptyEl = document.getElementById('decisions-empty');
+  var status = 'pending';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function card(step) {
+    var html = '<div class="dec-card" data-step="' + esc(step.step_id) + '">'
+      + '<h3>' + esc(step.template_name || step.template_id) + '</h3>'
+      + '<div class="dec-meta">Surface <code>' + esc(step.surface) + '</code> &bull; subject <code>'
+      + esc(step.subject) + '</code> &bull; step <code>' + esc(step.step_id) + '</code></div>'
+      + '<div class="dec-meta">Proposed by ' + esc(step.proposed_by || '(taken in one action)')
+      + ' &bull; held by ' + esc((step.holders || []).join(', '))
+      + ' &bull; <span class="dec-status">' + esc(step.status) + '</span>';
+    if (step.decided_by) {
+      html += ' &bull; ' + esc(step.decision) + ' by ' + esc(step.decided_by)
+        + (step.reason ? ' (' + esc(step.reason) + ')' : '')
+        + (step.instance_id ? ' &bull; workflow <code>' + esc(step.instance_id) + '</code>' : '');
+    }
+    html += '</div>';
+    if (step.note) { html += '<div class="dec-meta">' + esc(step.note) + '</div>'; }
+    if (step.can_decide) {
+      html += '<div class="dec-actions"><input type="text" placeholder="Reason'
+        + ((step.reason_required || []).length ? ' (required to ' + esc(step.reason_required.join(', ')) + ')' : ' (optional)')
+        + '" data-reason>';
+      (step.decisions || []).forEach(function (d) {
+        var deny = /reject|decline/.test(d);
+        html += '<button type="button" class="dec-btn ' + (deny ? 'deny' : 'affirm')
+          + '" data-decide="' + esc(d) + '">' + esc(d.charAt(0).toUpperCase() + d.slice(1)) + '</button>';
+      });
+      html += '<span class="dec-result" data-result></span></div>';
+    } else if (step.status === 'pending') {
+      html += '<div class="dec-meta">You do not hold this step, or you proposed it.</div>';
+    }
+    return html + '</div>';
+  }
+
+  function load() {
+    errEl.hidden = true;
+    fetch('/decisions/api/steps?status=' + encodeURIComponent(status))
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { errEl.textContent = res.d.error || 'The decision ledger could not be read.'; errEl.hidden = false; listEl.innerHTML = ''; return; }
+        listEl.innerHTML = res.d.steps.map(card).join('');
+        emptyEl.hidden = res.d.steps.length > 0;
+      })
+      .catch(function () { errEl.textContent = 'Network error.'; errEl.hidden = false; });
+  }
+
+  listEl.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-decide]');
+    if (!btn) { return; }
+    var cardEl = btn.closest('.dec-card');
+    var result = cardEl.querySelector('[data-result]');
+    var reason = cardEl.querySelector('[data-reason]').value;
+    cardEl.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
+    result.textContent = 'Recording your step…';
+    fetch('/decisions/api/steps/' + encodeURIComponent(cardEl.dataset.step) + '/decide', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision: btn.dataset.decide, reason: reason })
+    }).then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, d: d }; });
+    }).then(function (res) {
+      if (!res.ok) {
+        result.textContent = res.d.error || 'Refused.';
+        cardEl.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+        return;
+      }
+      result.textContent = 'Decided: ' + res.d.decision + ' (workflow ' + res.d.instance_id + ').';
+      setTimeout(load, 700);
+    }).catch(function () {
+      result.textContent = 'Network error.';
+      cardEl.querySelectorAll('button').forEach(function (b) { b.disabled = false; });
+    });
+  });
+
+  document.querySelectorAll('.dec-tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      document.querySelectorAll('.dec-tab').forEach(function (x) { x.classList.remove('active'); });
+      t.classList.add('active');
+      status = t.dataset.status;
+      load();
+    });
+  });
+
+  fetch('/decisions/api/templates').then(function (r) { return r.json(); }).then(function (d) {
+    document.getElementById('decisions-templates').innerHTML = (d.templates || []).map(function (t) {
+      return '<div class="dec-card"><h3>' + esc(t.name) + '</h3>'
+        + '<div class="dec-meta"><code>' + esc(t.id) + '</code> decides <code>' + esc(t.decides.join(', ')) + '</code></div>'
+        + '<div class="dec-meta">Step <strong>' + esc(t.stage) + '</strong> (' + esc(t.role) + ') held by '
+        + esc(t.holders.join(', ')) + (t.separate_from ? ' &bull; never the proposer' : '') + '</div>'
+        + '<div class="dec-meta">' + esc(t.description) + '</div></div>';
+    }).join('');
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

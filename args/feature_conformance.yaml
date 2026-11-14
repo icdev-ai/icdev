@@ -49,7 +49,7 @@ version: 1
 enforcement: warn
 
 # The ceiling on args/feature_conformance_census.txt. It may only go DOWN.
-census_max: 79
+census_max: 68
 
 doc: docs/audits/conformance-cortex-coworker.md
 snapshot: docs/audits/conformance-cortex-coworker.json
@@ -155,9 +155,11 @@ features:
     endpoints:
       - dic.explorer
       - dic.api_explorer_cortex_findings
+      - dic.api_explorer_cortex_finding_adjudicate
     mcp_tools: []
     declared_decisions:
       - id: cortex.findings.adjudicate
+        endpoint: dic.api_explorer_cortex_finding_adjudicate
         evidence:
           file: tools/cortex/finding_store.py
           text: "A conflict is a finding a HUMAN adjudicates"

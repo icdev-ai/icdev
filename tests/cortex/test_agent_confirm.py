@@ -20,6 +20,19 @@ import pytest
 from tools.cortex import blueprint as bp
 
 
+@pytest.fixture(autouse=True)
+def _a_person_confirms(icdev_db, monkeypatch):
+    """The confirm click is a person's declared step (icx-cnf-02): it needs the wf
+    tables and a signed-in person who holds decl-wft-cortex-agent-launch."""
+    from flask import Flask, g
+
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+    with Flask(__name__).test_request_context("/"):
+        g.current_user = {"id": "u1", "role": "developer"}
+        yield
+
+
 @pytest.fixture
 def ctx():
     from tools.cortex.schemas import CortexContext
@@ -168,3 +181,21 @@ def test_governance_summary_is_normalised(ctx, monkeypatch):
 
     assert out["governance"]["gates_run"] == ["injection_screen", "citation_grounding"]
     assert out["governance"]["blocked"] is False
+
+
+def test_a_confirm_without_the_role_launches_nothing(ctx, monkeypatch):
+    """icx-cnf-02: the confirm is the person's step; a role that does not hold it
+    is refused, says why, and nothing launches."""
+    from flask import g
+
+    from tools.cortex import api as cortex_api
+
+    agent_mock = MagicMock()
+    monkeypatch.setattr(cortex_api, "agent", agent_mock)
+    g.current_user = {"id": "u-aud", "role": "auditor"}
+
+    out = bp._run_facade("agent", GOAL, ctx, confirm_agent=True)
+
+    agent_mock.assert_not_called()
+    assert out["degraded"] is True and "not launched" in out["answer"]
+

@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+id: decl-wft-cortex-bom-designation
+name: "Cortex: designate BOM source credibility"
+description: >-
+  Only a person's designation of a source's role or credibility tier binds.
+  A holder's designations bind in the same request. A service key or a person
+  without the role only proposes; a holder decides at /decisions, and the
+  caller re-posts with the decided step.
+decides: [cortex.api_v1_bom]
+effect: The designations bind in the reconciliation (set_by human), unchanged.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: The engine proposed a tier and role for each source.
+  - name: designate
+    step_type: manual
+    role: pricing_reviewer
+    holders: [admin, pm, co, cor, contract_mgr, capture_mgr, bd, reviewer]
+    decisions: {designate: affirm, decline: deny}
+    reason_required: [decline]

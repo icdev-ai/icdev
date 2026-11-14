@@ -9872,6 +9872,22 @@ python tools/workflow/coherence_checker.py --check feature_conformance --json
 
 Console: `/twin-observatory/conformance`. MCP: `feature_conformance` (read-only).
 
+## Declared decisions — every decision a person takes runs a template (icx-cnf-02)
+
+Each decision route in Cortex and ACE names a template under
+`args/workflow_hitl_templates/` (`decides:` plus one manual stage held by a role).
+The route takes the person's step before its effect. Machine callers and people
+without the role only propose; a holder decides at `/decisions`.
+
+```bash
+python -m tools.workflow_hitl.declared --json              # templates and shape errors
+python -m tools.workflow_hitl.declared --seed --json       # seed them into wf_templates
+python -m tools.workflow_hitl.declared --list --status pending --json
+python tools/workflow/coherence_checker.py --check hitl_workflow --json
+```
+
+Console: `/decisions`. MCP: `workflow_decision_steps` (read-only).
+
 ## Cards — the per-card incident records (xrv-docs-02)
 
 These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —

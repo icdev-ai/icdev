@@ -283,7 +283,14 @@ def test_the_rest_govern_endpoint_deliberately_does_not_call_the_facade():
 # --------------------------------------------------------------------------- #
 # 3b. agent() — ADOPTED. All three consumers must genuinely reach the facade.
 # --------------------------------------------------------------------------- #
-def test_the_canvas_confirm_then_launch_path_reaches_the_facade(monkeypatch):
+@pytest.fixture
+def _wf_db(icdev_db, monkeypatch):
+    """A launch is a person's declared step (icx-cnf-02): it needs the wf tables."""
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+
+
+def test_the_canvas_confirm_then_launch_path_reaches_the_facade(monkeypatch, _wf_db):
     """tools/cortex/blueprint.py::_launch_confirmed_agent is a first-party
     in-repo Python consumer — the card's "zero production Python consumers"
     premise was wrong, and this is the assertion that shows it."""
@@ -296,16 +303,18 @@ def test_the_canvas_confirm_then_launch_path_reaches_the_facade(monkeypatch):
         return result
 
     monkeypatch.setattr(api, "agent", _fake_agent)
-    out = _BLUEPRINT._launch_confirmed_agent(
-        "stand up a threat-hunt review", CortexContext(tenant_id="t1")
-    )
+    # The confirm is a signed-in person's step (decl-wft-cortex-agent-launch).
+    with _rest_request_context({}):
+        out = _BLUEPRINT._launch_confirmed_agent(
+            "stand up a threat-hunt review", CortexContext(tenant_id="t1")
+        )
     assert captured["goal"] == "stand up a threat-hunt review"
     assert captured["mode"] == "auto"
     assert captured["trigger"] == "cortex.chat"
     assert "/coworker/xyz" in out["answer"]
 
 
-def test_the_rest_agent_endpoint_reaches_the_facade(monkeypatch):
+def test_the_rest_agent_endpoint_reaches_the_facade(monkeypatch, _wf_db):
     captured = {}
 
     def _fake_agent(goal, ctx=None, **kw):

@@ -1329,6 +1329,26 @@ components:
     collections:
     - standards_catalog.entries
     - standards_catalog.audit
+- key: workflow_decisions
+  kind: core_extension
+  display_name: Decisions
+  description: Declared decision steps (icx-cnf-02). Every decision a person takes in Cortex
+    and ACE runs through a template under args/workflow_hitl_templates/; this page is where a
+    holder decides the ones that were only proposed (won-bid baselines, service-key launches
+    and BOM designations). Always on, unlike the HITL queue, because the decisions are.
+  env_flag: ICDEV_WORKFLOW_DECISIONS_ENABLED
+  default_enabled: true
+  module: tools.workflow_hitl.decisions_blueprint
+  blueprint_attr: decisions_bp
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Ops
+    label: Decisions
+    links:
+    - label: Decisions
+      href: /decisions/
 - key: forecast
   kind: core_extension
   display_name: TimesFM Forecasting

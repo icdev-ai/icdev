@@ -1253,3 +1253,4 @@
 | Brand Deck | tools\slides\brand_deck.py | Auto-registered: slides/brand_deck.py | --json | JSON |
 - [Agent Detection (AGOV / DET)](manifest/agent-detection.md)
 - [Feature Conformance (icx-cnf-01)](manifest/feature-conformance.md)
+- [Declared Decisions (icx-cnf-02)](manifest/declared-decisions.md)

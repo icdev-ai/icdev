@@ -90,8 +90,34 @@ def calls(monkeypatch):
     return seen
 
 
+@pytest.fixture(autouse=True)
+def _wf_db(icdev_db, monkeypatch):
+    """The launch is a declared decision (icx-cnf-02): its steps need the wf tables."""
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+
+
+class _DecidedClient:
+    """A service key only PROPOSES a launch (icx-cnf-02). Like compass, this client
+    has a person decide the proposal and re-posts once with ``decision_step``."""
+
+    def __init__(self, client):
+        self._client = client
+
+    def post(self, url, json=None, **kw):
+        resp = self._client.post(url, json=json, **kw)
+        body = resp.get_json(silent=True) or {}
+        if resp.status_code != 200 or not body.get("pending"):
+            return resp
+        from tools.workflow_hitl import declared
+
+        step_id = body["decision_step"]["step_id"]
+        declared.decide(step_id, decision="launch", actor={"id": "u-approver", "role": "admin"})
+        return self._client.post(url, json={**(json or {}), "decision_step": step_id}, **kw)
+
+
 def _authed_client():
-    return make_client(binding=_binding(["cortex:agent"]))
+    return _DecidedClient(make_client(binding=_binding(["cortex:agent"])))
 
 
 # ---------------------------------------------------------------------------
@@ -115,6 +141,12 @@ def test_scope_missing_403(calls):
 
 
 def test_scope_granted_passes(calls):
+    # The scope lets a key PROPOSE; a person decides; the re-post launches once.
+    first = make_client(binding=_binding(["cortex:agent"])).post(
+        "/cortex/api/v1/agent", json={"goal": "do the thing"})
+    assert first.status_code == 200
+    assert first.get_json()["launched"] is False and first.get_json()["pending"] is True
+    assert not calls
     resp = _authed_client().post("/cortex/api/v1/agent", json={"goal": "do the thing"})
     assert resp.status_code == 200
     assert resp.get_json()["launched"] is True

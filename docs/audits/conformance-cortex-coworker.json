@@ -107,22 +107,13 @@
           "status": "gap"
         },
         "workflow": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "ace_api.api_hitl_resolve is a decision (name carries 'hitl') with no declared workflow template",
-              "id": "workflow:undeclared:ace_api.api_hitl_resolve"
-            },
-            {
-              "detail": "ace_api.api_suggestion_confirm is a decision (name carries 'confirm') with no declared workflow template",
-              "id": "workflow:undeclared:ace_api.api_suggestion_confirm"
-            },
-            {
-              "detail": "ace_api.api_suggestion_decline is a decision (name carries 'decline') with no declared workflow template",
-              "id": "workflow:undeclared:ace_api.api_suggestion_decline"
-            }
+          "evidence": [
+            "ace_api.api_hitl_resolve (name carries 'hitl') -> template decl-wft-ace-hitl-resolve (args/workflow_hitl_templates/ace-hitl-resolve.yaml)",
+            "ace_api.api_suggestion_confirm (name carries 'confirm') -> template decl-wft-ace-team-suggestion (args/workflow_hitl_templates/ace-team-suggestion.yaml)",
+            "ace_api.api_suggestion_decline (name carries 'decline') -> template decl-wft-ace-team-suggestion (args/workflow_hitl_templates/ace-team-suggestion.yaml)"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         }
       },
       "component": "ace",
@@ -178,14 +169,11 @@
           "status": "gap"
         },
         "workflow": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "ace_api.api_profiles_delete is a decision (name carries 'delete') with no declared workflow template",
-              "id": "workflow:undeclared:ace_api.api_profiles_delete"
-            }
+          "evidence": [
+            "ace_api.api_profiles_delete (name carries 'delete') -> template decl-wft-ace-profile-delete (args/workflow_hitl_templates/ace-profile-delete.yaml)"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         }
       },
       "component": "ace",
@@ -244,19 +232,12 @@
         },
         "workflow": {
           "evidence": [
+            "ace_api.api_launch (name carries 'launch') -> template decl-wft-ace-run-launch (args/workflow_hitl_templates/ace-run-launch.yaml)",
+            "ace_api.api_session_rerun (name carries 'rerun') -> template decl-wft-ace-run-launch (args/workflow_hitl_templates/ace-run-launch.yaml)",
             "mcp:ace_launch (name carries 'launch') -> approval tier 'unknown' (default_tier) halts in args/agent_approval_policy.yaml"
           ],
-          "gaps": [
-            {
-              "detail": "ace_api.api_launch is a decision (name carries 'launch') with no declared workflow template",
-              "id": "workflow:undeclared:ace_api.api_launch"
-            },
-            {
-              "detail": "ace_api.api_session_rerun is a decision (name carries 'rerun') with no declared workflow template",
-              "id": "workflow:undeclared:ace_api.api_session_rerun"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         }
       },
       "component": "ace",
@@ -426,19 +407,12 @@
         },
         "workflow": {
           "evidence": [
+            "cortex.api_chat (declared (tools/cortex/blueprint.py: \"confirm to proceed\")) -> template decl-wft-cortex-agent-launch (args/workflow_hitl_templates/cortex-agent-launch.yaml)",
+            "cortex.api_v1_agent (declared (tools/cortex/rest_v1.py: \"it is the one endpoint here that\")) -> template decl-wft-cortex-agent-launch (args/workflow_hitl_templates/cortex-agent-launch.yaml)",
             "mcp:cortex_agent_launch (name carries 'launch') -> approval tier 'unknown' (default_tier) halts in args/agent_approval_policy.yaml"
           ],
-          "gaps": [
-            {
-              "detail": "cortex.api_chat is a decision (declared (tools/cortex/blueprint.py: \"confirm to proceed\")) with no declared workflow template",
-              "id": "workflow:undeclared:cortex.api_chat"
-            },
-            {
-              "detail": "cortex.api_v1_agent is a decision (declared (tools/cortex/rest_v1.py: \"it is the one endpoint here that\")) with no declared workflow template",
-              "id": "workflow:undeclared:cortex.api_v1_agent"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         }
       },
       "component": "cortex",
@@ -525,6 +499,7 @@
         },
         "gui": {
           "evidence": [
+            "dic.api_explorer_cortex_finding_adjudicate called from tools/dashboard/templates/document_intelligence/explorer.html",
             "nav links /document-intelligence/explorer",
             "page /document-intelligence/explorer renders document_intelligence/explorer.html",
             "registry entry 'cortex'"
@@ -543,14 +518,11 @@
           "status": "gap"
         },
         "workflow": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "a person decides this (tools/cortex/finding_store.py: \"A conflict is a finding a HUMAN adjudicates\") but no endpoint takes the decision",
-              "id": "workflow:no-endpoint:cortex.findings.adjudicate"
-            }
+          "evidence": [
+            "dic.api_explorer_cortex_finding_adjudicate (name carries 'adjudicate') -> template decl-wft-cortex-finding-adjudicate (args/workflow_hitl_templates/cortex-finding-adjudicate.yaml)"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         }
       },
       "component": "cortex",
@@ -886,18 +858,12 @@
           "status": "gap"
         },
         "workflow": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "cortex.api_v1_award is a decision (name carries 'award') with no declared workflow template",
-              "id": "workflow:undeclared:cortex.api_v1_award"
-            },
-            {
-              "detail": "cortex.api_v1_bom is a decision (declared (tools/cortex/rest_v1.py: \"Only a human's designation binds\")) with no declared workflow template",
-              "id": "workflow:undeclared:cortex.api_v1_bom"
-            }
+          "evidence": [
+            "cortex.api_v1_award (name carries 'award') -> template decl-wft-cortex-award (args/workflow_hitl_templates/cortex-award.yaml)",
+            "cortex.api_v1_bom (declared (tools/cortex/rest_v1.py: \"Only a human's designation binds\")) -> template decl-wft-cortex-bom-designation (args/workflow_hitl_templates/cortex-bom-designation.yaml)"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         }
       },
       "component": "cortex",
@@ -1094,21 +1060,21 @@
         "architecture": 1,
         "gui": 0,
         "twin": 1,
-        "workflow": 3
+        "workflow": 0
       },
       "ace.profiles": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 1,
         "twin": 1,
-        "workflow": 1
+        "workflow": 0
       },
       "ace.runs": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 1,
         "twin": 1,
-        "workflow": 2
+        "workflow": 0
       },
       "ace.trust_sessions": {
         "ai_native": 0,
@@ -1129,7 +1095,7 @@
         "architecture": 1,
         "gui": 0,
         "twin": 1,
-        "workflow": 2
+        "workflow": 0
       },
       "cortex.airgap_guard": {
         "ai_native": 1,
@@ -1143,7 +1109,7 @@
         "architecture": 1,
         "gui": 0,
         "twin": 1,
-        "workflow": 1
+        "workflow": 0
       },
       "cortex.govern": {
         "ai_native": 1,
@@ -1178,7 +1144,7 @@
         "architecture": 1,
         "gui": 8,
         "twin": 1,
-        "workflow": 2
+        "workflow": 0
       },
       "cortex.search_ask": {
         "ai_native": 0,
@@ -1207,9 +1173,9 @@
       "architecture": 17,
       "gui": 24,
       "twin": 17,
-      "workflow": 11
+      "workflow": 0
     },
-    "gaps_total": 79
+    "gaps_total": 68
   },
   "tool": "feature_audit",
   "version": 1

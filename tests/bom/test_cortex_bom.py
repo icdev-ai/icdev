@@ -18,7 +18,26 @@ from tools.cortex.rest_v1 import api_v1_bom
 from tools.cortex.service_keys import ALL_SCOPES, DEFAULT_SCOPES
 
 # The undecorated logic.
-_bom = api_v1_bom.__wrapped__
+_handler = api_v1_bom.__wrapped__
+
+#: A person who holds the designation step (decl-wft-cortex-bom-designation).
+_PRICER = {"id": "u-pricing", "role": "contract_mgr"}
+
+
+@pytest.fixture(autouse=True)
+def _wf_db(icdev_db, monkeypatch):
+    """A designation is a declared decision (icx-cnf-02): its step needs the wf tables."""
+    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
+
+
+def _bom(data, user=_PRICER):
+    """Run the handler as ``user`` (a holder by default), as the decorator would."""
+    from flask import Flask, g
+
+    with Flask(__name__).test_request_context("/"):
+        g.current_user = user
+        return _handler(data)
 
 
 def _doc(name: str, rows: list[list], **extra) -> dict:
@@ -108,6 +127,16 @@ class TestSilenceIsNeverConfirmation:
         src = out["sources"][0]
         assert src["credibility_tier"] == "authoritative"
         assert src["set_by"] == "human"
+
+    def test_a_service_keys_designation_is_only_a_proposal(self):
+        """icx-cnf-02: only a PERSON's designation binds. A key's is recorded as a
+        pending step for a holder, and the engine's proposal is used meanwhile."""
+        out = _bom({"documents": [
+            _doc("bom.xlsx", _ROWS, role="bom_claim", credibility_tier="authoritative"),
+        ]}, user={"id": "cortex-svc:compass", "role": "service"})
+        assert out["sources"][0]["set_by"] == "ai_proposed"
+        assert out["designation_step"]["status"] == "pending"
+        assert out["proposed_designations"]["bom.xlsx"]["credibility_tier"] == "authoritative"
 
     def test_what_the_caller_omits_is_PROPOSED_and_says_so(self):
         out = _bom({"documents": [_doc("bom.xlsx", _ROWS)]})
