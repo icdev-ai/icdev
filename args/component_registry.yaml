@@ -1334,7 +1334,7 @@ components:
   display_name: Decisions
   description: Declared decision steps (icx-cnf-02). Every decision a person takes in Cortex
     and ACE runs through a template under args/workflow_hitl_templates/; this page is where a
-    holder decides the ones that were only proposed (won-bid baselines, service-key launches
+    holder decides the ones that were only proposed (won-bid baselines, launches by people without the role
     and BOM designations). Always on, unlike the HITL queue, because the decisions are.
   env_flag: ICDEV_WORKFLOW_DECISIONS_ENABLED
   default_enabled: true

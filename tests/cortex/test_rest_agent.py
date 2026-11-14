@@ -96,27 +96,8 @@ def _wf_db(wf_db):
     return wf_db
 
 
-class _DecidedClient:
-    """A service key only PROPOSES a launch (icx-cnf-02). Like compass, this client
-    has a person decide the proposal and re-posts once with ``decision_step``."""
-
-    def __init__(self, client):
-        self._client = client
-
-    def post(self, url, json=None, **kw):
-        resp = self._client.post(url, json=json, **kw)
-        body = resp.get_json(silent=True) or {}
-        if resp.status_code != 200 or not body.get("pending"):
-            return resp
-        from tools.workflow_hitl import declared
-
-        step_id = body["decision_step"]["step_id"]
-        declared.decide(step_id, decision="launch", actor={"id": "u-approver", "role": "admin"})
-        return self._client.post(url, json={**(json or {}), "decision_step": step_id}, **kw)
-
-
 def _authed_client():
-    return _DecidedClient(make_client(binding=_binding(["cortex:agent"])))
+    return make_client(binding=_binding(["cortex:agent"]))
 
 
 # ---------------------------------------------------------------------------
@@ -140,15 +121,12 @@ def test_scope_missing_403(calls):
 
 
 def test_scope_granted_passes(calls):
-    # The scope lets a key PROPOSE; a person decides; the re-post launches once.
-    first = make_client(binding=_binding(["cortex:agent"])).post(
-        "/cortex/api/v1/agent", json={"goal": "do the thing"})
-    assert first.status_code == 200
-    assert first.get_json()["launched"] is False and first.get_json()["pending"] is True
-    assert not calls
+    # The scope is the authority: a service key with cortex:agent launches at once,
+    # with no person's step (owner, 2026-11-14).
     resp = _authed_client().post("/cortex/api/v1/agent", json={"goal": "do the thing"})
     assert resp.status_code == 200
     assert resp.get_json()["launched"] is True
+    assert resp.get_json()["decision_step"] is None
     assert len(calls) == 1
 
 

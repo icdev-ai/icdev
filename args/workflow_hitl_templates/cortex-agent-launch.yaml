@@ -3,11 +3,15 @@ id: decl-wft-cortex-agent-launch
 name: "Cortex: launch an agent"
 description: >-
   Cortex proposes an agent or a team for a multi-step goal. A person launches
-  it, from the /cortex confirm card in one action. A service key or a person
-  without the role only proposes; a holder decides at /decisions, and the
-  caller re-posts with the decided step.
+  it, from the /cortex confirm card in one action. A person without the role
+  only proposes; a holder decides at /decisions, and the caller re-posts with
+  the decided step. A service key granted the non-default cortex:agent scope
+  launches without a person (owner, 2026-11-14): the grant is the decision,
+  and the launch still runs the TRUST pipeline and lands in cortex_audit.
 decides: [cortex.api_chat, cortex.api_v1_agent]
 effect: cortex.api.agent (the governed facade), unchanged.
+# A machine caller is not a person deciding; its authority is the key's grant.
+service_keys: proceed
 approval_policy: any_one
 kickback_limit: 1
 stages:

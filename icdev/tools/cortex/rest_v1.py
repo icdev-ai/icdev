@@ -111,6 +111,9 @@ def _decision_gate(template_id: str, surface: str, *, decision: str, subject: st
                      exact payload; it is used once.
     * ``"decided"``  the caller is a person whose role holds the step; the step
                      is taken in this request.
+    * ``"service"``  a service key, on a template that declares
+                     ``service_keys: proceed``: not a person's decision, so no
+                     step; the key's scope authorised it. ``step`` is None.
     * ``"proposed"`` anyone else (a service key, a person without the role). A
                      proposal is recorded and the effect must NOT run. A holder
                      decides at ``/decisions``; the caller re-posts with the id.
@@ -124,6 +127,8 @@ def _decision_gate(template_id: str, surface: str, *, decision: str, subject: st
         return "spent", declared.spend(step_id, template_id=template_id, surface=surface,
                                        payload=payload)
     actor = declared.current_actor()
+    if declared.service_key_proceeds(template_id, actor):
+        return "service", None
     if declared.can_hold(template_id, actor):
         return "decided", declared.take_step(template_id, surface=surface, decision=decision,
                                              subject=subject, actor=actor, payload=payload)
@@ -561,8 +566,9 @@ def api_v1_agent(data):
     if "llm_function" in params:
         kwargs["llm_function"] = params["llm_function"]
 
-    # The launch is a person's decision (decl-wft-cortex-agent-launch). A service
-    # key or a person without the role only proposes it.
+    # The launch is a person's decision (decl-wft-cortex-agent-launch); a person
+    # without the role only proposes it. A service key with cortex:agent launches
+    # on its grant (the template declares service_keys: proceed).
     how, step = _decision_gate("decl-wft-cortex-agent-launch", "cortex.api_v1_agent",
                                decision="launch", subject=params["goal"][:200],
                                payload=params, data=data)

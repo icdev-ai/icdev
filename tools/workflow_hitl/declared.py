@@ -17,6 +17,10 @@ the engine ignores and this module enforces:
 ``reason_required``  the decisions that need a reason.
 ``separate_from``    ``proposer``: the person who proposed may not decide.
 
+One template-level field: ``service_keys: proceed`` says a service key's call is
+not a person's decision at all, so it runs on the key's scope with no step
+(the agent launch, owner 2026-11-14). The default is ``propose``.
+
 Two ways through a template:
 
 ``take_step``  the person decides in the request itself (one action, so the
@@ -138,6 +142,8 @@ def validate_template(tmpl: dict) -> list[str]:
             errors.append(f"{tid}: reason_required names unknown decision {name!r}")
     if stage.get("separate_from") not in (None, "proposer"):
         errors.append(f"{tid}: separate_from may only be 'proposer'")
+    if tmpl.get("service_keys") not in (None, "propose", "proceed"):
+        errors.append(f"{tid}: service_keys may only be 'propose' or 'proceed'")
     return errors
 
 
@@ -220,6 +226,13 @@ def can_hold(template_id: str, actor: dict | None) -> bool:
         return False
     tmpl = _template(template_id)
     return actor.get("role") in (manual_stage(tmpl).get("holders") or [])
+
+
+def service_key_proceeds(template_id: str, actor: dict | None) -> bool:
+    """True when ``actor`` is a service key and the template lets one proceed unasked."""
+    if not actor or actor.get("role") != SERVICE_ROLE:
+        return False
+    return _template(template_id).get("service_keys") == "proceed"
 
 
 def payload_digest(payload: Any) -> str:

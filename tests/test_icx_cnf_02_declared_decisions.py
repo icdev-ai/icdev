@@ -389,21 +389,31 @@ def agent_calls(wf_db, monkeypatch):
     return calls
 
 
-def test_rest_agent_from_a_service_key_is_a_proposal_then_a_spent_step(agent_calls):
+def test_rest_agent_from_a_service_key_launches_on_its_grant(agent_calls):
+    """Owner, 2026-11-14: a service key with cortex:agent is not a person deciding.
+    It launches at once, with no step and nothing left pending at /decisions."""
     from tools.workflow_hitl import declared
 
     svc = _cortex_client(user=SERVICE, binding=_svc_binding("cortex:agent"))
-    body = {"goal": "triage the CVEs", "mode": "single"}
-    out = svc.post("/cortex/api/v1/agent", json=body).get_json()
-    assert out["launched"] is False and out["pending"] is True and agent_calls == []
-    step_id = out["decision_step"]["step_id"]
-    again = svc.post("/cortex/api/v1/agent", json={**body, "decision_step": step_id})
-    assert again.status_code == 409 and agent_calls == []
-    declared.decide(step_id, decision="launch", actor=DEV)
-    launched = svc.post("/cortex/api/v1/agent", json={**body, "decision_step": step_id})
-    assert launched.get_json()["launched"] is True and agent_calls == ["triage the CVEs"]
-    assert svc.post("/cortex/api/v1/agent",
-                    json={**body, "decision_step": step_id}).status_code == 409
+    out = svc.post("/cortex/api/v1/agent", json={"goal": "triage the CVEs", "mode": "single"})
+    assert out.status_code == 200
+    body = out.get_json()
+    assert body["launched"] is True and body.get("pending") is not True
+    assert body["decision_step"] is None and agent_calls == ["triage the CVEs"]
+    assert declared.list_steps("pending") == []
+
+
+def test_only_the_launch_template_lets_a_service_key_proceed(declared):
+    tmpls = declared.load_templates()
+    proceeding = sorted(t for t, v in tmpls.items() if v.get("service_keys") == "proceed")
+    assert proceeding == ["decl-wft-cortex-agent-launch"]
+    assert declared.service_key_proceeds("decl-wft-cortex-agent-launch", SERVICE)
+    assert not declared.service_key_proceeds("decl-wft-cortex-agent-launch", DEV)
+    assert not declared.service_key_proceeds("decl-wft-cortex-award", SERVICE)
+    bad = {"id": "x", "decides": ["s"], "service_keys": "always",
+           "stages": [{"name": "go", "step_type": "manual", "role": "r", "holders": ["pm"],
+                       "decisions": {"go": "affirm"}}]}
+    assert "service_keys may only be" in " ".join(declared.validate_template(bad))
 
 
 def test_rest_agent_from_a_holder_launches_in_one_request(agent_calls):
