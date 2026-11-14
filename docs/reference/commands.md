@@ -4764,6 +4764,7 @@ python tools/modernization/db_migration_planner.py --app-id "app-1" --target pos
 python tools/modernization/strangler_fig_manager.py --plan-id "plan-1" --status --json                                 # Strangler fig status
 python tools/modernization/app_wave_planner.py --app-id "app-1" --out waves.json                                     # An application's own waves (strangler order, backouts)
 python tools/modernization/refactor_jobs.py --app-id "app-1" --strategy rehost --out refactor.json                     # The migrators as CAM refactor jobs
+python tools/modernization/cloud_native_jobs.py --app-id "app-1" --target-cloud containerised --out cloud_native.json  # The cloud-native target as CAM jobs (generated, unreviewed)
 python tools/modernization/compliance_bridge.py --plan-id "plan-1" --validate --json                                   # ATO compliance bridge
 python tools/modernization/migration_code_generator.py --plan-id "plan-1" --generate-all --output /path                # Generate migration code
 python tools/modernization/migration_report_generator.py --app-id "app-1" --type assessment                            # Migration report

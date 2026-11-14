@@ -17,7 +17,11 @@ Every step is the existing tool, run as a subprocess with the scratch database i
                                    (declared level -> current), the framework migrator (EJB / Struts / WCF) and the
                                    database planner (over the extracted schema), each a job whose files are bound by
                                    SHA-256 in the bundle and labelled unreviewed
-     6. aiify.engine scan          (aiify)
+        cloud_native_jobs          the cloud-native target as CAM jobs (cloud_native; osx-fth-14): a container
+                                   definition and deployment manifest, the hard-coded configuration by location with
+                                   its environment mapping, a twelve-factor report and, for message-driven beans, an
+                                   event contract -- generated from the source, unreviewed, bound by SHA-256
+     6. aiify.engine scan          (aiify; its opportunities are also DRAFTED as AI use cases in cloud_native)
      7. processify --from-doc      the README (processes); skipped by --no-model, the only step that calls a model
      8. monolith_decomposer        --create-plan with the strategy (migration)
      9. app_wave_planner           the plan's waves, each with its backout (migration.waves; osx-fth-13)
@@ -97,7 +101,7 @@ def _why(stderr: str, stdout: str) -> str:
 
 
 def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: str | None = None,
-             at: str | None = None, no_model: bool = False) -> dict:
+             at: str | None = None, no_model: bool = False, targets: dict | None = None) -> dict:
     source, out = source.resolve(), out.resolve()
     if not source.is_dir():
         raise PipelineError(f"no source directory {source}")
@@ -188,6 +192,20 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
     if not any(j["refactor_type"] == "framework_migration" for j in jobs):
         r.note("framework", False, None, f"no framework migrator for {a['framework'] or 'an undetected framework'}")
 
+    cn_path = out / "cloud_native.json"
+    cn_args = [x for t in (targets or {}).get("cloud") or [] for x in ("--target-cloud", t)] + \
+              [x for t in (targets or {}).get("ai") or [] for x in ("--target-ai", t)]
+    rc, so, se = r.tool("cloud-native", "tools/modernization/cloud_native_jobs.py", "--app-id", app, "--out",
+                        str(cn_path), *cn_args)
+    cn = json.loads(cn_path.read_text()) if rc == 0 and cn_path.is_file() else None
+    cn_jobs = (cn or {}).get("jobs") or []
+    cn_ok = any(j["scaffold"] == "twelve_factor_report" and j["status"] == "completed" for j in cn_jobs)
+    r.note("cloud-native", cn_ok, "cloud_native", None if cn_ok else
+           (_why(se, so) if rc else "the twelve-factor job did not complete: " +
+            "; ".join(_why(j.get("error_message") or "", "") for j in cn_jobs if j["status"] == "failed")),
+           jobs=[{"kind": j["scaffold"], "status": j["status"], "files": len(j.get("artifacts") or []),
+                  **({"error": _why(j["error_message"], "")} if j.get("error_message") else {})} for j in cn_jobs])
+
     rc, so, se = r.tool("aiify", "-m", "tools.aiify.engine", "scan", "--input-type", "code", "--input-ref", str(source),
                         "--il-level", "IL2")
     aiify = _last_json(so) if rc == 0 else None
@@ -237,6 +255,8 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
         args += ["--refactor", str(ref_path)]
     if (waves or {}).get("waves"):
         args += ["--waves", str(waves_path)]
+    if cn_ok:
+        args += ["--cloud-native", str(cn_path)]
     for p in procs:
         args += ["--process", str(p)]
     if at:
@@ -276,10 +296,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--strategy", help="the 7R strategy to plan for (default: the 7R recommendation)")
     ap.add_argument("--at", help="produced_at (ISO 8601) for a reproducible bundle")
     ap.add_argument("--no-model", action="store_true", help="run no step that calls a language model (Process-Ify)")
+    ap.add_argument("--target-cloud", action="append", default=[],
+                    help="one item of the plan's cloud-native target (ICDEV[OS] apps.yaml target.cloud); repeatable")
+    ap.add_argument("--target-ai", action="append", default=[],
+                    help="one item of the plan's AI target (ICDEV[OS] apps.yaml target.ai); repeatable")
     a = ap.parse_args(argv)
     try:
         rep = pipeline(Path(a.source), a.name, Path(a.scratch_db), Path(a.out), strategy=a.strategy, at=a.at,
-                       no_model=a.no_model)
+                       no_model=a.no_model, targets={"cloud": a.target_cloud, "ai": a.target_ai})
     except (PipelineError, subprocess.TimeoutExpired) as e:
         print(json.dumps({"status": "error", "error": str(e)}))
         return 1
