@@ -8895,6 +8895,24 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    # -- platform model (icx-cnf-04 — ICDEV's own architecture, traced) -------
+    "platform_model_trace": {
+        "category": "mbse",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_platform_model_trace",
+        "description": "Read ICDEV's own platform model (args/platform_model/*.yaml) as a trace: for each feature (Cortex, ACE, Co-Workers, the conformance audit) every requirement with its elements, code and the existing tests that verify it, and the requirements no test covers yet (gaps, never passes). With seeded=true it reads the MBSE digital thread for project icdev-platform instead, with find_orphans/find_gaps; trace_forward/trace_backward walk the same rows. Read-only, decides nothing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "feature": {"type": "string", "description": "Only this feature key (e.g. cortex.pmo)"},
+                "seeded": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Read the seeded digital thread rather than the model files",
+                },
+            },
+        },
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -9567,6 +9585,7 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # -- conformance -------------------------------------------------------
     # Reads the committed snapshot; writes nothing.
     "feature_conformance":                      True,
+    "platform_model_trace":                     True,
 })
 
 

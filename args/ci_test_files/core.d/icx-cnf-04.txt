@@ -1,0 +1,15 @@
+# icx-cnf-04 -- ICDEV platform model: the tests args/platform_model cites, gated so the trace rests on tests CI runs.
+# Promoted from args/ci_test_backlog.txt: each passed alone and in the suite.
+tests/test_platform_model.py
+tests/cortex/test_agent_confirm.py
+tests/cortex/test_mcp_tools.py
+tests/cortex/test_metrics.py
+tests/cortex/test_service_keys.py
+tests/test_ace_event_bus.py
+tests/test_ace_hitl_resolve_endpoint.py
+tests/test_ace_nova_state_endpoint.py
+tests/test_ace_persona_generator.py
+tests/test_ace_persona_query.py
+tests/test_ace_runtime.py
+tests/test_ace_session_persistence.py
+tests/test_ace_team_proposal.py

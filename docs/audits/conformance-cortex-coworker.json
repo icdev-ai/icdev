@@ -23,8 +23,8 @@
           "evidence": [],
           "gaps": [
             {
-              "detail": "no requirement in args/platform_model names ace.abort",
-              "id": "architecture:no-requirement"
+              "detail": "PM-ACE-07 traces to no existing test",
+              "id": "architecture:untested:PM-ACE-07"
             }
           ],
           "status": "gap"
@@ -75,14 +75,12 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names ace.hitl",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-ACE-05 -> ace.hitl, if.ace.api -> tests/test_ace_runtime.py::test_confidence_gate_fires_sets_pending_and_registers_event, tests/test_ace_runtime.py::test_hitl_resolve_wakes_thread_under_poll_interval, tests/test_ace_hitl_resolve_endpoint.py::test_hitl_resolve_endpoint_approves_confidence_gate, tests/test_ace_hitl_resolve_endpoint.py::test_hitl_resolve_endpoint_rejects_confidence_gate, tests/test_ace_hitl_resolve_endpoint.py::test_hitl_resolve_endpoint_requires_fields",
+            "PM-ACE-06 -> ace.hitl -> tests/test_ace_team_proposal.py::test_implicit_message_proposes_without_launching, tests/test_ace_team_proposal.py::test_declined_proposal_cannot_be_confirmed, tests/test_ace_team_proposal.py::test_confirm_is_idempotent, tests/test_ace_team_proposal.py::test_decisions_are_written_to_the_append_only_trail"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -140,11 +138,14 @@
           "status": "pass"
         },
         "architecture": {
-          "evidence": [],
+          "evidence": [
+            "PM-ACE-08 -> ace.profiles.persona, if.ace.mcp -> tests/test_ace_persona_query.py::TestQueryPersona::test_uses_soul_identity_as_system_prompt, tests/test_ace_persona_query.py::TestQueryPersona::test_unknown_role_falls_back_to_generalist_system_prompt, tests/test_ace_persona_query.py::TestHandleAcePersonaQuery::test_exception_is_caught_and_returns_error_dict",
+            "PM-ACE-09 -> ace.profiles.persona -> tests/test_ace_persona_generator.py::test_get_or_generate_persona_requires_domain_description, tests/test_ace_persona_generator.py::test_get_or_generate_persona_reuses_cached_persona_without_a_new_llm_call"
+          ],
           "gaps": [
             {
-              "detail": "no requirement in args/platform_model names ace.profiles",
-              "id": "architecture:no-requirement"
+              "detail": "PM-ACE-10 traces to no existing test",
+              "id": "architecture:untested:PM-ACE-10"
             }
           ],
           "status": "gap"
@@ -203,14 +204,14 @@
           "status": "pass"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names ace.runs",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-ACE-01 -> ace.runs, if.ace.api -> tests/test_ace_runtime.py::test_controller_launch_returns_instance_id, tests/test_ace_runtime.py::test_controller_launch_threads_role_ids_to_run",
+            "PM-ACE-02 -> ace.runs, if.ace.console -> tests/test_ace_session_persistence.py::test_select_by_resume_token_returns_one_row, tests/test_ace_session_persistence.py::test_append_turn_and_reload, tests/test_ace_session_persistence.py::test_duplicate_resume_token_raises, tests/test_ace_instance_page_render.py::test_instance_page_with_session_exposes_resume_token",
+            "PM-ACE-03 -> ace.runs, if.ace.console, if.ace.api -> tests/test_ace_instance_page_render.py::test_template_failure_on_page_route_is_500_html_not_200_json, tests/test_ace_instance_page_render.py::test_unknown_instance_is_404, tests/test_ace_instance_page_render.py::test_audit_endpoint_returns_events_array_and_count",
+            "PM-ACE-04 -> ace.runs -> tests/test_ace_runtime.py::test_coworker_thread_step_sequence, tests/test_ace_runtime.py::test_coworker_thread_trust_denied"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -276,11 +277,14 @@
           "status": "pass"
         },
         "architecture": {
-          "evidence": [],
+          "evidence": [
+            "PM-ACE-11 -> ace.trust, if.ace.api -> tests/test_ace_nova_state_endpoint.py::test_nova_state_trust_score_present, tests/test_ace_nova_state_endpoint.py::test_nova_state_default_trust_when_no_ledger, tests/test_ace_nova_state_endpoint.py::test_nova_state_legacy_improvement_reports_no_evidence_honestly",
+            "PM-ACE-12 -> ace.trust -> tests/test_ace_event_bus.py::TestPublishSubscribe::test_different_instances_isolated, tests/test_ace_event_bus.py::TestPublishSubscribe::test_full_queue_drops_event, tests/test_ace_event_bus.py::TestThreadSafety::test_concurrent_publish_and_subscribe"
+          ],
           "gaps": [
             {
-              "detail": "no requirement in args/platform_model names ace.trust_sessions",
-              "id": "architecture:no-requirement"
+              "detail": "PM-ACE-13 traces to no existing test",
+              "id": "architecture:untested:PM-ACE-13"
             }
           ],
           "status": "gap"
@@ -339,14 +343,15 @@
           "status": "pass"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names conformance.audit",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CNF-01 -> conformance.audit -> tests/test_feature_conformance_audit.py::test_the_baseline_meets_all_five_rules, tests/test_feature_conformance_audit.py::test_architecture_an_orphan_element_and_a_missing_test_are_gaps, tests/test_feature_conformance_audit.py::test_a_stated_reason_excuses_only_its_own_rule, tests/test_feature_conformance_audit.py::test_a_reason_that_excuses_nothing_is_stale",
+            "PM-CNF-02 -> conformance.audit -> tests/test_feature_conformance_audit.py::test_two_runs_and_a_shuffled_url_map_are_byte_identical, tests/test_feature_conformance_audit.py::test_check_fails_on_a_stale_doc_snapshot_or_census, tests/test_feature_conformance_audit.py::test_the_census_ceiling_may_not_be_exceeded",
+            "PM-CNF-03 -> conformance.audit, if.conformance.console, if.conformance.mcp -> tests/test_feature_conformance_audit.py::test_the_console_page_and_api_render_the_snapshot, tests/test_feature_conformance_audit.py::test_the_mcp_tool_is_declared_read_only_and_serves_the_snapshot",
+            "PM-CNF-04 -> platform_model.seeder -> tests/test_platform_model.py::test_the_shipped_model_validates, tests/test_platform_model.py::test_an_invented_test_name_is_refused, tests/test_platform_model.py::test_an_untested_requirement_is_a_gap_not_a_pass, tests/test_platform_model.py::test_seeded_thread_has_no_orphans_or_gaps_for_traced_features, tests/test_platform_model.py::test_mcp_trace_forward_and_backward_resolve_a_requirement",
+            "PM-CNF-05 -> if.lineage.platform_model, if.conformance.mcp -> tests/test_platform_model.py::test_lineage_route_and_page_show_the_trace, tests/test_platform_model.py::test_mcp_platform_model_trace_is_read_only"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -394,14 +399,12 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names cortex.agent_launch",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CTX-10 -> cortex.agent_launch, if.cortex.rest_v1 -> tests/cortex/test_rest_agent.py::test_agent_is_not_in_the_default_grant, tests/cortex/test_rest_agent.py::test_scope_missing_403, tests/cortex/test_rest_agent.py::test_identity_comes_from_the_session_not_the_body, tests/cortex/test_rest_agent.py::test_tools_and_handlers_are_never_forwarded",
+            "PM-CTX-11 -> cortex.agent_launch -> tests/cortex/test_chat_routing.py::TestChatRouting::test_agent_intent_gated_behind_confirm, tests/cortex/test_agent_confirm.py::test_unconfirmed_agent_does_not_launch, tests/cortex/test_agent_confirm.py::test_confirmed_agent_launches_via_governed_facade, tests/cortex/test_agent_confirm.py::test_proposal_names_the_actual_roster"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -458,14 +461,12 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names cortex.airgap_guard",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CTX-22 -> cortex.airgap_guard -> tests/cortex/test_summarize_routing_airgap.py::test_the_airgap_guard_can_see_this_function, tests/cortex/test_summarize_routing_airgap.py::test_airgap_context_threads_exclude_model_ids, tests/cortex/test_summarize_routing_airgap.py::test_every_declared_cortex_routing_function_exists_under_routing",
+            "PM-CTX-23 -> cortex.airgap_guard, if.cortex.rest_v1 -> tests/cortex/test_rest_scopes.py::test_health_requires_no_auth"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -514,14 +515,12 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names cortex.findings",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CTX-12 -> cortex.findings -> tests/cortex/test_finding_store.py::TestNoSilentWinner::test_no_winner_column_exists, tests/cortex/test_finding_store.py::TestNoSilentWinner::test_both_values_are_kept, tests/cortex/test_finding_store.py::TestConflictRoundTrip::test_each_side_keeps_its_own_source_and_as_of",
+            "PM-CTX-13 -> cortex.findings -> tests/cortex/test_explorer_conflict_render.py::TestNoSilentResolution::test_the_page_says_it_is_unresolved_by_design, tests/cortex/test_explorer_conflict_render.py::TestNoSilentResolution::test_neither_side_is_hidden, tests/cortex/test_finding_store.py::TestGapBrowsing::test_all_gaps_are_browsable"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -572,14 +571,12 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names cortex.govern",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CTX-08 -> cortex.govern, if.cortex.rest_v1 -> tests/cortex/test_rest_api.py::test_govern_returns_report, tests/cortex/test_rest_api.py::test_governance_block_returns_403, tests/cortex/test_rest_single_governance.py::test_the_govern_endpoint_still_runs_the_chain_once",
+            "PM-CTX-09 -> cortex.govern -> tests/cortex/test_governance_kg_gate.py, tests/cortex/test_governance_timing.py"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -633,14 +630,14 @@
           "status": "pass"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names cortex.governed_verbs",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CTX-04 -> cortex.governed_verbs, if.cortex.rest_v1 -> tests/cortex/test_rest_api.py::test_complete_is_governed, tests/cortex/test_rest_api.py::test_reason_is_governed, tests/cortex/test_rest_api.py::test_classify_is_governed, tests/cortex/test_rest_api.py::test_extract_is_governed, tests/cortex/test_rest_api.py::test_a_schema_refusal_is_422_not_500, tests/cortex/test_rest_single_governance.py::test_one_rest_call_enters_the_trust_chain_once",
+            "PM-CTX-05 -> cortex.governed_verbs -> tests/cortex/test_resolve_facade.py::TestVerdictIsDeterministic::test_verdict_comes_from_pack_evaluate, tests/cortex/test_resolve_facade.py::TestVerdictIsDeterministic::test_no_llm_call_is_made_at_all, tests/cortex/test_resolve_facade.py::TestAuditAndProvenance::test_a_resolution_audits_with_a_provenance_id",
+            "PM-CTX-06 -> cortex.governed_verbs -> tests/cortex/test_extract_validation.py::test_non_conforming_output_raises, tests/cortex/test_extract_validation.py::test_a_partly_valid_object_is_never_returned, tests/cortex/test_extract_validation.py::test_repair_stops_at_one_attempt",
+            "PM-CTX-07 -> cortex.governed_verbs, if.cortex.mcp -> tests/cortex/test_mcp_tools.py::test_complete_serializes_result_with_governance, tests/cortex/test_mcp_tools.py::test_complete_surfaces_governance_block, tests/cortex/test_mcp_tools.py::test_reason_serializes_result_with_mode"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -709,14 +706,11 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names cortex.intake",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CTX-18 -> cortex.intake, if.cortex.rest_v1 -> tests/cortex/test_rest_intake.py::test_create_seeds_verbatim_ask_as_first_turn, tests/cortex/test_rest_intake.py::test_turn_other_tenant_session_404, tests/cortex/test_rest_intake.py::test_get_session_whitelists_fields, tests/cortex/test_rest_intake.py::test_scope_missing_403"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -773,14 +767,11 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names cortex.metrics",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CTX-21 -> cortex.metrics -> tests/cortex/test_metrics.py::test_missing_table_reports_unavailable, tests/cortex/test_metrics.py::test_healthy_but_empty_window_reports_idle, tests/cortex/test_metrics.py::test_counts_stay_exact_when_detail_is_truncated, tests/cortex/test_metrics.py::test_metrics_page_discloses_a_truncated_detail_read"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -826,11 +817,15 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
+          "evidence": [
+            "PM-CTX-14 -> cortex.pmo.award, if.cortex.rest_v1 -> tests/cortex/test_rest_award.py::test_award_scope_exists_but_is_not_granted_by_default, tests/cortex/test_rest_award.py::test_pricing_a_bid_does_not_let_you_declare_it_won, tests/cortex/test_rest_award.py::test_award_requires_authentication",
+            "PM-CTX-15 -> cortex.pmo.evidence -> tests/cortex/test_rest_win_themes.py::test_uncited_theme_is_refused_not_stored, tests/cortex/test_rest_staffing_matrix.py::test_an_unevidenced_person_is_REFUSED_not_stored, tests/cortex/test_rest_cost_volume.py::test_an_unrated_lcat_refuses_the_price_rather_than_guessing",
+            "PM-CTX-16 -> cortex.pmo.render -> tests/cortex/test_rest_slides.py::test_image_path_never_reaches_the_builder, tests/cortex/test_rest_dashboard.py::test_a_path_bearing_key_NEVER_reaches_the_renderer, tests/cortex/test_rest_dashboard.py::test_the_caller_cannot_mark_its_own_export_DOWN"
+          ],
           "gaps": [
             {
-              "detail": "no requirement in args/platform_model names cortex.pmo",
-              "id": "architecture:no-requirement"
+              "detail": "PM-CTX-17 traces to no existing test",
+              "id": "architecture:untested:PM-CTX-17"
             }
           ],
           "status": "gap"
@@ -915,14 +910,13 @@
           "status": "pass"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names cortex.search_ask",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CTX-01 -> cortex.search_ask, if.cortex.rest_v1 -> tests/cortex/test_rest_api.py::test_search_returns_normalized_rows, tests/cortex/test_rest_api.py::test_ask_returns_cortex_result, tests/cortex/test_rest_api.py::test_ask_query_blocked_returns_403, tests/cortex/test_rest_api.py::test_ask_unanswerable_returns_422",
+            "PM-CTX-02 -> cortex.search_ask, if.cortex.console -> tests/cortex/test_chat_routing.py::TestChatRouting::test_search_message_calls_cortex_search, tests/cortex/test_chat_routing.py::TestChatRouting::test_data_question_calls_cortex_ask, tests/cortex/test_chat_routing.py::TestChatRouting::test_explicit_mode_overrides_routing, tests/cortex/test_chat_routing.py::TestChatRouting::test_facade_error_degrades_not_500, tests/cortex/test_blueprint_routes.py::TestPageRoutes::test_index_returns_200_and_branding",
+            "PM-CTX-03 -> cortex.search_ask, if.cortex.mcp -> tests/cortex/test_mcp_tools.py::test_registry_lists_all_cortex_tools, tests/cortex/test_mcp_tools.py::test_search_round_trips_results, tests/cortex/test_mcp_tools.py::test_search_requires_query, tests/cortex/test_mcp_tools.py::test_search_wraps_backend_error"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -972,14 +966,12 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no requirement in args/platform_model names cortex.service_keys",
-              "id": "architecture:no-requirement"
-            }
+          "evidence": [
+            "PM-CTX-19 -> cortex.service_keys -> tests/cortex/test_service_keys.py::test_raw_key_never_stored, tests/cortex/test_service_keys.py::test_revoked_key_rejected, tests/cortex/test_service_keys.py::test_tenant_never_from_request, tests/cortex/test_service_keys.py::test_classification_clamped_to_ceiling",
+            "PM-CTX-20 -> cortex.service_keys, if.cortex.rest_v1 -> tests/cortex/test_rest_scopes.py::test_scope_missing_403, tests/cortex/test_rest_scopes.py::test_unauthenticated_401, tests/cortex/test_rest_api.py::test_unauthenticated_requests_rejected, tests/security/test_canvas_guard_service_key.py::test_scope_enforcement_still_exists_for_the_exempted_principal"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "gui": {
           "evidence": [
@@ -1028,11 +1020,13 @@
           "status": "gap"
         },
         "architecture": {
-          "evidence": [],
+          "evidence": [
+            "PM-CWK-01 -> if.cwk.console -> tests/test_component_registry.py::test_get_iqe_path_canvas_cwk_ace_collision_rule"
+          ],
           "gaps": [
             {
-              "detail": "no requirement in args/platform_model names cwk.canvas",
-              "id": "architecture:no-requirement"
+              "detail": "PM-CWK-02 traces to no existing test",
+              "id": "architecture:untested:PM-CWK-02"
             }
           ],
           "status": "gap"
@@ -1091,7 +1085,7 @@
       },
       "ace.hitl": {
         "ai_native": 1,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 0,
         "twin": 1,
         "workflow": 3
@@ -1105,7 +1099,7 @@
       },
       "ace.runs": {
         "ai_native": 0,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 1,
         "twin": 1,
         "workflow": 2
@@ -1119,56 +1113,56 @@
       },
       "conformance.audit": {
         "ai_native": 0,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 0,
         "twin": 1,
         "workflow": 0
       },
       "cortex.agent_launch": {
         "ai_native": 1,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 0,
         "twin": 1,
         "workflow": 2
       },
       "cortex.airgap_guard": {
         "ai_native": 1,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 1,
         "twin": 1,
         "workflow": 0
       },
       "cortex.findings": {
         "ai_native": 1,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 0,
         "twin": 1,
         "workflow": 1
       },
       "cortex.govern": {
         "ai_native": 1,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 2,
         "twin": 1,
         "workflow": 0
       },
       "cortex.governed_verbs": {
         "ai_native": 0,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 6,
         "twin": 1,
         "workflow": 0
       },
       "cortex.intake": {
         "ai_native": 1,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 3,
         "twin": 1,
         "workflow": 0
       },
       "cortex.metrics": {
         "ai_native": 1,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 0,
         "twin": 1,
         "workflow": 0
@@ -1182,14 +1176,14 @@
       },
       "cortex.search_ask": {
         "ai_native": 0,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 0,
         "twin": 1,
         "workflow": 0
       },
       "cortex.service_keys": {
         "ai_native": 1,
-        "architecture": 1,
+        "architecture": 0,
         "gui": 1,
         "twin": 1,
         "workflow": 0
@@ -1204,12 +1198,12 @@
     },
     "gaps_by_rule": {
       "ai_native": 10,
-      "architecture": 17,
+      "architecture": 5,
       "gui": 24,
       "twin": 17,
       "workflow": 11
     },
-    "gaps_total": 79
+    "gaps_total": 67
   },
   "tool": "feature_audit",
   "version": 1

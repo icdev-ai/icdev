@@ -53,6 +53,11 @@ Checks:
                       five rules (GUI, workflow, twin, architecture, AI-native), or the doc, snapshot, census or a
                       stated reason is stale; open gaps are enumerated BY NAME in
                       args/feature_conformance_census.txt. `enforcement: fail` flips it to fail (icx-cnf-01)
+ 32. platform_model_trace — FAIL when ICDEV's own platform model (args/platform_model/*.yaml) cites a test
+                      that does not exist (file AND function), code that does not exist, an orphan element or an
+                      unknown feature; WARN while a requirement traces to no test (a gap, never a pass) or a
+                      feature in args/feature_conformance.yaml has no requirement. The per-feature RTM gate for
+                      the features the conformance audit judges (icx-cnf-04)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -11619,6 +11624,83 @@ def check_feature_conformance() -> CoherenceCheck:
     )
 
 
+_PLATFORM_MODEL_CHECK_ID = "platform_model_trace"
+_PLATFORM_MODEL_CHECK_NAME = "Platform Model Trace (icx-cnf-04)"
+_PLATFORM_MODEL_EXPECTED = [
+    "every requirement in args/platform_model/*.yaml traces to an element of a digital-thread type, "
+    "its existing code and an existing test (file and function); no element is an orphan; every "
+    "feature in args/feature_conformance.yaml has requirements"
+]
+
+
+def _platform_model_check(
+    status: str, message: str, actual: List[str], missing: Optional[List[str]] = None
+) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=_PLATFORM_MODEL_CHECK_ID,
+        check_name=_PLATFORM_MODEL_CHECK_NAME,
+        status=status,
+        expected=_PLATFORM_MODEL_EXPECTED,
+        actual=actual,
+        missing=missing or [],
+        extra=[],
+        message=message,
+    )
+
+
+def check_platform_model_trace() -> CoherenceCheck:
+    """icx-cnf-04 — the RTM gate for the features the conformance audit judges.
+
+    ``args/security_gates.yaml`` ``ivv.rtm_completeness_pct`` is a project-wide
+    threshold with no per-feature consumer, so ICDEV's own platform model is held
+    here instead. A cited test or code path that does not exist FAILS: it would
+    put an invented test into the RTM. A requirement with no test WARNS, by
+    name: it is a gap, and it stays listed until a real test covers it. No
+    database is read; ``tools/mbse/platform_model.py --seed`` writes the thread.
+    """
+    try:
+        from tools.mbse.platform_model import validate
+    except Exception as exc:  # noqa: BLE001
+        return _platform_model_check(
+            "warn",
+            f"tools/mbse/platform_model.py could not be imported ({exc}) — the platform model "
+            "was NOT checked. This is 'unmeasured', not 'clean'.",
+            [f"import failed: {exc}"],
+        )
+    try:
+        report = validate(PROJECT_ROOT)
+    except Exception as exc:  # noqa: BLE001
+        return _platform_model_check(
+            "warn", f"the platform model could not be read ({exc}) — NOT checked.", [str(exc)[:300]]
+        )
+    s = report["summary"]
+    actual = [
+        f"{s['requirements']} requirement(s), {s['elements']} element(s), {s['interfaces']} interface(s)",
+        f"{s['features_traced']} of {s['features']} feature(s) fully traced to tests",
+    ]
+    if report["errors"]:
+        return _platform_model_check(
+            "fail",
+            f"{len(report['errors'])} defect(s) in args/platform_model — run `python "
+            "tools/mbse/platform_model.py --check`. Never cite a test that does not exist.",
+            actual,
+            missing=report["errors"][:20],
+        )
+    no_req = sorted(k for k, row in report["features"].items() if row["status"] == "no_requirement")
+    if report["gaps"] or no_req:
+        return _platform_model_check(
+            "warn",
+            f"{len(report['gaps'])} requirement(s) trace to no test and {len(no_req)} feature(s) "
+            "have no requirement; each is a gap, never a pass.",
+            actual,
+            missing=[f"{g['requirement']} ({g['features']}): no test" for g in report["gaps"]]
+            + [f"{k}: no requirement in args/platform_model" for k in no_req],
+        )
+    return _platform_model_check(
+        "pass", f"all {s['requirements']} requirement(s) trace to existing code and tests.", actual
+    )
+
+
 CHECK_REGISTRY = {
     "bootstrap_parity": check_bootstrap_parity,
     "mirror_parity": check_mirror_parity,
@@ -11686,6 +11768,7 @@ CHECK_REGISTRY = {
     "board_writer_census": check_board_writer_census,
     "pin_census": check_pin_census,
     "feature_conformance": check_feature_conformance,
+    "platform_model_trace": check_platform_model_trace,
     "schema_ownership": check_schema_ownership,
     "self_rooting": check_self_rooting,
     "core_api": check_core_api,

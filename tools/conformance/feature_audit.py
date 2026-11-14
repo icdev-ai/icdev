@@ -76,6 +76,7 @@ if str(_BOOTSTRAP_ROOT) not in sys.path:
 import yaml  # noqa: E402
 
 from icdev.core.paths import repo_root  # noqa: E402
+from tools.mbse.platform_model import _Symbols, resolve_code, resolve_test  # noqa: E402
 
 BASE_DIR = repo_root(__file__)
 
@@ -395,7 +396,8 @@ def platform_model(root: Path, rel_dir: str) -> dict[str, Any]:
         for req in data.get("requirements") or []:
             if isinstance(req, dict) and req.get("id"):
                 reqs.append(req)
-        for el in data.get("elements") or []:
+        # An interface is an element too (an interface block); icx-cnf-04.
+        for el in (data.get("elements") or []) + (data.get("interfaces") or []):
             if isinstance(el, dict) and el.get("id"):
                 elements[str(el["id"])] = el
     return {"requirements": reqs, "elements": elements}
@@ -475,6 +477,7 @@ class _Context:
             root, cfg.get("twin_adapters_dir", "tools/twin_core/adapters"))
         self.model = platform_model(root, cfg.get("platform_model_dir", "args/platform_model"))
         self.thread_types = _digital_thread_types(self.files)
+        self.symbols = _Symbols(root)
         self._nav_page_text: Optional[str] = None
 
     def renders(self, rule: dict[str, Any]) -> list[str]:
@@ -686,7 +689,8 @@ def judge_architecture(ctx: _Context, feature: dict[str, Any]) -> dict[str, Any]
     for req in reqs:
         rid = str(req["id"])
         tests = [str(t) for t in req.get("tests") or []]
-        missing = [t for t in tests if not ctx.files.exists(t)]
+        # A test is a pytest node: its file AND its function must exist.
+        missing = [t for t in tests if resolve_test(ctx.root, t, ctx.symbols)]
         if not tests or missing:
             gaps.append(_gap(f"architecture:untested:{rid}",
                              f"{rid} traces to no existing test" + (f" ({missing[0]} missing)"
@@ -705,7 +709,7 @@ def judge_architecture(ctx: _Context, feature: dict[str, Any]) -> dict[str, Any]
                 gaps.append(_gap(f"architecture:bad-type:{el_id}",
                                  f"type '{el.get('type')}' is not a digital-thread artifact type"))
             code = [str(c) for c in el.get("code") or []]
-            if not code or any(not ctx.files.exists(c) for c in code):
+            if not code or any(resolve_code(ctx.root, c, ctx.symbols) for c in code):
                 gaps.append(_gap(f"architecture:no-code:{el_id}",
                                  f"{el_id} links to no existing code"))
         if tests and not missing and elements:

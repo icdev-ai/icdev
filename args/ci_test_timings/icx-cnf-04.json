@@ -1,0 +1,21 @@
+{
+  "durations": {
+    "tests/cortex/test_agent_confirm.py": 0.586,
+    "tests/cortex/test_mcp_tools.py": 0.155,
+    "tests/cortex/test_metrics.py": 0.349,
+    "tests/cortex/test_service_keys.py": 0.388,
+    "tests/test_ace_event_bus.py": 0.422,
+    "tests/test_ace_hitl_resolve_endpoint.py": 0.198,
+    "tests/test_ace_nova_state_endpoint.py": 0.33,
+    "tests/test_ace_persona_generator.py": 0.019,
+    "tests/test_ace_persona_query.py": 0.023,
+    "tests/test_ace_runtime.py": 0.28,
+    "tests/test_ace_session_persistence.py": 0.023,
+    "tests/test_ace_team_proposal.py": 0.234,
+    "tests/test_platform_model.py": 18.402
+  },
+  "generated_at": "2026-11-14T16:52:53Z",
+  "note": "icx-cnf-04: the 13 test files this card gated, measured locally (JUnit totals). The next shard-timings refresh supersedes it.",
+  "source": "local-icx-cnf-04 (tests promoted by this card, measured on the build host)",
+  "unit": "seconds"
+}

@@ -9872,6 +9872,25 @@ python tools/workflow/coherence_checker.py --check feature_conformance --json
 
 Console: `/twin-observatory/conformance`. MCP: `feature_conformance` (read-only).
 
+## Platform model — ICDEV's own architecture, traced (icx-cnf-04)
+
+`args/platform_model/*.yaml` declares the elements, interfaces and requirements of
+Cortex, ACE, Co-Workers and the conformance audit. Each requirement traces to
+elements, their code and the EXISTING tests that verify it; a requirement with no
+test is a gap, never a pass. Seed it into the MBSE digital thread as project
+`icdev-platform` (use a scratch `ICDEV_DB_PATH`).
+
+```bash
+python tools/mbse/platform_model.py --check                     # every test (file+function) and code path resolves
+python tools/mbse/platform_model.py --seed --json               # write the digital thread (project icdev-platform)
+python tools/mbse/platform_model.py --trace --feature cortex.pmo --json   # per-feature chain, orphans and gaps
+python tools/workflow/coherence_checker.py --check platform_model_trace --json
+```
+
+Console: `/lineage` (ICDEV platform model button). MCP: `platform_model_trace`
+(read-only), and `trace_forward` / `trace_backward` with `project_id: icdev-platform`
+and a requirement id such as `PM-CTX-01`.
+
 ## Cards — the per-card incident records (xrv-docs-02)
 
 These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —

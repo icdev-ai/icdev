@@ -1,0 +1,60 @@
+# CUI // SP-CTI
+# ICDEV platform model: Co-Workers canvas (tools/coworkers). icx-cnf-04.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the
+# header of args/platform_model/cortex.yaml. A requirement with `tests: []` is a
+# GAP the audit and the digital thread both report, never a pass.
+
+component: cwk
+project_id: icdev-platform
+
+elements:
+  - id: cwk.canvas
+    type: sysml_element
+    kind: block
+    name: Co-Workers canvas (roster, chat hand-off, status)
+    features: [cwk.canvas]
+    code:
+      - tools/coworkers/blueprint.py
+      - tools/coworkers/registry.py
+      - tools/coworkers/context_factory.py
+      - tools/dashboard/templates/coworkers/index.html
+
+interfaces:
+  - id: if.cwk.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /coworkers
+    features: [cwk.canvas]
+    code:
+      - args/component_registry.yaml
+      - tools/coworkers/constants.py
+
+requirements:
+  - id: PM-CWK-01
+    title: /coworkers belongs to the Co-Workers canvas, not ACE
+    text: >-
+      The registry resolves /coworkers and its sub-paths to the cwk canvas
+      before the ACE canvas (/coworker), so each surface binds its own IQE
+      adapter.
+    type: interface
+    priority: medium
+    features: [cwk.canvas]
+    elements: [if.cwk.console]
+    controls: [CM-8]
+    tests:
+      - tests/test_component_registry.py::test_get_iqe_path_canvas_cwk_ace_collision_rule
+
+  - id: PM-CWK-02
+    title: The roster renders from config and never 500s on a load failure
+    text: >-
+      GET /coworkers lists the config-driven roster with a chat link per
+      co-worker, shows an empty roster rather than a 500 when the roster cannot
+      load, and GET /coworkers/status counts the roster by kind. No test covers
+      tools/coworkers yet.
+    type: functional
+    priority: medium
+    features: [cwk.canvas]
+    elements: [cwk.canvas, if.cwk.console]
+    controls: [SI-11]
+    tests: []

@@ -49,7 +49,7 @@ version: 1
 enforcement: warn
 
 # The ceiling on args/feature_conformance_census.txt. It may only go DOWN.
-census_max: 79
+census_max: 67
 
 doc: docs/audits/conformance-cortex-coworker.md
 snapshot: docs/audits/conformance-cortex-coworker.json
