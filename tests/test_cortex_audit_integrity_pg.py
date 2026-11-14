@@ -117,22 +117,19 @@ def test_ensure_chain_is_idempotent(chained):
         conn.close()
 
 
-def test_verify_sees_a_tampered_row_on_postgresql(govern):
-    """PostgreSQL DDL is transactional: drop the trigger, alter a row, verify, roll back."""
-    conn = get_connection()
-    try:
-        if not is_pg(conn):
-            pytest.skip("transactional DDL tamper is the PostgreSQL half; "
-                        "tests/test_cortex_audit_integrity.py covers SQLite")
-    finally:
-        conn.close()
+def test_verify_sees_a_row_altered_inside_a_rolled_back_transaction(govern):
+    """DDL is transactional on both backends: drop the trigger, alter a row, verify, roll back."""
     govern()
     govern()
     target = _rows(govern.tenant)[0]["id"]
     conn = get_connection()
     try:
         before = audit_chain.verify(conn)["break_count"]
-        conn.execute("DROP TRIGGER cortex_audit_no_update ON cortex_audit")
+        if is_pg(conn):
+            conn.execute("DROP TRIGGER cortex_audit_no_update ON cortex_audit")
+        else:
+            conn.execute("BEGIN")  # sqlite3 runs bare DDL outside a transaction
+            conn.execute("DROP TRIGGER cortex_audit_no_update")
         conn.execute("UPDATE cortex_audit SET outcome = 'fail' WHERE id = %s", (target,))
         v = audit_chain.verify(conn)
         assert v["status"] == "broken" and v["break_count"] == before + 1
@@ -142,5 +139,6 @@ def test_verify_sees_a_tampered_row_on_postgresql(govern):
     conn = get_connection()
     try:  # the rollback restored the trigger and the row
         assert "cortex_audit_no_update" in audit_chain._triggers_present(conn, "cortex_audit")
+        assert audit_chain.verify(conn)["break_count"] == before
     finally:
         conn.close()
