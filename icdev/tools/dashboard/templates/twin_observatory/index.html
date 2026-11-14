@@ -13,6 +13,10 @@
     twin drift/lifecycle event stream. Read-only aggregate over the twin_core observer.
     {% if generated_at %}<span style="font-size:0.8rem;">Generated {{ generated_at }}.</span>{% endif %}
   </p>
+  <p style="margin:0 0 1rem 0;">
+    <a href="/twin-observatory/conformance" style="color:#5aa9e6;font-size:0.85rem;">Feature conformance</a>
+    <span style="color:#7a8cb0;font-size:0.8rem;">&mdash; each feature against the five rules (GUI, workflow, twin, architecture, AI-native).</span>
+  </p>
 
   {% set summary = report.summary or {} %}
   {% set vd = summary.verdict_distribution or {} %}

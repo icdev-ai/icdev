@@ -49,6 +49,10 @@ Checks:
                       `uses:`, a compose image with no digest in vendor/images/, a `curl … | sh`); the 69 that
                       existed at adoption are grandfathered BY NAME in args/pin_census.txt and the ceiling in
                       args/pin_gate.yaml may only go DOWN (xrv-route-03)
+ 31. feature_conformance — WARN while any feature in args/feature_conformance.yaml has an open gap against the
+                      five rules (GUI, workflow, twin, architecture, AI-native), or the doc, snapshot, census or a
+                      stated reason is stale; open gaps are enumerated BY NAME in
+                      args/feature_conformance_census.txt. `enforcement: fail` flips it to fail (icx-cnf-01)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -11513,6 +11517,108 @@ def _read_all(paths: List[Path]) -> str:
     return "\n".join(out)
 
 
+_FEATURE_CONFORMANCE_CHECK_ID = "feature_conformance"
+_FEATURE_CONFORMANCE_CHECK_NAME = "Feature Conformance (icx-cnf-01)"
+_FEATURE_CONFORMANCE_EXPECTED = [
+    "every feature in args/feature_conformance.yaml meets the five rules (GUI, workflow, twin, "
+    "architecture, AI-native) or carries a stated reason for that rule; every open gap is "
+    "enumerated BY NAME in args/feature_conformance_census.txt; the doc and snapshot are fresh"
+]
+
+
+def _feature_conformance_check(
+    status: str, message: str, actual: List[str], missing: Optional[List[str]] = None
+) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=_FEATURE_CONFORMANCE_CHECK_ID,
+        check_name=_FEATURE_CONFORMANCE_CHECK_NAME,
+        status=status,
+        expected=_FEATURE_CONFORMANCE_EXPECTED,
+        actual=actual,
+        missing=missing or [],
+        extra=[],
+        message=message,
+    )
+
+
+def check_feature_conformance() -> CoherenceCheck:
+    """icx-cnf-01 — each feature held to the five rules, gap by gap.
+
+    ``warn`` while gaps remain, and deliberately: at adoption no Cortex, ACE or
+    Co-Workers feature meets all five, and the remediation is queued as
+    icx-cnf-02..05. ``enforcement: fail`` in args/feature_conformance.yaml flips
+    every open gap to a failure once those land. Promote it by that edit, never
+    by deleting a census line.
+
+    The census makes the gap SET observable, not just its size: a gap that
+    appears without a census line, or a census line whose gap has closed, is
+    named here. An unmeasurable audit (the url_map probe failed) is a warn that
+    says so, never a pass.
+    """
+    try:
+        from tools.conformance.feature_audit import (
+            RULES,
+            AuditError,
+            audit,
+            check as _audit_check,
+            load_config,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _feature_conformance_check(
+            "warn",
+            f"tools/conformance/feature_audit.py could not be imported ({exc}) — feature "
+            "conformance NOT measured. This is 'unmeasured', not 'clean'.",
+            [f"import failed: {exc}"],
+        )
+    try:
+        cfg = load_config(PROJECT_ROOT)
+        report = audit(PROJECT_ROOT, config=cfg)
+    except AuditError as exc:
+        return _feature_conformance_check(
+            "warn",
+            f"the feature audit could not be produced: {exc}",
+            [str(exc)[:300]],
+            missing=[str(exc)[:300]],
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _feature_conformance_check(
+            "warn",
+            f"feature audit failed to run ({exc}) — conformance NOT measured.",
+            [f"audit failed: {exc}"],
+        )
+
+    summary = report["summary"]
+    by_rule = summary["gaps_by_rule"]
+    actual = [
+        f"{summary['features']} feature(s); {summary['features_conforming']} meet all five rules",
+        "open gaps by rule: " + ", ".join(f"{r} {by_rule[r]}" for r in RULES),
+    ]
+    problems = _audit_check(report, PROJECT_ROOT, cfg)
+    failing = str(report.get("enforcement")) == "fail"
+    if problems:
+        return _feature_conformance_check(
+            "fail" if failing else "warn",
+            f"{len(problems)} problem(s) with the conformance record — run `python "
+            "tools/conformance/feature_audit.py --check` and review the census diff.",
+            actual,
+            missing=problems[:20],
+        )
+    if summary["gaps_total"]:
+        return _feature_conformance_check(
+            "fail" if failing else "warn",
+            f"{summary['gaps_total']} open gap(s) against the five rules, each enumerated in "
+            "args/feature_conformance_census.txt (docs/audits/conformance-cortex-coworker.md "
+            "ranks the remediation).",
+            actual,
+            missing=[f"{rule}: {by_rule[rule]} open gap(s)" for rule in RULES if by_rule[rule]],
+        )
+    return _feature_conformance_check(
+        "pass",
+        f"all {summary['features']} feature(s) meet the five rules or carry a stated reason.",
+        actual,
+    )
+
+
 CHECK_REGISTRY = {
     "bootstrap_parity": check_bootstrap_parity,
     "mirror_parity": check_mirror_parity,
@@ -11579,6 +11685,7 @@ CHECK_REGISTRY = {
     "insert_schema_parity": check_insert_schema_parity,
     "board_writer_census": check_board_writer_census,
     "pin_census": check_pin_census,
+    "feature_conformance": check_feature_conformance,
     "schema_ownership": check_schema_ownership,
     "self_rooting": check_self_rooting,
     "core_api": check_core_api,
@@ -11734,6 +11841,27 @@ HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
     # the fast tier re-adds it exactly when the diff touches a file that CAN
     # change its verdict — a workflow, the GitLab config, a Dockerfile, a compose
     # file, the vendored digests, or the gate/census pair itself.
+    # icx-cnf-01: the audit probes the whole url_map in a scrubbed subprocess
+    # (~25s measured), so it is a full-tier sweep. The fast tier re-adds it when a
+    # diff touches a surface that can move a verdict: the audited features' code,
+    # their pages, the twin adapters, the MCP registry, the declared workflow
+    # templates, the platform model, the approval policy, or the audit itself.
+    "feature_conformance": (
+        "tools/cortex/",
+        "tools/ace/",
+        "tools/coworkers/",
+        "tools/twin_core/adapters/",
+        "tools/twin_observatory/",
+        "tools/dashboard/templates/",
+        "tools/mcp/tool_registry.py",
+        "tools/conformance/",
+        "args/feature_conformance",
+        "args/workflow_hitl_templates/",
+        "args/platform_model/",
+        "args/agent_approval_policy.yaml",
+        "args/component_registry.yaml",
+        "docs/audits/conformance-cortex-coworker",
+    ),
     "pin_census": (
         ".github/workflows/",
         ".gitlab-ci.yml",

@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI — Feature conformance (icx-cnf-01): each feature against the five rules. #}
+{% block title %}Feature Conformance - ICDEV Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+  <div style="background:#1a1a2e;border:1px solid #1e3a6e;border-radius:4px;padding:6px 12px;margin-bottom:1rem;color:#7a8cb0;font-size:0.8rem;text-align:center;">
+    CUI // SP-CTI &mdash; Feature Conformance
+  </div>
+
+  <p style="margin:0 0 0.5rem 0;"><a href="/twin-observatory/" style="color:#5aa9e6;font-size:0.85rem;">&larr; Twin Observatory</a></p>
+  <h1 style="color:#eaeaea;">Feature Conformance</h1>
+  <p style="color:#7a8cb0;">
+    Each feature judged against the five rules: a console page, a declared workflow for every
+    decision a person takes, twin observation with thread ids, a traced place in the architecture
+    model, and a read-only AI capability. Every verdict comes from the repository and lists its
+    evidence. Read-only: this page decides nothing.
+  </p>
+
+  {% if not ok %}
+  <div id="conformance-unavailable" style="background:#2a1a1a;border:1px solid #6e1e1e;border-radius:6px;padding:12px;color:#e0a0a0;">
+    The conformance report could not be loaded: {{ error }}.
+    Run <code>python tools/conformance/feature_audit.py --markdown --census</code> to produce it.
+  </div>
+  {% else %}
+  {% set s = report.summary %}
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin:1rem 0;">
+    <div style="flex:1;min-width:140px;background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7a8cb0;font-size:0.75rem;">FEATURES</div>
+      <div style="color:#eaeaea;font-size:1.6rem;">{{ s.features }}</div>
+    </div>
+    <div style="flex:1;min-width:140px;background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7a8cb0;font-size:0.75rem;">MEET ALL FIVE</div>
+      <div style="color:#2e7d32;font-size:1.6rem;">{{ s.features_conforming }}</div>
+    </div>
+    <div style="flex:1;min-width:140px;background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7a8cb0;font-size:0.75rem;">OPEN GAPS</div>
+      <div id="conformance-gap-total" style="color:#e0a030;font-size:1.6rem;">{{ s.gaps_total }}</div>
+    </div>
+    <div style="flex:1;min-width:140px;background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:12px;">
+      <div style="color:#7a8cb0;font-size:0.75rem;">ENFORCEMENT</div>
+      <div style="color:#eaeaea;font-size:1rem;">{{ report.enforcement }}</div>
+    </div>
+  </div>
+
+  <h2 style="color:#eaeaea;font-size:1.1rem;">Matrix</h2>
+  <div style="overflow-x:auto;">
+  <table id="conformance-matrix" style="width:100%;border-collapse:collapse;color:#c9d4e6;font-size:0.85rem;">
+    <thead>
+      <tr style="text-align:left;border-bottom:1px solid #1e3a6e;color:#7a8cb0;">
+        <th style="padding:6px;">Feature</th>
+        {% for rule in report.rules %}<th style="padding:6px;">{{ rule|replace('_', '-') }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in report.features %}
+      <tr data-feature="{{ f.key }}" style="border-bottom:1px solid #16203a;">
+        <td style="padding:6px;color:#eaeaea;"><a href="#f-{{ f.key }}" style="color:#eaeaea;">{{ f.label }}</a></td>
+        {% for rule in report.rules %}{% set c = f.cells[rule] %}
+        <td style="padding:6px;">
+          {% if c.status == 'gap' %}<span style="color:#e0a030;">gap ({{ c.gaps|length }})</span>
+          {% elif c.status == 'pass' %}<span style="color:#2e7d32;">pass</span>
+          {% else %}<span style="color:#7a8cb0;">{{ c.status }}</span>{% endif %}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <h2 style="color:#eaeaea;font-size:1.1rem;margin-top:1.5rem;">Evidence and gaps</h2>
+  {% for f in report.features %}
+  <details id="f-{{ f.key }}" style="background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:8px 12px;margin-bottom:8px;color:#c9d4e6;font-size:0.85rem;">
+    <summary style="color:#eaeaea;cursor:pointer;">{{ f.label }} <span style="color:#7a8cb0;">({{ f.key }})</span></summary>
+    {% for rule in report.rules %}{% set c = f.cells[rule] %}
+    <div style="margin:6px 0 0 8px;">
+      <strong>{{ rule|replace('_', '-') }}: {{ c.status }}</strong>
+      <ul style="margin:2px 0 0 0;">
+        {% for g in c.gaps %}<li style="color:#e0a030;"><code>{{ g.id }}</code> &mdash; {{ g.detail }}</li>{% endfor %}
+        {% if c.reason %}<li style="color:#7a8cb0;">excused: {{ c.reason }}</li>{% endif %}
+        {% for e in c.evidence %}<li style="color:#7a8cb0;">{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </details>
+  {% endfor %}
+
+  <p style="color:#5a6b8c;font-size:0.75rem;margin-top:1rem;">
+    Source: {{ report.source.snapshot }} (regenerate: <code>{{ report.source.regenerate }}</code>).
+    Also as JSON at <a href="/twin-observatory/api/conformance" style="color:#5aa9e6;">/twin-observatory/api/conformance</a>
+    and through the MCP tool <code>feature_conformance</code>.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}
