@@ -9888,6 +9888,19 @@ python -m tools.twin_core.governance --thread cortex_audit:<id>     # a finding'
 
 Console: `/twin-observatory/governance`. MCP: `twin_governance` (read-only).
 
+## cortex_audit hash chain and Cortex provenance (icx-cnf-06)
+
+`cortex_audit` rows carry `chain_seq`, `prev_hash` and `row_hash`; UPDATE and
+DELETE are refused by triggers (SQLite and PostgreSQL). Rows written before the
+chain are never rewritten: one `cortex_audit_chain_genesis` row records their
+count and digest. Migration `20261114175314_cortex_audit_hash_chain`. The cortex
+governance twin runs `verify` on every observation.
+
+```bash
+python -m tools.cortex.db.audit_chain --verify --json   # walk the chain; exit 1 when broken
+python -m tools.cortex.db.audit_chain --ensure --json   # columns, genesis, triggers (idempotent)
+```
+
 ## Cards — the per-card incident records (xrv-docs-02)
 
 These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —

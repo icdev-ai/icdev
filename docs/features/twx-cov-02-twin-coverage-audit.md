@@ -111,7 +111,7 @@ records the evidence and the verdict's digest in the append-only
 
 | Canvas | Adapter | Observes |
 |--------|---------|----------|
-| Cortex | `tools/twin_core/adapters/cortex.py` (`cortex`) | TRUST-gate outcomes (blocked and redacted counts by gate, mandatory-gate holes, fail-open gates, calls with no provenance); `cortex_audit` health (hook declaration, database triggers, hash chain); conflicts awaiting a person, aged; backend liveness (`capability_consumption.probe_cortex_backend`) |
+| Cortex | `tools/twin_core/adapters/cortex.py` (`cortex`) | TRUST-gate outcomes (blocked and redacted counts by gate, mandatory-gate holes, fail-open gates, calls with no provenance); `cortex_audit` health (hook declaration, database triggers, hash chain walked by `tools/cortex/db/audit_chain.verify` since icx-cnf-06); conflicts awaiting a person, aged; backend liveness (`capability_consumption.probe_cortex_backend`) |
 | ACE | `tools/twin_core/adapters/ace.py` (`ace`) | stuck and failed runs; checkpoints waiting on a person, aged; aborts (advisory); NOVA trust band drops and probationary roles |
 | Co-Workers | `tools/twin_core/adapters/cwk.py` (`cwk`) | the roster's config sources: files that silently drop out, id collisions |
 | Conformance audit | `tools/twin_core/adapters/conformance.py` (`twin_observatory`, observes `conformance.audit`) | the committed snapshot against the census and `census_max` |

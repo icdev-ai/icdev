@@ -526,3 +526,39 @@ Capability-sheet entries follow each new tool.
   (append-only holds only at the agent hook), and the `rag` backend failed once.
   These are findings for a later card; this card only makes them visible.
 
+
+### icx-cnf-06: Cortex provenance and cortex_audit integrity (2026-11-14)
+
+- Root cause of the missing provenance: the provenance gate wrote through
+  `tools/provenance/registry.register_citation`, whose default path was this
+  checkout's `data/icdev.db`. On SQLite, `get_connection` opens a `.db` path
+  that differs from `ICDEV_DB_PATH` as its own file, so the citation went to a
+  different database from the audit row. That file had no
+  `source_citation_registry` (only the blockchain migration created it), the
+  INSERT failed, `register_citation` swallowed it into `""`, and the gate
+  recorded `warn` with no reason saved. Every governed verb hit it: none skips
+  the gate. The 5 calls the twin did not count had failed operations.
+- Fix, in one place: the registry now uses the process database when no path
+  is given; gate 7a writes on a connection to the audit row's database, ensures
+  the registry table first, and lets a database error raise so the reason lands
+  on the audit row (`gates_json.provenance_detail`). The audit row's id is the
+  citation's `source_record_id`, so the two join both ways.
+- `cortex_audit` is hash-chained (`chain_seq`, `prev_hash`, `row_hash`) and
+  UPDATE/DELETE are refused by triggers on SQLite and PostgreSQL (migration
+  `20261114175314`, `tools/cortex/db/audit_chain.py`). Old rows are never
+  rewritten: one `cortex_audit_chain_genesis` row records their count and
+  digest. `verify` catches an altered row, a removed row, an altered old row and
+  a row written around the chain. The cortex twin runs it on every observation:
+  `cortex.audit.chain_broken` (critical) threads to the first broken row.
+- Twin readings on a scratch copy of the same database. Before: 52 untraced
+  calls, `db_mutable`, `unchained`. After the migration and three new governed
+  calls: provenance `pass` 3/3, chain intact (57 pre-chain rows covered by the
+  genesis, 3 chained), no audit-chain finding. With the window widened to the
+  October rows, `no_provenance` still counts the 52 old calls: they really have
+  no record, and they leave the default 168-hour window on their own.
+- PostgreSQL path checked on a throwaway `postgres:16` container (never the
+  live database): migration, three governed calls with provenance `pass`, chain
+  intact, UPDATE and DELETE refused, a tampered row reported by the twin.
+- Not changed: a cache hit (`tools/cortex/cache.audit_hit`) still writes a
+  chained audit row with no provenance id of its own; the twin does not count it
+  (its outcome is `cache`, not `operation`). Gap counts unchanged (62).

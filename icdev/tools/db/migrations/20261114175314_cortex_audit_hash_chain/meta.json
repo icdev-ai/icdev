@@ -1,0 +1,7 @@
+{
+  "description": "cortex_audit_hash_chain",
+  "date": "2026-11-14",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

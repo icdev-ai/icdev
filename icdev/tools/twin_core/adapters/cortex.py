@@ -13,7 +13,10 @@ What it has is a governed call path, and that is what this twin observes:
 * **cortex_audit chain health** — the table is declared append-only at the agent
   hook (``APPEND_ONLY_TABLES``). This twin checks whether the DATABASE also
   refuses UPDATE/DELETE (a trigger), and whether rows carry a hash chain that
-  could prove nothing was altered. It reports what is there; it does not invent
+  could prove nothing was altered. Since icx-cnf-06 the chain exists
+  (``tools/cortex/db/audit_chain.py``): ``collect`` walks it with ``verify`` and
+  a broken link, a missing row, an altered pre-chain row or a missing genesis is
+  a finding threaded to the row. It reports what is there; it does not invent
   a chain the table does not have.
 * **Unadjudicated findings** — every conflict in ``cortex_entity_findings`` is
   one a person must adjudicate (the store keeps no winner and no adjudication
@@ -146,6 +149,8 @@ class CortexGovernanceTwin(GovernanceTwinAdapter):
                         "backends_failed": sorted(str(x) for x in
                                                   (backends.get("failed") or []) if x),
                     })
+                    if g.get("provenance_detail"):  # icx-cnf-06: why gate 7a did not pass
+                        calls[-1]["provenance_detail"] = str(g["provenance_detail"])[:300]
                 ev["audit"] = {"rows": calls, "truncated": truncated}
                 ev["chain"] = {
                     "hook_append_only": _hook_declares_append_only(AUDIT_TABLE),
@@ -154,6 +159,16 @@ class CortexGovernanceTwin(GovernanceTwinAdapter):
                                      if column_exists(conn, AUDIT_TABLE, c)],
                     "latest_id": "",
                 }
+                try:  # icx-cnf-06: walk the chain here; judge() only reads the result
+                    from tools.cortex.db.audit_chain import verify
+
+                    v = verify(conn)
+                    ev["chain"]["verify"] = {k: v[k] for k in (
+                        "status", "chained_rows", "unchained_rows", "genesis_id", "prior",
+                        "break_count", "breaks", "first_break_id", "latest_seq")}
+                except Exception as exc:  # noqa: BLE001 — an unread chain is not intact
+                    ev["chain"]["verify"] = {"status": "unreadable", "error": str(exc),
+                                             "break_count": 0, "breaks": []}
                 newest = conn.execute(
                     f"SELECT id FROM {AUDIT_TABLE} ORDER BY created_at DESC, id DESC LIMIT 1"  # nosec B608
                 ).fetchone()
@@ -203,6 +218,39 @@ class CortexGovernanceTwin(GovernanceTwinAdapter):
         return ev
 
     # -- judge (pure) --------------------------------------------------------
+
+    @staticmethod
+    def _chain_findings(v: dict, thread: str) -> list:
+        """Findings from ``audit_chain.verify`` as collected (icx-cnf-06)."""
+        status = v.get("status")
+        if status == "intact":
+            return []
+        if status == "not_started":
+            return [finding(
+                "cortex.audit.chain_unverified", "low",
+                "cortex_audit has chain columns but no genesis: the chain never started",
+                thread_id=thread,
+                recommendation="Run migration 20261114175314 (or python -m "
+                               "tools.cortex.db.audit_chain --ensure).")]
+        if status in ("absent", "unreadable"):
+            return [finding(
+                "cortex.audit.chain_broken", "high",
+                f"cortex_audit chain could not be verified ({status})",
+                thread_id=thread, detail=str(v.get("error") or "no genesis table"),
+                recommendation="Run migration 20261114175314, then observe again.")]
+        breaks = v.get("breaks") or []
+        # Thread to the first audit row that broke; a genesis-level break (the
+        # rows before the chain) has no row of its own, so it keeps the chain's.
+        rows = [str(b.get("id")) for b in breaks
+                if b.get("id") and not str(b.get("id")).startswith("cag-")]
+        return [finding(
+            "cortex.audit.chain_broken", "critical",
+            f"cortex_audit hash chain is broken: {v.get('break_count', len(breaks))} problem(s)",
+            thread_id=f"cortex_audit:{rows[0]}" if rows else thread,
+            detail="; ".join(f"{b.get('id') or '?'}: {b.get('reason')}" for b in breaks[:5]),
+            recommendation="A row was altered, removed or written around the chain. "
+                           "python -m tools.cortex.db.audit_chain --verify lists every break.",
+            category="security")]
 
     def judge(self, evidence: dict) -> dict:
         policy = evidence.get("policy") or {}
@@ -262,11 +310,12 @@ class CortexGovernanceTwin(GovernanceTwinAdapter):
                                "callers that must not proceed on a failed gate."))
         if untraced:
             newest = untraced[0]
+            why = newest.get("provenance_detail")
             findings.append(finding(
                 "cortex.audit.no_provenance", "medium",
                 f"{len(untraced)} unblocked governed call(s) have no provenance record",
                 thread_id=f"cortex_audit:{newest['id']}",
-                detail="newest " + newest["at"],
+                detail="newest " + newest["at"] + (f": {why}" if why else ""),
                 recommendation="The provenance gate writes a source_citation_registry row; "
                                "check its citation_type and the registry write."))
 
@@ -297,11 +346,15 @@ class CortexGovernanceTwin(GovernanceTwinAdapter):
                     thread_id=thread,
                     recommendation="Chain the rows (hash, previous_hash) as audit_trail is, "
                                    "then verify the chain here."))
-            else:
+            elif chain.get("verify") is None:
+                # Evidence recorded before the chain had a verifier (icx-cnf-03):
+                # judged as it was then, so its replay still matches.
                 findings.append(finding(
                     "cortex.audit.chain_unverified", "low",
                     "cortex_audit has chain columns but no verifier reads them",
                     thread_id=thread, detail=", ".join(chain["hash_columns"])))
+            else:
+                findings.extend(self._chain_findings(chain["verify"], thread))
 
         # unadjudicated findings ---------------------------------------------
         fs = evidence.get("findings")

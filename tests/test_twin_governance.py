@@ -126,11 +126,11 @@ def test_a_finding_without_a_thread_is_refused():
 def _seed_cortex():
     from tests._schema_compat import ensure_table
 
-    from tools.cortex.db.init_db import _ensure_schema
+    from tools.cortex.db.init_db import SCHEMA_SQLITE
 
     conn = _conn()
     try:
-        _ensure_schema(conn)
+        conn.executescript(SCHEMA_SQLITE)  # the cortex tables, without the chain yet
         ensure_table(conn, """CREATE TABLE IF NOT EXISTS source_citation_registry (
             id TEXT PRIMARY KEY, citation_type TEXT NOT NULL, source_table TEXT NOT NULL,
             source_record_id TEXT NOT NULL, source_doc TEXT, source_hash TEXT NOT NULL,
@@ -161,6 +161,14 @@ def _seed_cortex():
                 "INSERT INTO cortex_audit (id, outcome, blocked, provenance_id, gates_json, "
                 "created_at) VALUES (%s, %s, %s, %s, %s, %s)",
                 (rid, outcome, blocked, prov, json.dumps(gates), at))
+        conn.commit()
+        # These rows stand for ones written before the chain (icx-cnf-06): the
+        # chain starts after them, with a genesis covering them, as the
+        # migration does. Not through _ensure_schema, whose once-a-process
+        # latch would make the seed differ alone and in the suite.
+        from tools.cortex.db.audit_chain import ensure_chain
+
+        ensure_chain(conn)
         conn.execute("INSERT INTO cortex_finding_runs (tenant_id, resolutions, last_run_at) "
                      "VALUES (%s, %s, %s)", ("default", 3, _ago(hours=1)))
         for fid, days in (("cef-old", 40), ("cef-mid", 10), ("cef-new", 1)):
@@ -185,7 +193,10 @@ def test_cortex_observes_gates_chain_findings_with_threads(full_db):
     assert by_rule["cortex.gate.mandatory"][0]["severity"] == "critical"
     assert [v["thread_id"] for v in by_rule["cortex.gate.fail_open"]] == ["cortex_audit:cgov-open"]
     assert by_rule["cortex.audit.no_provenance"][0]["thread_id"] == "cortex_audit:cgov-hole"
-    assert "cortex.audit.db_mutable" in by_rule and "cortex.audit.unchained" in by_rule
+    # icx-cnf-06: triggers and an intact chain, so neither audit finding fires
+    # (tests/test_cortex_audit_integrity.py has them firing and clearing).
+    assert not {"cortex.audit.db_mutable", "cortex.audit.unchained",
+                "cortex.audit.chain_broken", "cortex.audit.chain_unverified"} & set(by_rule)
     aged = {v["thread_id"]: v["severity"] for v in by_rule["cortex.finding.unadjudicated"]}
     assert aged == {"cortex_finding:cef-old": "critical", "cortex_finding:cef-mid": "high"}
     assert env["verdict"] == "fail"
@@ -207,14 +218,11 @@ def test_cortex_threads_resolve_to_the_record_and_its_provenance(full_db):
     assert not gov.resolve_thread("nonsense")["resolved"]
 
 
-def test_cortex_audit_triggers_clear_the_db_mutable_finding(full_db):
+def test_cortex_audit_finding_refires_when_a_trigger_is_dropped(full_db):
     _seed_cortex()
-    _exec("CREATE TRIGGER cortex_audit_no_update BEFORE UPDATE ON cortex_audit "
-          "BEGIN SELECT RAISE(ABORT, 'x'); END")
-    _exec("CREATE TRIGGER cortex_audit_no_delete BEFORE DELETE ON cortex_audit "
-          "BEGIN SELECT RAISE(ABORT, 'x'); END")
+    _exec("DROP TRIGGER cortex_audit_no_delete")
     env = gov.observe(_adapter("cortex"), record=False)
-    assert "cortex.audit.db_mutable" not in {v["rule_id"] for v in env["violations"]}
+    assert "cortex.audit.db_mutable" in {v["rule_id"] for v in env["violations"]}
 
 
 # ── record and replay ────────────────────────────────────────────────────────
