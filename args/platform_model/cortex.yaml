@@ -440,14 +440,23 @@ requirements:
   - id: PM-CTX-17
     title: A BOM credibility designation binds only when a person makes it
     text: >-
-      POST /cortex/api/v1/bom records an item's credibility; only a human's
-      designation binds. No test covers this route yet.
+      POST /cortex/api/v1/bom needs a caller with the cortex:bom scope, which is
+      never in the default grant. A credibility tier the caller does not declare
+      comes back ai_proposed with a rationale; only the caller's declaration
+      binds (set_by human). Nothing uploaded is persisted.
     type: security
     priority: high
     features: [cortex.pmo]
     elements: [cortex.pmo.bom]
-    controls: [AC-3]
-    tests: []
+    controls: [AC-3, AC-6]
+    tests:
+      - tests/cortex/test_rest_bom.py::test_the_route_needs_a_caller_and_the_bom_scope
+      - tests/cortex/test_rest_bom.py::test_an_undeclared_tier_is_proposed_never_self_approved
+      - tests/cortex/test_rest_bom.py::test_only_the_callers_declaration_binds
+      - tests/cortex/test_rest_bom.py::test_no_documents_is_a_400_naming_the_defect
+      - tests/bom/test_cortex_bom.py::TestTheScope::test_it_is_never_in_the_default_grant
+      - tests/bom/test_cortex_bom.py::TestSilenceIsNeverConfirmation::test_what_the_caller_omits_is_PROPOSED_and_says_so
+      - tests/bom/test_cortex_bom.py::TestTheSecurityPosture::test_nothing_the_caller_uploads_is_persisted
 
   # ── intake ──────────────────────────────────────────────────────────────
   - id: PM-CTX-18

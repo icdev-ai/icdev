@@ -39,6 +39,7 @@ elements:
     code:
       - tools/ace/controller.py::ACEController.abort
       - tools/ace/blueprint.py::api_abort
+      - tools/mcp/gap_handlers.py::handle_ace_abort
 
   - id: ace.profiles.persona
     type: sysml_element
@@ -78,6 +79,8 @@ elements:
       - tools/ace/evaluator.py
       - tools/ace/eval_runner.py
       - tools/ace/blueprint.py::api_session_eval_post
+      - tools/ace/blueprint.py::api_session_eval_get
+      - tools/ace/blueprint.py::api_evals_list
       - tools/ace/blueprint.py::api_evals_trends
 
 interfaces:
@@ -205,16 +208,24 @@ requirements:
 
   # ── abort ───────────────────────────────────────────────────────────────
   - id: PM-ACE-07
-    title: Abort stops a running team at once
+    title: Abort stops a running team at once, needs no approval, and is audited
     text: >-
-      POST /api/ace/<instance_id>/abort and ace_abort cancel a running team
-      immediately, without waiting for an approval. No test covers abort yet.
+      ACEController.abort, POST /api/ace/<instance_id>/abort and ace_abort stop
+      every coworker thread and mark the run cancelled in the same call, with no
+      approval step, and append an abort row naming the actor to ace_audit_log.
+      An unknown instance is a 404.
     type: functional
     priority: critical
     features: [ace.abort]
     elements: [ace.abort]
-    controls: [IR-4]
-    tests: []
+    controls: [IR-4, AU-2]
+    tests:
+      - tests/test_ace_abort.py::test_abort_stops_every_thread_and_marks_the_run_cancelled
+      - tests/test_ace_abort.py::test_abort_is_audited_with_its_actor
+      - tests/test_ace_abort.py::test_abort_of_an_unknown_instance_raises_and_writes_nothing
+      - tests/test_ace_abort.py::test_the_route_stops_the_run_in_one_request_with_no_approval
+      - tests/test_ace_abort.py::test_the_route_returns_404_for_an_unknown_instance
+      - tests/test_ace_abort.py::test_the_mcp_tool_aborts_and_records_mcp_as_the_actor
 
   # ── profiles ────────────────────────────────────────────────────────────
   - id: PM-ACE-08
@@ -251,14 +262,22 @@ requirements:
     title: A role profile is previewed before it is written, and deleted on request
     text: >-
       /api/ace/profiles/preview, /generate and DELETE /api/ace/profiles/<role_id>
-      go through tools/ace/profile_generator.py. No test covers the profile
-      generator yet.
-    type: functional
-    priority: medium
+      go through tools/ace/profile_generator.py. Preview writes nothing; a
+      generated role (from the model or a caller's spec) is held to the
+      red/yellow tiers and Read/Grep/Glob, and its role_id cannot leave the
+      roles directory; a built-in role is never overwritten or deleted.
+    type: security
+    priority: high
     features: [ace.profiles]
     elements: [ace.profiles.generator]
-    controls: [CM-3]
-    tests: []
+    controls: [CM-3, AC-6]
+    tests:
+      - tests/test_ace_profile_generator.py::test_preview_writes_nothing_and_holds_the_model_to_the_allowlists
+      - tests/test_ace_profile_generator.py::test_generate_writes_one_generated_role
+      - tests/test_ace_profile_generator.py::test_generate_refuses_to_overwrite_a_builtin_role
+      - tests/test_ace_profile_generator.py::test_a_caller_supplied_spec_is_held_to_the_same_allowlists
+      - tests/test_ace_profile_generator.py::test_delete_removes_generated_roles_and_candidates_only
+      - tests/test_ace_profile_generator.py::test_the_profile_routes_preview_generate_and_delete
 
   # ── trust, sessions, evaluations ────────────────────────────────────────
   - id: PM-ACE-11
@@ -295,12 +314,21 @@ requirements:
   - id: PM-ACE-13
     title: A session evaluation is recorded and compared
     text: >-
-      POST /api/ace/sessions/<session_id>/eval records an evaluation through
-      tools/ace/evaluator.py and the trends page reads it back. No test covers
-      the evaluator yet.
+      POST /api/ace/sessions/<session_id>/eval scores a stored session through
+      tools/ace/evaluator.py and persists it (an unknown session is a 404 and
+      writes nothing); the eval, list and trends routes read it back; the eval
+      runner loads its suite and reports a failing router as an error.
     type: functional
     priority: medium
     features: [ace.trust_sessions]
     elements: [ace.evaluations]
     controls: [CA-7]
-    tests: []
+    tests:
+      - tests/test_ace_eval_routes.py::test_post_scores_a_stored_session_and_persists_it
+      - tests/test_ace_eval_routes.py::test_an_unknown_session_is_a_404_and_writes_nothing
+      - tests/test_ace_eval_routes.py::test_the_read_side_returns_what_was_stored
+      - tests/test_agent_evaluator.py::TestScoreFromDB::test_score_existing_session
+      - tests/test_agent_evaluator.py::TestSaveAndGetEval::test_save_and_retrieve
+      - tests/test_agent_evaluator.py::TestEvalRunner::test_load_suite_parses_entries
+      - tests/test_agent_evaluator.py::TestEvalRunner::test_run_eval_router_failure
+      - tests/test_eval_trends.py::TestGetEvalTrends::test_fallback_query_used_when_join_fails

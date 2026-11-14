@@ -42,7 +42,6 @@ tests/agent_toolkit/test_shell.py
 tests/airgap/test_hook_compat_middleware.py
 tests/api/test_contract.py
 tests/bi_dashboard/test_routes_auth.py
-tests/bom/test_cortex_bom.py
 tests/bom/test_credibility.py
 tests/bom/test_export_categorized.py
 tests/bom/test_exports.py
@@ -378,7 +377,6 @@ tests/test_agent_browser.py
 tests/test_agent_capability_matrix.py
 tests/test_agent_coordination.py
 tests/test_agent_error_circuit.py
-tests/test_agent_evaluator.py
 tests/test_agent_event_type_reachability.py
 tests/test_agent_execution_audit_events.py
 tests/test_agent_hitl.py
@@ -805,7 +803,6 @@ tests/test_eol_predictor.py
 tests/test_episodic_distiller.py
 tests/test_eu_ai_act_classifier.py
 tests/test_eval_compare_rerun.py
-tests/test_eval_trends.py
 tests/test_event_bus_canvas_rls.py
 tests/test_event_envelope.py
 tests/test_event_service_ai_narrative.py

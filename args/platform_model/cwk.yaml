@@ -50,11 +50,17 @@ requirements:
     text: >-
       GET /coworkers lists the config-driven roster with a chat link per
       co-worker, shows an empty roster rather than a 500 when the roster cannot
-      load, and GET /coworkers/status counts the roster by kind. No test covers
-      tools/coworkers yet.
+      load, and GET /coworkers/status counts the roster by kind.
     type: functional
     priority: medium
     features: [cwk.canvas]
     elements: [cwk.canvas, if.cwk.console]
     controls: [SI-11]
-    tests: []
+    tests:
+      - tests/test_coworkers_canvas.py::test_the_roster_is_personas_then_ace_roles_from_config
+      - tests/test_coworkers_canvas.py::test_a_missing_source_contributes_nothing
+      - tests/test_coworkers_canvas.py::test_the_chat_link_is_a_relative_chat_url_for_that_coworker
+      - tests/test_coworkers_canvas.py::test_the_roster_page_lists_every_coworker_with_its_chat_link
+      - tests/test_coworkers_canvas.py::test_a_roster_that_cannot_load_is_empty_not_a_500
+      - tests/test_coworkers_canvas.py::test_open_chat_redirects_into_the_shared_chat_or_404s
+      - tests/test_coworkers_canvas.py::test_status_counts_the_roster_by_kind

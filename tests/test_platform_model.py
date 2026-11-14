@@ -136,7 +136,7 @@ def test_an_untested_requirement_is_a_gap_not_a_pass(mini):
 # ── the digital thread (scratch database) ────────────────────────────────────
 
 
-def test_seeded_thread_has_no_orphans_or_gaps_for_traced_features(tmp_path, monkeypatch):
+def test_seeded_thread_has_no_orphans_or_gaps_for_traced_features(tmp_path, monkeypatch, mini):
     db = _seeded(tmp_path, monkeypatch)
     model_view = pm.validate(REPO)["features"]
     thread = pm.trace(db_path=db)
@@ -150,13 +150,16 @@ def test_seeded_thread_has_no_orphans_or_gaps_for_traced_features(tmp_path, monk
             assert got["status"] == "gap", key
             assert got["untested"] == row["untested"], key
 
-    # The untested BOM route is code with no test in the existing orphan analysis.
+    # Every shipped requirement is traced, so the existing orphan and gap analysis
+    # finds nothing at all for the project.
     from tools.mbse.digital_thread import find_gaps, find_orphans
 
-    orphan_code = {o["id"] for o in find_orphans(pm.PROJECT_ID, db_path=db)["code_without_tests"]["items"]}
-    assert "tools/cortex/rest_v1.py::api_v1_bom" in orphan_code
-    assert "tools/cortex/rest_v1.py::api_v1_award" not in orphan_code
-    assert {g["gap_type"] for g in find_gaps(pm.PROJECT_ID, db_path=db)["gaps"]} <= {"code_without_test"}
+    assert all(row["status"] == "traced" for row in model_view.values())
+    orphans = find_orphans(pm.PROJECT_ID, db_path=db)
+    assert {k: v["count"] for k, v in orphans.items()} == {
+        "requirements_without_model": 0, "blocks_without_code": 0,
+        "code_without_tests": 0, "controls_without_evidence": 0}
+    assert find_gaps(pm.PROJECT_ID, db_path=db)["total_gaps"] == 0
 
     # A requirement row says whether a test verifies it; a re-seed replaces, never duplicates.
     from tools.db.storage import get_connection
@@ -167,13 +170,27 @@ def test_seeded_thread_has_no_orphans_or_gaps_for_traced_features(tmp_path, monk
     before = conn.execute("SELECT COUNT(*) FROM digital_thread_links WHERE project_id = %s",
                           (pm.PROJECT_ID,)).fetchone()[0]
     conn.close()
-    assert status["PM-CTX-17"] == "active" and status["PM-CTX-01"] == "verified"
+    assert set(status.values()) == {"verified"}
     pm.seed(db_path=db)
     conn = get_connection(db_path=db)
     after = conn.execute("SELECT COUNT(*) FROM digital_thread_links WHERE project_id = %s",
                          (pm.PROJECT_ID,)).fetchone()[0]
     conn.close()
     assert after == before == len(pm.thread_links(pm.load_model(REPO)))
+
+    # An untested requirement shows in the thread too: its code has no test in
+    # find_orphans, its row stays `active`, and the feature reads as a gap.
+    _model(mini, [], ["tools/demo/core.py::run"])
+    small = tmp_path / "small.db"
+    from tools.db.init_icdev_db import init_db
+
+    init_db(str(small))
+    assert pm.seed(db_path=str(small), root=mini, project_id="demo")["seeded"]
+    demo = pm.trace(db_path=str(small), root=mini, project_id="demo")
+    assert demo["features"]["demo.feature"]["status"] == "gap"
+    assert demo["features"]["demo.feature"]["orphans"] == ["tools/demo/core.py::run"]
+    assert {o["id"] for o in find_orphans("demo", db_path=str(small))["code_without_tests"]["items"]} == {
+        "tools/demo/core.py::run"}
 
 
 def test_mcp_trace_forward_and_backward_resolve_a_requirement(tmp_path, monkeypatch):
@@ -223,12 +240,13 @@ def test_lineage_route_and_page_show_the_trace(tmp_path, monkeypatch):
     body = client.get("/api/lineage/platform-model").get_json()
     assert body["project_id"] == "icdev-platform"
     assert body["model"]["ok"] and body["thread"]["seeded"]
-    assert body["model"]["features"]["cortex.pmo"]["untested"] == ["PM-CTX-17"]
+    assert body["model"]["features"]["cortex.pmo"]["untested"] == []
+    assert body["model"]["gaps"] == []
     assert body["thread"]["features"]["cortex.search_ask"]["status"] == "traced"
 
     one = client.get("/api/lineage/platform-model?feature=cwk.canvas").get_json()
     assert list(one["model"]["features"]) == ["cwk.canvas"]
-    assert [g["requirement"] for g in one["model"]["gaps"]] == ["PM-CWK-02"]
+    assert one["model"]["features"]["cwk.canvas"]["status"] == "traced"
     assert client.get("/api/lineage/platform-model?feature=nope").status_code == 404
 
     # Unseeded, the route says so rather than reading as clean.
@@ -253,8 +271,8 @@ def test_mcp_platform_model_trace_is_read_only(tmp_path, monkeypatch):
     assert tool_authorization("platform_model_trace")["tier"] == "read"
 
     out = handle_platform_model_trace({"feature": "ace.abort"})
-    assert out["ok"] and out["features"]["ace.abort"]["status"] == "gap"
-    assert [g["requirement"] for g in out["gaps"]] == ["PM-ACE-07"]
+    assert out["ok"] and out["features"]["ace.abort"]["status"] == "traced"
+    assert out["gaps"] == []
     assert "error" in handle_platform_model_trace({"feature": "nope"})
 
     _seeded(tmp_path, monkeypatch)

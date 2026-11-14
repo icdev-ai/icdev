@@ -13,3 +13,11 @@ tests/test_ace_persona_query.py
 tests/test_ace_runtime.py
 tests/test_ace_session_persistence.py
 tests/test_ace_team_proposal.py
+tests/test_ace_abort.py
+tests/test_ace_profile_generator.py
+tests/test_coworkers_canvas.py
+tests/cortex/test_rest_bom.py
+tests/test_ace_eval_routes.py
+tests/bom/test_cortex_bom.py
+tests/test_agent_evaluator.py
+tests/test_eval_trends.py

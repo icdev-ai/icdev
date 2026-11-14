@@ -2223,7 +2223,7 @@ def handle_ace_abort(args: dict) -> dict:
     try:
         from icdev.tools.ace.controller import ACEController
 
-        ACEController.get_instance().abort(instance_id)
+        ACEController.get_instance().abort(instance_id, actor="mcp")
         return {"instance_id": instance_id, "state": "cancelled", "aborted": True}
     except ImportError:
         return {
