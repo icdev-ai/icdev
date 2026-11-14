@@ -165,9 +165,6 @@ projects:
   - key: run
     title: RUN
     priority: medium
-  - key: test
-    title: TEST
-    priority: medium
 - key: task_qa
   name: Task Qa Project
   description: Auto-registered project for tasks with prefix 'task-qa-'. Update name
