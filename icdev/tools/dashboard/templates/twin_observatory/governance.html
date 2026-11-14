@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI — Governance twins (icx-cnf-03): each finding with its thread ("why") and a replay. #}
+{% block title %}Governance Twins - ICDEV Dashboard{% endblock %}
+{% block content %}
+{% set colors = {'pass': '#2e7d32', 'warn': '#b26a00', 'fail': '#c62828', 'unknown': '#5a6b8c'} %}
+<div class="container">
+  <div style="background:#1a1a2e;border:1px solid #1e3a6e;border-radius:4px;padding:6px 12px;margin-bottom:1rem;color:#7a8cb0;font-size:0.8rem;text-align:center;">
+    CUI // SP-CTI &mdash; Governance Twins
+  </div>
+
+  <p style="margin:0 0 0.5rem 0;"><a href="/twin-observatory/" style="color:#5aa9e6;font-size:0.85rem;">&larr; Twin Observatory</a></p>
+  <h1 style="color:#eaeaea;">Governance Twins</h1>
+  <p style="color:#7a8cb0;">
+    Twins that observe how a governed subsystem behaved: Cortex (TRUST gates, its audit table,
+    findings awaiting a person, backends), ACE (stuck and failed runs, checkpoints waiting on a
+    person, aborts, NOVA trust), the Co-Workers roster sources, and the feature-conformance audit.
+    Every finding names its thread: open <em>why</em> to see the record it rests on. <em>Replay</em>
+    re-judges the recorded evidence and says whether the verdict still comes out the same.
+    A source that could not be read is <em>unverified</em>: it lowers coverage and is never a pass.
+    Observing records evidence; it decides and changes nothing.
+  </p>
+  <p>
+    <button type="button" id="gov-observe-all" data-canvas="" class="gov-observe" style="background:#1e3a6e;color:#eaeaea;border:1px solid #5aa9e6;border-radius:4px;padding:4px 10px;cursor:pointer;">Observe all now</button>
+    <span id="gov-status" role="status" style="color:#7a8cb0;font-size:0.8rem;margin-left:8px;"></span>
+  </p>
+
+  {% if not ok %}
+  <div id="governance-unavailable" style="background:#2a1a1a;border:1px solid #6e1e1e;border-radius:6px;padding:12px;color:#e0a0a0;">
+    The governance twins could not be read: {{ error }}.
+  </div>
+  {% endif %}
+
+  {% for t in twins %}
+  {% set env = t.envelope %}
+  <section id="twin-{{ t.canvas }}" data-canvas="{{ t.canvas }}" style="background:#12172b;border:1px solid #1e3a6e;border-radius:6px;padding:12px;margin-bottom:12px;color:#c9d4e6;font-size:0.85rem;">
+    <h2 style="color:#eaeaea;font-size:1.05rem;margin:0 0 6px 0;">
+      {{ t.display_name }} <span style="color:#7a8cb0;font-size:0.8rem;">({{ t.canvas }}{% if t.observes %}; observes {{ t.observes|join(', ') }}{% endif %})</span>
+    </h2>
+    {% if not env %}
+    <p class="gov-none" style="color:#7a8cb0;">No observation recorded yet. Nothing observed is not a pass.</p>
+    {% else %}
+    {% set obs = t.observation %}
+    <p style="margin:0 0 6px 0;">
+      <span class="gov-verdict" style="background:{{ colors.get(env.verdict, '#5a6b8c') }};color:#fff;padding:2px 8px;border-radius:10px;font-size:0.75rem;">{{ env.verdict }}</span>
+      coverage {{ '%.0f'|format((env.coverage_score or 0) * 100) }}%
+      &middot; observed {{ obs.observed_at }}
+      &middot; <code>{{ obs.id }}</code>
+      &middot; replay:
+      {% if t.replay and t.replay.match %}<span class="gov-replay-state" style="color:#2e7d32;">matches</span>
+      {% else %}<span class="gov-replay-state" style="color:#c62828;">does not match{% if t.replay and t.replay.reason %} ({{ t.replay.reason }}){% endif %}</span>{% endif %}
+    </p>
+    <table class="gov-checks" style="width:100%;border-collapse:collapse;margin:6px 0;">
+      <thead><tr style="text-align:left;color:#7a8cb0;border-bottom:1px solid #1e3a6e;"><th style="padding:4px;">Check</th><th style="padding:4px;">Status</th><th style="padding:4px;">Reason</th></tr></thead>
+      <tbody>
+        {% for c in env.extra.checks %}
+        <tr style="border-bottom:1px solid #16203a;"><td style="padding:4px;">{{ c.label }}</td>
+          <td style="padding:4px;color:{{ '#2e7d32' if c.status == 'verified' else '#e0a030' }};">{{ c.status }}</td>
+          <td style="padding:4px;color:#7a8cb0;">{{ c.reason }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <table class="gov-violations" style="width:100%;border-collapse:collapse;margin:6px 0;">
+      <thead><tr style="text-align:left;color:#7a8cb0;border-bottom:1px solid #1e3a6e;"><th style="padding:4px;">Severity</th><th style="padding:4px;">Finding</th><th style="padding:4px;">Why</th></tr></thead>
+      <tbody>
+        {% for v in env.violations %}
+        <tr style="border-bottom:1px solid #16203a;vertical-align:top;">
+          <td style="padding:4px;">{{ v.severity }}</td>
+          <td style="padding:4px;color:#eaeaea;">{{ v.title }}{% if v.detail %}<div style="color:#7a8cb0;">{{ v.detail }}</div>{% endif %}
+            <div style="color:#7a8cb0;">{{ v.recommendation }}</div></td>
+          <td style="padding:4px;">
+            <button type="button" class="gov-why" data-thread="{{ v.thread_id }}" style="background:none;color:#5aa9e6;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;">why</button>
+            <code style="color:#7a8cb0;font-size:0.75rem;">{{ v.thread_id }}</code>
+            <pre class="gov-thread" hidden style="white-space:pre-wrap;color:#c9d4e6;background:#0d1120;padding:6px;margin:4px 0 0 0;max-width:40rem;"></pre>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" style="padding:6px;color:#7a8cb0;">No findings.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <details style="margin-top:4px;"><summary style="cursor:pointer;color:#7a8cb0;">Summary</summary>
+      <pre style="white-space:pre-wrap;color:#c9d4e6;">{{ env.extra.summary|tojson(indent=2) }}</pre></details>
+    {% endif %}
+    <p style="margin:6px 0 0 0;">
+      <button type="button" class="gov-observe" data-canvas="{{ t.canvas }}" style="background:#1e3a6e;color:#eaeaea;border:1px solid #5aa9e6;border-radius:4px;padding:3px 8px;cursor:pointer;">Observe now</button>
+      {% if t.observation %}
+      <button type="button" class="gov-replay" data-observation="{{ t.observation.id }}" style="background:none;color:#5aa9e6;border:1px solid #1e3a6e;border-radius:4px;padding:3px 8px;cursor:pointer;">Replay</button>
+      <span class="gov-replay-result" role="status" style="color:#7a8cb0;margin-left:6px;"></span>
+      {% endif %}
+    </p>
+  </section>
+  {% else %}
+  <p style="color:#7a8cb0;">No governance twin is registered.</p>
+  {% endfor %}
+
+  <p style="color:#5a6b8c;font-size:0.75rem;margin-top:1rem;">
+    JSON: <a href="/twin-observatory/api/governance" style="color:#5aa9e6;">/twin-observatory/api/governance</a>.
+    CLI: <code>python -m tools.twin_core.governance --observe | --replay &lt;id&gt; | --thread &lt;id&gt;</code>.
+    MCP: <code>twin_governance</code> (read-only). Thresholds: <code>args/twin_governance.yaml</code>.
+  </p>
+</div>
+<script>
+(function () {
+  var status = document.getElementById('gov-status');
+  document.querySelectorAll('.gov-observe').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      status.textContent = 'Observing...';
+      fetch('/twin-observatory/api/governance/observe', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({canvas: btn.dataset.canvas || ''})
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        if (d.error) { status.textContent = d.error; return; }
+        window.location.reload();
+      }).catch(function (e) { status.textContent = 'Observe failed: ' + e; });
+    });
+  });
+  document.querySelectorAll('.gov-replay').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var out = btn.parentNode.querySelector('.gov-replay-result');
+      fetch('/twin-observatory/api/governance/replay/' + encodeURIComponent(btn.dataset.observation))
+        .then(function (r) { return r.json(); }).then(function (d) {
+          out.textContent = d.match
+            ? 'Replay matches: ' + d.recomputed.verdict + ' (' + d.recomputed.verdict_digest.slice(0, 12) + ')'
+            : 'Replay does NOT match: ' + (d.reason || d.error || 'unknown');
+        }).catch(function (e) { out.textContent = 'Replay failed: ' + e; });
+    });
+  });
+  document.querySelectorAll('.gov-why').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var pre = btn.parentNode.querySelector('.gov-thread');
+      if (!pre.hidden) { pre.hidden = true; return; }
+      fetch('/twin-observatory/api/governance/thread?id=' + encodeURIComponent(btn.dataset.thread))
+        .then(function (r) { return r.json(); }).then(function (d) {
+          pre.textContent = JSON.stringify(d, null, 2);
+          pre.hidden = false;
+        }).catch(function (e) { pre.textContent = 'Thread failed: ' + e; pre.hidden = false; });
+    });
+  });
+})();
+</script>
+{% endblock %}

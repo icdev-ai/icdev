@@ -4438,3 +4438,32 @@ def handle_feature_conformance(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_feature_conformance: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_twin_governance(args: dict) -> dict:
+    """MCP: the governance twins' latest observations, a replay, or a thread (icx-cnf-03).
+
+    Pattern A, read-only. Taking a new observation records evidence, so it is
+    the console's or the CLI's to do, not an agent's.
+    """
+    try:
+        from tools.twin_core import governance
+
+        thread_id = str(args.get("thread_id") or "").strip()
+        if thread_id:
+            return {"classification": CORTEX_CLASSIFICATION,
+                    "thread": governance.resolve_thread(thread_id)}
+        obs_id = str(args.get("observation_id") or "").strip()
+        if obs_id:
+            result = governance.replay_any(obs_id)
+            return {"classification": CORTEX_CLASSIFICATION, "replay": result}
+        canvas = str(args.get("canvas") or "").strip()
+        twins = governance.latest_envelopes()
+        if canvas:
+            twins = [t for t in twins if t["canvas"] == canvas]
+            if not twins:
+                return {"error": f"no governance twin {canvas!r}"}
+        return {"classification": CORTEX_CLASSIFICATION, "twins": twins}
+    except Exception as exc:
+        logger.warning("handle_twin_governance: %s", exc)
+        return {"error": str(exc)}

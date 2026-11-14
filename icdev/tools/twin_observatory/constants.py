@@ -20,6 +20,11 @@ TWIN_CANVAS_ROUTES: dict[str, str] = {
     "aadc": "/agentic-ai",
     "aimc": "/aiml",
     "mission_canvas": "/mission",
+    # Governance twins (icx-cnf-03): the observed canvas, and their own page.
+    "cortex": "/twin-observatory/governance#twin-cortex",
+    "ace": "/twin-observatory/governance#twin-ace",
+    "cwk": "/twin-observatory/governance#twin-cwk",
+    "twin_observatory": "/twin-observatory/governance#twin-twin_observatory",
 }
 
 # Verdict → badge colour (light/dark friendly hex).

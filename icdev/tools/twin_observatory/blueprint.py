@@ -2,8 +2,9 @@
 """Flask blueprint for the cross-canvas Twin Observatory page.
 
 Registry-driven (args/component_registry.yaml key `twin_observatory`). Read-only:
-renders the twin_core observer grid + twin_* event stream, and answers IQE
-questions over the twin_observatory.* collections.
+renders the twin_core observer grid + twin_* event stream, the governance twins
+(icx-cnf-03) with each finding's thread and a replay, and answers IQE questions
+over the twin_observatory.* collections.
 """
 from __future__ import annotations
 
@@ -70,6 +71,75 @@ def api_conformance():
     """JSON: the feature-conformance report (read-only)."""
     data = _conformance()
     return jsonify(data), (200 if data["ok"] else 503)
+
+
+# ── governance twins (icx-cnf-03) ───────────────────────────────────────────
+
+
+def _governance() -> dict:
+    """Each governance twin's latest recorded observation, re-judged (replayed)."""
+    try:
+        from tools.twin_core.governance import latest_envelopes
+
+        return {"ok": True, "twins": latest_envelopes()}
+    except Exception as exc:  # noqa: BLE001 — the page states the cause
+        logger.warning("twin_observatory governance unavailable: %s", exc)
+        return {"ok": False, "error": str(exc), "twins": []}
+
+
+@twin_observatory_bp.route("/governance")
+def governance_page():
+    """Governance twins: Cortex, ACE, Co-Workers, the conformance audit; why and replay."""
+    return render_template("twin_observatory/governance.html", **_governance())
+
+
+@twin_observatory_bp.route("/api/governance")
+def api_governance():
+    """JSON: the latest observation of every governance twin (read-only)."""
+    data = _governance()
+    return jsonify(data), (200 if data["ok"] else 503)
+
+
+@twin_observatory_bp.route("/api/governance/observe", methods=["POST"])
+def api_governance_observe():
+    """Take and record a fresh observation (one twin, or all). Decides nothing."""
+    from tools.twin_core.governance import adapter_for, governance_adapters, observe
+
+    canvas = str((request.get_json(silent=True) or {}).get("canvas") or "").strip()
+    try:
+        keys = [canvas] if canvas else list(governance_adapters())
+        envs = [observe(adapter_for(k)) for k in keys]
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify({"observations": [
+        {"canvas": e["canvas"], "verdict": e["verdict"],
+         "coverage_score": e["coverage_score"], "observation_id": e["extra"]["observation_id"],
+         "recorded": e["extra"].get("recorded")} for e in envs]})
+
+
+@twin_observatory_bp.route("/api/governance/replay/<observation_id>")
+def api_governance_replay(observation_id: str):
+    """Re-judge a recorded observation from its evidence; ``match`` says if it holds."""
+    from tools.twin_core.governance import replay_any
+
+    try:
+        result = replay_any(observation_id)
+    except LookupError as exc:
+        return jsonify({"error": str(exc)}), 404
+    result.pop("envelope", None)
+    return jsonify(result), (200 if result.get("found") else 404)
+
+
+@twin_observatory_bp.route("/api/governance/thread")
+def api_governance_thread():
+    """Follow a violation's thread to its record (and provenance, where it has one)."""
+    from tools.twin_core.governance import resolve_thread
+
+    thread_id = (request.args.get("id") or "").strip()
+    if not thread_id:
+        return jsonify({"error": "id is required"}), 400
+    result = resolve_thread(thread_id)
+    return jsonify(result), (200 if result["resolved"] else 404)
 
 
 @twin_observatory_bp.route("/api/iqe-query", methods=["POST"])
