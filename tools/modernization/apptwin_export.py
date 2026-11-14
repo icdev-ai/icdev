@@ -7,6 +7,7 @@ produced, so every section is traceable to the tool that made it:
 
     inventory     components, apis, data, dependencies   the legacy_* tables (tools/modernization/legacy_analyzer.py)
     --features    features (basis observed)              tools/aiify/observed_inventory.py output (its ``features``)
+    --static-features  features (provenance static)      tools/modernization/static_features.py (entry points)
     --process     processes (basis document | observed)  python -m tools.workflow_canvas.processify --json
     --aiify       aiify                                  python -m tools.aiify.engine scan --json
     --integrity   integrity                              python tools/integrity/engine.py --json (SIPA)
@@ -22,7 +23,8 @@ A verification result (``--ivv``/``--sbd``/``--rtm``/``--coherence``) is passed 
 --bundle``): this module never stamps a subject on one, because only the run that assessed the code knows what it saw.
 
 A section with no input stays ``null``: ICDEV[OS] reads null as UNVERIFIED, never as a pass, so nothing here
-fills a gap with a default. Nothing is invented either: no feature is guessed from code, and ``consumers`` (which
+fills a gap with a default. Nothing is invented either: a static feature is only what static_features grouped
+from the entry points the analyser found, labelled ``static`` and never ``observed``, and ``consumers`` (which
 needs every other application) is left to ICDEV[OS]. The bundle is validated against the vendored contract
 (``context/icos/apptwin.schema.json``, pinned by SHA-256) before it is written.
 
@@ -50,9 +52,9 @@ _BASE = repo_root(__file__)
 
 SCHEMA = "icos-apptwin/v1"
 SCHEMA_PATH = _BASE / "context" / "icos" / "apptwin.schema.json"
-#: The digest of the vendored ICDEV[OS] contract (1.169.0: the migration and refactor sections, ICDEV[OS] Phase 247).
+#: The digest of the vendored ICDEV[OS] contract (1.180.0: a feature's provenance and confidence, ICDEV[OS] osx-fth-12).
 #: A changed file is refused, never silently used.
-SCHEMA_SHA256 = "1d696d65f22958768d112bc6e90b33f7e90e833d340f5db97c50560c0bda515e"
+SCHEMA_SHA256 = "92df2bb2ae2ea0db601c6b81013a526e33bfeb69544d3201416a274ad0f17ec3"
 PRODUCER = "icdev-it/apptwin_export"
 PASSTHROUGH = ("ivv", "sbd", "rtm", "coherence", "readiness")
 
@@ -190,6 +192,21 @@ def features_from_inventory(inv: dict) -> list[dict] | None:
     return [out[k] for k in sorted(out)]
 
 
+def features_from_static(doc: dict) -> list[dict] | None:
+    """Static features (static_features.report output), carried as that tool grouped them: basis ``source``,
+    provenance ``static``, its confidence. ``features: null`` there (no entry point found) is null here."""
+    feats = doc.get("features")
+    if feats is None:
+        return None
+    out = []
+    for f in feats:
+        if f.get("provenance") != "static" or f.get("basis") not in ("source", "decompiled"):
+            raise BundleError(f"static feature {f.get('id')!r} is not labelled static from source")
+        out.append({k: f[k] for k in ("id", "title", "basis", "provenance", "confidence", "signatures", "evidence")
+                    if f.get(k) not in (None, [], {})})
+    return sorted(out, key=lambda f: f["id"])
+
+
 def process_from_processify(doc: dict) -> dict | None:
     """A Process-Ify draft (CLI output or its ``workflow``). A draft with no measured steps is no process."""
     wf = doc.get("workflow", doc)
@@ -316,11 +333,11 @@ def migration_from_plan(app_id: str, conn, *, at: str, waves: list | None = None
     """The application's latest migration plan (ICDEV[OS] Phase 247): strategy, approach, task counts by type, and the
     waves and strangler status the planners produced. No plan recorded: null (unverified in ICDEV[OS])."""
     try:
-        row = conn.execute("SELECT * FROM migration_plans WHERE legacy_app_id = ? ORDER BY created_at DESC LIMIT 1", (app_id,)).fetchone()
+        row = conn.execute("SELECT * FROM migration_plans WHERE legacy_app_id = %s ORDER BY created_at DESC LIMIT 1", (app_id,)).fetchone()
         if row is None:
             return None
         p = dict(row)
-        tasks = [dict(t) for t in conn.execute("SELECT task_type, status FROM migration_tasks WHERE plan_id = ?", (p["id"],))]
+        tasks = [dict(t) for t in conn.execute("SELECT task_type, status FROM migration_tasks WHERE plan_id = %s", (p["id"],))]
     except Exception as exc:  # no migration tables in this database: nothing was planned here
         if "no such table" in str(exc) or "does not exist" in str(exc):
             return None
@@ -361,12 +378,15 @@ def refactor_from_jobs(jobs: list, *, at: str) -> dict:
 def build(app_id: str, conn, *, at: str | None = None, features: dict | None = None, processes: list[dict] = (),
           aiify: dict | None = None, integrity: dict | None = None, seven_r: dict | None = None,
           sections: dict | None = None, waves: list | None = None, strangler: list | None = None,
-          refactor: list | None = None) -> dict:
+          refactor: list | None = None, static_features: dict | None = None) -> dict:
     at = at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if features is not None and static_features is not None:
+        raise BundleError("give observed features or static features, not both: each is one tool's report")
     inv = inventory(app_id, conn)
     procs = [p for p in (process_from_processify(d) for d in processes) if p is not None]
     bundle = {"schema": SCHEMA, "producer": {"tool": PRODUCER, "version": _version()}, "produced_at": at, **inv,
-              "features": features_from_inventory(features) if features is not None else None,
+              "features": features_from_inventory(features) if features is not None else
+                          features_from_static(static_features) if static_features is not None else None,
               "processes": sorted(procs, key=lambda p: p["id"]) or None,   # no measured steps: unverified, never "none"
               "consumers": None,
               "aiify": aiify_from_scan(aiify, at=at, root=_source_root(app_id, conn)) if aiify is not None else None,
@@ -386,6 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Export a legacy application as an ICDEV[OS] icos-apptwin/v1 bundle")
     ap.add_argument("--app-id", required=True, help="the legacy application's id (legacy_applications.id)")
     ap.add_argument("--features", type=Path, help="observed_inventory output (JSON)")
+    ap.add_argument("--static-features", type=Path, help="static_features.py output (JSON)")
     ap.add_argument("--process", type=Path, action="append", default=[], help="a Process-Ify draft (JSON); repeatable")
     ap.add_argument("--aiify", type=Path, help="python -m tools.aiify.engine scan --json output")
     ap.add_argument("--integrity", type=Path, help="SIPA assessment (JSON)")
@@ -407,7 +428,8 @@ def main(argv: list[str] | None = None) -> int:
         b = build(a.app_id, conn, at=_iso(a.at) if a.at else None, features=load(a.features),
                   processes=[load(p) for p in a.process], aiify=load(a.aiify), integrity=load(a.integrity),
                   seven_r=load(a.seven_r), sections={k: load(getattr(a, k)) for k in PASSTHROUGH},
-                  waves=load(a.waves), strangler=load(a.strangler), refactor=load(a.refactor))
+                  waves=load(a.waves), strangler=load(a.strangler), refactor=load(a.refactor),
+                  static_features=load(a.static_features))
     except (BundleError, OSError, KeyError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}))
         return 1
