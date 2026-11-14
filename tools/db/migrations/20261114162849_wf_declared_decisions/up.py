@@ -19,7 +19,9 @@ once. A disagreement whose claims change is a NEW finding id, so it opens again.
 
 Both are immutable: SQLite RAISE(ABORT) triggers, or a PostgreSQL trigger
 function, on UPDATE and DELETE. Every statement is IF NOT EXISTS / OR REPLACE,
-so a re-run converges.
+so a re-run converges. The PostgreSQL message is concatenated, not a RAISE
+format string: the storage layer rewrites `%` in SQL text, and a `%` placeholder
+there failed with "too many parameters specified for RAISE".
 """
 from __future__ import annotations
 
@@ -81,7 +83,7 @@ PG_TRIGGERS = (
     """CREATE OR REPLACE FUNCTION wf_declared_immutable()
 RETURNS TRIGGER AS $$
 BEGIN
-    RAISE EXCEPTION '% is append-only', TG_TABLE_NAME;
+    RAISE EXCEPTION USING MESSAGE = TG_TABLE_NAME || ' is append-only';
 END;
 $$ LANGUAGE plpgsql""",
 ) + tuple(
