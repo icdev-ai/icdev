@@ -556,9 +556,14 @@ Capability-sheet entries follow each new tool.
   genesis, 3 chained), no audit-chain finding. With the window widened to the
   October rows, `no_provenance` still counts the 52 old calls: they really have
   no record, and they leave the default 168-hour window on their own.
-- PostgreSQL path checked on a throwaway `postgres:16` container (never the
-  live database): migration, three governed calls with provenance `pass`, chain
-  intact, UPDATE and DELETE refused, a tampered row reported by the twin.
+- PostgreSQL (never the live database): `bootstrap_pg.py` on a fresh database
+  of the scratch server `icdev-scratch-pg` applies migration 20261114175314 with
+  no failed migration; `tests/test_cortex_audit_integrity_pg.py` (in
+  `tests/pg_tier_allowlist.txt`) passes there under `ICDEV_PYTEST_PG=1`:
+  provenance lands and joins, rows read back from JSONB/TIMESTAMP/BOOLEAN hash to
+  their `row_hash`, the PL/pgSQL triggers refuse UPDATE and DELETE (their RAISE
+  has no `%`), and a row altered inside a rolled-back transaction is a break.
+  `pg_pytest_tier.py --json`: ok.
 - Not changed: a cache hit (`tools/cortex/cache.audit_hit`) still writes a
   chained audit row with no provenance id of its own; the twin does not count it
   (its outcome is `cache`, not `operation`). Gap counts unchanged (62).

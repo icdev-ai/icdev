@@ -1,1 +1,2 @@
 tests/test_cortex_audit_integrity.py
+tests/test_cortex_audit_integrity_pg.py
