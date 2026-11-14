@@ -65,14 +65,11 @@
     {
       "cells": {
         "ai_native": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
+          "evidence": [
+            "ace_checkpoints read-only, tool_authorization tier 'read'"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -215,22 +212,20 @@
         "gui": {
           "evidence": [
             "/coworker/<instance_id> linked from a nav page",
+            "/coworker/chat linked from a nav page",
+            "ace_api.api_ace_chat called from tools/dashboard/templates/ace/chat.html",
             "ace_api.api_launch called from tools/dashboard/templates/coworker/index.html",
             "ace_api.api_session_rerun called from tools/dashboard/templates/ace/session_detail.html",
             "nav links /coworker",
             "page /coworker renders coworker/index.html",
             "page /coworker/ renders coworker/index.html",
             "page /coworker/<instance_id> renders coworker/instance.html",
+            "page /coworker/chat renders ace/chat.html",
             "page /coworker/live/<instance_id> renders ace/live.html",
             "registry entry 'ace'"
           ],
-          "gaps": [
-            {
-              "detail": "mutating route /api/ace/chat is called by no page",
-              "id": "gui:uncalled:ace_api.api_ace_chat"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "twin": {
           "evidence": [],
@@ -289,7 +284,7 @@
           "evidence": [
             "/coworker/sessions/<session_id> linked from a nav page",
             "/coworker/trust linked from a nav page",
-            "ace_api.api_iqe_query called from tools/dashboard/templates/coworker/index.html",
+            "ace_api.api_iqe_query called from tools/dashboard/templates/ace/chat.html",
             "ace_api.api_session_eval_post called from tools/dashboard/templates/ace/evals.html",
             "nav links /coworker/sessions",
             "page /coworker/evals renders ace/evals.html",
@@ -299,13 +294,8 @@
             "page /coworker/trust renders ace/trust.html",
             "registry entry 'ace'"
           ],
-          "gaps": [
-            {
-              "detail": "mutating route /api/ace/events/emit is called by no page",
-              "id": "gui:uncalled:ace_api.api_ace_events_emit"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "twin": {
           "evidence": [],
@@ -319,7 +309,7 @@
         },
         "workflow": {
           "evidence": [
-            "3 mutating route(s), none a decision a person takes"
+            "2 mutating route(s), none a decision a person takes"
           ],
           "gaps": [],
           "status": "n/a"
@@ -383,15 +373,11 @@
       "cells": {
         "ai_native": {
           "evidence": [
-            "cortex_agent_launch mutating, approval tier 'unknown' (default_tier) halts"
+            "cortex_agent_launch mutating, approval tier 'unknown' (default_tier) halts",
+            "cortex_agent_launches read-only, tool_authorization tier 'read'"
           ],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -448,14 +434,11 @@
     {
       "cells": {
         "ai_native": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
+          "evidence": [
+            "cortex_airgap_posture read-only, tool_authorization tier 'read'"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -469,15 +452,12 @@
         },
         "gui": {
           "evidence": [
+            "/cortex/airgap linked from a nav page",
+            "page /cortex/airgap renders cortex/airgap.html",
             "registry entry 'cortex'"
           ],
-          "gaps": [
-            {
-              "detail": "no GET route of this feature renders a template",
-              "id": "gui:no-page"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "twin": {
           "evidence": [],
@@ -504,14 +484,11 @@
     {
       "cells": {
         "ai_native": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
+          "evidence": [
+            "cortex_findings_list read-only, tool_authorization tier 'read'"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -561,15 +538,11 @@
       "cells": {
         "ai_native": {
           "evidence": [
-            "cortex_govern mutating, approval tier 'unknown' (default_tier) halts"
+            "cortex_govern mutating, approval tier 'unknown' (default_tier) halts",
+            "cortex_trust_chain read-only, tool_authorization tier 'read'"
           ],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -583,19 +556,13 @@
         },
         "gui": {
           "evidence": [
+            "/cortex/govern linked from a nav page",
+            "cortex.api_v1_govern called from tools/dashboard/templates/cortex/govern.html",
+            "page /cortex/govern renders cortex/govern.html",
             "registry entry 'cortex'"
           ],
-          "gaps": [
-            {
-              "detail": "no GET route of this feature renders a template",
-              "id": "gui:no-page"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/govern is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_govern"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "twin": {
           "evidence": [],
@@ -644,35 +611,17 @@
         },
         "gui": {
           "evidence": [
+            "/cortex/verbs linked from a nav page",
+            "cortex.api_v1_classify called from tools/dashboard/templates/cortex/verbs.html",
+            "cortex.api_v1_complete called from tools/dashboard/templates/cortex/verbs.html",
+            "cortex.api_v1_extract called from tools/dashboard/templates/cortex/verbs.html",
+            "cortex.api_v1_reason called from tools/dashboard/templates/cortex/verbs.html",
+            "cortex.api_v1_resolve called from tools/dashboard/templates/cortex/verbs.html",
+            "page /cortex/verbs renders cortex/verbs.html",
             "registry entry 'cortex'"
           ],
-          "gaps": [
-            {
-              "detail": "no GET route of this feature renders a template",
-              "id": "gui:no-page"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/classify is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_classify"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/complete is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_complete"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/extract is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_extract"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/reason is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_reason"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/resolve is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_resolve"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "twin": {
           "evidence": [],
@@ -699,14 +648,11 @@
     {
       "cells": {
         "ai_native": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
+          "evidence": [
+            "cortex_intake_sessions read-only, tool_authorization tier 'read'"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -720,23 +666,14 @@
         },
         "gui": {
           "evidence": [
+            "/cortex/intake linked from a nav page",
+            "cortex.api_v1_intake_session_create called from tools/dashboard/templates/cortex/intake.html",
+            "cortex.api_v1_intake_turn called from tools/dashboard/templates/cortex/intake.html",
+            "page /cortex/intake renders cortex/intake.html",
             "registry entry 'cortex'"
           ],
-          "gaps": [
-            {
-              "detail": "no GET route of this feature renders a template",
-              "id": "gui:no-page"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/intake/session is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_intake_session_create"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/intake/turn is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_intake_turn"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "twin": {
           "evidence": [],
@@ -763,14 +700,11 @@
     {
       "cells": {
         "ai_native": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
+          "evidence": [
+            "cortex_metrics read-only, tool_authorization tier 'read'"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -816,14 +750,11 @@
     {
       "cells": {
         "ai_native": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
+          "evidence": [
+            "cortex_pmo_status read-only, tool_authorization tier 'read'"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -837,40 +768,20 @@
         },
         "gui": {
           "evidence": [
+            "/cortex/pmo linked from a nav page",
+            "cortex.api_v1_bom called from tools/dashboard/templates/cortex/pmo.html",
+            "cortex.api_v1_cost_volume called from tools/dashboard/templates/cortex/pmo.html",
+            "cortex.api_v1_dashboard called from tools/dashboard/templates/cortex/pmo.html",
+            "cortex.api_v1_slides called from tools/dashboard/templates/cortex/pmo.html",
+            "cortex.api_v1_staffing_matrix called from tools/dashboard/templates/cortex/pmo.html",
+            "cortex.api_v1_win_themes called from tools/dashboard/templates/cortex/pmo.html",
+            "page /cortex/pmo renders cortex/pmo.html",
             "registry entry 'cortex'"
           ],
           "gaps": [
             {
-              "detail": "no GET route of this feature renders a template",
-              "id": "gui:no-page"
-            },
-            {
               "detail": "mutating route /cortex/api/v1/award is called by no page",
               "id": "gui:uncalled:cortex.api_v1_award"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/bom is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_bom"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/cost_volume is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_cost_volume"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/dashboard is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_dashboard"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/slides is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_slides"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/staffing_matrix is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_staffing_matrix"
-            },
-            {
-              "detail": "mutating route /cortex/api/v1/win_themes is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_win_themes"
             }
           ],
           "status": "gap"
@@ -927,7 +838,7 @@
         "gui": {
           "evidence": [
             "cortex.api_chat called from tools/dashboard/templates/cortex/index.html",
-            "cortex.api_iqe_query called from tools/dashboard/templates/cortex/index.html",
+            "cortex.api_iqe_query called from tools/dashboard/templates/cortex/airgap.html",
             "cortex.api_v1_ask machine surface (stated reason)",
             "cortex.api_v1_search machine surface (stated reason)",
             "nav links /cortex",
@@ -962,14 +873,11 @@
     {
       "cells": {
         "ai_native": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
+          "evidence": [
+            "cortex_service_keys read-only, tool_authorization tier 'read'"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -983,15 +891,12 @@
         },
         "gui": {
           "evidence": [
+            "/cortex/service-keys linked from a nav page",
+            "page /cortex/service-keys renders cortex/service_keys.html",
             "registry entry 'cortex'"
           ],
-          "gaps": [
-            {
-              "detail": "no GET route of this feature renders a template",
-              "id": "gui:no-page"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "twin": {
           "evidence": [],
@@ -1018,14 +923,11 @@
     {
       "cells": {
         "ai_native": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no declared read-only MCP tool serves this feature",
-              "id": "ai:no-read-tool"
-            }
+          "evidence": [
+            "coworkers_roster read-only, tool_authorization tier 'read'"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "architecture": {
           "evidence": [],
@@ -1090,7 +992,7 @@
         "workflow": 0
       },
       "ace.hitl": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
         "gui": 0,
         "twin": 1,
@@ -1106,14 +1008,14 @@
       "ace.runs": {
         "ai_native": 0,
         "architecture": 1,
-        "gui": 1,
+        "gui": 0,
         "twin": 1,
         "workflow": 2
       },
       "ace.trust_sessions": {
         "ai_native": 0,
         "architecture": 1,
-        "gui": 1,
+        "gui": 0,
         "twin": 1,
         "workflow": 0
       },
@@ -1125,58 +1027,58 @@
         "workflow": 0
       },
       "cortex.agent_launch": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
         "gui": 0,
         "twin": 1,
         "workflow": 2
       },
       "cortex.airgap_guard": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
-        "gui": 1,
+        "gui": 0,
         "twin": 1,
         "workflow": 0
       },
       "cortex.findings": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
         "gui": 0,
         "twin": 1,
         "workflow": 1
       },
       "cortex.govern": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
-        "gui": 2,
+        "gui": 0,
         "twin": 1,
         "workflow": 0
       },
       "cortex.governed_verbs": {
         "ai_native": 0,
         "architecture": 1,
-        "gui": 6,
+        "gui": 0,
         "twin": 1,
         "workflow": 0
       },
       "cortex.intake": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
-        "gui": 3,
+        "gui": 0,
         "twin": 1,
         "workflow": 0
       },
       "cortex.metrics": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
         "gui": 0,
         "twin": 1,
         "workflow": 0
       },
       "cortex.pmo": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
-        "gui": 8,
+        "gui": 1,
         "twin": 1,
         "workflow": 2
       },
@@ -1188,14 +1090,14 @@
         "workflow": 0
       },
       "cortex.service_keys": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
-        "gui": 1,
+        "gui": 0,
         "twin": 1,
         "workflow": 0
       },
       "cwk.canvas": {
-        "ai_native": 1,
+        "ai_native": 0,
         "architecture": 1,
         "gui": 0,
         "twin": 1,
@@ -1203,13 +1105,13 @@
       }
     },
     "gaps_by_rule": {
-      "ai_native": 10,
+      "ai_native": 0,
       "architecture": 17,
-      "gui": 24,
+      "gui": 2,
       "twin": 17,
       "workflow": 11
     },
-    "gaps_total": 79
+    "gaps_total": 47
   },
   "tool": "feature_audit",
   "version": 1

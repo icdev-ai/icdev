@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Cortex PMO — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="margin-bottom:20px;">
+  <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">📁 Cortex PMO</h2>
+  <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;max-width:900px;">
+    The capture and bid verbs a PMO tool (or you) sends to Cortex: a deck, cited win themes, an evidenced
+    staffing matrix, a cost volume, an exported dashboard, and a bill-of-materials reconcile. Every theme and
+    every person must carry evidence or the route refuses it. Two verbs are a person's decision and are not taken
+    here: <strong style="color:#b8d0e8;">award</strong> (a won bid becoming a contract) and the
+    <strong style="color:#b8d0e8;">BOM credibility designation</strong>. The BOM card below sends your files with no
+    designation, so the engine only proposes one and says so (<code style="color:#b8d0e8;">set_by: ai_proposed</code>).
+    · <a href="{{ url_for('cortex.index') }}" style="color:#5aa9e6;">← back to Cortex</a>
+  </p>
+</div>
+
+<script>
+var CORTEX_PMO_PATHS = {
+  slides: '/cortex/api/v1/slides',
+  win_themes: '/cortex/api/v1/win_themes',
+  staffing_matrix: '/cortex/api/v1/staffing_matrix',
+  cost_volume: '/cortex/api/v1/cost_volume',
+  dashboard: '/cortex/api/v1/dashboard',
+  bom: '/cortex/api/v1/bom'
+};
+</script>
+{% include "cortex/_rest_runner.html" %}
+
+<!-- What is registered against one opportunity (read-only) -->
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;margin-bottom:20px;">
+  <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 8px;">Opportunity status</h3>
+  <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;">Read-only: the win themes, key personnel and latest cost volume registered for one opportunity.</p>
+  <label for="pmo-opp" style="color:#7a8cb0;font-size:11px;">Opportunity id</label>
+  <input id="pmo-opp" value="{{ opportunity_id }}" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;margin-left:6px;">
+  <button type="button" onclick="pmoStatus()" style="background:#0f2a4a;color:#b8d0e8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Show</button>
+  <div id="pmo-status-out" style="margin-top:10px;"></div>
+</div>
+<script>
+function pmoStatus() {
+  var opp = document.getElementById('pmo-opp').value.trim();
+  cortexGet('/cortex/api/pmo/status?opportunity_id=' + encodeURIComponent(opp))
+    .then(function(res) { cortexShow('pmo-status-out', res); });
+}
+</script>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;margin-bottom:20px;">
+  {% for v in verbs if v.verb in examples %}
+  <div id="pmo-{{ v.verb }}" style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 4px;">{{ v.verb | replace('_', ' ') | title }}</h3>
+    <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;">Writes: {{ v.writes }} · service-key scope <code style="color:#b8d0e8;">{{ v.scope }}</code>{% if not v.default_grant %} (granted explicitly){% endif %}</p>
+    <label for="pmo-body-{{ v.verb }}" style="color:#7a8cb0;font-size:11px;">Request body (JSON)</label>
+    <textarea id="pmo-body-{{ v.verb }}" rows="7" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-family:monospace;font-size:12px;">{{ examples[v.verb] | tojson(indent=2) }}</textarea>
+    <button type="button" onclick="cortexRun(CORTEX_PMO_PATHS['{{ v.verb }}'], 'pmo-body-{{ v.verb }}', 'pmo-out-{{ v.verb }}')"
+      style="margin-top:8px;background:#0f2a4a;color:#b8d0e8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Send</button>
+    <div id="pmo-out-{{ v.verb }}" style="margin-top:10px;"></div>
+  </div>
+  {% endfor %}
+
+  <div id="pmo-bom" style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 4px;">BOM reconcile</h3>
+    <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;">Pick quotes, workbooks or inventories. They are parsed in a temporary directory and deleted; nothing is stored. No model runs. Credibility tiers in the reply are the engine's proposal, never a designation.</p>
+    <input id="pmo-bom-files" type="file" multiple style="color:#b8d0e8;font-size:12px;">
+    <button type="button" onclick="pmoBom()" style="margin-top:8px;background:#0f2a4a;color:#b8d0e8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Reconcile</button>
+    <div id="pmo-out-bom" style="margin-top:10px;"></div>
+  </div>
+</div>
+<script>
+function pmoBom() {
+  var files = Array.prototype.slice.call(document.getElementById('pmo-bom-files').files || []);
+  if (!files.length) { document.getElementById('pmo-out-bom').textContent = 'Pick at least one file.'; return; }
+  Promise.all(files.map(function(f) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function() { resolve({filename: f.name, content_base64: String(reader.result).split(',')[1] || ''}); };
+      reader.onerror = reject;
+      reader.readAsDataURL(f);
+    });
+  })).then(function(documents) {
+    // No role or credibility_tier is sent: that designation is a person's decision.
+    return cortexPost(CORTEX_PMO_PATHS.bom, {documents: documents});
+  }).then(function(res) { cortexShow('pmo-out-bom', res); })
+    .catch(function(e) { document.getElementById('pmo-out-bom').textContent = 'Request failed: ' + e; });
+}
+</script>
+
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+  <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 8px;">Verb catalog</h3>
+  <ul style="margin:0;padding-left:18px;color:#c8d6ea;font-size:12px;">
+    {% for v in verbs %}
+    <li><code style="color:#b8d0e8;">{{ v.verb }}</code> — writes {{ v.writes }}; scope {{ v.scope }}{% if v.decision %} · <span style="color:#f0c060;">a person's decision, taken through its workflow, not on this page</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cortex" %}
+{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Cortex" %}
+{% set iqe_examples = [
+  {"label": "Governance audit", "query": "foreach a in cortex.audit select a.function, a.outcome, a.blocked, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

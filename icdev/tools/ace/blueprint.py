@@ -351,6 +351,12 @@ def sessions_list():
     return _render_page("ace/sessions.html")
 
 
+@ace_bp.route("/chat")
+def chat_page():
+    """Multi-turn ACE chat with persisted history; drives ``POST /api/ace/chat`` (icx-cnf-05)."""
+    return _render_page("ace/chat.html")
+
+
 @ace_bp.route("/sessions/<session_id>")
 def session_detail(session_id: str):
     """Agent session replay — turn-by-turn detail view for one session."""
@@ -1664,24 +1670,11 @@ def api_ace_events():
         return jsonify({"error": str(exc)}), 500
 
 
-@ace_api_bp.route("/events/emit", methods=["POST"])
-def api_ace_events_emit():
-    """Manually emit an ACE event (for testing / canvas integration)."""
-    try:
-        from icdev.tools.ace.event_bus import emit, DISPATCH_TOPICS
-        body = request.get_json(silent=True) or {}
-        topic = body.get("topic", "")
-        if topic not in DISPATCH_TOPICS:
-            return jsonify({"error": f"Unknown topic. Valid: {sorted(DISPATCH_TOPICS)}"}), 400
-        event_id = emit(
-            topic=topic,
-            payload=body.get("payload", {}),
-            source_canvas=body.get("source_canvas", "manual"),
-            source_id=body.get("source_id", ""),
-        )
-        return jsonify({"ok": True, "event_id": event_id})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+# POST /api/ace/events/emit was retired here (icx-cnf-05). It imported ``emit``
+# and ``DISPATCH_TOPICS`` from ``icdev.tools.ace.event_bus``, which defines
+# neither (the module is the per-instance SSE queue only), so every call answered
+# 500. No page, script or test called it. The topics route below says the same
+# registry is missing and answers 404 until it exists.
 
 
 @ace_api_bp.route("/events/topics", methods=["GET"])

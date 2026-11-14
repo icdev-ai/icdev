@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Cortex Intake — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="margin-bottom:20px;">
+  <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">📝 Cortex Intake</h2>
+  <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;max-width:900px;">
+    Capture a customer's ask into a real RICOAS intake session, the same one a PMO tool opens over the intake
+    bridge. The customer's words are kept verbatim as the first turn. Each turn passes the TRUST injection
+    screen before it reaches the intake engine. A Task Lead continues the session in the full requirements chat
+    (the <em>Continue</em> link). · <a href="{{ url_for('cortex.index') }}" style="color:#5aa9e6;">← back to Cortex</a>
+  </p>
+</div>
+{% include "cortex/_rest_runner.html" %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;margin-bottom:20px;">
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 8px;">New session</h3>
+    <label for="intake-customer" style="color:#7a8cb0;font-size:11px;">Customer name</label>
+    <input id="intake-customer" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;margin-bottom:6px;">
+    <label for="intake-org" style="color:#7a8cb0;font-size:11px;">Customer organisation</label>
+    <input id="intake-org" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;margin-bottom:6px;">
+    <label for="intake-ask" style="color:#7a8cb0;font-size:11px;">The ask, in the customer's words</label>
+    <textarea id="intake-ask" rows="5" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-size:12px;"></textarea>
+    <button type="button" onclick="intakeCreate()" style="margin-top:8px;background:#0f2a4a;color:#b8d0e8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Open session</button>
+    <div id="intake-create-out" style="margin-top:10px;"></div>
+  </div>
+
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 8px;">Next turn</h3>
+    <label for="intake-session" style="color:#7a8cb0;font-size:11px;">Session id</label>
+    <input id="intake-session" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;margin-bottom:6px;">
+    <label for="intake-message" style="color:#7a8cb0;font-size:11px;">Customer message</label>
+    <textarea id="intake-message" rows="4" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-size:12px;"></textarea>
+    <button type="button" onclick="intakeTurn()" style="margin-top:8px;background:#0f2a4a;color:#b8d0e8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Send turn</button>
+    <button type="button" onclick="intakeShow()" style="margin-top:8px;background:#0f2a4a;color:#b8d0e8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Show conversation</button>
+    <div id="intake-turn-out" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+  <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 8px;">Bridge sessions</h3>
+  <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;">Sessions opened through this bridge, newest first (read-only).</p>
+  <div id="intake-sessions"><span style="color:#7a8cb0;font-size:12px;">Loading…</span></div>
+</div>
+
+<script>
+function intakeCreate() {
+  var body = {
+    customer_name: document.getElementById('intake-customer').value.trim(),
+    customer_org: document.getElementById('intake-org').value.trim(),
+    verbatim_ask: document.getElementById('intake-ask').value
+  };
+  cortexPost('/cortex/api/v1/intake/session', body).then(function(res) {
+    cortexShow('intake-create-out', res);
+    if (res.json && res.json.session_id) {
+      document.getElementById('intake-session').value = res.json.session_id;
+      intakeList();
+    }
+  });
+}
+
+function intakeTurn() {
+  var body = {
+    session_id: document.getElementById('intake-session').value.trim(),
+    message: document.getElementById('intake-message').value
+  };
+  cortexPost('/cortex/api/v1/intake/turn', body).then(function(res) { cortexShow('intake-turn-out', res); });
+}
+
+function intakeShow() {
+  var sid = document.getElementById('intake-session').value.trim();
+  if (!sid) { return; }
+  cortexGet('/cortex/api/v1/intake/session/' + encodeURIComponent(sid))
+    .then(function(res) { cortexShow('intake-turn-out', res); });
+}
+
+function intakeList() {
+  cortexGet('/cortex/api/intake/sessions').then(function(res) {
+    var el = document.getElementById('intake-sessions');
+    var rows = (res.json && res.json.sessions) || [];
+    if (res.json && res.json.status === 'unavailable') {
+      el.innerHTML = '<span style="color:#f87171;font-size:12px;">Intake sessions could not be read: ' + cortexEsc(res.json.error) + '</span>';
+      return;
+    }
+    if (!rows.length) {
+      el.innerHTML = '<span style="color:#7a8cb0;font-size:12px;">No bridge sessions yet.</span>';
+      return;
+    }
+    el.innerHTML = '<ul style="margin:0;padding-left:18px;color:#c8d6ea;font-size:12px;">' + rows.map(function(s) {
+      return '<li><code>' + cortexEsc(s.id) + '</code> · ' + cortexEsc(s.customer_name) + ' · ' + cortexEsc(s.status) +
+        ' · readiness ' + cortexEsc(s.readiness_score) + ' · <a style="color:#5aa9e6;" href="' + cortexEsc(s.continue_url) + '">Continue</a></li>';
+    }).join('') + '</ul>';
+  });
+}
+intakeList();
+</script>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cortex" %}
+{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Cortex" %}
+{% set iqe_examples = [
+  {"label": "Recent sessions", "query": "foreach s in cortex.sessions select s.session_id, s.mode, s.domain, s.status"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

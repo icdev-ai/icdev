@@ -8,8 +8,14 @@
     <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🧠 Cortex</h2>
     <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Unified AI layer — one governed facade over RAG, knowledge graph, documents, and keyword search · complete · classify · extract · search · ask · govern · agent</p>
   </div>
-  <div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
     <a href="{{ url_for('cortex.metrics_page') }}" style="color:#5aa9e6;font-size:12px;border:1px solid #1e3a6e;border-radius:5px;padding:6px 12px;text-decoration:none;">📊 Metrics</a>
+    <a href="{{ url_for('cortex.verbs_page') }}" title="Run resolve, complete, reason, classify or extract" style="color:#5aa9e6;font-size:12px;border:1px solid #1e3a6e;border-radius:5px;padding:6px 12px;text-decoration:none;">🧩 Verbs</a>
+    <a href="{{ url_for('cortex.govern_page') }}" title="The TRUST chain, its outcomes and a dry run" style="color:#5aa9e6;font-size:12px;border:1px solid #1e3a6e;border-radius:5px;padding:6px 12px;text-decoration:none;">🛡️ TRUST chain</a>
+    <a href="{{ url_for('cortex.pmo_page') }}" title="Decks, win themes, staffing, cost, dashboards, BOM" style="color:#5aa9e6;font-size:12px;border:1px solid #1e3a6e;border-radius:5px;padding:6px 12px;text-decoration:none;">📁 PMO</a>
+    <a href="{{ url_for('cortex.intake_page') }}" title="Capture a customer ask into RICOAS intake" style="color:#5aa9e6;font-size:12px;border:1px solid #1e3a6e;border-radius:5px;padding:6px 12px;text-decoration:none;">📝 Intake</a>
+    <a href="{{ url_for('cortex.airgap_page') }}" title="Air-gap switch and readiness" style="color:#5aa9e6;font-size:12px;border:1px solid #1e3a6e;border-radius:5px;padding:6px 12px;text-decoration:none;">🛰️ Air-gap</a>
+    <a href="{{ url_for('cortex.service_keys_page') }}" title="Service keys and scopes (admin, ISSO)" style="color:#5aa9e6;font-size:12px;border:1px solid #1e3a6e;border-radius:5px;padding:6px 12px;text-decoration:none;">🔑 Service keys</a>
   </div>
 </div>
 

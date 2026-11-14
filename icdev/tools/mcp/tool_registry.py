@@ -8895,6 +8895,77 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    # -- console reads (icx-cnf-05 — Cortex, ACE, Co-Workers) --------------
+    "cortex_pmo_status": {
+        "category": "cortex",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cortex_pmo_status",
+        "description": "Read what the Cortex PMO verbs have registered against one opportunity: its win themes, key personnel mappings and latest cost volume, plus the verb catalog (what each verb writes, the service-key scope it needs, and which verbs -- award, the BOM credibility designation -- are a person's decision). Read-only; registers, prices and awards nothing.",
+        "input_schema": {"type": "object", "properties": {"opportunity_id": {"type": "string", "description": "Opportunity id; omit for the verb catalog only"}}},
+    },
+    "cortex_intake_sessions": {
+        "category": "cortex",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cortex_intake_sessions",
+        "description": "List the RICOAS intake sessions the Cortex intake bridge opened (customer, status, readiness, turn count, origin, where a Task Lead continues it), newest first, whitelisted fields only. Read-only; opens no session and sends no turn.",
+        "input_schema": {"type": "object", "properties": {"tenant_id": {"type": "string", "description": "Only sessions bound to this bridge tenant"}, "limit": {"type": "integer", "default": 50, "description": "Max sessions (1-200)"}}},
+    },
+    "cortex_trust_chain": {
+        "category": "cortex",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cortex_trust_chain",
+        "description": "Read the Cortex TRUST governance chain: gate order, the gates no profile may skip, the declared profiles, and what the gates did over a trailing window (calls, blocked, outcomes, per-gate timing) from the append-only cortex_audit trail. The read-only counterpart of cortex_govern, which runs the chain and therefore writes audit and provenance rows.",
+        "input_schema": {"type": "object", "properties": {"window_hours": {"type": "integer", "default": 24, "description": "Trailing window in hours (1-720)"}}},
+    },
+    "cortex_findings_list": {
+        "category": "cortex",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cortex_findings_list",
+        "description": "List persisted Cortex resolution findings (conflicts and gaps between backends), newest first, with the stats that say why an empty set is empty (never measured vs measured clean). Read-only; adjudicates nothing -- a conflict is a finding a person adjudicates.",
+        "input_schema": {"type": "object", "properties": {"tenant_id": {"type": "string", "default": "default", "description": "Tenant whose findings to read"}, "finding_type": {"type": "string", "description": "Only this finding type (e.g. conflict, gap)"}, "entity": {"type": "string", "description": "Substring match on the entity label or key"}, "limit": {"type": "integer", "default": 50, "description": "Max findings (1-200)"}}},
+    },
+    "cortex_metrics": {
+        "category": "cortex",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cortex_metrics",
+        "description": "Read the Cortex governance, usage and spend rollup over the append-only cortex_audit trail (the same figures /cortex/metrics shows): calls, blocked, block rate, redactions, cost and what the cost covers, latency, and breakdowns by function, outcome, domain, tenant, model and gate. Status says idle vs unavailable. Read-only.",
+        "input_schema": {"type": "object", "properties": {"window_hours": {"type": "integer", "default": 24, "description": "Trailing window in hours (1-720)"}}},
+    },
+    "cortex_agent_launches": {
+        "category": "cortex",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cortex_agent_launches",
+        "description": "List governed Cortex agent launches (cortex.agent calls) from the append-only cortex_audit trail, newest first: who, when, outcome, blocked. Read-only; launches nothing (cortex_agent_launch does, behind the approval gate).",
+        "input_schema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 25, "description": "Max launches (1-200)"}}},
+    },
+    "cortex_service_keys": {
+        "category": "cortex",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cortex_service_keys",
+        "description": "List Cortex service keys by id and label with tenant, classification ceiling, scopes and status (never the hash or the key prefix), plus the scope vocabulary: default scopes vs those granted explicitly. Read-only; grants, revokes and issues nothing.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "cortex_airgap_posture": {
+        "category": "cortex",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cortex_airgap_posture",
+        "description": "Read the Cortex air-gap posture: whether ICDEV_AIRGAP is on, which models it excludes, the fail-closed default, and whether the readiness invariant (every Cortex routing chain keeps a local-tier model) holds now, with the missing chains if not. Read-only.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "ace_checkpoints": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_checkpoints",
+        "description": "Read the pending mid-run HITL checkpoints of one ACE instance (tool, coworker, detail, when) and, given a suggestion id, the state of a suggested-team proposal. Read-only; resolves, confirms and declines nothing -- those are a person's decisions in the console.",
+        "input_schema": {"type": "object", "properties": {"instance_id": {"type": "string", "description": "ACE instance id"}, "suggestion_id": {"type": "string", "description": "Optional suggested-team proposal id"}}, "required": ["instance_id"]},
+    },
+    "coworkers_roster": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coworkers_roster",
+        "description": "List the Co-Workers roster the /coworkers canvas shows: chat personas and ACE autonomous roles (id, name, role, description, kind, tags), with counts by kind. Read-only, config-driven.",
+        "input_schema": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["persona", "ace"], "description": "Only this kind"}}},
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -9567,6 +9638,21 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # -- conformance -------------------------------------------------------
     # Reads the committed snapshot; writes nothing.
     "feature_conformance":                      True,
+    # -- console reads (icx-cnf-05) -----------------------------------------
+    # Each reads one model in tools/cortex/console.py (or the ACE HITL table, or
+    # the Co-Workers YAML roster); none writes a row, calls a model or runs the
+    # TRUST chain. cortex_govern stays mutating: running the chain writes the
+    # audit and provenance rows, so cortex_trust_chain is its read.
+    "cortex_pmo_status":                        True,
+    "cortex_intake_sessions":                   True,
+    "cortex_trust_chain":                       True,
+    "cortex_findings_list":                     True,
+    "cortex_metrics":                           True,
+    "cortex_agent_launches":                    True,
+    "cortex_service_keys":                      True,
+    "cortex_airgap_posture":                    True,
+    "ace_checkpoints":                          True,
+    "coworkers_roster":                         True,
 })
 
 

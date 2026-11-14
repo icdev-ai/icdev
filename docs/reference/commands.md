@@ -9872,6 +9872,28 @@ python tools/workflow/coherence_checker.py --check feature_conformance --json
 
 Console: `/twin-observatory/conformance`. MCP: `feature_conformance` (read-only).
 
+## Cortex, ACE and Co-Workers console pages and reads (icx-cnf-05)
+
+Pages (each linked from `/cortex`): `/cortex/verbs` (resolve, complete, reason,
+classify, extract), `/cortex/pmo` (slides, win themes, staffing, cost volume,
+dashboard, BOM reconcile; never award, never a BOM designation), `/cortex/intake`,
+`/cortex/govern` (TRUST chain, dry run, agent launches), `/cortex/service-keys`
+(admin, ISSO), `/cortex/airgap`; ACE: `/coworker/chat`. Read-only JSON beside them:
+
+```bash
+curl -s localhost:5050/cortex/api/pmo/status?opportunity_id=OPP-1
+curl -s localhost:5050/cortex/api/trust-chain?hours=24
+curl -s localhost:5050/cortex/api/agent-launches
+curl -s localhost:5050/cortex/api/intake/sessions
+curl -s localhost:5050/cortex/api/service-keys      # admin, isso
+curl -s localhost:5050/cortex/api/airgap
+```
+
+MCP (all read-only, tier `read`): `cortex_pmo_status`, `cortex_intake_sessions`,
+`cortex_trust_chain` (the read of `cortex_govern`, which stays mutating),
+`cortex_findings_list`, `cortex_metrics`, `cortex_agent_launches`,
+`cortex_service_keys`, `cortex_airgap_posture`, `ace_checkpoints`, `coworkers_roster`.
+
 ## Cards — the per-card incident records (xrv-docs-02)
 
 These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —

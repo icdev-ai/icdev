@@ -94,3 +94,54 @@ IQE_COLLECTIONS = ("cortex.chat_sessions", "cortex.audit", "cortex.search_histor
 # or, on a union, 3x that — into a single response body. A capped response says
 # so via ``truncated`` + ``max_rows`` rather than silently looking complete.
 IQE_MAX_ROWS = 500
+
+# ── Console pages for the REST verbs (icx-cnf-05) ─────────────────────────────
+# /cortex/verbs runs each governed verb through its /cortex/api/v1 route (the
+# template holds the literal paths, so the conformance audit can see them). The
+# example body is a starting point the person edits; the route validates it.
+CONSOLE_VERBS = [
+    {"key": "resolve", "label": "Resolve",
+     "desc": "Is one entity current, deprecated or superseded? Deterministic: no model runs.",
+     "example": {"entity": "TLS 1.1", "question": "Is it still allowed?"}},
+    {"key": "complete", "label": "Complete",
+     "desc": "Free-form completion through the governed model chain.",
+     "example": {"prompt": "Summarise the purpose of a system security plan in two sentences."}},
+    {"key": "reason", "label": "Reason",
+     "desc": "Multi-step reasoning: cot, debate or council.",
+     "example": {"prompt": "Should a CUI enclave allow outbound DNS?", "mode": "cot"}},
+    {"key": "classify", "label": "Classify",
+     "desc": "Pick exactly one label; falls back to deterministic heuristics offline.",
+     "example": {"text": "Patch the OpenSSL CVE on the web tier.",
+                 "labels": ["security", "feature", "documentation"]}},
+    {"key": "extract", "label": "Extract",
+     "desc": "Pull one JSON object that conforms to your schema.",
+     "example": {"text": "Jane Doe, ISSO, ext 4410.",
+                 "schema": {"type": "object",
+                            "properties": {"name": {"type": "string"},
+                                           "role": {"type": "string"}}}}},
+]
+
+# /cortex/pmo example bodies, keyed by verb. bom has no example: the page reads
+# files instead. award has none because the page never calls it (a person
+# decides an award through its workflow).
+PMO_EXAMPLES = {
+    "slides": {"title": "Capture review", "slides": [
+        {"slide_type": "bullets", "title": "Where we stand",
+         "bullets": ["Draft themes registered", "Cost volume pending rates"]}]},
+    "win_themes": {"opportunity_id": "OPP-EXAMPLE", "themes": [
+        {"statement": "Zero-downtime cutover proven on two prior moves.",
+         "theme_type": "win_theme", "evidence": "Past performance PP-12 [source: pp-12]"}]},
+    "staffing_matrix": {"opportunity_id": "OPP-EXAMPLE", "people": [
+        {"name": "A. Example", "proposed_lcat": "Senior Systems Engineer",
+         "qualification_verdict": "qualified", "source": "manual",
+         "evidence": [{"claim": "12 years RMF", "source": "resume-ae"}]}]},
+    "cost_volume": {"opportunity_id": "OPP-EXAMPLE", "contract_type": "ffp"},
+    "dashboard": {"title": "Bid status", "format": "html", "tiles": [
+        {"spec": {"kind": "kpis", "title": "Bid", "tiles": [
+            {"label": "Themes", "value": 1}]}}]},
+}
+
+# Who may list Cortex service keys in the console. Listing shows labels, tenants
+# and scopes (never a hash); granting and revoking are decisions with their own
+# workflow and are not on the page.
+SERVICE_KEY_VIEW_ROLES = ("admin", "isso")

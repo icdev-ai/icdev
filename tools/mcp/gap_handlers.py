@@ -4438,3 +4438,132 @@ def handle_feature_conformance(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_feature_conformance: %s", exc)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# console reads (icx-cnf-05) — Cortex, ACE, Co-Workers
+# ---------------------------------------------------------------------------
+# Each handler returns the same read model the console page renders
+# (tools/cortex/console.py for Cortex), so an agent and a person see one answer.
+# None writes, calls a model or runs the TRUST chain.
+
+
+def _cortex_read(fn, *args, **kwargs) -> dict:
+    try:
+        out = fn(*args, **kwargs)
+        out = dict(out)
+        out.setdefault("classification", CORTEX_CLASSIFICATION)
+        return out
+    except Exception as exc:  # noqa: BLE001 — a read reports its fault, never raises
+        logger.warning("%s: %s", getattr(fn, "__name__", "cortex read"), exc)
+        return {"error": str(exc)}
+
+
+def handle_cortex_pmo_status(args: dict) -> dict:
+    """MCP: what the PMO verbs registered against one opportunity, and the verb catalog."""
+    from tools.cortex.console import pmo_status
+
+    return _cortex_read(pmo_status, str(args.get("opportunity_id") or ""))
+
+
+def handle_cortex_intake_sessions(args: dict) -> dict:
+    """MCP: bridge-created RICOAS intake sessions, whitelisted fields only."""
+    from tools.cortex.console import intake_sessions
+
+    return _cortex_read(intake_sessions, tenant_id=str(args.get("tenant_id") or ""),
+                        limit=args.get("limit", 50))
+
+
+def handle_cortex_trust_chain(args: dict) -> dict:
+    """MCP: the TRUST chain's configuration and its gates' outcomes (read-only govern)."""
+    from tools.cortex.console import trust_chain
+
+    try:
+        hours = int(args.get("window_hours") or 24)
+    except (TypeError, ValueError):
+        hours = 24
+    return _cortex_read(trust_chain, max(1, min(hours, 24 * 30)))
+
+
+def handle_cortex_findings_list(args: dict) -> dict:
+    """MCP: persisted resolution findings and why an empty set is empty."""
+    from tools.cortex.console import findings
+
+    return _cortex_read(findings, tenant_id=str(args.get("tenant_id") or "default"),
+                        finding_type=args.get("finding_type") or None,
+                        entity=str(args.get("entity") or ""), limit=args.get("limit", 50))
+
+
+def handle_cortex_metrics(args: dict) -> dict:
+    """MCP: the cortex_audit governance/usage/spend rollup."""
+    from tools.cortex.console import metrics
+
+    return _cortex_read(metrics, args.get("window_hours", 24))
+
+
+def handle_cortex_agent_launches(args: dict) -> dict:
+    """MCP: governed cortex.agent calls from the audit trail."""
+    from tools.cortex.console import agent_launches
+
+    return _cortex_read(agent_launches, args.get("limit", 25))
+
+
+def handle_cortex_service_keys(args: dict) -> dict:
+    """MCP: service keys without hash or prefix, and the scope vocabulary."""
+    from tools.cortex.console import service_keys
+
+    return _cortex_read(service_keys, include_prefix=False)
+
+
+def handle_cortex_airgap_posture(args: dict) -> dict:
+    """MCP: air-gap switch, exclusions and the readiness invariant."""
+    from tools.cortex.console import airgap_posture
+
+    return _cortex_read(airgap_posture)
+
+
+def handle_ace_checkpoints(args: dict) -> dict:
+    """MCP: pending HITL checkpoints of one ACE instance, and a suggestion's state."""
+    instance_id = str(args.get("instance_id") or "").strip()
+    if not instance_id:
+        return {"error": "instance_id is required"}
+    try:
+        from icdev.tools.llm.agent_hitl import get_pending_hitl
+
+        out = {"classification": CORTEX_CLASSIFICATION, "instance_id": instance_id,
+               "checkpoints": get_pending_hitl(instance_id)}
+        out["count"] = len(out["checkpoints"])
+        suggestion_id = str(args.get("suggestion_id") or "").strip()
+        if suggestion_id:
+            from icdev.tools.ace import chat_trigger
+
+            proposal = chat_trigger.get_proposal(suggestion_id)
+            out["suggestion"] = None if not proposal else {
+                "suggestion_id": proposal.get("id"),
+                "state": proposal.get("state"),
+                "instance_id": proposal.get("instance_id") or "",
+                "expired": chat_trigger.is_expired(proposal),
+                "created_at": proposal.get("created_at") or "",
+            }
+        return out
+    except Exception as exc:  # noqa: BLE001 — a read reports its fault, never raises
+        logger.warning("handle_ace_checkpoints: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_coworkers_roster(args: dict) -> dict:
+    """MCP: the Co-Workers roster (personas and ACE roles)."""
+    try:
+        from tools.coworkers.registry import list_coworkers
+
+        kind = str(args.get("kind") or "").strip()
+        roster = [c.to_dict() for c in list_coworkers()]
+        counts = {"persona": sum(1 for c in roster if c["kind"] == "persona"),
+                  "ace": sum(1 for c in roster if c["kind"] == "ace")}
+        if kind:
+            roster = [c for c in roster if c["kind"] == kind]
+        return {"classification": CORTEX_CLASSIFICATION, "coworkers": roster,
+                "count": len(roster), "counts": counts}
+    except Exception as exc:  # noqa: BLE001 — a read reports its fault, never raises
+        logger.warning("handle_coworkers_roster: %s", exc)
+        return {"error": str(exc)}
