@@ -1,0 +1,138 @@
+# CUI // SP-CTI
+# ICDEV platform model: the feature conformance audit (tools/conformance). icx-cnf-04.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the
+# header of args/platform_model/cortex.yaml.
+
+component: twin_observatory
+project_id: icdev-platform
+
+elements:
+  - id: conformance.audit
+    type: sysml_element
+    kind: block
+    name: Feature conformance audit
+    features: [conformance.audit]
+    code:
+      - tools/conformance/feature_audit.py
+      - args/feature_conformance.yaml
+
+  - id: platform_model.seeder
+    type: sysml_element
+    kind: block
+    name: Platform model and its digital-thread seeder
+    features: [conformance.audit]
+    code:
+      - tools/mbse/platform_model.py
+      - tools/mbse/digital_thread.py
+
+interfaces:
+  - id: if.conformance.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /twin-observatory/conformance and /twin-observatory/api/conformance
+    features: [conformance.audit]
+    code:
+      - tools/twin_observatory/blueprint.py::conformance_page
+      - tools/twin_observatory/blueprint.py::api_conformance
+      - tools/dashboard/templates/twin_observatory/conformance.html
+
+  - id: if.conformance.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP feature_conformance and platform_model_trace tools
+    features: [conformance.audit]
+    code:
+      - tools/mcp/gap_handlers.py::handle_feature_conformance
+      - tools/mcp/gap_handlers.py::handle_platform_model_trace
+
+  - id: if.lineage.platform_model
+    type: sysml_element
+    kind: interface_block
+    name: Console /lineage platform model panel and /api/lineage/platform-model
+    features: [conformance.audit]
+    code:
+      - tools/dashboard/api/lineage.py::platform_model_trace
+      - tools/dashboard/templates/lineage.html
+
+requirements:
+  - id: PM-CNF-01
+    title: Each rule's gap is found, and only that rule's
+    text: >-
+      The audit finds a planted gap under its own rule for each of the five
+      rules; a stated reason excuses only its own rule and goes stale when the
+      evidence no longer needs it.
+    type: functional
+    priority: high
+    features: [conformance.audit]
+    elements: [conformance.audit]
+    controls: [CA-2, CA-7]
+    tests:
+      - tests/test_feature_conformance_audit.py::test_the_baseline_meets_all_five_rules
+      - tests/test_feature_conformance_audit.py::test_architecture_an_orphan_element_and_a_missing_test_are_gaps
+      - tests/test_feature_conformance_audit.py::test_a_stated_reason_excuses_only_its_own_rule
+      - tests/test_feature_conformance_audit.py::test_a_reason_that_excuses_nothing_is_stale
+
+  - id: PM-CNF-02
+    title: The audit is deterministic and its record cannot go stale unseen
+    text: >-
+      Two runs over one tree are byte-identical; a stale doc, snapshot or census
+      fails the check; the census ceiling may not be exceeded.
+    type: non_functional
+    priority: high
+    features: [conformance.audit]
+    elements: [conformance.audit]
+    controls: [CM-3, SI-7]
+    tests:
+      - tests/test_feature_conformance_audit.py::test_two_runs_and_a_shuffled_url_map_are_byte_identical
+      - tests/test_feature_conformance_audit.py::test_check_fails_on_a_stale_doc_snapshot_or_census
+      - tests/test_feature_conformance_audit.py::test_the_census_ceiling_may_not_be_exceeded
+
+  - id: PM-CNF-03
+    title: The console page and the MCP tool serve the snapshot read-only
+    text: >-
+      /twin-observatory/conformance and its JSON route render the committed
+      snapshot; feature_conformance is declared read-only and serves it.
+    type: interface
+    priority: medium
+    features: [conformance.audit]
+    elements: [conformance.audit, if.conformance.console, if.conformance.mcp]
+    controls: [AC-3]
+    tests:
+      - tests/test_feature_conformance_audit.py::test_the_console_page_and_api_render_the_snapshot
+      - tests/test_feature_conformance_audit.py::test_the_mcp_tool_is_declared_read_only_and_serves_the_snapshot
+
+  - id: PM-CNF-04
+    title: The platform model traces every requirement to real code and tests
+    text: >-
+      Every element names existing code, every cited test exists by file and
+      function, no element is an orphan, and a requirement with no test is
+      reported as a gap. Seeding writes the digital thread for project
+      icdev-platform, where find_orphans and find_gaps see none for a fully
+      traced feature and trace_forward and trace_backward resolve each link.
+    type: functional
+    priority: high
+    features: [conformance.audit]
+    elements: [platform_model.seeder]
+    controls: [CA-2, SA-11]
+    tests:
+      - tests/test_platform_model.py::test_the_shipped_model_validates
+      - tests/test_platform_model.py::test_an_invented_test_name_is_refused
+      - tests/test_platform_model.py::test_an_untested_requirement_is_a_gap_not_a_pass
+      - tests/test_platform_model.py::test_seeded_thread_has_no_orphans_or_gaps_for_traced_features
+      - tests/test_platform_model.py::test_mcp_trace_forward_and_backward_resolve_a_requirement
+
+  - id: PM-CNF-05
+    title: The trace is shown where the digital thread is viewed
+    text: >-
+      /api/lineage/platform-model returns each feature's requirement, element,
+      code and test chain with the thread's orphans and gaps, and the /lineage
+      page shows it; platform_model_trace serves the same read-only.
+    type: interface
+    priority: medium
+    features: [conformance.audit]
+    elements: [if.lineage.platform_model, if.conformance.mcp]
+    controls: [AC-3]
+    tests:
+      - tests/test_platform_model.py::test_lineage_route_and_page_show_the_trace
+      - tests/test_platform_model.py::test_mcp_platform_model_trace_is_read_only

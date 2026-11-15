@@ -277,7 +277,7 @@ def ace_env(wf_db, tmp_path, monkeypatch):
             launches.append(kw)
             return f"ace-{len(launches)}"
 
-        def abort(self, instance_id):
+        def abort(self, instance_id, actor="system"):  # the real signature (icx-cnf-04 passes actor)
             launches.append({"aborted": instance_id})
 
     monkeypatch.setattr(bp_mod.ACEController, "get_instance", classmethod(lambda cls: _Ctrl()))
