@@ -101,3 +101,4 @@ tests/pg_tier/test_aisg_audit_immutable_pg.py
 # owui-api-07: tenant_manager create_tenant/add_user/validate_api_key on a live PG platform DB;
 # creates and drops its own throwaway database, and swaps storage._pg_pool for the test.
 tests/pg_tier/test_tenant_manager_pg.py
+tests/test_twin_governance.py
