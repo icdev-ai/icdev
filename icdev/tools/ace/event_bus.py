@@ -9,6 +9,13 @@ Public API
 publish(instance_id, event)         - broadcast to all subscribers for the instance
 subscribe(instance_id, maxsize)     - returns a Queue; call unsubscribe when done
 unsubscribe(instance_id, q)         - remove the queue from the subscriber list
+
+This module is the SSE queue ONLY (``/api/ace/<id>/stream``). The durable log of
+ecosystem events that the dispatcher turns into recommendations is
+``icdev.tools.ace.event_log`` (icx-ace-01): ``emit``, ``get_pending``,
+``mark_processed``, ``store_result``, ``get_recent_results``, ``pending_count``.
+Commit 36d611a31 rewrote this file from that log into the queue and dropped those
+functions while their callers swallowed the ImportError; keep the two apart.
 """
 from __future__ import annotations
 

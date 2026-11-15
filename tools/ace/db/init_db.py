@@ -41,6 +41,17 @@ COWORKER_STATES: tuple[str, ...] = (
     "failed",        # terminated due to unrecoverable error
 )
 
+#: Events of the auto-dispatch grants log (icx-ace-01). The log is append-only;
+#: a grant's current state is derived from its events, never updated in place.
+GRANT_EVENTS: tuple[str, ...] = (
+    "granted",     # a holder turned auto on for (role, topic): reason, expiry, max_per_day
+    "revoked",     # a holder turned it off (immediate, no approval)
+    "suspended",   # the role's NOVA trust fell below trusted: back to recommend
+    "expired",     # the grant passed its expiry (recorded once, when first met)
+    "stop_all",    # a holder stopped every grant at once (no approval)
+    "resume_all",  # a holder lifted stop-all (the declared step)
+)
+
 # ---------------------------------------------------------------------------
 # DDL helpers
 # ---------------------------------------------------------------------------
@@ -52,6 +63,7 @@ def _check(values: tuple[str, ...]) -> str:
 
 _CHECK_INSTANCE_STATE = _check(INSTANCE_STATES)
 _CHECK_COWORKER_STATE = _check(COWORKER_STATES)
+_CHECK_GRANT_EVENT = _check(GRANT_EVENTS)
 
 SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS ace_instances (
@@ -157,9 +169,35 @@ CREATE TABLE IF NOT EXISTS ace_event_results (
     role_id         TEXT NOT NULL,
     instance_id     TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'dispatched',
-    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- icx-ace-01 (migration 20261115114944): the declared step a recommendation
+    -- waits on, the grant an auto-launch ran under, why, and when it last moved.
+    step_id         TEXT NOT NULL DEFAULT '',
+    grant_id        TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    updated_at      TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_ace_event_results_event ON ace_event_results(event_id);
+CREATE INDEX IF NOT EXISTS idx_ace_event_results_status ON ace_event_results(status);
+
+-- Auto-dispatch grants (icx-ace-01). Append-only: one row per event, the state
+-- of a grant is derived (tools/ace/auto_dispatch.py). grant_id '*' is the
+-- stop-all switch. See APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py.
+CREATE TABLE IF NOT EXISTS ace_dispatch_grants (
+    event_id        TEXT PRIMARY KEY,
+    grant_id        TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event {_CHECK_GRANT_EVENT}),
+    role_id         TEXT NOT NULL DEFAULT '',
+    topic           TEXT NOT NULL DEFAULT '',
+    expires_at      TEXT NOT NULL DEFAULT '',
+    max_per_day     INTEGER NOT NULL DEFAULT 0,
+    reason          TEXT NOT NULL DEFAULT '',
+    actor           TEXT NOT NULL DEFAULT '',
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ace_dispatch_grants_grant ON ace_dispatch_grants(grant_id);
 
 CREATE TABLE IF NOT EXISTS ace_sessions (
     session_id            TEXT PRIMARY KEY,
@@ -355,6 +393,12 @@ def init() -> None:
             "ALTER TABLE ace_audit_log ADD COLUMN control_refs TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE ace_sessions ADD COLUMN last_user_message TEXT",
             "ALTER TABLE ace_sessions ADD COLUMN last_agent_message TEXT",
+            # icx-ace-01: recommendations and auto-launches (PG: migration
+            # 20261115114944_ace_event_dispatch).
+            "ALTER TABLE ace_event_results ADD COLUMN step_id TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE ace_event_results ADD COLUMN grant_id TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE ace_event_results ADD COLUMN reason TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE ace_event_results ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''",
         ):
             try:
                 conn.execute(_ddl)
@@ -364,6 +408,17 @@ def init() -> None:
                 # the whole transaction on a failed DDL, so every later
                 # statement would fail too if the txn were left in that state.
                 conn.rollback()
+        # The grants log is append-only. On SQLite the triggers are made here;
+        # on PostgreSQL the migration makes them (a PL/pgSQL function).
+        from icdev.tools.db.storage import is_pg
+
+        if not is_pg(conn):
+            for op in ("UPDATE", "DELETE"):
+                conn.execute(
+                    f"CREATE TRIGGER IF NOT EXISTS ace_dispatch_grants_no_{op.lower()} "
+                    f"BEFORE {op} ON ace_dispatch_grants BEGIN SELECT RAISE(ABORT, "
+                    "'ace_dispatch_grants is append-only'); END")
+            conn.commit()
         # Repair state CHECK constraints that CREATE TABLE IF NOT EXISTS can't
         # fix on a pre-existing (live PG) table. No-op on SQLite.
         try:

@@ -9930,6 +9930,26 @@ python tools/workflow/coherence_checker.py --check hitl_workflow --json
 ```
 
 Console: `/decisions`. MCP: `workflow_decision_steps` (read-only).
+## ACE event log and dispatch — recommend by default, auto only under a grant (icx-ace-01)
+
+`tools/ace/event_log.py` records ACE events (topics derived from the role YAMLs).
+The event dispatcher, started by the dashboard server when
+`args/ace/auto_dispatch.yaml` says `dispatcher_enabled`, turns each event into a
+recommendation: a pending `decl-wft-ace-run-launch` step a person decides at
+`/decisions`. A role/topic launches on auto only under a live grant
+(`decl-wft-ace-auto-dispatch`): declared eligible in its role YAML, trust trusted
+or above, a reason, an expiry and a daily limit. Revoke and stop-all are
+immediate. Libraries, no CLI:
+
+```bash
+python -m pytest tests/ace -q                                  # log, dispatch, grants, twin, import guard
+python tools/conformance/feature_audit.py --check              # ace.trust_sessions owns the routes and tools
+```
+
+`from tools.ace.event_log import emit, get_recent_results, dispatch_topics`;
+`from tools.ace.auto_dispatch import grants, eligible, live_grant`.
+Console: `/coworker` (Event feed and Auto-dispatch panels), `/decisions`.
+MCP: `ace_events`, `ace_auto_dispatch_grants` (read-only).
 ## Governance twins — Cortex, ACE, Co-Workers, the conformance audit (icx-cnf-03)
 
 Observe a governed subsystem, record the evidence, replay it. Every finding names

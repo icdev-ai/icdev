@@ -122,6 +122,31 @@ class RoleStep:
         raise TypeError(f"Expected str or dict for step, got {type(raw)!r}")
 
 
+def _auto_dispatch_decl(data: dict[str, Any]) -> dict[str, Any]:
+    """A role's ``auto_dispatch`` block, checked (icx-ace-01). Raises ValueError.
+
+    An eligible topic must be one the role listens to, and the block must say
+    why: eligibility is a reviewed statement, so an unexplained one is refused
+    and the role is skipped with that reason, like an invalid tool list.
+    """
+    raw = data.get("auto_dispatch")
+    if not raw:
+        return {}
+    if not isinstance(raw, dict):
+        # ValueError, not TypeError: _parse_roles_dir skips a role on ValueError.
+        raise ValueError(f"{data.get('role_id')}: auto_dispatch must be a mapping")  # noqa: TRY004
+    topics = [str(t) for t in raw.get("eligible_topics") or []]
+    reason = str(raw.get("reason") or "").strip()
+    if topics and not reason:
+        raise ValueError(f"{data.get('role_id')}: auto_dispatch needs a reason")
+    listens = set((data.get("communication") or {}).get("listen_topics") or [])
+    stray = sorted(set(topics) - listens)
+    if stray:
+        raise ValueError(f"{data.get('role_id')}: auto_dispatch names topics the role does not "
+                         f"listen to: {', '.join(stray)}")
+    return {"eligible_topics": topics, "reason": reason} if topics else {}
+
+
 @dataclass
 class RoleTemplate:
     role_id: str
@@ -153,6 +178,11 @@ class RoleTemplate:
     # is routed through run_agent_loop_with_rubric with the delivery-pipeline
     # grader (build -> gates -> revise). Absent/empty/None = off (plain loop).
     rubric: str = ""
+    # Auto-dispatch eligibility (icx-ace-01): {eligible_topics: [...], reason: "..."}.
+    # Absent means the role never runs on auto; an event for it is always a
+    # recommendation a person decides. Eligibility alone launches nothing: a
+    # holder must also grant it (tools/ace/auto_dispatch.py).
+    auto_dispatch: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # Expose listen_topics at top level for dispatcher hot-path
@@ -183,6 +213,8 @@ class RoleTemplate:
             data.get("mode", "steps"),
         )
 
+        auto_dispatch = _auto_dispatch_decl(data)
+
         return cls(
             role_id=data["role_id"],
             display_name=data.get("display_name", data["role_id"]),
@@ -204,6 +236,7 @@ class RoleTemplate:
             agent_tools=list(data.get("agent_tools") or []),
             max_iterations=int(data.get("max_iterations", 12)),
             rubric=str(data.get("rubric") or ""),
+            auto_dispatch=auto_dispatch,
         )
 
 

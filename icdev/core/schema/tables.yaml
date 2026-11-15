@@ -4,7 +4,10 @@
 # Tables owned by the domain-neutral core (xit-decl-04). `rls: true` means the
 # row-security predicate applies; an explicit false is the generalisation of
 # get_canvas_connection. `declared_in` lists up to four declaring sources.
-rls_exempt: []
+rls_exempt:
+- ace_coworkers
+- ace_trust_ledger
+- wf_decision_steps
 tables:
   a2a_discovery_registry: core
   a2a_task_artifacts: core
@@ -15,6 +18,7 @@ tables:
   ace_audit_log: core
   ace_coworker_memory: core
   ace_coworkers: core
+  ace_dispatch_grants: core
   ace_event_results: core
   ace_events: core
   ace_instances: core

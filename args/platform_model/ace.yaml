@@ -83,6 +83,50 @@ elements:
       - tools/ace/blueprint.py::api_evals_list
       - tools/ace/blueprint.py::api_evals_trends
 
+  # icx-ace-01: the event log, the dispatcher and auto-dispatch grants.
+  - id: ace.event_log
+    type: sysml_element
+    kind: block
+    name: ACE event log (events, what each led to per role, derived topics)
+    features: [ace.trust_sessions]
+    code:
+      - tools/ace/event_log.py
+      - tools/ace/blueprint.py::api_ace_events
+      - tools/ace/blueprint.py::api_ace_event_topics
+      - tools/ace/controller.py::ACEController._emit_completion_event
+
+  - id: ace.dispatch
+    type: sysml_element
+    kind: block
+    name: ACE event dispatcher (recommend by default, auto only under a live grant)
+    features: [ace.trust_sessions]
+    code:
+      - tools/ace/event_dispatcher.py::ACEEventDispatcher
+      - tools/ace/event_dispatcher.py::launch_spec
+      - tools/workflow_hitl/declared.py::step_state
+
+  - id: ace.auto_dispatch
+    type: sysml_element
+    kind: block
+    name: ACE auto-dispatch grants (declared step to grant; revoke and stop-all are stops)
+    features: [ace.trust_sessions]
+    code:
+      - tools/ace/auto_dispatch.py
+      - tools/ace/role_loader.py::_auto_dispatch_decl
+      - tools/ace/blueprint.py::api_auto_dispatch_grant
+      - tools/ace/blueprint.py::api_auto_dispatch_revoke
+      - tools/ace/blueprint.py::api_auto_dispatch_stop_all
+      - tools/ace/blueprint.py::api_auto_dispatch_resume_all
+
+  - id: ace.dispatch_twin
+    type: sysml_element
+    kind: block
+    name: ACE twin findings over event dispatch and grants
+    features: [ace.trust_sessions]
+    code:
+      - tools/twin_core/adapters/ace.py::ACEGovernanceTwin._judge_dispatch
+      - tools/twin_core/adapters/ace.py::ACEGovernanceTwin._collect_dispatch
+
 interfaces:
   - id: if.ace.api
     type: sysml_element
@@ -108,6 +152,16 @@ interfaces:
     features: [ace.profiles]
     code:
       - tools/mcp/gap_handlers.py::handle_ace_persona_query
+      - tools/mcp/gap_handlers.py::handle_ace_events
+      - tools/mcp/gap_handlers.py::handle_ace_auto_dispatch_grants
+
+  - id: if.ace.dispatch_console
+    type: sysml_element
+    kind: interface_block
+    name: Console /coworker Event feed and Auto-dispatch panels
+    features: [ace.trust_sessions]
+    code:
+      - tools/dashboard/templates/coworker/_dispatch_panels.html
 
 requirements:
   # ── runs ────────────────────────────────────────────────────────────────
@@ -332,3 +386,112 @@ requirements:
       - tests/test_agent_evaluator.py::TestEvalRunner::test_load_suite_parses_entries
       - tests/test_agent_evaluator.py::TestEvalRunner::test_run_eval_router_failure
       - tests/test_eval_trends.py::TestGetEvalTrends::test_fallback_query_used_when_join_fails
+
+  # ── event log and dispatch (icx-ace-01) ─────────────────────────────────
+  - id: PM-ACE-14
+    title: Every ACE event is recorded and readable, and the feed says so when it cannot be
+    text: >-
+      tools/ace/event_log.py records an event only for a topic a role declares
+      (topics derived from args/ace/roles), and what it led to per role.
+      GET /api/ace/events answers 200 with the rows and 503 when the log cannot
+      be read; /events/topics answers 200 with the derived map. A completed run
+      records task.completed. The read-only MCP tools read the same rows.
+    type: functional
+    priority: high
+    features: [ace.trust_sessions]
+    elements: [ace.event_log, if.ace.api, if.ace.mcp, if.ace.dispatch_console]
+    controls: [AU-2, SI-4]
+    tests:
+      - tests/ace/test_event_log.py::test_emit_pending_result_recent_processed
+      - tests/ace/test_event_log.py::test_an_undeclared_topic_is_refused
+      - tests/ace/test_event_log.py::test_topics_are_derived_from_the_roles
+      - tests/ace/test_event_log.py::test_the_events_route_answers_200_with_rows
+      - tests/ace/test_event_log.py::test_the_events_route_answers_503_when_the_log_cannot_be_read
+      - tests/ace/test_event_log.py::test_the_topics_route_answers_200_with_the_derived_map
+      - tests/ace/test_event_log.py::test_the_completion_event_reaches_the_log
+      - tests/ace/test_event_log.py::test_the_mcp_tools_are_declared_read_only_and_read_the_log
+      - tests/ace/test_auto_dispatch_grant.py::test_the_coworker_page_carries_both_panels_and_calls_the_routes
+
+  - id: PM-ACE-15
+    title: An event is a recommendation a person decides; it launches once, only after
+    text: >-
+      With no live grant the dispatcher records a pending decl-wft-ace-run-launch
+      step and launches nothing. A step a person decided is spent once for exactly
+      the launch that was recommended, and only then launched; a declined,
+      withdrawn, changed or lapsed one launches nothing. The dispatcher cannot
+      decide its own recommendation.
+    type: security
+    priority: high
+    features: [ace.trust_sessions]
+    elements: [ace.dispatch]
+    controls: [AC-3, CM-3]
+    tests:
+      - tests/ace/test_event_dispatch.py::test_no_grant_means_a_pending_recommendation_and_no_launch
+      - tests/ace/test_event_dispatch.py::test_a_decided_recommendation_launches_exactly_once
+      - tests/ace/test_event_dispatch.py::test_a_declined_recommendation_launches_nothing
+      - tests/ace/test_event_dispatch.py::test_a_withdrawn_recommendation_launches_nothing
+      - tests/ace/test_event_dispatch.py::test_the_dispatcher_cannot_decide_its_own_recommendation
+      - tests/ace/test_event_dispatch.py::test_a_recommendation_for_what_changed_is_withdrawn_not_launched
+      - tests/ace/test_event_dispatch.py::test_an_undecided_recommendation_lapses
+      - tests/test_nova_reflexion_trigger.py::test_full_round_trip_emit_recommend_decide_launch
+
+  - id: PM-ACE-16
+    title: Auto-dispatch runs only under a person's live grant, and stops at once
+    text: >-
+      A role/topic launches on auto only when its role YAML declares it eligible,
+      its NOVA trust is trusted or above, and a holder granted it with a reason,
+      an expiry within max_grant_days and a max_per_day; revoked, expired, stopped
+      or over-limit grants recommend instead, and falling trust suspends a grant.
+      Revoke and stop-all are immediate with a reason and no step; resume is the
+      holder's step.
+    type: security
+    priority: high
+    features: [ace.trust_sessions]
+    elements: [ace.auto_dispatch, ace.dispatch]
+    controls: [AC-3, AC-6, CM-3]
+    tests:
+      - tests/ace/test_event_dispatch.py::test_under_a_live_grant_the_role_launches_on_auto
+      - tests/ace/test_event_dispatch.py::test_a_revoked_grant_recommends_again
+      - tests/ace/test_event_dispatch.py::test_stop_all_recommends_again_until_resumed
+      - tests/ace/test_event_dispatch.py::test_an_expired_grant_recommends_and_records_its_expiry
+      - tests/ace/test_event_dispatch.py::test_over_max_per_day_recommends
+      - tests/ace/test_event_dispatch.py::test_falling_trust_suspends_the_grant_for_good
+      - tests/ace/test_auto_dispatch_grant.py::test_a_grant_is_refused_and_leaves_no_decision
+      - tests/ace/test_auto_dispatch_grant.py::test_a_grant_is_refused_below_trusted
+      - tests/ace/test_auto_dispatch_grant.py::test_only_a_holder_may_grant
+      - tests/ace/test_auto_dispatch_grant.py::test_a_holders_grant_is_a_decided_step_bound_to_its_payload
+      - tests/ace/test_auto_dispatch_grant.py::test_revoke_is_immediate_with_a_reason_and_no_step
+      - tests/ace/test_auto_dispatch_grant.py::test_stop_all_is_immediate_and_resume_needs_the_step
+      - tests/ace/test_auto_dispatch_grant.py::test_the_role_loader_refuses_an_eligible_topic_the_role_does_not_hear
+
+  - id: PM-ACE-17
+    title: The twin flags stalled dispatch and grants that need a person
+    text: >-
+      The ace governance twin reports events not processed in time,
+      recommendations undecided in time, failed or refused auto-launches, grants
+      at their daily limit, near expiry or suspended, each threaded to the event
+      or grant, resolvable and replayable; unread tables are unverified.
+    type: non_functional
+    priority: medium
+    features: [ace.trust_sessions]
+    elements: [ace.dispatch_twin]
+    controls: [CA-7, SI-4]
+    tests:
+      - tests/ace/test_ace_twin_dispatch.py::test_the_twin_flags_dispatch_and_grants_with_their_threads
+      - tests/ace/test_ace_twin_dispatch.py::test_the_dispatch_checks_are_unverified_when_the_tables_are_missing
+
+  - id: PM-ACE-18
+    title: An ACE module never imports a name another ACE module does not define
+    text: >-
+      Every `from icdev.tools.ace.<mod> import <name>` in tools/ace and its
+      icdev/tools/ace mirror, including imports inside functions and try blocks,
+      resolves, so a deleted function cannot hide behind a swallowed ImportError.
+    type: non_functional
+    priority: medium
+    features: [ace.trust_sessions]
+    elements: [ace.event_log]
+    controls: [SA-11]
+    tests:
+      - tests/ace/test_ace_import_resolution.py::test_the_walk_finds_the_imports_that_broke
+      - tests/ace/test_ace_import_resolution.py::test_every_imported_ace_name_resolves
+

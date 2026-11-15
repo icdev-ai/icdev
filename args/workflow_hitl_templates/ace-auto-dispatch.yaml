@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+id: decl-wft-ace-auto-dispatch
+name: "ACE: turn auto-dispatch on for a role and topic"
+description: >-
+  By default every ACE event is a recommendation a person decides
+  (decl-wft-ace-run-launch). A holder may turn auto-dispatch on for one role and
+  topic, only when the role's reviewed YAML declares it auto-eligible and its
+  NOVA trust is trusted or above, with a reason, an expiry (at most
+  max_grant_days in args/ace/auto_dispatch.yaml) and a max_per_day. The same
+  holder lifts a stop-all with the resume decision. Turning a grant off
+  (revoke) and stop-all are stops: immediate, with a stated reason, no approval.
+  The grant suspends itself if the role's trust falls.
+decides: [ace_api.api_auto_dispatch_grant, ace_api.api_auto_dispatch_resume_all]
+effect: >-
+  tools/ace/auto_dispatch.record_grant appends a granted event to the
+  append-only ace_dispatch_grants log; record_resume appends resume_all.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: >-
+      The Auto-dispatch panel on /coworker assembled the role, topic, expiry and
+      daily limit, and the checks (eligible, trust, limits) passed.
+  - name: grant
+    step_type: manual
+    role: run_approver
+    holders: [admin, pm, developer, isso, co, cor, reviewer]
+    decisions: {grant: affirm, resume: affirm}
+    reason_required: [grant, resume]

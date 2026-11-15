@@ -10653,6 +10653,21 @@ if __name__ == "__main__":
     except Exception as _fs_err:
         print(f"[ICDEV™ Dashboard] DIC freshness daemon failed to start: {_fs_err}")
 
+    # ── ACE event dispatcher (icx-ace-01) ─────────────────────────────────
+    # Turns ACE events into recommendations a person decides at /decisions, or
+    # auto-launches under a live grant. Only the server process starts it (never
+    # an import, a test or a CLI), only with the ACE canvas on, and only when
+    # args/ace/auto_dispatch.yaml says dispatcher_enabled.
+    try:
+        if "ace" in app.blueprints and not os.environ.get("PYTEST_CURRENT_TEST"):
+            from tools.ace.event_dispatcher import start_if_enabled as _ace_dispatch_start
+
+            if _ace_dispatch_start():
+                print("[ICDEV™ Dashboard] ACE event dispatcher started "
+                      "(recommend by default; auto only under a grant)")
+    except Exception as _ad_err:  # noqa: BLE001
+        print(f"[ICDEV™ Dashboard] ACE event dispatcher failed to start: {_ad_err}")
+
     # Optional inbound TLS / mTLS (IL5+/GovCloud). Env vars:
     #   ICDEV_DASHBOARD_TLS_CERT      server certificate (PEM)
     #   ICDEV_DASHBOARD_TLS_KEY       server private key (PEM)

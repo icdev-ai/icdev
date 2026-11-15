@@ -462,6 +462,25 @@ def _events(step_id: str, conn=None) -> dict[str, dict]:
     return out
 
 
+def step_state(step_id: str) -> dict | None:
+    """Where one step stands, from the ledger: ``{status, decision, affirmative,
+    decided_by, proposed_at}``, or None for an unknown step. ``status`` is
+    pending, decided, spent or withdrawn. Raises when the ledger cannot be read.
+
+    For a machine proposer that sweeps its own proposals (the ACE event
+    dispatcher, icx-ace-01): it reads, then spends a decided step; it never decides.
+    """
+    events = _events(step_id)
+    if "proposed" not in events and "decided" not in events:
+        return None
+    decided = events.get("decided") or {}
+    status = next((e for e in ("withdrawn", "spent", "decided") if e in events), "pending")
+    return {"step_id": step_id, "status": status, "decision": decided.get("decision", ""),
+            "affirmative": bool(decided.get("affirmative")) if decided else None,
+            "decided_by": decided.get("actor", ""),
+            "proposed_at": (events.get("proposed") or {}).get("created_at", "")}
+
+
 def decide(step_id: str, *, decision: str, reason: str = "",
            actor: dict | None = None) -> dict:
     """A holder decides a pending proposal. Raises StepRefused."""

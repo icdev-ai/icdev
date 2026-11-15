@@ -820,17 +820,22 @@ class ACEController:
 
     @staticmethod
     def _emit_completion_event(instance_id: str) -> None:
-        """Emit task.completed to ace_events so reflexion_loop reflex fires (best-effort)."""
+        """Record task.completed in the ACE event log (best-effort, never raises).
+
+        The event dispatcher turns it into a recommendation for each listening role
+        (reflexion_loop among them), or an auto-launch under a live grant
+        (icx-ace-01). ``emit`` itself never raises and logs what it could not write.
+        """
         try:
-            from icdev.tools.ace.event_bus import emit as ace_emit
+            from icdev.tools.ace.event_log import emit as ace_emit
             ace_emit(
                 "task.completed",
                 {"trigger": "instance_complete", "instance_id": instance_id},
                 source_canvas="ace",
                 source_id=instance_id,
             )
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 — completion must not fail on its event
+            logger.warning("task.completed event for %s not recorded: %s", instance_id, exc)
 
     @staticmethod
     def _emit_sse(instance_id: str, phase: str, detail: str) -> None:

@@ -773,6 +773,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ace_step_audit_log",
         "ace_webhook_log",
         "ace_skill_candidates",
+        # icx-ace-01, migration 20261115114944: the ACE auto-dispatch grants log
+        # (granted / revoked / suspended / expired / stop_all / resume_all).
+        "ace_dispatch_grants",
         # SIPA Software Integrity & Provenance Assessor (sipa-, NIST AU — assessment evidence is immutable)
         "integrity_capabilities",
         "integrity_findings",

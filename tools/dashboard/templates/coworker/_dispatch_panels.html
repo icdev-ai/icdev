@@ -1,0 +1,227 @@
+<!-- CUI // SP-CTI — ACE Event feed + Auto-dispatch panels (icx-ace-01) -->
+<style>
+  .ace-panel { background: var(--bg-card, #16213e); border: 1px solid var(--border-color, #2a2a4a);
+    border-radius: 8px; padding: 16px 18px; margin-bottom: 20px; }
+  .ace-panel h2 { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+  .ace-panel .ap-help { font-size: 12px; color: var(--text-secondary, #7a8cb0); margin: 0 0 12px; }
+  .ace-panel table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .ace-panel th { text-align: left; font-weight: 600; color: var(--text-secondary, #7a8cb0);
+    border-bottom: 1px solid var(--border-color, #2a2a4a); padding: 6px 8px; }
+  .ace-panel td { border-bottom: 1px solid var(--border-color, #2a2a4a); padding: 6px 8px; vertical-align: top; }
+  .ace-panel .ap-status { font-size: 11px; padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; }
+  .ap-recommended { color: #4a90d9; } .ap-launched { color: #27ae60; } .ap-auto_launched { color: #f39c12; }
+  .ap-declined, .ap-withdrawn { color: #a0a0b8; } .ap-auto_refused { color: #e74c3c; }
+  .ace-panel .ap-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .ace-panel input, .ace-panel select { background: var(--bg-secondary, #1a1a2e); color: var(--text-primary, #e0e0e0);
+    border: 1px solid var(--border-color, #2a2a4a); border-radius: 4px; padding: 5px 8px; font-size: 12px; }
+  .ace-panel .ap-msg { font-size: 12px; margin-top: 8px; color: var(--text-secondary, #7a8cb0); }
+  .ace-panel .ap-stopped { color: #e74c3c; font-weight: 600; }
+</style>
+
+<!-- ── Event feed ─────────────────────────────────────────────────── -->
+<section class="ace-panel" id="ace-event-feed" aria-labelledby="ace-event-feed-title">
+  <h2 id="ace-event-feed-title">Event feed <span id="ace-feed-pending" style="font-weight:400;"></span></h2>
+  <p class="ap-help">
+    ACE events from across ICDEV, and what each led to for every role that listens.
+    An event is a <strong>recommendation</strong> by default: a person decides it at
+    <a href="/decisions/">Decisions</a>, and only then does the team launch. A role runs on
+    <strong>auto</strong> only under a live grant (below); you can abort such a run at once.
+  </p>
+  <table aria-describedby="ace-event-feed-title">
+    <thead><tr><th>When</th><th>Topic</th><th>Source</th><th>Role</th><th>Status</th><th>Next</th></tr></thead>
+    <tbody id="ace-feed-rows"><tr><td colspan="6">Loading…</td></tr></tbody>
+  </table>
+  <div class="ap-msg" id="ace-feed-msg" role="status"></div>
+</section>
+
+<!-- ── Auto-dispatch ──────────────────────────────────────────────── -->
+<section class="ace-panel" id="ace-auto-dispatch" aria-labelledby="ace-auto-title">
+  <h2 id="ace-auto-title">Auto-dispatch</h2>
+  <p class="ap-help">
+    Only a role/topic its reviewed role YAML declares auto-eligible, with NOVA trust
+    <span id="ace-auto-band">trusted</span> or above, can be put on auto. Turning it on is your
+    decision (<code>decl-wft-ace-auto-dispatch</code>): give a reason, an expiry and a daily limit.
+    Turning it off, or stopping all, takes effect at once. A grant suspends itself if trust falls.
+  </p>
+  <div class="ap-row">
+    <span id="ace-auto-stopstate"></span>
+    <input id="ace-auto-stop-reason" placeholder="Reason" aria-label="Reason to stop or resume auto-dispatch">
+    <button class="btn btn-secondary" id="ace-auto-stop-btn" style="font-size:12px;">Stop all auto</button>
+    <button class="btn btn-secondary" id="ace-auto-resume-btn" style="font-size:12px;">Resume</button>
+  </div>
+  <h3 style="font-size:12px; margin:14px 0 6px;">Eligible role/topics</h3>
+  <table aria-label="Auto-eligible role and topic pairs">
+    <thead><tr><th>Role</th><th>Topic</th><th>Why eligible</th><th>Trust</th></tr></thead>
+    <tbody id="ace-auto-eligible"><tr><td colspan="4">Loading…</td></tr></tbody>
+  </table>
+  <div id="ace-auto-grant-form" class="ap-row" style="display:none;">
+    <select id="ace-auto-pair" aria-label="Role and topic"></select>
+    <input id="ace-auto-reason" placeholder="Reason (required)" aria-label="Reason to turn auto on" size="28">
+    <input id="ace-auto-expiry" type="date" aria-label="Expiry date">
+    <input id="ace-auto-perday" type="number" min="1" value="5" aria-label="Most auto-launches per day" style="width:70px;">
+    <button class="btn" id="ace-auto-grant-btn" style="font-size:12px; background:var(--accent-color,#2563eb); color:#fff;">Turn auto on</button>
+  </div>
+  <h3 style="font-size:12px; margin:14px 0 6px;">Grants</h3>
+  <table aria-label="Auto-dispatch grants">
+    <thead><tr><th>Grant</th><th>Role/topic</th><th>State</th><th>Today</th><th>Expires</th><th>By</th><th></th></tr></thead>
+    <tbody id="ace-auto-grants"><tr><td colspan="7">Loading…</td></tr></tbody>
+  </table>
+  <div class="ap-msg" id="ace-auto-msg" role="status"></div>
+</section>
+
+<script>
+(function () {
+  "use strict";
+  function el(tag, text, cls) {
+    var e = document.createElement(tag);
+    if (text !== undefined && text !== null) e.textContent = String(text);
+    if (cls) e.className = cls;
+    return e;
+  }
+  function row(cells) {
+    var tr = document.createElement("tr");
+    cells.forEach(function (c) {
+      var td = document.createElement("td");
+      if (c instanceof Node) td.appendChild(c); else td.textContent = c == null ? "" : String(c);
+      tr.appendChild(td);
+    });
+    return tr;
+  }
+  function empty(tbody, cols, text) {
+    tbody.textContent = "";
+    var td = el("td", text); td.colSpan = cols;
+    var tr = document.createElement("tr"); tr.appendChild(td); tbody.appendChild(tr);
+  }
+  function post(url, body) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(body || {}) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); });
+  }
+  function say(id, text) { document.getElementById(id).textContent = text; }
+
+  // ── Event feed ──
+  function abortRun(instanceId) {
+    if (!window.confirm("Abort run " + instanceId + " now?")) return;
+    fetch("/api/ace/" + encodeURIComponent(instanceId) + "/abort", { method: "POST" })
+      .then(function (r) { say("ace-feed-msg", r.ok ? "Aborted " + instanceId + "." : "Abort failed (" + r.status + ")."); loadFeed(); });
+  }
+  function nextCell(r) {
+    if (r.status === "recommended") {
+      var a = el("a", "Decide at /decisions"); a.href = "/decisions/"; return a;
+    }
+    if ((r.status === "launched" || r.status === "auto_launched") && r.instance_id) {
+      var span = document.createElement("span");
+      var link = el("a", r.instance_id); link.href = "/coworker/" + encodeURIComponent(r.instance_id);
+      span.appendChild(link);
+      if (r.status === "auto_launched") {
+        span.appendChild(document.createTextNode(" — auto, under grant " + r.grant_id + " "));
+        var b = el("button", "Abort", "btn btn-secondary"); b.style.fontSize = "11px";
+        b.addEventListener("click", function () { abortRun(r.instance_id); });
+        span.appendChild(b);
+      }
+      return span;
+    }
+    return r.reason || "";
+  }
+  function loadFeed() {
+    var tbody = document.getElementById("ace-feed-rows");
+    fetch("/api/ace/events?limit=50")
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        if (!res.ok) { empty(tbody, 6, res.data.message || "The event log cannot be read."); return; }
+        say("ace-feed-pending", "(" + res.data.pending + " waiting to be processed)");
+        var rows = res.data.results || [];
+        if (!rows.length) { empty(tbody, 6, "No events yet. Completed runs and other canvases emit them."); return; }
+        tbody.textContent = "";
+        rows.forEach(function (r) {
+          var st = el("span", r.status.replace("_", " "), "ap-status ap-" + r.status);
+          tbody.appendChild(row([String(r.created_at).slice(0, 16), r.topic, r.source_canvas, r.role_id, st, nextCell(r)]));
+        });
+      })
+      .catch(function (e) { empty(tbody, 6, "Request failed: " + e); });
+  }
+
+  // ── Auto-dispatch ──
+  function loadAuto() {
+    fetch("/api/ace/auto-dispatch")
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        var d = res.data;
+        if (!res.ok) { say("ace-auto-msg", d.message || "The grants cannot be read."); return; }
+        say("ace-auto-band", d.limits.min_trust_band);
+        var stop = d.stop_all || {};
+        var ss = document.getElementById("ace-auto-stopstate");
+        ss.textContent = stop.stopped ? "All auto-dispatch is STOPPED (" + stop.reason + ")." : "Auto-dispatch runs where granted.";
+        ss.className = stop.stopped ? "ap-stopped" : "";
+        document.getElementById("ace-auto-stop-btn").disabled = !!stop.stopped;
+        document.getElementById("ace-auto-resume-btn").disabled = !stop.stopped || !d.can_grant;
+
+        var etb = document.getElementById("ace-auto-eligible");
+        var pair = document.getElementById("ace-auto-pair");
+        pair.textContent = "";
+        if (!d.eligible.length) {
+          empty(etb, 4, "No role declares auto-dispatch (auto_dispatch.eligible_topics in its role YAML). Every event is a recommendation.");
+        } else {
+          etb.textContent = "";
+          d.eligible.forEach(function (e) {
+            etb.appendChild(row([e.display_name || e.role_id, e.topic, e.reason,
+                                 e.trust_band + " (" + e.trust_score + ")" + (e.trust_ok ? "" : " — too low")]));
+            if (e.trust_ok) {
+              var o = el("option", e.role_id + " / " + e.topic);
+              o.value = JSON.stringify([e.role_id, e.topic]); pair.appendChild(o);
+            }
+          });
+        }
+        document.getElementById("ace-auto-grant-form").style.display = (d.can_grant && pair.options.length) ? "" : "none";
+        var exp = document.getElementById("ace-auto-expiry");
+        var max = new Date(Date.now() + d.limits.max_grant_days * 864e5).toISOString().slice(0, 10);
+        exp.max = max; if (!exp.value) exp.value = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+        document.getElementById("ace-auto-perday").max = d.limits.max_per_day_ceiling;
+
+        var gtb = document.getElementById("ace-auto-grants");
+        if (!d.grants.length) { empty(gtb, 7, "No grants. Nothing runs on auto."); return; }
+        gtb.textContent = "";
+        d.grants.forEach(function (g) {
+          var action = "";
+          if (g.state === "live" && d.can_grant) {
+            action = el("button", "Turn off", "btn btn-secondary"); action.style.fontSize = "11px";
+            action.addEventListener("click", function () { revoke(g.grant_id); });
+          }
+          gtb.appendChild(row([g.grant_id, g.role_id + " / " + g.topic,
+                               g.state + (g.at_limit ? " (at today's limit)" : "") + (g.closed_reason ? ": " + g.closed_reason : ""),
+                               g.launched_today + " / " + g.max_per_day, g.expires_at, g.granted_by, action]));
+        });
+      })
+      .catch(function (e) { say("ace-auto-msg", "Request failed: " + e); });
+  }
+  function revoke(grantId) {
+    var reason = window.prompt("Why turn auto-dispatch off for " + grantId + "?");
+    if (!reason) return;
+    post("/api/ace/auto-dispatch/" + encodeURIComponent(grantId) + "/revoke", { reason: reason })
+      .then(function (res) { say("ace-auto-msg", res.ok ? "Turned off " + grantId + "." : (res.data.error || "Refused.")); loadAuto(); });
+  }
+  document.getElementById("ace-auto-grant-btn").addEventListener("click", function () {
+    var pick = JSON.parse(document.getElementById("ace-auto-pair").value || "[]");
+    var body = { role_id: pick[0], topic: pick[1],
+                 reason: document.getElementById("ace-auto-reason").value.trim(),
+                 expires_at: document.getElementById("ace-auto-expiry").value,
+                 max_per_day: parseInt(document.getElementById("ace-auto-perday").value, 10) };
+    if (!body.reason) { say("ace-auto-msg", "A reason is required."); return; }
+    post("/api/ace/auto-dispatch/grant", body)
+      .then(function (res) { say("ace-auto-msg", res.ok ? "Auto on: grant " + res.data.grant.grant_id + "." : (res.data.error || "Refused.")); loadAuto(); });
+  });
+  document.getElementById("ace-auto-stop-btn").addEventListener("click", function () {
+    var reason = document.getElementById("ace-auto-stop-reason").value.trim();
+    if (!reason) { say("ace-auto-msg", "Say why you are stopping auto-dispatch."); return; }
+    post("/api/ace/auto-dispatch/stop-all", { reason: reason })
+      .then(function (res) { say("ace-auto-msg", res.ok ? "All auto-dispatch stopped." : (res.data.error || "Refused.")); loadAuto(); });
+  });
+  document.getElementById("ace-auto-resume-btn").addEventListener("click", function () {
+    var reason = document.getElementById("ace-auto-stop-reason").value.trim();
+    if (!reason) { say("ace-auto-msg", "A reason is required to resume."); return; }
+    post("/api/ace/auto-dispatch/resume-all", { reason: reason })
+      .then(function (res) { say("ace-auto-msg", res.ok ? "Auto-dispatch resumed." : (res.data.error || "Refused.")); loadAuto(); });
+  });
+  loadFeed(); loadAuto();
+})();
+</script>

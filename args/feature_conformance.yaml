@@ -306,7 +306,7 @@ features:
 
   - key: ace.trust_sessions
     component: ace
-    label: "ACE: trust (NOVA), sessions, evaluations, trends"
+    label: "ACE: trust (NOVA), sessions, evaluations, trends, event feed and auto-dispatch"
     endpoints:
       - ace.trust_leaderboard
       - ace.sessions_list
@@ -326,12 +326,53 @@ features:
       - ace_api.api_nova_state
       - ace_api.api_ace_events
       - ace_api.api_ace_event_topics
+      - ace_api.api_auto_dispatch
+      - ace_api.api_auto_dispatch_grant
+      - ace_api.api_auto_dispatch_revoke
+      - ace_api.api_auto_dispatch_stop_all
+      - ace_api.api_auto_dispatch_resume_all
       - ace_api.api_iqe_query
     mcp_tools:
       - nova_get_trust_score
       - nova_record_trust_event
       - nova_get_dispatch_config
       - nova_trust_summary
+      - ace_events
+      - ace_auto_dispatch_grants
+    # icx-ace-01: turning auto-dispatch on and lifting stop-all are a person's
+    # decisions (decl-wft-ace-auto-dispatch); turning a grant off and stop-all are
+    # a person's decisions too, and they are stops.
+    declared_decisions:
+      - id: ace.auto_dispatch.grant
+        endpoint: ace_api.api_auto_dispatch_grant
+        evidence:
+          file: tools/ace/blueprint.py
+          text: "A person turns auto-dispatch on for one role/topic"
+      - id: ace.auto_dispatch.resume
+        endpoint: ace_api.api_auto_dispatch_resume_all
+        evidence:
+          file: tools/ace/blueprint.py
+          text: "Lift stop-all. The holder's declared step"
+      - id: ace.auto_dispatch.revoke
+        endpoint: ace_api.api_auto_dispatch_revoke
+        evidence:
+          file: tools/ace/blueprint.py
+          text: "Turn one grant off now. A stop"
+      - id: ace.auto_dispatch.stop_all
+        endpoint: ace_api.api_auto_dispatch_stop_all
+        evidence:
+          file: tools/ace/blueprint.py
+          text: "Stop every auto-dispatch at once. A stop"
+    stops:
+      - surface: ace_api.api_auto_dispatch_revoke
+        reason: >-
+          A stop. Turning a grant off takes effect at once, with a stated reason:
+          waiting for an approval would leave a role launching on its own while
+          the request queues. Every later event is a recommendation again.
+      - surface: ace_api.api_auto_dispatch_stop_all
+        reason: >-
+          A stop, for every grant at once, like ACE abort for a run. Lifting it
+          is the declared step (resume, decl-wft-ace-auto-dispatch).
 
   # ── Co-Workers canvas (tools/coworkers) ───────────────────────────────────
   - key: cwk.canvas

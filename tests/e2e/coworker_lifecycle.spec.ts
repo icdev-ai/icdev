@@ -132,11 +132,9 @@ test.describe('ACE Co-Worker Engine Lifecycle', () => {
       return { status: r.status, ok: true, hasTopics: Array.isArray(body) || typeof body === 'object' };
     });
 
-    // Acceptable: 200 with topics, or 404 if endpoint not wired (gap C-2 related)
-    expect([200, 404]).toContain(result.status);
-    if (result.status === 200) {
-      expect(result.hasTopics).toBe(true);
-    }
+    // icx-ace-01: the topics are derived from the role YAMLs; the route answers 200.
+    expect(result.status).toBe(200);
+    expect(result.hasTopics).toBe(true);
   });
 
   test('POST /api/ace/launch with valid problem returns instance_id', async ({ page }) => {

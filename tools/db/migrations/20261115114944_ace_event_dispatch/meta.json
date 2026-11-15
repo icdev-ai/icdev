@@ -1,0 +1,7 @@
+{
+  "description": "ACE event dispatch: recommendation/auto columns on ace_event_results, append-only ace_dispatch_grants (icx-ace-01)",
+  "date": "2026-11-15",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}
