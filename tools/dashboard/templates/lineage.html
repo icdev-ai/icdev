@@ -9,6 +9,7 @@
   <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;">
     <input id="lin-project-id" type="text" placeholder="Project ID" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;width:240px;" />
     <button onclick="loadLineage()" style="padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Load Lineage</button>
+    <button id="pm-load" onclick="loadPlatformModel()" style="padding:0.4rem 1rem;background:#455a64;color:#fff;border:none;border-radius:4px;cursor:pointer;">ICDEV platform model</button>
   </div>
 
   <!-- Stat Grid -->
@@ -34,6 +35,49 @@
       <text x="50%" y="50%" text-anchor="middle" fill="#999" font-size="14">Load a project to see the lineage graph</text>
     </svg>
   </div>
+
+  <!-- Platform model trace (icx-cnf-04) -->
+  <section id="pm-section" aria-labelledby="pm-heading" style="display:none;margin-top:1.5rem;">
+    <h2 id="pm-heading">ICDEV platform model: requirement &rarr; element &rarr; code &rarr; test</h2>
+    <p style="color:#666;">
+      ICDEV's own architecture, from <code>args/platform_model/*.yaml</code>, for Cortex, ACE, Co-Workers
+      and the conformance audit. Each requirement traces to the elements that realise it, their code, and
+      the existing tests that verify it. A requirement no test covers is a <strong>gap</strong>, never a pass.
+      The digital thread is project <code>icdev-platform</code>, written by
+      <code>python tools/mbse/platform_model.py --seed</code>; the MCP tools <code>trace_forward</code>,
+      <code>trace_backward</code> and <code>platform_model_trace</code> read the same rows.
+    </p>
+    <p id="pm-thread-status" role="status" style="font-weight:600;"></p>
+    <div class="table-container">
+      <table id="pm-features" style="width:100%;border-collapse:collapse;">
+        <caption style="text-align:left;color:#666;padding:0.25rem 0;">Per feature</caption>
+        <thead>
+          <tr style="border-bottom:2px solid #ddd;">
+            <th scope="col" style="text-align:left;padding:0.5rem;">Feature</th>
+            <th scope="col" style="text-align:left;padding:0.5rem;">Status</th>
+            <th scope="col" style="text-align:left;padding:0.5rem;">Requirements traced</th>
+            <th scope="col" style="text-align:left;padding:0.5rem;">Untested</th>
+            <th scope="col" style="text-align:left;padding:0.5rem;">Code without a test (thread)</th>
+          </tr>
+        </thead>
+        <tbody id="pm-features-body"></tbody>
+      </table>
+    </div>
+    <div class="table-container" style="margin-top:1rem;">
+      <table id="pm-reqs" style="width:100%;border-collapse:collapse;">
+        <caption style="text-align:left;color:#666;padding:0.25rem 0;">Per requirement</caption>
+        <thead>
+          <tr style="border-bottom:2px solid #ddd;">
+            <th scope="col" style="text-align:left;padding:0.5rem;">Requirement</th>
+            <th scope="col" style="text-align:left;padding:0.5rem;">Elements</th>
+            <th scope="col" style="text-align:left;padding:0.5rem;">Code</th>
+            <th scope="col" style="text-align:left;padding:0.5rem;">Tests</th>
+          </tr>
+        </thead>
+        <tbody id="pm-reqs-body"></tbody>
+      </table>
+    </div>
+  </section>
 
   <!-- Node Table -->
   <h2 style="margin-top:1.5rem;">Artifact Inventory</h2>
@@ -134,6 +178,64 @@ function renderTable(nodes) {
       + '<td style="padding:0.5rem;">' + escHtml(n.label) + '</td>'
       + '<td style="padding:0.5rem;"><span style="color:'+color+';font-weight:600;">' + escHtml(n.source) + '</span></td></tr>';
   }
+}
+
+function loadPlatformModel() {
+  document.getElementById('lin-project-id').value = 'icdev-platform';
+  document.getElementById('pm-section').style.display = '';
+  fetch('/api/lineage/platform-model')
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var thread = data.thread || {};
+    var status = document.getElementById('pm-thread-status');
+    if (!thread.seeded) {
+      status.textContent = 'Digital thread not seeded: ' + (thread.reason || 'unknown') +
+        ' The table below is the model checked against the repository.';
+    } else {
+      status.textContent = 'Digital thread for icdev-platform' +
+        (thread.current ? ' (current with the model)' : ' (OUT OF DATE: re-seed it)') +
+        '. Orphan code modules: ' + ((thread.orphans || {}).code_without_tests || 0) +
+        '; thread gaps: ' + (thread.gaps_total || 0) + '.';
+      loadLineage();
+    }
+    renderPlatformModel(data.model, thread);
+  });
+}
+
+function renderPlatformModel(model, thread) {
+  var fbody = document.getElementById('pm-features-body');
+  var rbody = document.getElementById('pm-reqs-body');
+  var tf = (thread && thread.seeded) ? thread.features : {};
+  var keys = Object.keys(model.features).sort();
+  var fh = '', rh = '';
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i], f = model.features[k], t = tf[k] || {};
+    var status = t.status || f.status;
+    var color = status === 'traced' ? '#2e7d32' : '#c62828';
+    fh += '<tr style="border-bottom:1px solid #eee;">'
+      + '<td style="padding:0.5rem;font-family:monospace;">' + escHtml(k) + '</td>'
+      + '<td style="padding:0.5rem;"><span style="color:' + color + ';font-weight:600;">' + escHtml(status) + '</span></td>'
+      + '<td style="padding:0.5rem;">' + f.traced.length + ' of ' + f.requirements.length + '</td>'
+      + '<td style="padding:0.5rem;">' + escHtml(f.untested.join(', ') || 'none') + '</td>'
+      + '<td style="padding:0.5rem;font-family:monospace;font-size:0.85rem;">' + escHtml(((t.orphans || []).join(', ')) || (thread && thread.seeded ? 'none' : 'not seeded')) + '</td></tr>';
+    var reqs = t.requirements || [];
+    for (var j = 0; j < reqs.length; j++) {
+      var r = reqs[j];
+      var els = [], code = [];
+      for (var e = 0; e < r.elements.length; e++) {
+        els.push(r.elements[e].element);
+        code = code.concat(r.elements[e].code);
+      }
+      rh += '<tr style="border-bottom:1px solid #eee;">'
+        + '<td style="padding:0.5rem;"><strong>' + escHtml(r.id) + '</strong> ' + escHtml(r.title)
+        + (r.status === 'traced' ? '' : ' <span style="color:#c62828;font-weight:600;">(gap: no test)</span>') + '</td>'
+        + '<td style="padding:0.5rem;font-family:monospace;font-size:0.85rem;">' + escHtml(els.join(', ')) + '</td>'
+        + '<td style="padding:0.5rem;font-family:monospace;font-size:0.8rem;">' + escHtml(code.join(', ')) + '</td>'
+        + '<td style="padding:0.5rem;font-family:monospace;font-size:0.8rem;">' + escHtml(r.tests.join(', ') || 'none') + '</td></tr>';
+    }
+  }
+  fbody.innerHTML = fh || '<tr><td colspan="5" style="padding:1rem;text-align:center;color:#999;">No features in the platform model</td></tr>';
+  rbody.innerHTML = rh || '<tr><td colspan="4" style="padding:1rem;text-align:center;color:#999;">Seed the digital thread to see each requirement\'s chain</td></tr>';
 }
 
 function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }

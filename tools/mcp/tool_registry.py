@@ -8966,6 +8966,24 @@ RESOURCE_REGISTRY = {
         "description": "List the Co-Workers roster the /coworkers canvas shows: chat personas and ACE autonomous roles (id, name, role, description, kind, tags), with counts by kind. Read-only, config-driven.",
         "input_schema": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["persona", "ace"], "description": "Only this kind"}}},
     },
+    # -- platform model (icx-cnf-04 — ICDEV's own architecture, traced) -------
+    "platform_model_trace": {
+        "category": "mbse",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_platform_model_trace",
+        "description": "Read ICDEV's own platform model (args/platform_model/*.yaml) as a trace: for each feature (Cortex, ACE, Co-Workers, the conformance audit) every requirement with its elements, code and the existing tests that verify it, and the requirements no test covers yet (gaps, never passes). With seeded=true it reads the MBSE digital thread for project icdev-platform instead, with find_orphans/find_gaps; trace_forward/trace_backward walk the same rows. Read-only, decides nothing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "feature": {"type": "string", "description": "Only this feature key (e.g. cortex.pmo)"},
+                "seeded": {
+                    "type": "boolean",
+                    "default": False,
+                    "description": "Read the seeded digital thread rather than the model files",
+                },
+            },
+        },
+    },
     # -- declared decisions (icx-cnf-02 — every decision a person takes runs a template) --
     "workflow_decision_steps": {
         "category": "workflow",
@@ -9686,6 +9704,7 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "cortex_airgap_posture":                    True,
     "ace_checkpoints":                          True,
     "coworkers_roster":                         True,
+    "platform_model_trace":                     True,
     # -- declared decisions (icx-cnf-02) -------------------------------------
     # Reads the templates and the ledger; never takes or proposes a step.
     "workflow_decision_steps":                  True,

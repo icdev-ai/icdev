@@ -8,22 +8,5 @@
 # ENUMERATED, NOT COUNTED: a count can hold while the set churns. A line that
 # disappears is a gap someone closed -- prune it and lower `census_max`. A line
 # that appears is a new gap; it fails --check until it is reviewed in here.
-ace.abort|architecture:no-requirement
-ace.hitl|architecture:no-requirement
-ace.profiles|architecture:no-requirement
 ace.profiles|gui:uncalled:ace_api.api_profiles_delete
-ace.runs|architecture:no-requirement
-ace.trust_sessions|architecture:no-requirement
-conformance.audit|architecture:no-requirement
-cortex.agent_launch|architecture:no-requirement
-cortex.airgap_guard|architecture:no-requirement
-cortex.findings|architecture:no-requirement
-cortex.governed_verbs|architecture:no-requirement
-cortex.govern|architecture:no-requirement
-cortex.intake|architecture:no-requirement
-cortex.metrics|architecture:no-requirement
-cortex.pmo|architecture:no-requirement
 cortex.pmo|gui:uncalled:cortex.api_v1_award
-cortex.search_ask|architecture:no-requirement
-cortex.service_keys|architecture:no-requirement
-cwk.canvas|architecture:no-requirement
