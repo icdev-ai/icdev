@@ -92,7 +92,7 @@ def test_inventory_only_gives_a_valid_bundle_with_every_other_section_unverified
     assert b["data"] == [{"name": "depot", "columns": ["id"]}, {"name": "stock", "columns": ["depot", "qty"]}]
     assert b["dependencies"] == [{"source": "depot.StockController", "target": "depot.StockRepo", "kind": "injection"}]
     unverified = {"features", "processes", "consumers", "aiify", "integrity", "seven_r", "ivv", "sbd", "rtm",
-                  "coherence", "readiness", "migration", "refactor"}
+                  "coherence", "readiness", "migration", "refactor", "cloud_native"}
     assert {k for k, v in b.items() if v is None} == unverified
     assert ex.validate(b) == []
 

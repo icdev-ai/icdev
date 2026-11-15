@@ -18,6 +18,10 @@ produced, so every section is traceable to the tool that made it:
     --strangler   migration.strangler                    tools/modernization/strangler_fig_manager.py status (JSON)
     --refactor    refactor                               tools/modernization/refactor_jobs.py (CAM's jobs), or
                                                          cam_refactor_engine.py --list-jobs rows (JSON list)
+    --cloud-native cloud_native                          tools/modernization/cloud_native_jobs.py (CAM's cloud-native
+                                                         jobs, osx-fth-14): every generated file by SHA-256, the
+                                                         twelve factors, config by location, events; AI use cases
+                                                         DRAFTED from --aiify's opportunities
     --ivv/--sbd/--rtm/--coherence/--readiness            already in the bundle's section shape
 
 A verification result (``--ivv``/``--sbd``/``--rtm``/``--coherence``) is passed through as it was made, with the
@@ -54,9 +58,10 @@ _BASE = repo_root(__file__)
 
 SCHEMA = "icos-apptwin/v1"
 SCHEMA_PATH = _BASE / "context" / "icos" / "apptwin.schema.json"
-#: The digest of the vendored ICDEV[OS] contract (1.181.0: a refactor job's artefacts, each by SHA-256, its summary and
-#: review, ICDEV[OS] osx-fth-13). A changed file is refused, never silently used.
-SCHEMA_SHA256 = "fa6d7e6347d0c77b1679596718d0b848cb89426ec17f5e4f9197643a3669f959"
+#: The digest of the vendored ICDEV[OS] contract (1.182.0: the cloud_native section -- generated artefacts by SHA-256,
+#: the twelve factors, config by location, events, AI use case drafts, targets; ICDEV[OS] osx-fth-14). A changed file is
+#: refused, never silently used.
+SCHEMA_SHA256 = "6536c7caec7fd11c6990ee6243a80706cf169d4e939cc9596abfe3e66d568e84"
 PRODUCER = "icdev-it/apptwin_export"
 PASSTHROUGH = ("ivv", "sbd", "rtm", "coherence", "readiness")
 
@@ -415,10 +420,77 @@ def refactor_from_jobs(jobs, *, at: str) -> dict:
     return {"tool": "icdev-it/cam_refactor_engine", "assessed_at": at, "jobs": out}
 
 
+#: each file a cloud-native job writes, and what it is in the contract (ICDEV[OS] apptwin.GENERATED)
+CLOUD_FILES = {"Containerfile": "container_definition", "deployment.yaml": "deployment_manifest",
+               "config-findings.json": "config_mapping", "env.mapping.json": "config_mapping",
+               "config.env.example": "config_mapping", "twelve-factor.json": "twelve_factor_report",
+               "asyncapi.yaml": "event_contract", "event-contract.json": "event_contract"}
+
+
+def ai_use_case_drafts(aiify: dict | None, app: str) -> list[dict]:
+    """AI-Ify's opportunities as DRAFT AI use cases, one per pattern: those AI-Ify neither ruled not suitable nor
+    disqualified. A draft only -- ICDEV[OS] registers an AI use case through its own reviewed workflow."""
+    by: dict[str, list[dict]] = {}
+    for o in (aiify or {}).get("opportunities") or []:
+        if o.get("ai_readiness") == "not_suitable" or o.get("disqualifiers"):
+            continue
+        by.setdefault(o["pattern_type"], []).append(o)
+    out = []
+    for pat in sorted(by):
+        os_ = sorted(by[pat], key=lambda o: (-float(o["composite_score"]), o["module_path"]))
+        out.append({"id": f"{_slug(app)}-{_slug(pat)}", "title": f"{pat.replace('_', ' ')} in {app}",
+                    "pattern_type": pat, "opportunities": [str(o.get("id") or o["module_path"]) for o in os_],
+                    "modules": sorted({o["module_path"] for o in os_})[:20],
+                    "best_score": float(os_[0]["composite_score"]), "status": "draft"})
+    return out
+
+
+def cloud_native_from_jobs(rep: dict, *, at: str, app: str, aiify: dict | None = None,
+                           refactor: dict | None = None) -> dict | None:
+    """CAM's cloud-native jobs (osx-fth-14). Every file they wrote is bound by SHA-256 (path ``<job>/<file>``) and the
+    section by the digest of that list; each is generated and unreviewed. The twelve factors, the configuration found
+    (where, never a value), the environment mapping and the event channels are read from the job files themselves,
+    so the section says what the bound files say. No twelve-factor report, no section: unverified, never filled in."""
+    jobs = {j["scaffold"]: j for j in rep.get("jobs") or [] if j.get("status") == "completed"}
+    tf = jobs.get("twelve_factor_report")
+    if tf is None:
+        return None
+    arts, docs = [], {}
+    for scaffold, j in sorted(jobs.items()):
+        files = _job_artefacts(j) or []
+        root = Path(j["output_path"])
+        for a in files:
+            kind = CLOUD_FILES.get(Path(a["path"]).name)
+            if kind is None:
+                continue
+            arts.append({"kind": kind, "job": str(j["id"]), "path": f"{scaffold}/{a['path']}", "sha256": a["sha256"],
+                         "review": "unreviewed"})
+            if a["path"].endswith(".json"):
+                docs[a["path"]] = json.loads((root / a["path"]).read_text(encoding="utf-8"))
+    tfd = docs.get("twelve-factor.json") or {}
+    from tools.modernization import cloud_native
+    generated = {a["kind"] for a in arts} | {j["kind"] for j in (refactor or {}).get("jobs") or []
+                                             if j.get("artefact_digest")}
+    stack = dict(tfd.get("stack") or {})
+    stack["ports"] = [{k: v for k, v in p.items() if v is not None} for p in stack.get("ports") or []]
+    return {"tool": cloud_native.TOOL,
+            "assessed_at": at,
+            "stack": {k: v for k, v in stack.items() if v not in (None, [])} | {"ports": stack["ports"]},
+            "factors": tfd.get("factors") or [],
+            "config": [{k: v for k, v in f.items() if v is not None} for f in (docs.get("config-findings.json") or {}).get("findings") or []],
+            "env": (docs.get("env.mapping.json") or {}).get("env") or [],
+            "events": (docs.get("event-contract.json") or {}).get("channels") or [],
+            "artefacts": sorted(arts, key=lambda a: a["path"]),
+            **({"artefact_digest": _manifest_digest(arts)} if arts else {}),
+            "ai_use_cases": ai_use_case_drafts(aiify, app),
+            "targets": cloud_native.targets(rep.get("targets") or {}, generated, stack.get("container_files") or [])}
+
+
 def build(app_id: str, conn, *, at: str | None = None, features: dict | None = None, processes: list[dict] = (),
           aiify: dict | None = None, integrity: dict | None = None, seven_r: dict | None = None,
           sections: dict | None = None, waves: list | dict | None = None, strangler: list | None = None,
-          refactor: list | dict | None = None, static_features: dict | None = None) -> dict:
+          refactor: list | dict | None = None, static_features: dict | None = None,
+          cloud_native: dict | None = None) -> dict:
     at = at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if features is not None and static_features is not None:
         raise BundleError("give observed features or static features, not both: each is one tool's report")
@@ -434,6 +506,9 @@ def build(app_id: str, conn, *, at: str | None = None, features: dict | None = N
               "seven_r": seven_r_from_assessment(seven_r, at=at) if seven_r is not None else None,
               "migration": migration_from_plan(app_id, conn, at=at, waves=waves, strangler=strangler),
               "refactor": refactor_from_jobs(refactor, at=at) if refactor is not None else None}
+    bundle["cloud_native"] = (cloud_native_from_jobs(cloud_native, at=at, app=inv["application"]["title"],
+                                                     aiify=bundle["aiify"], refactor=bundle["refactor"])
+                              if cloud_native is not None else None)
     for k in PASSTHROUGH:
         bundle[k] = (sections or {}).get(k)
     errors = validate(bundle)
@@ -454,6 +529,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--waves", type=Path, help="the migration canvas's waves (JSON list)")
     ap.add_argument("--strangler", type=Path, help="strangler-fig component status (JSON list)")
     ap.add_argument("--refactor", type=Path, help="CAM refactor jobs (JSON list)")
+    ap.add_argument("--cloud-native", type=Path, help="cloud_native_jobs.py output (JSON)")
     for k in PASSTHROUGH:
         ap.add_argument(f"--{k}", type=Path, help=f"the bundle's {k} section (JSON)")
     ap.add_argument("--at", help="produced_at (ISO 8601; default now), so a bundle can be re-made byte for byte")
@@ -469,7 +545,7 @@ def main(argv: list[str] | None = None) -> int:
                   processes=[load(p) for p in a.process], aiify=load(a.aiify), integrity=load(a.integrity),
                   seven_r=load(a.seven_r), sections={k: load(getattr(a, k)) for k in PASSTHROUGH},
                   waves=load(a.waves), strangler=load(a.strangler), refactor=load(a.refactor),
-                  static_features=load(a.static_features))
+                  static_features=load(a.static_features), cloud_native=load(a.cloud_native))
     except (BundleError, OSError, KeyError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}))
         return 1

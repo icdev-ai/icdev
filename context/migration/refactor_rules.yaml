@@ -195,3 +195,27 @@ rules:
         source_framework: wcf
         target_framework: aspnet-core-grpc
         description: "WCF → ASP.NET Core gRPC migration (framework_migrator.py)"
+
+  # ── Cloud-native target (ICDEV[OS] osx-fth-14) ───────────────────────────
+  # Dispatched only as the cloud_native set (tools/modernization/cloud_native_jobs.py), so a refactor run's jobs are
+  # unchanged. Each reads the application's source (never builds or runs it) and writes generated, unreviewed files.
+  - set: cloud_native
+    match_source: true
+    jobs:
+      - type: code_scaffold
+        scaffold_type: container_definition
+        description: "Containerfile and a minimal deployment manifest from the analysed stack (cloud_native.py)"
+      - type: code_scaffold
+        scaffold_type: config_externalisation
+        description: "Hard-coded configuration by location, and the environment variables that replace it"
+      - type: code_scaffold
+        scaffold_type: twelve_factor_report
+        description: "Each of the twelve factors from evidence; unverified where static analysis cannot tell"
+
+  - set: cloud_native
+    match_source: true
+    match_framework: ejb
+    jobs:
+      - type: code_scaffold
+        scaffold_type: event_contract
+        description: "Events in place of message-driven beans: an AsyncAPI proposal of their destinations and payloads"

@@ -87,7 +87,8 @@ def run(tmp_path_factory):
     out = base / "out"
     p = subprocess.run([sys.executable, str(ROOT / "tools/modernization/sample_pipeline.py"), "--source", str(src),
                         "--name", "acme-trade", "--scratch-db", str(base / "db/icdev.db"), "--out", str(out),
-                        "--at", "2026-11-12T00:00:00Z", "--no-model"],
+                        "--at", "2026-11-12T00:00:00Z", "--no-model", "--target-cloud", "containerised",
+                        "--target-ai", "trade anomaly detection"],
                        cwd=ROOT, capture_output=True, text=True, timeout=900, check=False)
     assert p.returncode == 0, p.stdout[-2000:] + p.stderr[-2000:]
     return {"base": base, "out": out, "report": json.loads((out / "gaps.json").read_text()),
@@ -199,3 +200,19 @@ def test_the_migrators_ran_as_cam_jobs_bound_by_digest(run):
     assert hashlib.sha256(Path(a["path"]).read_bytes()).hexdigest() == next(
         x["sha256"] for x in jobs["version_upgrade"]["artefacts"] if x["path"] == a["rel"])
     assert "refactor" not in run["report"]["gaps"]
+
+
+def test_the_cloud_native_target_is_generated_as_cam_jobs_and_never_reached(run):
+    """osx-fth-14: the container definition, config mapping and twelve-factor report as CAM jobs, every file bound."""
+    import hashlib
+    cn = run["bundle"]["cloud_native"]
+    assert {a["kind"] for a in cn["artefacts"]} >= {"container_definition", "deployment_manifest", "config_mapping",
+                                                     "twelve_factor_report"}
+    assert all(a["review"] == "unreviewed" for a in cn["artefacts"])
+    lines = "".join(f"{a['sha256']}  {a['path']}\n" for a in sorted(cn["artefacts"], key=lambda a: a["path"]))
+    assert cn["artefact_digest"] == hashlib.sha256(lines.encode()).hexdigest()
+    assert len(cn["factors"]) == 12 and cn["stack"]["language"] == "java"
+    t = {x["target"]: x for x in cn["targets"]}
+    assert t["containerised"]["status"] == "generated" and t["trade anomaly detection"]["status"] == "not_addressed"
+    steps = {s["step"]: s for s in run["report"]["steps"]}
+    assert steps["cloud-native"]["ok"] and "cloud_native" not in run["report"]["gaps"]

@@ -103,8 +103,9 @@ def _load_refactor_rules() -> list[dict]:
         return []
 
 
-def _match_rules(component: dict, rules: list[dict]) -> list[dict]:
-    """Return the list of job specs that match this component."""
+def _match_rules(component: dict, rules: list[dict], rule_set: str | None = None) -> list[dict]:
+    """Return the list of job specs that match this component. A rule with a ``set`` fires only when that set is
+    dispatched (ICDEV[OS] osx-fth-14: ``cloud_native``), so the refactor run's jobs stay what they were."""
     # Use full name as substring search — handles "Apache NiFi", "Redis 7 Cache", etc.
     tech = (component.get("name") or "").lower()
     strategy = (component.get("migration_strategy") or "").lower()
@@ -114,6 +115,10 @@ def _match_rules(component: dict, rules: list[dict]) -> list[dict]:
 
     matched: list[dict] = []
     for rule in rules:
+        if rule.get("set") != rule_set:
+            continue
+        if rule.get("match_source") and not component.get("source_repo"):
+            continue            # a job that reads the application's source needs it
         if "match_tech" in rule:
             if rule["match_tech"].lower() not in tech:
                 continue
@@ -131,14 +136,17 @@ def _match_rules(component: dict, rules: list[dict]) -> list[dict]:
             if rule["match_framework"].lower() not in framework:
                 continue
             matched.extend(rule.get("jobs", []))
+        elif rule.get("match_source"):
+            matched.extend(rule.get("jobs", []))
     return matched
 
 
 # ── Job creation ─────────────────────────────────────────────────────────────
 
 def dispatch(project_id: str, component_name: str | None = None,
-             dry_run: bool = False) -> list[dict]:
-    """Queue refactor jobs for all (or one named) component in the project.
+             dry_run: bool = False, rule_set: str | None = None) -> list[dict]:
+    """Queue refactor jobs for all (or one named) component in the project, from the rules of ``rule_set`` (None: the
+    rules with no set).
 
     Returns list of job dicts (with status='queued' or 'dry_run').
     """
@@ -172,7 +180,7 @@ def dispatch(project_id: str, component_name: str | None = None,
             if component_name and component_name.lower() not in comp_name.lower():
                 continue
 
-            job_specs = _match_rules(comp_dict, rules)
+            job_specs = _match_rules(comp_dict, rules, rule_set)
             for spec in job_specs:
                 ai_opp_id = None
                 if "ai_service" in spec:
@@ -524,9 +532,27 @@ def _run_code_scaffold(job, params, output_dir) -> tuple[list[dict], str]:
         "amplify_migration": _scaffold_amplify,
         "eks_fargate_migration": _scaffold_eks_fargate,
         "documentdb_migration": _scaffold_documentdb,
+        # ICDEV[OS] osx-fth-14: the cloud-native target, generated from the source (read, never built or run)
+        **{k: _scaffold_cloud_native for k in ("container_definition", "config_externalisation",
+                                               "twelve_factor_report", "event_contract")},
     }
     gen = generators.get(scaffold_type, _gen_stub_readme_fn)
     return gen(job, params, output_dir)
+
+
+def _scaffold_cloud_native(job, params, output_dir) -> tuple[list[dict], str]:
+    """A cloud-native job (tools/modernization/cloud_native.py) over the inventory row's source. What it writes is
+    generated and unreviewed; a job that finds nothing to generate fails with why, never writes a stub."""
+    from tools.modernization import cloud_native
+    conn = _mc_conn()
+    try:
+        row = conn.execute("SELECT * FROM mc_app_inventory WHERE id=%s", (job.get("app_id"),)).fetchone()
+    finally:
+        conn.close()
+    app = dict(row) if row else {"name": job.get("component_name"), "language": job.get("source_language")}
+    _files, summary = cloud_native.generate(params.get("scaffold_type", ""), source=job.get("source_path") or "",
+                                            app=app, out=output_dir)
+    return _scan_artifacts(output_dir, "generated"), summary
 
 
 def _run_ai_integration(job, params, output_dir) -> tuple[list[dict], str]:
