@@ -49,6 +49,16 @@ Checks:
                       `uses:`, a compose image with no digest in vendor/images/, a `curl … | sh`); the 69 that
                       existed at adoption are grandfathered BY NAME in args/pin_census.txt and the ceiling in
                       args/pin_gate.yaml may only go DOWN (xrv-route-03)
+ 31. feature_conformance — FAIL when any feature in args/feature_conformance.yaml has an open gap against the
+                      five rules (GUI, workflow, twin, architecture, AI-native), or the doc, snapshot, census or a
+                      stated reason is stale; open gaps are enumerated BY NAME in
+                      args/feature_conformance_census.txt. `enforcement: fail` since icx-cnf-07 (17/17, census 0);
+                      under `warn` the same findings warn (icx-cnf-01)
+ 32. platform_model_trace — FAIL when ICDEV's own platform model (args/platform_model/*.yaml) cites a test
+                      that does not exist (file AND function), code that does not exist, an orphan element or an
+                      unknown feature; WARN while a requirement traces to no test (a gap, never a pass) or a
+                      feature in args/feature_conformance.yaml has no requirement. The per-feature RTM gate for
+                      the features the conformance audit judges (icx-cnf-04)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -5174,17 +5184,53 @@ def check_hitl_workflow() -> CoherenceCheck:
     2. If ICDEV_HITL_KANBAN_GATE=true, HITLGate import resolves
     3. wf_ tables listed in APPEND_ONLY_TABLES (wf_feedback, wf_document_submissions, wf_citations)
     4. Blueprint registered at /api/v1/wf
+    5. (icx-cnf-02) Every declared decision template under args/workflow_hitl_templates/
+       is well formed (a manual stage held by a role, holders that are people), no
+       surface is decided by two templates, every template is RUN by code (its id is
+       named outside declared.py), and every decision endpoint the feature audit
+       found maps to one (no ``workflow:`` line in the conformance census).
     """
     import os
     issues: list[str] = []
     actual: list[str] = []
+
+    # Declared decision templates (icx-cnf-02)
+    try:
+        from tools.workflow_hitl.declared import load_templates, validate_template
+
+        templates = load_templates(PROJECT_ROOT / "args" / "workflow_hitl_templates")
+        owners: dict[str, str] = {}
+        code = "\n".join(
+            p.read_text(encoding="utf-8", errors="replace")
+            for p in (PROJECT_ROOT / "tools").rglob("*.py")
+            if p.name != "declared.py" and "__pycache__" not in p.parts
+        )
+        for tid, tmpl in sorted(templates.items()):
+            issues.extend(f"declared template: {e}" for e in validate_template(tmpl))
+            for surface in tmpl.get("decides") or []:
+                if surface in owners:
+                    issues.append(f"{surface} is decided by both {owners[surface]} and {tid}")
+                owners[surface] = tid
+            if f'"{tid}"' not in code:
+                issues.append(f"declared template {tid} is run by no code (no take_step/propose names it)")
+        actual.append(f"declared_templates={len(templates)}, surfaces={len(owners)}")
+        census = PROJECT_ROOT / "args" / "feature_conformance_census.txt"
+        if census.exists():
+            undeclared = [ln.strip() for ln in census.read_text(encoding="utf-8").splitlines()
+                          if "|workflow:" in ln]
+            issues.extend(f"decision without a declared template: {ln}" for ln in undeclared)
+            if not undeclared:
+                actual.append("every audited decision endpoint maps to a declared template")
+    except Exception as exc:  # noqa: BLE001
+        issues.append(f"declared template check failed: {exc}")
 
     # Check 1: append-only tables
     try:
         aot_path = PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
         if aot_path.exists():
             content = aot_path.read_text(encoding="utf-8")
-            for tbl in ("wf_feedback", "wf_document_submissions", "wf_citations"):
+            for tbl in ("wf_feedback", "wf_document_submissions", "wf_citations",
+                        "wf_decision_steps", "cortex_finding_adjudications"):
                 if tbl in content:
                     actual.append(f"append_only:{tbl}=OK")
                 else:
@@ -5227,7 +5273,8 @@ def check_hitl_workflow() -> CoherenceCheck:
         check_name="HITL Workflow Coherence",
         status=status,
         expected=["append_only tables registered", "HITLGate importable", "blueprint importable",
-                  "workflow_hitl_config.yaml exists"],
+                  "workflow_hitl_config.yaml exists",
+                  "every decision endpoint maps to a declared template (icx-cnf-02)"],
         actual=actual,
         missing=issues,
         extra=[],
@@ -11513,6 +11560,185 @@ def _read_all(paths: List[Path]) -> str:
     return "\n".join(out)
 
 
+_FEATURE_CONFORMANCE_CHECK_ID = "feature_conformance"
+_FEATURE_CONFORMANCE_CHECK_NAME = "Feature Conformance (icx-cnf-01)"
+_FEATURE_CONFORMANCE_EXPECTED = [
+    "every feature in args/feature_conformance.yaml meets the five rules (GUI, workflow, twin, "
+    "architecture, AI-native) or carries a stated reason for that rule; every open gap is "
+    "enumerated BY NAME in args/feature_conformance_census.txt; the doc and snapshot are fresh"
+]
+
+
+def _feature_conformance_check(
+    status: str, message: str, actual: List[str], missing: Optional[List[str]] = None
+) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=_FEATURE_CONFORMANCE_CHECK_ID,
+        check_name=_FEATURE_CONFORMANCE_CHECK_NAME,
+        status=status,
+        expected=_FEATURE_CONFORMANCE_EXPECTED,
+        actual=actual,
+        missing=missing or [],
+        extra=[],
+        message=message,
+    )
+
+
+def check_feature_conformance() -> CoherenceCheck:
+    """icx-cnf-01 — each feature held to the five rules, gap by gap.
+
+    ``warn`` while gaps remained, and deliberately: at adoption no Cortex, ACE or
+    Co-Workers feature met all five, and the remediation was queued as
+    icx-cnf-02..07. icx-cnf-07 closed the last gap and set ``enforcement: fail``
+    in args/feature_conformance.yaml, so every open gap is now a failure. Never
+    flip it back, and never close a gap by deleting a census line.
+
+    The census makes the gap SET observable, not just its size: a gap that
+    appears without a census line, or a census line whose gap has closed, is
+    named here. An unmeasurable audit (the url_map probe failed) is a warn that
+    says so, never a pass.
+    """
+    try:
+        from tools.conformance.feature_audit import (
+            RULES,
+            AuditError,
+            audit,
+            check as _audit_check,
+            load_config,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _feature_conformance_check(
+            "warn",
+            f"tools/conformance/feature_audit.py could not be imported ({exc}) — feature "
+            "conformance NOT measured. This is 'unmeasured', not 'clean'.",
+            [f"import failed: {exc}"],
+        )
+    try:
+        cfg = load_config(PROJECT_ROOT)
+        report = audit(PROJECT_ROOT, config=cfg)
+    except AuditError as exc:
+        return _feature_conformance_check(
+            "warn",
+            f"the feature audit could not be produced: {exc}",
+            [str(exc)[:300]],
+            missing=[str(exc)[:300]],
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _feature_conformance_check(
+            "warn",
+            f"feature audit failed to run ({exc}) — conformance NOT measured.",
+            [f"audit failed: {exc}"],
+        )
+
+    summary = report["summary"]
+    by_rule = summary["gaps_by_rule"]
+    actual = [
+        f"{summary['features']} feature(s); {summary['features_conforming']} meet all five rules",
+        "open gaps by rule: " + ", ".join(f"{r} {by_rule[r]}" for r in RULES),
+    ]
+    problems = _audit_check(report, PROJECT_ROOT, cfg)
+    failing = str(report.get("enforcement")) == "fail"
+    if problems:
+        return _feature_conformance_check(
+            "fail" if failing else "warn",
+            f"{len(problems)} problem(s) with the conformance record — run `python "
+            "tools/conformance/feature_audit.py --check` and review the census diff.",
+            actual,
+            missing=problems[:20],
+        )
+    if summary["gaps_total"]:
+        return _feature_conformance_check(
+            "fail" if failing else "warn",
+            f"{summary['gaps_total']} open gap(s) against the five rules, each enumerated in "
+            "args/feature_conformance_census.txt (docs/audits/conformance-cortex-coworker.md "
+            "ranks the remediation).",
+            actual,
+            missing=[f"{rule}: {by_rule[rule]} open gap(s)" for rule in RULES if by_rule[rule]],
+        )
+    return _feature_conformance_check(
+        "pass",
+        f"all {summary['features']} feature(s) meet the five rules or carry a stated reason.",
+        actual,
+    )
+
+
+_PLATFORM_MODEL_CHECK_ID = "platform_model_trace"
+_PLATFORM_MODEL_CHECK_NAME = "Platform Model Trace (icx-cnf-04)"
+_PLATFORM_MODEL_EXPECTED = [
+    "every requirement in args/platform_model/*.yaml traces to an element of a digital-thread type, "
+    "its existing code and an existing test (file and function); no element is an orphan; every "
+    "feature in args/feature_conformance.yaml has requirements"
+]
+
+
+def _platform_model_check(
+    status: str, message: str, actual: List[str], missing: Optional[List[str]] = None
+) -> CoherenceCheck:
+    return CoherenceCheck(
+        check_id=_PLATFORM_MODEL_CHECK_ID,
+        check_name=_PLATFORM_MODEL_CHECK_NAME,
+        status=status,
+        expected=_PLATFORM_MODEL_EXPECTED,
+        actual=actual,
+        missing=missing or [],
+        extra=[],
+        message=message,
+    )
+
+
+def check_platform_model_trace() -> CoherenceCheck:
+    """icx-cnf-04 — the RTM gate for the features the conformance audit judges.
+
+    ``args/security_gates.yaml`` ``ivv.rtm_completeness_pct`` is a project-wide
+    threshold with no per-feature consumer, so ICDEV's own platform model is held
+    here instead. A cited test or code path that does not exist FAILS: it would
+    put an invented test into the RTM. A requirement with no test WARNS, by
+    name: it is a gap, and it stays listed until a real test covers it. No
+    database is read; ``tools/mbse/platform_model.py --seed`` writes the thread.
+    """
+    try:
+        from tools.mbse.platform_model import validate
+    except Exception as exc:  # noqa: BLE001
+        return _platform_model_check(
+            "warn",
+            f"tools/mbse/platform_model.py could not be imported ({exc}) — the platform model "
+            "was NOT checked. This is 'unmeasured', not 'clean'.",
+            [f"import failed: {exc}"],
+        )
+    try:
+        report = validate(PROJECT_ROOT)
+    except Exception as exc:  # noqa: BLE001
+        return _platform_model_check(
+            "warn", f"the platform model could not be read ({exc}) — NOT checked.", [str(exc)[:300]]
+        )
+    s = report["summary"]
+    actual = [
+        f"{s['requirements']} requirement(s), {s['elements']} element(s), {s['interfaces']} interface(s)",
+        f"{s['features_traced']} of {s['features']} feature(s) fully traced to tests",
+    ]
+    if report["errors"]:
+        return _platform_model_check(
+            "fail",
+            f"{len(report['errors'])} defect(s) in args/platform_model — run `python "
+            "tools/mbse/platform_model.py --check`. Never cite a test that does not exist.",
+            actual,
+            missing=report["errors"][:20],
+        )
+    no_req = sorted(k for k, row in report["features"].items() if row["status"] == "no_requirement")
+    if report["gaps"] or no_req:
+        return _platform_model_check(
+            "warn",
+            f"{len(report['gaps'])} requirement(s) trace to no test and {len(no_req)} feature(s) "
+            "have no requirement; each is a gap, never a pass.",
+            actual,
+            missing=[f"{g['requirement']} ({g['features']}): no test" for g in report["gaps"]]
+            + [f"{k}: no requirement in args/platform_model" for k in no_req],
+        )
+    return _platform_model_check(
+        "pass", f"all {s['requirements']} requirement(s) trace to existing code and tests.", actual
+    )
+
+
 CHECK_REGISTRY = {
     "bootstrap_parity": check_bootstrap_parity,
     "mirror_parity": check_mirror_parity,
@@ -11579,6 +11805,8 @@ CHECK_REGISTRY = {
     "insert_schema_parity": check_insert_schema_parity,
     "board_writer_census": check_board_writer_census,
     "pin_census": check_pin_census,
+    "feature_conformance": check_feature_conformance,
+    "platform_model_trace": check_platform_model_trace,
     "schema_ownership": check_schema_ownership,
     "self_rooting": check_self_rooting,
     "core_api": check_core_api,
@@ -11734,6 +11962,27 @@ HEAVY_CHECKS: Dict[str, Tuple[str, ...]] = {
     # the fast tier re-adds it exactly when the diff touches a file that CAN
     # change its verdict — a workflow, the GitLab config, a Dockerfile, a compose
     # file, the vendored digests, or the gate/census pair itself.
+    # icx-cnf-01: the audit probes the whole url_map in a scrubbed subprocess
+    # (~25s measured), so it is a full-tier sweep. The fast tier re-adds it when a
+    # diff touches a surface that can move a verdict: the audited features' code,
+    # their pages, the twin adapters, the MCP registry, the declared workflow
+    # templates, the platform model, the approval policy, or the audit itself.
+    "feature_conformance": (
+        "tools/cortex/",
+        "tools/ace/",
+        "tools/coworkers/",
+        "tools/twin_core/adapters/",
+        "tools/twin_observatory/",
+        "tools/dashboard/templates/",
+        "tools/mcp/tool_registry.py",
+        "tools/conformance/",
+        "args/feature_conformance",
+        "args/workflow_hitl_templates/",
+        "args/platform_model/",
+        "args/agent_approval_policy.yaml",
+        "args/component_registry.yaml",
+        "docs/audits/conformance-cortex-coworker",
+    ),
     "pin_census": (
         ".github/workflows/",
         ".gitlab-ci.yml",

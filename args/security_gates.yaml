@@ -2210,3 +2210,61 @@ agent_detection_rules:
     someone believes it does. A finding is a RULE MATCH AND NOT PROOF OF
     EXECUTION; see docs/features/agov-det-coverage-and-limits.md for what the
     detector does not see before treating a clean run as evidence.
+
+# Feature conformance gate (icx-cnf-01)
+#
+# Each feature in args/feature_conformance.yaml is judged against the five rules
+# (GUI, workflow, twin, architecture, AI-native). WARN while the gaps queued as
+# icx-cnf-02..05 remain; `enforcement: fail` in that file promotes the open-gap
+# condition to blocking in the coherence check.
+# Run: python tools/conformance/feature_audit.py --check
+#      python tools/workflow/coherence_checker.py --check feature_conformance --json
+feature_conformance:
+  blocking: []            # every condition blocks once enforcement: fail
+  warning:
+    - open_conformance_gap        # a feature misses a rule with no stated reason
+    - unregistered_conformance_gap  # a gap with no line in args/feature_conformance_census.txt
+    - stale_conformance_record    # the doc, snapshot or a stated reason no longer matches the evidence
+  note: >
+    A stated reason excuses only its own rule and goes stale when the rule
+    holds without it. The census enumerates every open gap by name and its
+    ceiling (census_max) may only go down.
+
+# Platform model trace gate (icx-cnf-04)
+#
+# ICDEV's own architecture (args/platform_model/*.yaml) for the features the
+# conformance audit judges: requirement -> element -> code -> EXISTING test.
+# ivv.rtm_completeness_pct is project-wide with no per-feature consumer, so these
+# features are held here instead.
+# Run: python tools/mbse/platform_model.py --check
+#      python tools/workflow/coherence_checker.py --check platform_model_trace --json
+platform_model_trace:
+  blocking:
+    - invented_test_or_code       # a cited test (file and function) or code path that does not exist
+    - orphan_platform_element     # an element no requirement of its feature names
+  warning:
+    - untested_requirement        # a requirement no test covers yet: a gap, never a pass
+    - feature_without_requirement # a feature in args/feature_conformance.yaml the model does not cover
+  note: >
+    Seeding the digital thread (--seed) refuses a model with a blocking
+    condition, so an invented test never reaches the RTM.
+
+# Declared decision gate (icx-cnf-02)
+#
+# Every decision a person takes in Cortex and ACE runs through a template under
+# args/workflow_hitl_templates/ (a manual stage held by a role). The coherence
+# check hitl_workflow fails on a malformed template, a template no code runs, a
+# surface decided twice, or a decision endpoint the feature audit finds with no
+# template (a workflow: line in args/feature_conformance_census.txt).
+# Run: python tools/workflow/coherence_checker.py --check hitl_workflow --json
+declared_decisions:
+  blocking:
+    - undeclared_decision          # a decision endpoint with no declared template
+    - template_without_manual_stage  # no manual stage, no role, or a service key as holder
+    - template_not_run             # a template no route or tool takes a step through
+  warning: []
+  note: >
+    A step that cannot be recorded is refused and its effect does not run. A
+    service key never holds a person's step; it proposes, and re-posts the decided
+    step id once. ACE abort stays an immediate stop with its stated reason.
+

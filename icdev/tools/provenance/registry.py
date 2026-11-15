@@ -35,6 +35,61 @@ from tools.db.storage import get_connection
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
+def _connect(db_path=None):
+    """The registry's connection: ``db_path`` when given, else the process database.
+
+    Before icx-cnf-06 the default was ``DB_PATH`` (this checkout's
+    ``data/icdev.db``). On SQLite, ``get_connection`` opens a ``.db`` path that
+    differs from ``ICDEV_DB_PATH`` as a separate file, so a process pointed at
+    another database (a tenant, a scratch copy, a test) wrote every citation into
+    a file the rest of the process never reads. The Cortex provenance gate hit
+    exactly that: the INSERT failed there (no table), was swallowed, and the gate
+    recorded ``warn`` on every call. With no path the registry now uses the same
+    database as everything else. On PostgreSQL nothing changes.
+    """
+    return get_connection(db_path=str(db_path)) if db_path else get_connection()
+
+
+def ensure_schema(conn) -> None:
+    """Create ``source_citation_registry`` on ``conn`` if it is missing (idempotent).
+
+    The table is created by the blockchain migration (149 /
+    20260815210105), so a database that never ran it has no registry, and every
+    citation written there was lost without a sound. Writers that must land a row
+    (the Cortex provenance gate) call this first, as ``cortex_audit`` does for its
+    own table. The CHECK clause is rendered from :mod:`citation_types`, so it is
+    the vocabulary the migrations ship. An existing table is left as it is: on
+    SQLite an older CHECK cannot be widened in place, and an INSERT that violates
+    it now raises to a caller that passed ``conn`` instead of vanishing.
+    """
+    from tools.db.storage import is_pg
+    from tools.provenance.citation_types import check_constraint_sql, sqlite_check_clause
+
+    pg = is_pg(conn)
+    check = check_constraint_sql() if pg else sqlite_check_clause()
+    created = "TIMESTAMP" if pg else "TEXT"
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS source_citation_registry ("
+        " id TEXT PRIMARY KEY,"
+        f" citation_type TEXT NOT NULL {check},"
+        " source_table TEXT NOT NULL,"
+        " source_record_id TEXT NOT NULL,"
+        " source_doc TEXT,"
+        " source_hash TEXT NOT NULL,"
+        " anchor_hash TEXT,"
+        " merkle_root TEXT,"
+        " blockchain_tx_id TEXT,"
+        " classification TEXT DEFAULT 'CUI',"
+        " project_id TEXT,"
+        " trust_score REAL DEFAULT 0.0,"
+        f" created_at {created} DEFAULT CURRENT_TIMESTAMP)"
+    )
+    for name, column in (("idx_scr_project", "project_id"), ("idx_scr_type", "citation_type"),
+                         ("idx_scr_hash", "source_hash"), ("idx_scr_anchor", "anchor_hash")):
+        conn.execute(
+            f"CREATE INDEX IF NOT EXISTS {name} ON source_citation_registry({column})")
+
+
 def register_citation(
     citation_type: str,
     source_table: str,
@@ -48,10 +103,16 @@ def register_citation(
     project_id: Optional[str] = None,
     trust_score: float = 0.0,
     db_path: Path = None,
+    conn=None,
 ) -> str:
     """Register a citation in the unified source_citation_registry.
 
     Returns the registry entry ID, or ``""`` on failure.
+
+    With ``conn`` the row is written on that connection and the caller owns
+    the commit, and a database error RAISES instead of returning ``""``: a
+    caller that brings its own connection is one that needs to know why a row
+    did not land (icx-cnf-06; the Cortex provenance gate records the reason).
 
     Raises:
         ValueError: if *citation_type* is not in
@@ -75,30 +136,22 @@ def register_citation(
         )
 
     reg_id = f"scr-{uuid.uuid4().hex[:16]}"
-    conn = get_connection(db_path=str(db_path or DB_PATH))
-    try:
-        conn.execute(
-            """INSERT INTO source_citation_registry
+    sql = """INSERT INTO source_citation_registry
                (id, citation_type, source_table, source_record_id, source_doc,
                 source_hash, anchor_hash, merkle_root, blockchain_tx_id,
                 classification, project_id, trust_score, created_at)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-            (
-                reg_id,
-                citation_type,
-                source_table,
-                source_record_id,
-                source_doc,
-                source_hash,
-                anchor_hash,
-                merkle_root,
-                blockchain_tx_id,
-                classification,
-                project_id,
-                trust_score,
-                __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
-            ),
-        )
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"""
+    params = (
+        reg_id, citation_type, source_table, source_record_id, source_doc, source_hash,
+        anchor_hash, merkle_root, blockchain_tx_id, classification, project_id, trust_score,
+        __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+    )
+    if conn is not None:
+        conn.execute(sql, params)
+        return reg_id
+    conn = _connect(db_path)
+    try:
+        conn.execute(sql, params)
         conn.commit()
         return reg_id
     except Exception:
@@ -113,7 +166,7 @@ def register_citation(
 
 def get_citations_for_project(project_id: str, db_path: Path = None) -> List[dict]:
     """Return all registry entries for a project."""
-    conn = get_connection(db_path=str(db_path or DB_PATH))
+    conn = _connect(db_path)
     try:
         rows = conn.execute(
             "SELECT * FROM source_citation_registry WHERE project_id = %s ORDER BY created_at DESC",
@@ -126,7 +179,7 @@ def get_citations_for_project(project_id: str, db_path: Path = None) -> List[dic
 
 def get_citation_by_hash(source_hash: str, db_path: Path = None) -> Optional[dict]:
     """Return a registry entry by its source hash."""
-    conn = get_connection(db_path=str(db_path or DB_PATH))
+    conn = _connect(db_path)
     try:
         row = conn.execute(
             "SELECT * FROM source_citation_registry WHERE source_hash = %s LIMIT 1",
@@ -139,7 +192,7 @@ def get_citation_by_hash(source_hash: str, db_path: Path = None) -> Optional[dic
 
 def update_trust_score(registry_id: str, trust_score: float, db_path: Path = None) -> bool:
     """Update the trust score of a registry entry."""
-    conn = get_connection(db_path=str(db_path or DB_PATH))
+    conn = _connect(db_path)
     try:
         conn.execute(
             "UPDATE source_citation_registry SET trust_score = %s WHERE id = %s",
@@ -160,7 +213,7 @@ def update_blockchain_anchor(
     db_path: Path = None,
 ) -> bool:
     """Update the blockchain anchor fields after ledger submission."""
-    conn = get_connection(db_path=str(db_path or DB_PATH))
+    conn = _connect(db_path)
     try:
         conn.execute(
             "UPDATE source_citation_registry SET merkle_root = %s, blockchain_tx_id = %s WHERE id = %s",
@@ -176,7 +229,7 @@ def update_blockchain_anchor(
 
 def has_cross_reference(registry_id: str, db_path: Path = None) -> bool:
     """Check if a registry entry is cross-referenced by another subsystem."""
-    conn = get_connection(db_path=str(db_path or DB_PATH))
+    conn = _connect(db_path)
     try:
         # A cross-reference exists if the same source_hash appears in multiple source_tables
         row = conn.execute(
@@ -197,7 +250,7 @@ def index_existing_citations(db_path: Path = None) -> dict:
     Iterates prov_entities, canvas_ai_decisions, compliance_evidence_chain,
     sbom_records, and wf_citations (if source_hash exists).
     """
-    conn = get_connection(db_path=str(db_path or DB_PATH))
+    conn = _connect(db_path)
     stats = {"prov_entities": 0, "canvas_ai": 0, "evidence": 0, "sbom": 0, "hitl": 0, "errors": 0}
 
     def _hash_row(row: dict, keys: List[str]) -> str:
@@ -403,7 +456,7 @@ def register_web_citation(
     assert "web" in CITATION_TYPES  # tripwire if the vocabulary is edited badly
 
     prov_id = f"wfp-{uuid.uuid4().hex[:16]}"
-    conn = get_connection(db_path=str(db_path or DB_PATH))
+    conn = _connect(db_path)
     try:
         conn.execute(
             """INSERT INTO web_fetch_provenance
@@ -443,7 +496,7 @@ def get_web_provenance(citation_id: str, db_path: Path = None) -> List[dict]:
     A list, not a single row: the table is append-only, so a re-fetched URL
     accumulates rows and the history is the evidence-drift signal.
     """
-    conn = get_connection(db_path=str(db_path or DB_PATH))
+    conn = _connect(db_path)
     try:
         rows = conn.execute(
             "SELECT * FROM web_fetch_provenance WHERE citation_id = %s "

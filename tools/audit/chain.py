@@ -238,8 +238,11 @@ def _probe_chain_columns(conn):
         return None
 
 
-def serialize_chain_writes(conn) -> None:
+def serialize_chain_writes(conn, lock_name: str = CHAIN_LOCK_NAME) -> None:
     """Enter the audit-chain critical section on this connection.
+
+    ``lock_name`` names the chain; another hash-chained table (``cortex_audit``,
+    icx-cnf-06) passes its own so the two chains do not queue behind each other.
 
     PostgreSQL takes a transaction-scoped advisory lock, which the next COMMIT
     or ROLLBACK releases — there is no unlock path to leak and no way for a
@@ -256,7 +259,7 @@ def serialize_chain_writes(conn) -> None:
             from tools.coordination.dblock import lock_key
 
             conn.cursor().execute(
-                "SELECT pg_advisory_xact_lock(%s)", (lock_key(CHAIN_LOCK_NAME),)
+                "SELECT pg_advisory_xact_lock(%s)", (lock_key(lock_name),)
             )
             return
         cur = conn.cursor()

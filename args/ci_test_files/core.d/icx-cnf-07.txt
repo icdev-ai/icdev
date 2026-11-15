@@ -1,0 +1,2 @@
+# icx-cnf-07 -- the last two GUI gaps: ACE profile delete and Cortex award on their pages, through the declared step.
+tests/test_icx_cnf_07_page_decisions.py

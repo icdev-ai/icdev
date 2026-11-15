@@ -12,6 +12,8 @@ Routes:
   POST /cortex/api/chat             message → intent routing → cortex.* facade
   GET  /cortex/api/session/<id>     reload a session's persisted turns
   POST /cortex/api/iqe-query        IQE natural-language query over cortex.* collections
+  GET  /cortex/verbs|pmo|intake|govern|service-keys|airgap
+                                    console pages for the REST verbs (icx-cnf-05)
 """
 from __future__ import annotations
 
@@ -28,7 +30,9 @@ from tools.cortex.constants import (
     CORTEX_MODES,
     DEFAULT_DOMAIN,
     DEFAULT_MODE,
+    SERVICE_KEY_VIEW_ROLES,
 )
+from tools.dashboard.auth import require_role
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -232,6 +236,112 @@ def api_metrics_tile():
     })
 
 
+# ── Console pages for the REST verbs (icx-cnf-05) ───────────────────────────────
+#
+# The feature-conformance audit found these verbs reachable only over
+# /cortex/api/v1. Each page below calls its verbs through that SAME governed REST
+# surface (one auth path, one TRUST chain), and each JSON read comes from
+# tools/cortex/console.py, the module the read-only MCP tools return too. Nothing
+# here decides: award and the BOM credibility designation are people's decisions
+# with their own workflow (icx-cnf-02), so these pages never take them. The PMO
+# page PROPOSES an award (icx-cnf-07): the route records a pending step that a
+# contracts person other than the proposer accepts at /decisions.
+
+def _hours_arg() -> int:
+    return _metrics_window()
+
+
+@cortex_bp.route("/verbs")
+def verbs_page():
+    """GET /cortex/verbs — run resolve, complete, reason, classify, extract."""
+    from tools.cortex.constants import CONSOLE_VERBS
+    return render_template("cortex/verbs.html", verbs=CONSOLE_VERBS)
+
+
+@cortex_bp.route("/pmo")
+def pmo_page():
+    """GET /cortex/pmo — the PMO verbs and what they registered for an opportunity."""
+    from tools.cortex.console import PMO_VERBS
+    from tools.cortex.constants import PMO_EXAMPLES
+    from tools.workflow_hitl.declared import template_for
+
+    award = template_for("cortex.api_v1_award") or {}
+    return render_template("cortex/pmo.html", verbs=PMO_VERBS, examples=PMO_EXAMPLES,
+                           award_template=award.get("id", ""),
+                           opportunity_id=(request.args.get("opportunity_id") or "").strip())
+
+
+@cortex_bp.route("/api/pmo/status", methods=["GET"])
+def api_pmo_status():
+    """GET /cortex/api/pmo/status?opportunity_id= — read-only PMO state."""
+    from tools.cortex.console import pmo_status
+    return jsonify(pmo_status(request.args.get("opportunity_id") or ""))
+
+
+@cortex_bp.route("/intake")
+def intake_page():
+    """GET /cortex/intake — capture a customer ask into a RICOAS intake session."""
+    return render_template("cortex/intake.html")
+
+
+@cortex_bp.route("/api/intake/sessions", methods=["GET"])
+def api_intake_sessions():
+    """GET /cortex/api/intake/sessions — bridge-created intake sessions (read-only)."""
+    from tools.cortex.console import intake_sessions
+    return jsonify(intake_sessions(limit=request.args.get("limit", 50)))
+
+
+@cortex_bp.route("/govern")
+def govern_page():
+    """GET /cortex/govern — the TRUST chain: profiles, gate outcomes, a dry run."""
+    from tools.cortex.console import trust_chain
+    return render_template("cortex/govern.html", chain=trust_chain(_hours_arg()))
+
+
+@cortex_bp.route("/api/trust-chain", methods=["GET"])
+def api_trust_chain():
+    """GET /cortex/api/trust-chain — the chain's configuration and outcomes (read-only)."""
+    from tools.cortex.console import trust_chain
+    return jsonify(trust_chain(_hours_arg()))
+
+
+@cortex_bp.route("/api/agent-launches", methods=["GET"])
+def api_agent_launches():
+    """GET /cortex/api/agent-launches — governed cortex.agent calls (read-only)."""
+    from tools.cortex.console import agent_launches
+    return jsonify(agent_launches(request.args.get("limit", 25)))
+
+
+@cortex_bp.route("/service-keys")
+@require_role(*SERVICE_KEY_VIEW_ROLES)
+def service_keys_page():
+    """GET /cortex/service-keys — keys, their scopes and status (no hashes)."""
+    from tools.cortex.console import service_keys
+    return render_template("cortex/service_keys.html", data=service_keys())
+
+
+@cortex_bp.route("/api/service-keys", methods=["GET"])
+@require_role(*SERVICE_KEY_VIEW_ROLES)
+def api_service_keys():
+    """GET /cortex/api/service-keys — the key list and scope vocabulary (read-only)."""
+    from tools.cortex.console import service_keys
+    return jsonify(service_keys())
+
+
+@cortex_bp.route("/airgap")
+def airgap_page():
+    """GET /cortex/airgap — air-gap posture and the readiness invariant."""
+    from tools.cortex.console import airgap_posture
+    return render_template("cortex/airgap.html", posture=airgap_posture())
+
+
+@cortex_bp.route("/api/airgap", methods=["GET"])
+def api_airgap():
+    """GET /cortex/api/airgap — air-gap posture (read-only)."""
+    from tools.cortex.console import airgap_posture
+    return jsonify(airgap_posture())
+
+
 # ── API Routes ──────────────────────────────────────────────────────────────────
 
 def _cortex_context(domain: str):
@@ -349,8 +459,19 @@ def _launch_confirmed_agent(question: str, ctx) -> dict:
     Goes through ``cortex_api.agent`` rather than ``ACEController`` directly so
     the launch inherits the TRUST pipeline — governance matters most at the
     moment something is authorised to act.
+
+    The confirm click is the person's step of ``decl-wft-cortex-agent-launch``
+    (icx-cnf-02), taken here in the same request. A refused step launches
+    nothing and says why.
     """
     from tools.cortex import api as cortex_api
+    from tools.workflow_hitl import declared
+
+    try:
+        step = declared.take_step("decl-wft-cortex-agent-launch", surface="cortex.api_chat",
+                                  decision="launch", subject=question[:200])
+    except declared.StepRefused as exc:
+        return _degraded(f"The agent was not launched: {exc.message}.", "agent")
 
     roster = _propose_roles(question)
     role_ids = [r["role_id"] for r in roster if r.get("exists")]
@@ -373,6 +494,7 @@ def _launch_confirmed_agent(question: str, ctx) -> dict:
             "governance": {"gates_run": [], "outcomes": {}, "blocked": False},
             "requires_confirm": False,
             "degraded": True,
+            "decision_step": step,
         }
 
     data = getattr(result, "data", None) or {}
@@ -393,6 +515,7 @@ def _launch_confirmed_agent(question: str, ctx) -> dict:
         "instance_id": instance_id,
         "deep_link": deep_link,
         "launched_roles": role_ids,
+        "decision_step": step,
     }
 
 
@@ -587,6 +710,8 @@ def api_chat():
         "proposed_roles": outcome.get("proposed_roles", []),
         "instance_id": outcome.get("instance_id", ""),
         "deep_link": outcome.get("deep_link", ""),
+        # The person's recorded step when the confirm launched (icx-cnf-02).
+        "decision_step": outcome.get("decision_step"),
     })
 
 
