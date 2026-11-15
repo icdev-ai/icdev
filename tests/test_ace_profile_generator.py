@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from flask import Flask
+from flask import Flask, g
 
 pg = importlib.import_module("icdev.tools.ace.profile_generator")
 
@@ -118,11 +118,20 @@ def test_delete_removes_generated_roles_and_candidates_only(roles, model):
 
 
 @pytest.fixture()
-def client(roles, model):
+def client(roles, model, wf_db):
+    # Deleting a profile is a signed-in person's declared step
+    # (decl-wft-ace-profile-delete, icx-cnf-02): a PM holds it, and the step is
+    # recorded in the wf tables wf_db provides.
     bp_mod = importlib.import_module("icdev.tools.ace.blueprint")
     bp_mod._state["db_ready"] = True
     app = Flask(__name__)
     app.config["TESTING"] = True
+
+    @app.before_request
+    def _signed_in_pm():
+        g.current_user = {"id": "u-pm", "role": "pm"}
+        g.security_context = {"tenant_id": "default", "user_id": "u-pm", "classification": "CUI"}
+
     app.register_blueprint(bp_mod.ace_bp)
     if "ace_api" not in app.blueprints:
         app.register_blueprint(bp_mod.ace_api_bp)

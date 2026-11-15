@@ -6,7 +6,9 @@ undecorated function. This file holds the ROUTE a caller actually reaches:
   * no key, no answer (401); a key without ``cortex:bom`` is denied (403);
   * a credibility tier the caller does not declare comes back ``ai_proposed``
     with a rationale: the service proposes, a person's declaration binds;
-  * a tier the caller does declare comes back ``set_by: human``;
+  * a tier a service key declares is only a recorded proposal (``ai_proposed``,
+    a pending designation step); a tier a signed-in holder declares binds as
+    ``set_by: human`` (decl-wft-cortex-bom-designation, icx-cnf-02);
   * a body with no documents is a 400 naming the defect, not a 500.
 """
 from __future__ import annotations
@@ -24,7 +26,7 @@ SCOPE = "cortex:bom"
 PATH = "/cortex/api/v1/bom"
 
 
-def make_client(*, binding=None, authenticated=True):
+def make_client(*, binding=None, authenticated=True, user=None):
     app = Flask(__name__)
     app.register_blueprint(cortex_bp)
 
@@ -38,7 +40,7 @@ def make_client(*, binding=None, authenticated=True):
             g.current_user = {"id": "cortex-svc:compass", "role": "service", "tenant_id": "compass"}
             g.cortex_binding = binding
         else:
-            g.current_user = {"id": "u1", "role": "admin"}
+            g.current_user = dict(user or {"id": "u1", "role": "admin"})
         g.security_context = {"tenant_id": "compass", "user_id": "u1", "classification": "CUI"}
 
     return app.test_client()
@@ -81,8 +83,19 @@ def test_an_undeclared_tier_is_proposed_never_self_approved():
     assert src["rationale"]
 
 
-def test_only_the_callers_declaration_binds():
+def test_a_service_keys_declaration_is_only_a_proposal(wf_db):
     res = make_client(binding=_binding([SCOPE])).post(PATH, json={"documents": [
+        _doc(role="bom_claim", credibility_tier="authoritative")]})
+    assert res.status_code == 200, res.get_json()
+    body = res.get_json()
+    assert body["sources"][0]["set_by"] == "ai_proposed"
+    assert body["designation_step"]["status"] == "pending"
+    assert body["proposed_designations"]["bom.xlsx"]["credibility_tier"] == "authoritative"
+
+
+def test_only_a_persons_declaration_binds(wf_db):
+    holder = {"id": "u-pricing", "role": "contract_mgr"}
+    res = make_client(user=holder).post(PATH, json={"documents": [
         _doc(role="bom_claim", credibility_tier="authoritative")]})
     assert res.status_code == 200, res.get_json()
     src = res.get_json()["sources"][0]

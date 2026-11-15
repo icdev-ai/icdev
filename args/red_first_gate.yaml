@@ -753,15 +753,17 @@ exemptions:
       NO NEW BEHAVIOUR. This file is the test evidence for PM-CTX-17
       (args/platform_model/cortex.yaml): POST /cortex/api/v1/bom already needed
       a caller and the cortex:bom scope, already returned an undeclared
-      credibility tier as `ai_proposed` with a rationale, already bound only
-      the caller's declared tier as `set_by: human`, and already answered an
-      empty body with a 400. The card changed no code behind that route
-      (tools/cortex/rest_v1.py and tools/bom are untouched), so it passes at
-      the merge base by construction. So that "traces existing behaviour" is
-      not a way to ship a test that asserts nothing, it was checked by
-      mutation on 2026-11-14: making api_v1_bom stamp `set_by = "human"`
-      unconditionally turns it RED (1 failed, 3 passed). Remove this
-      exemption if a later change to this file asserts new behaviour.
+      credibility tier as `ai_proposed` with a rationale, already answered an
+      empty body with a 400, and (since icx-cnf-02, #2574, on main) already
+      recorded a service key's declared tier as a pending proposal while a
+      signed-in holder's binds as `set_by: human`. The card changed no code
+      behind that route (tools/cortex/rest_v1.py and tools/bom are untouched),
+      so it passes at the merge base by construction. So that "traces existing
+      behaviour" is not a way to ship a test that asserts nothing, it was
+      checked by mutation on 2026-11-14: making api_v1_bom stamp
+      `set_by = "human"` unconditionally turns it RED (2 failed, 3 passed).
+      Remove this exemption if a later change to this file asserts new
+      behaviour.
   - pattern: "tests/test_ace_eval_routes.py"
     reason: >-
       icx-cnf-04 TRACES EXISTING BEHAVIOUR INTO THE PLATFORM MODEL AND ASSERTS
