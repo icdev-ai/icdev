@@ -1,0 +1,71 @@
+{# Shared by the Cortex console pages (icx-cnf-05): POST a JSON body to a Cortex
+   REST route and show the reply. The route does the validation, the governance
+   and the audit; this only carries the body there and the answer back. #}
+<script>
+function cortexEsc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+    return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+  });
+}
+
+function cortexPost(path, body) {
+  return fetch(path, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  }).then(function(r) {
+    return r.json().catch(function() { return {error: 'non-JSON reply'}; })
+      .then(function(j) { return {status: r.status, json: j}; });
+  });
+}
+
+function cortexGet(path) {
+  return fetch(path).then(function(r) {
+    return r.json().catch(function() { return {error: 'non-JSON reply'}; })
+      .then(function(j) { return {status: r.status, json: j}; });
+  });
+}
+
+// Render a reply. Large base64 payloads are shown as a download link, not text.
+function cortexShow(outId, res) {
+  var out = document.getElementById(outId);
+  var j = res.json || {};
+  var color = res.status >= 400 ? '#f87171' : '#4ade80';
+  var html = '<div style="font-size:11px;color:' + color + ';margin-bottom:4px;">HTTP ' +
+    cortexEsc(res.status) + (j.blocked ? ' · blocked by the TRUST chain' : '') + '</div>';
+  var shown = {};
+  Object.keys(j).forEach(function(k) {
+    var v = j[k];
+    if (typeof v === 'string' && /_base64$/.test(k)) {
+      var mime = j.content_type || 'application/octet-stream';
+      html += '<a download="' + cortexEsc(j.filename || 'cortex-output') + '" href="data:' +
+        cortexEsc(mime) + ';base64,' + v + '" style="color:#5aa9e6;font-size:12px;">Download ' +
+        cortexEsc(j.filename || k) + '</a><br>';
+      shown[k] = '(base64, ' + v.length + ' chars)';
+    } else {
+      shown[k] = v;
+    }
+  });
+  html += '<pre style="white-space:pre-wrap;color:#c8d6ea;font-size:11px;max-height:360px;overflow:auto;margin:0;">' +
+    cortexEsc(JSON.stringify(shown, null, 2)) + '</pre>';
+  out.innerHTML = html;
+}
+
+function cortexBody(textareaId, outId) {
+  try {
+    return JSON.parse(document.getElementById(textareaId).value || '{}');
+  } catch (e) {
+    document.getElementById(outId).innerHTML =
+      '<div style="color:#f87171;font-size:12px;">The body is not valid JSON: ' + cortexEsc(e.message) + '</div>';
+    return null;
+  }
+}
+
+function cortexRun(path, textareaId, outId) {
+  var body = cortexBody(textareaId, outId);
+  if (body === null) { return; }
+  document.getElementById(outId).innerHTML = '<div style="color:#7a8cb0;font-size:12px;">Running…</div>';
+  cortexPost(path, body).then(function(res) { cortexShow(outId, res); })
+    .catch(function(e) { document.getElementById(outId).textContent = 'Request failed: ' + e; });
+}
+</script>

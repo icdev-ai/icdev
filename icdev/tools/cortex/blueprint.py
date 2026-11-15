@@ -12,6 +12,8 @@ Routes:
   POST /cortex/api/chat             message → intent routing → cortex.* facade
   GET  /cortex/api/session/<id>     reload a session's persisted turns
   POST /cortex/api/iqe-query        IQE natural-language query over cortex.* collections
+  GET  /cortex/verbs|pmo|intake|govern|service-keys|airgap
+                                    console pages for the REST verbs (icx-cnf-05)
 """
 from __future__ import annotations
 
@@ -28,7 +30,9 @@ from tools.cortex.constants import (
     CORTEX_MODES,
     DEFAULT_DOMAIN,
     DEFAULT_MODE,
+    SERVICE_KEY_VIEW_ROLES,
 )
+from tools.dashboard.auth import require_role
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger(__name__)
@@ -230,6 +234,106 @@ def api_metrics_tile():
         # was capped rather than let a partial spend figure read as the total.
         "detail_truncated": bool((stats.get("detail") or {}).get("truncated")),
     })
+
+
+# ── Console pages for the REST verbs (icx-cnf-05) ───────────────────────────────
+#
+# The feature-conformance audit found these verbs reachable only over
+# /cortex/api/v1. Each page below calls its verbs through that SAME governed REST
+# surface (one auth path, one TRUST chain), and each JSON read comes from
+# tools/cortex/console.py, the module the read-only MCP tools return too. Nothing
+# here decides: award and the BOM credibility designation are people's decisions
+# with their own workflow (icx-cnf-02), so these pages never take them.
+
+def _hours_arg() -> int:
+    return _metrics_window()
+
+
+@cortex_bp.route("/verbs")
+def verbs_page():
+    """GET /cortex/verbs — run resolve, complete, reason, classify, extract."""
+    from tools.cortex.constants import CONSOLE_VERBS
+    return render_template("cortex/verbs.html", verbs=CONSOLE_VERBS)
+
+
+@cortex_bp.route("/pmo")
+def pmo_page():
+    """GET /cortex/pmo — the PMO verbs and what they registered for an opportunity."""
+    from tools.cortex.console import PMO_VERBS
+    from tools.cortex.constants import PMO_EXAMPLES
+    return render_template("cortex/pmo.html", verbs=PMO_VERBS, examples=PMO_EXAMPLES,
+                           opportunity_id=(request.args.get("opportunity_id") or "").strip())
+
+
+@cortex_bp.route("/api/pmo/status", methods=["GET"])
+def api_pmo_status():
+    """GET /cortex/api/pmo/status?opportunity_id= — read-only PMO state."""
+    from tools.cortex.console import pmo_status
+    return jsonify(pmo_status(request.args.get("opportunity_id") or ""))
+
+
+@cortex_bp.route("/intake")
+def intake_page():
+    """GET /cortex/intake — capture a customer ask into a RICOAS intake session."""
+    return render_template("cortex/intake.html")
+
+
+@cortex_bp.route("/api/intake/sessions", methods=["GET"])
+def api_intake_sessions():
+    """GET /cortex/api/intake/sessions — bridge-created intake sessions (read-only)."""
+    from tools.cortex.console import intake_sessions
+    return jsonify(intake_sessions(limit=request.args.get("limit", 50)))
+
+
+@cortex_bp.route("/govern")
+def govern_page():
+    """GET /cortex/govern — the TRUST chain: profiles, gate outcomes, a dry run."""
+    from tools.cortex.console import trust_chain
+    return render_template("cortex/govern.html", chain=trust_chain(_hours_arg()))
+
+
+@cortex_bp.route("/api/trust-chain", methods=["GET"])
+def api_trust_chain():
+    """GET /cortex/api/trust-chain — the chain's configuration and outcomes (read-only)."""
+    from tools.cortex.console import trust_chain
+    return jsonify(trust_chain(_hours_arg()))
+
+
+@cortex_bp.route("/api/agent-launches", methods=["GET"])
+def api_agent_launches():
+    """GET /cortex/api/agent-launches — governed cortex.agent calls (read-only)."""
+    from tools.cortex.console import agent_launches
+    return jsonify(agent_launches(request.args.get("limit", 25)))
+
+
+@cortex_bp.route("/service-keys")
+@require_role(*SERVICE_KEY_VIEW_ROLES)
+def service_keys_page():
+    """GET /cortex/service-keys — keys, their scopes and status (no hashes)."""
+    from tools.cortex.console import service_keys
+    return render_template("cortex/service_keys.html", data=service_keys())
+
+
+@cortex_bp.route("/api/service-keys", methods=["GET"])
+@require_role(*SERVICE_KEY_VIEW_ROLES)
+def api_service_keys():
+    """GET /cortex/api/service-keys — the key list and scope vocabulary (read-only)."""
+    from tools.cortex.console import service_keys
+    return jsonify(service_keys())
+
+
+@cortex_bp.route("/airgap")
+def airgap_page():
+    """GET /cortex/airgap — air-gap posture and the readiness invariant."""
+    from tools.cortex.console import airgap_posture
+    return render_template("cortex/airgap.html", posture=airgap_posture())
+
+
+@cortex_bp.route("/api/airgap", methods=["GET"])
+def api_airgap():
+    """GET /cortex/api/airgap — air-gap posture (read-only)."""
+    from tools.cortex.console import airgap_posture
+    return jsonify(airgap_posture())
 
 
 # ── API Routes ──────────────────────────────────────────────────────────────────

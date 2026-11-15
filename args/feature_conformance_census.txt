@@ -8,37 +8,5 @@
 # ENUMERATED, NOT COUNTED: a count can hold while the set churns. A line that
 # disappears is a gap someone closed -- prune it and lower `census_max`. A line
 # that appears is a new gap; it fails --check until it is reviewed in here.
-ace.hitl|ai:no-read-tool
 ace.profiles|gui:uncalled:ace_api.api_profiles_delete
-ace.runs|gui:uncalled:ace_api.api_ace_chat
-ace.trust_sessions|gui:uncalled:ace_api.api_ace_events_emit
-cortex.agent_launch|ai:no-read-tool
-cortex.airgap_guard|ai:no-read-tool
-cortex.airgap_guard|gui:no-page
-cortex.findings|ai:no-read-tool
-cortex.governed_verbs|gui:no-page
-cortex.governed_verbs|gui:uncalled:cortex.api_v1_classify
-cortex.governed_verbs|gui:uncalled:cortex.api_v1_complete
-cortex.governed_verbs|gui:uncalled:cortex.api_v1_extract
-cortex.governed_verbs|gui:uncalled:cortex.api_v1_reason
-cortex.governed_verbs|gui:uncalled:cortex.api_v1_resolve
-cortex.govern|ai:no-read-tool
-cortex.govern|gui:no-page
-cortex.govern|gui:uncalled:cortex.api_v1_govern
-cortex.intake|ai:no-read-tool
-cortex.intake|gui:no-page
-cortex.intake|gui:uncalled:cortex.api_v1_intake_session_create
-cortex.intake|gui:uncalled:cortex.api_v1_intake_turn
-cortex.metrics|ai:no-read-tool
-cortex.pmo|ai:no-read-tool
-cortex.pmo|gui:no-page
 cortex.pmo|gui:uncalled:cortex.api_v1_award
-cortex.pmo|gui:uncalled:cortex.api_v1_bom
-cortex.pmo|gui:uncalled:cortex.api_v1_cost_volume
-cortex.pmo|gui:uncalled:cortex.api_v1_dashboard
-cortex.pmo|gui:uncalled:cortex.api_v1_slides
-cortex.pmo|gui:uncalled:cortex.api_v1_staffing_matrix
-cortex.pmo|gui:uncalled:cortex.api_v1_win_themes
-cortex.service_keys|ai:no-read-tool
-cortex.service_keys|gui:no-page
-cwk.canvas|ai:no-read-tool
