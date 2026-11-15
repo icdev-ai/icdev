@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Cortex Verbs — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="margin-bottom:20px;">
+  <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🧩 Cortex Verbs</h2>
+  <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;max-width:900px;">
+    Run one governed Cortex verb on your own input. Each card posts to the same
+    <code style="color:#b8d0e8;">/cortex/api/v1</code> route an external caller uses, so the reply carries the
+    same TRUST governance report and lands in the same append-only audit
+    (<a href="{{ url_for('cortex.metrics_page') }}" style="color:#5aa9e6;">Metrics</a>).
+    Edit the JSON body, then Run. A reply is an answer, not a decision: nothing here approves or changes anything.
+    · <a href="{{ url_for('cortex.index') }}" style="color:#5aa9e6;">← back to Cortex</a>
+  </p>
+</div>
+
+{# The literal paths live here so the conformance audit can see which page calls which route. #}
+<script>
+var CORTEX_VERB_PATHS = {
+  resolve: '/cortex/api/v1/resolve',
+  complete: '/cortex/api/v1/complete',
+  reason: '/cortex/api/v1/reason',
+  classify: '/cortex/api/v1/classify',
+  extract: '/cortex/api/v1/extract'
+};
+</script>
+{% include "cortex/_rest_runner.html" %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;">
+  {% for v in verbs %}
+  <div id="verb-{{ v.key }}" style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <h3 style="color:#b8d0e8;font-size:14px;margin:0 0 4px;">{{ v.label }}</h3>
+    <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;">{{ v.desc }}</p>
+    <label for="verb-body-{{ v.key }}" style="color:#7a8cb0;font-size:11px;">Request body (JSON)</label>
+    <textarea id="verb-body-{{ v.key }}" rows="6" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-family:monospace;font-size:12px;">{{ v.example | tojson(indent=2) }}</textarea>
+    <button type="button" data-verb="{{ v.key }}" onclick="cortexRun(CORTEX_VERB_PATHS['{{ v.key }}'], 'verb-body-{{ v.key }}', 'verb-out-{{ v.key }}')"
+      style="margin-top:8px;background:#0f2a4a;color:#b8d0e8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Run {{ v.label }}</button>
+    <div id="verb-out-{{ v.key }}" style="margin-top:10px;"></div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "cortex" %}
+{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Cortex" %}
+{% set iqe_examples = [
+  {"label": "Governance audit", "query": "foreach a in cortex.audit select a.function, a.outcome, a.blocked, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

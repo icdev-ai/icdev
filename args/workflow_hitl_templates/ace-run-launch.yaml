@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+id: decl-wft-ace-run-launch
+name: "ACE: launch or rerun a team"
+description: >-
+  A person launches a co-worker team from the console, or reruns one from a
+  past session. The launch is the person's step.
+decides: [ace_api.api_launch, ace_api.api_session_rerun]
+effect: ACEController.launch, unchanged.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: The console assembled the problem and the team.
+  - name: launch
+    step_type: manual
+    role: run_approver
+    holders: [admin, pm, developer, isso, co, cor, reviewer]
+    decisions: {launch: affirm, rerun: affirm}
+    reason_required: []

@@ -153,6 +153,20 @@ exclusions:
       into a CI-gated file, and skip_census is closed.
     review: owui-api-07
 
+  - pattern: "tests/pg_tier/test_declared_decisions_pg.py"
+    reason: >-
+      Needs a LIVE PostgreSQL. It runs the declared decision steps on the
+      server: seeding wf_templates, a person's step through the engine
+      (wf_instances, wf_approvals, wf_feedback), propose / decide / spend, the
+      PL/pgSQL append-only triggers of migration 20261114162849 (SQLite hid a
+      RAISE format-string bug in it that only the server reports) and a Cortex
+      finding's adjudication. No SQLite run reaches those triggers. Runs in
+      Test (PostgreSQL) via tests/pg_tier_allowlist.txt. Excluded rather than
+      gated for the same reason as the local_database entry above: its
+      module-level skipif would put a skip into a CI-gated file, and
+      skip_census is closed.
+    review: icx-cnf-02
+
 # --------------------------------------------------------------------------- #
 # BACKLOG — the grandfathered census
 # --------------------------------------------------------------------------- #
@@ -187,7 +201,7 @@ backlog_file: args/ci_test_backlog.txt
 # tools/ci/census_growth.py: this census may lose names and never gain one,
 # whatever the ceiling says. The ceiling stays as a second, independent barrier
 # for a file ALREADY named here that someone un-gates.
-backlog_max: 1671
+backlog_max: 1653
 
 # --------------------------------------------------------------------------- #
 # SKIP CENSUS — a gated test that skips is UNMEASURED, not passing (trust-disc-03)

@@ -145,6 +145,22 @@ exemptions:
       Scoped to this one file. It runs in Test (PostgreSQL) via
       tests/pg_tier_allowlist.txt, and is excluded from CI gating for the
       reason written in args/test_gating_gate.yaml.
+  - pattern: "tests/pg_tier/test_declared_decisions_pg.py"
+    reason: >-
+      THE GATE CANNOT SEE THIS FILE: a module-level `skipif` on ICDEV_PYTEST_PG,
+      which the gate does not set, so both runs are "6 skipped" and it correctly
+      reports that it learned nothing. THE RED WAS TAKEN UNDER THE TIER INSTEAD
+      AND IS RECORDED (icx-cnf-02, 2026-11-14). Against a scratch PostgreSQL 16
+      bootstrapped fresh from the merge-base tree (17580dfb3), this file ran
+      5 failed, 1 passed: tools.workflow_hitl.declared and migration
+      20261114162849 do not exist there, and only the backend sentinel passes.
+      On this branch's tree it is 6 passed. The append-only assertion was also
+      checked by mutation: dropping the wf_decision_steps no_update/no_delete
+      triggers on this branch's database turns
+      test_the_ledger_is_append_only_on_postgresql RED (1 failed, 5 passed).
+      Scoped to this one file. It runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt, and is excluded from CI gating for the
+      reason written in args/test_gating_gate.yaml.
   - pattern: "tests/pg_tier/test_cortex_rls_index_plan.py"
     reason: >-
       THE GATE CANNOT SEE THIS FILE: a module-level `skipif` on ICDEV_PYTEST_PG,
@@ -731,3 +747,46 @@ exemptions:
       discriminating proof for this PR is
       tests/genesis/test_kpr_watch_25_git_first_without_baseline.py. Remove
       this exemption if a later change to this file adds a new assertion.
+  - pattern: "tests/cortex/test_rest_bom.py"
+    reason: >-
+      icx-cnf-04 TRACES EXISTING BEHAVIOUR INTO THE PLATFORM MODEL AND ASSERTS
+      NO NEW BEHAVIOUR. This file is the test evidence for PM-CTX-17
+      (args/platform_model/cortex.yaml): POST /cortex/api/v1/bom already needed
+      a caller and the cortex:bom scope, already returned an undeclared
+      credibility tier as `ai_proposed` with a rationale, already answered an
+      empty body with a 400, and (since icx-cnf-02, #2574, on main) already
+      recorded a service key's declared tier as a pending proposal while a
+      signed-in holder's binds as `set_by: human`. The card changed no code
+      behind that route (tools/cortex/rest_v1.py and tools/bom are untouched),
+      so it passes at the merge base by construction. So that "traces existing
+      behaviour" is not a way to ship a test that asserts nothing, it was
+      checked by mutation on 2026-11-14: making api_v1_bom stamp
+      `set_by = "human"` unconditionally turns it RED (2 failed, 3 passed).
+      Remove this exemption if a later change to this file asserts new
+      behaviour.
+  - pattern: "tests/test_ace_eval_routes.py"
+    reason: >-
+      icx-cnf-04 TRACES EXISTING BEHAVIOUR INTO THE PLATFORM MODEL AND ASSERTS
+      NO NEW BEHAVIOUR. This file is the test evidence for PM-ACE-13
+      (args/platform_model/ace.yaml): the ACE session-eval routes (POST and GET
+      /api/ace/sessions/<id>/eval, GET /api/ace/evals and /evals/trends)
+      already scored, persisted, replaced and read back an eval, and already
+      404ed an unknown session. The card's only change to tools/ace/blueprint.py
+      is the actor passed to abort(), which these routes do not reach, so it
+      passes at the merge base by construction. Checked by mutation on
+      2026-11-14: removing the `not_found` -> 404 branch from
+      api_session_eval_post turns it RED (1 failed, 2 passed). Remove this
+      exemption if a later change to this file asserts new behaviour.
+  - pattern: "tests/test_coworkers_canvas.py"
+    reason: >-
+      icx-cnf-04 TRACES EXISTING BEHAVIOUR INTO THE PLATFORM MODEL AND ASSERTS
+      NO NEW BEHAVIOUR. This file is the test evidence for PM-CWK-02
+      (args/platform_model/cwk.yaml): the Co-Workers canvas already built its
+      roster from config only (chat personas with the plumbing persona hidden,
+      then ACE roles), already handed off to /chat by a relative link, already
+      showed an empty roster instead of a 500, and already counted the roster
+      by kind. The card changed nothing under tools/coworkers, so it passes at
+      the merge base by construction. Checked by mutation on 2026-11-14:
+      dropping the HIDDEN_PERSONA_KEYS filter from registry._personas turns it
+      RED (3 failed, 4 passed). Remove this exemption if a later change to this
+      file asserts new behaviour.

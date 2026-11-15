@@ -207,8 +207,12 @@ class ACEController:
         except Exception as exc:
             return {"instance_id": instance_id, "error": str(exc)}
 
-    def abort(self, instance_id: str) -> None:
+    def abort(self, instance_id: str, actor: str = "system") -> None:
         """Signal all CoWorkerThreads for an instance to stop.
+
+        A stop: it takes effect at once and waits for no approval. It is
+        audited (an ``abort`` row in ace_audit_log naming *actor*) so a stopped
+        team always says who stopped it (icx-cnf-04).
 
         Raises LookupError if *instance_id* does not exist.
         """
@@ -237,7 +241,30 @@ class ACEController:
             except Exception:
                 pass
         self._set_instance_state(instance_id, "cancelled")
+        self._audit_abort(instance_id, actor, len(threads))
         logger.info("Aborted ACE instance %s (%d threads signalled)", instance_id, len(threads))
+
+    def _audit_abort(self, instance_id: str, actor: str, threads: int) -> None:
+        """Append the abort to ace_audit_log (best-effort: auditing never blocks a stop)."""
+        try:
+            from icdev.tools.db.storage import get_canvas_connection
+
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            conn = get_canvas_connection(_DB_ENV)
+            try:
+                conn.execute(
+                    "INSERT INTO ace_audit_log "
+                    "(instance_id, coworker_id, action, detail, actor, control_refs, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (instance_id, "", "abort",
+                     f"instance cancelled; {threads} coworker thread(s) signalled",
+                     str(actor or "system"), "IR-4,AU-2", now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:  # noqa: BLE001 - a stop must not wait on its audit row
+            logger.warning("abort audit write failed for %s: %s", instance_id, exc)
 
     @staticmethod
     def list_roles() -> list[str]:

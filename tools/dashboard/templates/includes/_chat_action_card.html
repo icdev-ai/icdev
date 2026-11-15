@@ -98,7 +98,12 @@
     }).then(function (r) {
       return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; });
     }).then(function (res) {
-      if (!approve) { result.textContent = 'Dismissed.'; return; }
+      // Confirm and decline are the person's step of decl-wft-ace-team-suggestion
+      // (icx-cnf-02); a refused step changes nothing and says why.
+      if (!approve) {
+        result.textContent = res.ok ? 'Dismissed.' : (res.d.error || 'Could not dismiss.');
+        return;
+      }
       if (res.status === 402) {
         result.innerHTML = '<span style="color:#fbbf24;">'
           + escapeHtml(res.d.message || 'Upgrade required.') + '</span>';

@@ -197,9 +197,36 @@ def init_db(conn=None) -> None:
             if stmt:
                 cur.execute(stmt)
         conn.commit()
+        _ensure_governed_tables(conn)
     finally:
         if own_conn:
             conn.close()
+
+
+def _ensure_governed_tables(conn) -> None:
+    """The rest of what a governed call writes: the provenance registry and the chain.
+
+    icx-cnf-06. ``source_citation_registry`` (the provenance gate's table) used
+    to exist only where the blockchain migration had run, so on any other
+    database the gate's INSERT failed, was swallowed, and every call recorded
+    provenance ``warn``. ``audit_chain.ensure_chain`` adds the hash chain, its
+    genesis and the UPDATE/DELETE triggers. Each step is best-effort and
+    isolated: neither may stop the cortex tables above from being usable.
+    """
+    from tools.cortex.db import audit_chain
+    from tools.provenance.registry import ensure_schema as ensure_registry
+
+    for label, step in (("provenance registry", ensure_registry),
+                        ("cortex_audit chain", audit_chain.ensure_chain)):
+        try:
+            step(conn)
+            conn.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("cortex %s not ensured: %s", label, exc)
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 # --------------------------------------------------------------------------- #
@@ -300,78 +327,97 @@ def record_audit(payload: dict, conn=None) -> str:
         from tools.db.storage import get_connection
         conn = get_connection()
     try:
+        from tools.cortex.db import audit_chain
+
         _ensure_schema(conn)
-        conn.execute(
-            "INSERT INTO cortex_audit "
-            "(id, session_id, tenant_id, classification, function, agent_id, "
-            " user_id, gates_json, outcome, blocked, provenance_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (
-                audit_id,
-                payload.get("session_id") or None,
-                payload.get("tenant_id") or "default",
-                payload.get("classification") or "CUI",
-                payload.get("operation") or "cortex",
-                payload.get("agent_id") or None,
-                payload.get("user_id") or None,
-                json.dumps(
-                    {
-                        # Which governance profile ran (hgx-gov-01). "default"
-                        # is the full chain; a narrower one shows up as `skip`
-                        # outcomes below, and this names which one it was.
-                        "profile": payload.get("profile") or "default",
-                        "gates_run": payload.get("gates_run") or [],
-                        "outcomes": payload.get("outcomes") or {},
-                        "redactions_applied": payload.get("redactions_applied", 0),
-                        "blocked_gate": payload.get("blocked_gate") or "",
-                        "blocked_reason": payload.get("blocked_reason") or "",
-                        # Accounting for /cortex/metrics observability (no dedicated
-                        # audit columns for these — see GovernancePipeline._audit).
-                        "domain": payload.get("domain") or "",
-                        "cost_usd": float(payload.get("cost_usd") or 0.0),
-                        "latency_ms": int(payload.get("latency_ms") or 0),
-                        "input_tokens": int(payload.get("input_tokens") or 0),
-                        "output_tokens": int(payload.get("output_tokens") or 0),
-                        "provider": payload.get("provider") or "",
-                        "model": payload.get("model") or "",
-                        "cache_hit": bool(payload.get("cache_hit")),
-                        # Wall-clock cost of the governance chain itself
-                        # (ctx-obs-02). latency_ms above times the LLM call
-                        # ONLY, so these are what make gate overhead derivable:
-                        # total_ms - operation_ms = governance_ms. Absent (0)
-                        # on rows written before ctx-obs-02 and on the
-                        # cache-hit path, which never enters the pipeline —
-                        # /cortex/metrics reads 0 as "not measured", never as
-                        # "free".
-                        "total_ms": float(payload.get("total_ms") or 0.0),
-                        "operation_ms": float(payload.get("operation_ms") or 0.0),
-                        "governance_ms": float(payload.get("governance_ms") or 0.0),
-                        "gate_ms": payload.get("gate_ms") or {},
-                        # KG-grounding detail (trust-kg-03). `outcomes` above
-                        # carries the gate's pass/warn/fail/skip; this carries
-                        # WHY — schema_source, verdict counts, findings — so a
-                        # `fail` from an unmeasurable graph is distinguishable
-                        # from a `fail` from a contradicted claim. Absent ({})
-                        # on every row whose profile did not declare the gate,
-                        # which is every row before this card.
-                        "kg_grounding": payload.get("kg_grounding") or {},
-                        # Which Cortex rungs this call reached (cef-ci-01).
-                        # `used` is the only one that means a backend actually
-                        # answered; `consulted` is a read of the configured
-                        # rung set and `failed` is an outage. Absent ({}) on
-                        # every row written before this card — which is why the
-                        # cortex_backend probe reads a LIFETIME window and says
-                        # so, rather than reporting a fresh zero as a finding.
-                        "backends": payload.get("backends") or {},
-                    },
-                    default=str,
-                ),
-                _derive_outcome(payload),
-                # Python bool — psycopg2 adapts to PG boolean, sqlite3 to 0/1.
-                # Passing int 1/0 fails on PG (blocked is BOOLEAN).
-                bool(payload.get("blocked")),
-                payload.get("provenance_id") or None,
+        values = (
+            audit_id,
+            payload.get("session_id") or None,
+            payload.get("tenant_id") or "default",
+            payload.get("classification") or "CUI",
+            payload.get("operation") or "cortex",
+            payload.get("agent_id") or None,
+            payload.get("user_id") or None,
+            json.dumps(
+                {
+                    # Which governance profile ran (hgx-gov-01). "default"
+                    # is the full chain; a narrower one shows up as `skip`
+                    # outcomes below, and this names which one it was.
+                    "profile": payload.get("profile") or "default",
+                    "gates_run": payload.get("gates_run") or [],
+                    "outcomes": payload.get("outcomes") or {},
+                    "redactions_applied": payload.get("redactions_applied", 0),
+                    "blocked_gate": payload.get("blocked_gate") or "",
+                    "blocked_reason": payload.get("blocked_reason") or "",
+                    # Accounting for /cortex/metrics observability (no dedicated
+                    # audit columns for these — see GovernancePipeline._audit).
+                    "domain": payload.get("domain") or "",
+                    "cost_usd": float(payload.get("cost_usd") or 0.0),
+                    "latency_ms": int(payload.get("latency_ms") or 0),
+                    "input_tokens": int(payload.get("input_tokens") or 0),
+                    "output_tokens": int(payload.get("output_tokens") or 0),
+                    "provider": payload.get("provider") or "",
+                    "model": payload.get("model") or "",
+                    "cache_hit": bool(payload.get("cache_hit")),
+                    # Wall-clock cost of the governance chain itself
+                    # (ctx-obs-02). latency_ms above times the LLM call
+                    # ONLY, so these are what make gate overhead derivable:
+                    # total_ms - operation_ms = governance_ms. Absent (0)
+                    # on rows written before ctx-obs-02 and on the
+                    # cache-hit path, which never enters the pipeline —
+                    # /cortex/metrics reads 0 as "not measured", never as
+                    # "free".
+                    "total_ms": float(payload.get("total_ms") or 0.0),
+                    "operation_ms": float(payload.get("operation_ms") or 0.0),
+                    "governance_ms": float(payload.get("governance_ms") or 0.0),
+                    "gate_ms": payload.get("gate_ms") or {},
+                    # KG-grounding detail (trust-kg-03). `outcomes` above
+                    # carries the gate's pass/warn/fail/skip; this carries
+                    # WHY — schema_source, verdict counts, findings — so a
+                    # `fail` from an unmeasurable graph is distinguishable
+                    # from a `fail` from a contradicted claim. Absent ({})
+                    # on every row whose profile did not declare the gate,
+                    # which is every row before this card.
+                    "kg_grounding": payload.get("kg_grounding") or {},
+                    # Which Cortex rungs this call reached (cef-ci-01).
+                    # `used` is the only one that means a backend actually
+                    # answered; `consulted` is a read of the configured
+                    # rung set and `failed` is an outage. Absent ({}) on
+                    # every row written before this card — which is why the
+                    # cortex_backend probe reads a LIFETIME window and says
+                    # so, rather than reporting a fresh zero as a finding.
+                    "backends": payload.get("backends") or {},
+                    # Why the provenance gate did not pass, when it did not
+                    # (icx-cnf-06). Before this a `warn` here carried no
+                    # reason, so 52 of 57 calls on one database lost their
+                    # provenance record and nothing said why.
+                    "provenance_detail": payload.get("provenance_detail") or "",
+                },
+                default=str,
             ),
+            _derive_outcome(payload),
+            # Python bool — psycopg2 adapts to PG boolean, sqlite3 to 0/1.
+            # Passing int 1/0 fails on PG (blocked is BOOLEAN).
+            bool(payload.get("blocked")),
+            payload.get("provenance_id") or None,
+            # Set here, not by the column DEFAULT, because the hash chain
+            # covers it (icx-cnf-06). Same shape CURRENT_TIMESTAMP writes.
+            audit_chain.now_text(),
+        )
+        # The hash chain (icx-cnf-06): the link is computed under the chain
+        # lock this connection now holds; the INSERT and COMMIT below release
+        # it. A database without the chain gets the row unchained, never lost.
+        link = audit_chain.next_link(
+            conn, dict(zip(audit_chain.HASH_FIELDS, values)))
+        columns = ("id, session_id, tenant_id, classification, function, agent_id, "
+                   "user_id, gates_json, outcome, blocked, provenance_id, created_at")
+        if link is not None:
+            columns += ", chain_seq, prev_hash, row_hash"
+            values = values + tuple(link)
+        conn.execute(
+            f"INSERT INTO cortex_audit ({columns}) "
+            f"VALUES ({', '.join(['%s'] * len(values))})",
+            values,
         )
         conn.commit()
         return audit_id
