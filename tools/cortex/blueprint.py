@@ -243,7 +243,9 @@ def api_metrics_tile():
 # surface (one auth path, one TRUST chain), and each JSON read comes from
 # tools/cortex/console.py, the module the read-only MCP tools return too. Nothing
 # here decides: award and the BOM credibility designation are people's decisions
-# with their own workflow (icx-cnf-02), so these pages never take them.
+# with their own workflow (icx-cnf-02), so these pages never take them. The PMO
+# page PROPOSES an award (icx-cnf-07): the route records a pending step that a
+# contracts person other than the proposer accepts at /decisions.
 
 def _hours_arg() -> int:
     return _metrics_window()
@@ -261,7 +263,11 @@ def pmo_page():
     """GET /cortex/pmo — the PMO verbs and what they registered for an opportunity."""
     from tools.cortex.console import PMO_VERBS
     from tools.cortex.constants import PMO_EXAMPLES
+    from tools.workflow_hitl.declared import template_for
+
+    award = template_for("cortex.api_v1_award") or {}
     return render_template("cortex/pmo.html", verbs=PMO_VERBS, examples=PMO_EXAMPLES,
+                           award_template=award.get("id", ""),
                            opportunity_id=(request.args.get("opportunity_id") or "").strip())
 
 

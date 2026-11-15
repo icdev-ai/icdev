@@ -341,7 +341,26 @@ def roles():
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace roles load failed: %s", exc)
         role_list = []
-    return _render_page("coworker/roles.html", roles=role_list)
+    # icx-cnf-07: the generated profiles, each deletable from this page. The
+    # delete is the person's step of decl-wft-ace-profile-delete, taken by the
+    # route itself; the button is offered only to a holder, and the route still
+    # refuses anyone else. Built-in roles are never listed here.
+    from icdev.tools.workflow_hitl import declared
+
+    tmpl = declared.template_for("ace_api.api_profiles_delete") or {}
+    try:
+        from icdev.tools.ace.profile_generator import list_profiles
+
+        generated = [p for p in list_profiles() if p.get("source", "builtin") != "builtin"]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace roles: list_profiles failed: %s", exc)
+        generated = []
+    holders = list(declared.manual_stage(tmpl).get("holders") or []) if tmpl else []
+    return _render_page(
+        "coworker/roles.html", roles=role_list, generated=generated,
+        delete_template=tmpl.get("id", ""), delete_holders=holders,
+        can_delete=bool(tmpl) and declared.can_hold(tmpl["id"], declared.current_actor()),
+    )
 
 
 @ace_bp.route("/profiles/new")

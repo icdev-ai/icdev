@@ -7,8 +7,9 @@ tool mutates. This pins what closed them:
 
   * each new page renders, is linked from /cortex (a nav page), and carries the
     literal route paths it calls, so the audit sees the caller;
-  * the PMO page never calls award and never sends a BOM credibility
-    designation (both are a person's decision, icx-cnf-02);
+  * the PMO page only PROPOSES award (icx-cnf-07: another person accepts at
+    /decisions) and never sends a BOM credibility designation (both are a
+    person's decision, icx-cnf-02);
   * the JSON reads and the MCP tools return the same read model, read only, and
     the service-key read never exposes a hash (nor, over MCP, a prefix);
   * every new MCP tool is declared read-only and authorised at tier ``read``,
@@ -148,10 +149,13 @@ def test_the_pmo_page_never_takes_a_decision():
 
     text = (TEMPLATES / "cortex" / "pmo.html").read_text(encoding="utf-8")
     for verb in PMO_VERBS:
-        if verb["verb"] == "award":
-            assert verb["path"] not in text, "award is a person's decision, not a page button"
-        else:
-            assert f"'{verb['path']}'" in text, verb["verb"]
+        assert f"'{verb['path']}'" in text, verb["verb"]
+    # Award is called (icx-cnf-07), but only PROPOSED: the acceptance is a
+    # different person's step at /decisions, never taken on this page.
+    award = text[text.index("function pmoAward"):]
+    award = award[:award.index("</script>")]
+    assert "cortexPost(CORTEX_PMO_PATHS.award, {opportunity_id: opp})" in award
+    assert "/decide" not in text
     # The BOM call sends documents only: no designation reaches the engine.
     bom_call = text[text.index("function pmoBom"):]
     assert "credibility_tier" not in bom_call.split("No role or credibility_tier")[1]

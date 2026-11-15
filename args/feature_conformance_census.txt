@@ -8,5 +8,3 @@
 # ENUMERATED, NOT COUNTED: a count can hold while the set churns. A line that
 # disappears is a gap someone closed -- prune it and lower `census_max`. A line
 # that appears is a new gap; it fails --check until it is reviewed in here.
-ace.profiles|gui:uncalled:ace_api.api_profiles_delete
-cortex.pmo|gui:uncalled:cortex.api_v1_award

@@ -1,7 +1,7 @@
 {
   "config": "args/feature_conformance.yaml",
   "config_errors": [],
-  "enforcement": "warn",
+  "enforcement": "fail",
   "features": [
     {
       "cells": {
@@ -130,6 +130,7 @@
         "gui": {
           "evidence": [
             "/coworker/roles linked from a nav page",
+            "ace_api.api_profiles_delete called from tools/dashboard/templates/coworker/roles.html",
             "ace_api.api_profiles_generate called from tools/dashboard/templates/coworker/profile_new.html",
             "ace_api.api_profiles_preview called from tools/dashboard/templates/coworker/profile_new.html",
             "ace_api.api_profiles_suggest_name called from tools/dashboard/templates/coworker/profile_new.html",
@@ -137,13 +138,8 @@
             "page /coworker/roles renders coworker/roles.html",
             "registry entry 'ace'"
           ],
-          "gaps": [
-            {
-              "detail": "mutating route /api/ace/profiles/<role_id> is called by no page",
-              "id": "gui:uncalled:ace_api.api_profiles_delete"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "twin": {
           "evidence": [
@@ -684,6 +680,7 @@
         "gui": {
           "evidence": [
             "/cortex/pmo linked from a nav page",
+            "cortex.api_v1_award called from tools/dashboard/templates/cortex/pmo.html",
             "cortex.api_v1_bom called from tools/dashboard/templates/cortex/pmo.html",
             "cortex.api_v1_cost_volume called from tools/dashboard/templates/cortex/pmo.html",
             "cortex.api_v1_dashboard called from tools/dashboard/templates/cortex/pmo.html",
@@ -693,13 +690,8 @@
             "page /cortex/pmo renders cortex/pmo.html",
             "registry entry 'cortex'"
           ],
-          "gaps": [
-            {
-              "detail": "mutating route /cortex/api/v1/award is called by no page",
-              "id": "gui:uncalled:cortex.api_v1_award"
-            }
-          ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "twin": {
           "evidence": [
@@ -874,7 +866,7 @@
   "stale_reasons": [],
   "summary": {
     "features": 17,
-    "features_conforming": 15,
+    "features_conforming": 17,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -893,7 +885,7 @@
       "ace.profiles": {
         "ai_native": 0,
         "architecture": 0,
-        "gui": 1,
+        "gui": 0,
         "twin": 0,
         "workflow": 0
       },
@@ -970,7 +962,7 @@
       "cortex.pmo": {
         "ai_native": 0,
         "architecture": 0,
-        "gui": 1,
+        "gui": 0,
         "twin": 0,
         "workflow": 0
       },
@@ -999,11 +991,11 @@
     "gaps_by_rule": {
       "ai_native": 0,
       "architecture": 0,
-      "gui": 2,
+      "gui": 0,
       "twin": 0,
       "workflow": 0
     },
-    "gaps_total": 2
+    "gaps_total": 0
   },
   "tool": "feature_audit",
   "version": 1

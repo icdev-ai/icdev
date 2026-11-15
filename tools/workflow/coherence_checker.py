@@ -49,10 +49,11 @@ Checks:
                       `uses:`, a compose image with no digest in vendor/images/, a `curl … | sh`); the 69 that
                       existed at adoption are grandfathered BY NAME in args/pin_census.txt and the ceiling in
                       args/pin_gate.yaml may only go DOWN (xrv-route-03)
- 31. feature_conformance — WARN while any feature in args/feature_conformance.yaml has an open gap against the
+ 31. feature_conformance — FAIL when any feature in args/feature_conformance.yaml has an open gap against the
                       five rules (GUI, workflow, twin, architecture, AI-native), or the doc, snapshot, census or a
                       stated reason is stale; open gaps are enumerated BY NAME in
-                      args/feature_conformance_census.txt. `enforcement: fail` flips it to fail (icx-cnf-01)
+                      args/feature_conformance_census.txt. `enforcement: fail` since icx-cnf-07 (17/17, census 0);
+                      under `warn` the same findings warn (icx-cnf-01)
  32. platform_model_trace — FAIL when ICDEV's own platform model (args/platform_model/*.yaml) cites a test
                       that does not exist (file AND function), code that does not exist, an orphan element or an
                       unknown feature; WARN while a requirement traces to no test (a gap, never a pass) or a
@@ -11586,11 +11587,11 @@ def _feature_conformance_check(
 def check_feature_conformance() -> CoherenceCheck:
     """icx-cnf-01 — each feature held to the five rules, gap by gap.
 
-    ``warn`` while gaps remain, and deliberately: at adoption no Cortex, ACE or
-    Co-Workers feature meets all five, and the remediation is queued as
-    icx-cnf-02..05. ``enforcement: fail`` in args/feature_conformance.yaml flips
-    every open gap to a failure once those land. Promote it by that edit, never
-    by deleting a census line.
+    ``warn`` while gaps remained, and deliberately: at adoption no Cortex, ACE or
+    Co-Workers feature met all five, and the remediation was queued as
+    icx-cnf-02..07. icx-cnf-07 closed the last gap and set ``enforcement: fail``
+    in args/feature_conformance.yaml, so every open gap is now a failure. Never
+    flip it back, and never close a gap by deleting a census line.
 
     The census makes the gap SET observable, not just its size: a gap that
     appears without a census line, or a census line whose gap has closed, is

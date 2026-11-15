@@ -304,6 +304,88 @@
   </div>
   {% endif %}
 
+  <!-- ── Generated profiles (icx-cnf-07) ────────────────────────────
+       Deleting a generated profile is a person's step of the declared workflow
+       {{ delete_template }}: the DELETE route takes the step in the request,
+       held by {{ delete_holders | join(', ') }}, and refuses anyone else. A
+       built-in role is protected and never listed here. -->
+  <section id="generated-profiles" style="margin-bottom:28px;">
+    <h2 style="font-size:14px; font-weight:600; margin:0 0 6px; color:var(--text-secondary,#7a8cb0); text-transform:uppercase; letter-spacing:.04em;">
+      Generated profiles
+    </h2>
+    <p style="font-size:12px; color:var(--text-secondary,#7a8cb0); margin:0 0 12px; line-height:1.6;">
+      Profiles made with <a href="/coworker/profiles/new">New profile</a>. Deleting one cannot be undone, so it is
+      a person's decision, recorded through the declared workflow <code>{{ delete_template }}</code>
+      (held by {{ delete_holders | join(', ') }}). Built-in roles cannot be deleted.
+    </p>
+    {% if generated %}
+    <div class="roles-grid" style="margin-bottom:0;">
+      {% for p in generated %}
+      <div class="role-card" data-profile="{{ p.role_id }}">
+        <div class="role-card-header">
+          <div>
+            <div class="role-card-title">{{ p.display_name }}</div>
+            <div class="role-card-id">{{ p.role_id }} · {{ p.source }}</div>
+          </div>
+          <span class="badge trust-badge-{{ p.trust_tier }}" style="font-size:10px; white-space:nowrap; flex-shrink:0;">
+            {{ p.trust_tier | upper }} trust
+          </span>
+        </div>
+        {% if p.description %}<p class="role-card-desc">{{ p.description }}</p>{% endif %}
+        <div class="role-meta">
+          {% if can_delete %}
+          <button type="button" class="btn btn-secondary" data-delete-profile="{{ p.role_id }}"
+                  style="font-size:11px; color:#e74c3c; border-color:#e74c3c;">Delete</button>
+          {% else %}
+          <span>Delete is held by {{ delete_holders | join(', ') }}.</span>
+          {% endif %}
+          <span data-delete-result style="font-size:11px;"></span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="font-size:12px; color:var(--text-secondary,#555); margin:0;">No generated profiles.</p>
+    {% endif %}
+  </section>
+  <script>
+  // One click and a confirmation: the route takes the person's step, then deletes.
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-delete-profile]');
+    if (!btn) { return; }
+    var id = btn.getAttribute('data-delete-profile');
+    var card = btn.closest('[data-profile]');
+    var result = card.querySelector('[data-delete-result]');
+    if (!window.confirm('Delete the generated profile "' + id + '"? This cannot be undone.')) { return; }
+    btn.disabled = true;
+    result.textContent = 'Deleting…';
+    fetch('/api/ace/profiles/' + encodeURIComponent(id), { method: 'DELETE' })
+      .then(function (r) {
+        return r.json().catch(function () { return {error: 'non-JSON reply'}; })
+          .then(function (d) { return {ok: r.ok, d: d}; });
+      })
+      .then(function (res) {
+        if (!res.ok) {
+          // A refusal by the declared step (workflow_refused) or the generator.
+          result.style.color = '#e74c3c';
+          result.textContent = (res.d.workflow_refused ? 'Refused by the workflow: ' : '') +
+            (res.d.error || 'Refused.');
+          btn.disabled = false;
+          return;
+        }
+        var step = res.d.decision_step || {};
+        card.innerHTML = '<div class="role-card-desc">Deleted ' + id.replace(/[<>&"']/g, '') +
+          ' (step ' + String(step.step_id || '').replace(/[<>&"']/g, '') + ', by ' +
+          String(step.decided_by || '').replace(/[<>&"']/g, '') + ').</div>';
+      })
+      .catch(function () {
+        result.style.color = '#e74c3c';
+        result.textContent = 'Network error.';
+        btn.disabled = false;
+      });
+  });
+  </script>
+
   <!-- ── How to add a new role ──────────────────────────────────── -->
   <section>
     <h2 style="font-size:14px; font-weight:600; margin:0 0 12px; color:var(--text-secondary,#7a8cb0); text-transform:uppercase; letter-spacing:.04em;">
