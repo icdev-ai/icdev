@@ -9856,6 +9856,105 @@ additive to every retry already on the board.
 
 ---
 
+## Feature conformance — the five rules, per feature (icx-cnf-01)
+
+Judges each feature listed in `args/feature_conformance.yaml` (Cortex, ACE,
+Co-Workers to start) against the five rules: console GUI, a declared workflow for
+every decision, twin observation, an architecture trace and an AI-native tool.
+Every cell lists its evidence. Doc: `docs/audits/conformance-cortex-coworker.md`.
+
+```bash
+python tools/conformance/feature_audit.py                      # JSON report (probes the url_map, ~25s)
+python tools/conformance/feature_audit.py --markdown --census  # rewrite the doc tables, snapshot, census
+python tools/conformance/feature_audit.py --check              # exit 1: stale doc, snapshot, reason or census
+python tools/workflow/coherence_checker.py --check feature_conformance --json
+```
+
+Console: `/twin-observatory/conformance`. MCP: `feature_conformance` (read-only).
+
+## Cortex, ACE and Co-Workers console pages and reads (icx-cnf-05)
+
+Pages (each linked from `/cortex`): `/cortex/verbs` (resolve, complete, reason,
+classify, extract), `/cortex/pmo` (slides, win themes, staffing, cost volume,
+dashboard, BOM reconcile; never award, never a BOM designation), `/cortex/intake`,
+`/cortex/govern` (TRUST chain, dry run, agent launches), `/cortex/service-keys`
+(admin, ISSO), `/cortex/airgap`; ACE: `/coworker/chat`. Read-only JSON beside them:
+
+```bash
+curl -s localhost:5050/cortex/api/pmo/status?opportunity_id=OPP-1
+curl -s localhost:5050/cortex/api/trust-chain?hours=24
+curl -s localhost:5050/cortex/api/agent-launches
+curl -s localhost:5050/cortex/api/intake/sessions
+curl -s localhost:5050/cortex/api/service-keys      # admin, isso
+curl -s localhost:5050/cortex/api/airgap
+```
+
+MCP (all read-only, tier `read`): `cortex_pmo_status`, `cortex_intake_sessions`,
+`cortex_trust_chain` (the read of `cortex_govern`, which stays mutating),
+`cortex_findings_list`, `cortex_metrics`, `cortex_agent_launches`,
+`cortex_service_keys`, `cortex_airgap_posture`, `ace_checkpoints`, `coworkers_roster`.
+## Platform model — ICDEV's own architecture, traced (icx-cnf-04)
+
+`args/platform_model/*.yaml` declares the elements, interfaces and requirements of
+Cortex, ACE, Co-Workers and the conformance audit. Each requirement traces to
+elements, their code and the EXISTING tests that verify it; a requirement with no
+test is a gap, never a pass. Seed it into the MBSE digital thread as project
+`icdev-platform` (use a scratch `ICDEV_DB_PATH`).
+
+```bash
+python tools/mbse/platform_model.py --check                     # every test (file+function) and code path resolves
+python tools/mbse/platform_model.py --seed --json               # write the digital thread (project icdev-platform)
+python tools/mbse/platform_model.py --trace --feature cortex.pmo --json   # per-feature chain, orphans and gaps
+python tools/workflow/coherence_checker.py --check platform_model_trace --json
+```
+
+Console: `/lineage` (ICDEV platform model button). MCP: `platform_model_trace`
+(read-only), and `trace_forward` / `trace_backward` with `project_id: icdev-platform`
+and a requirement id such as `PM-CTX-01`.
+## Declared decisions — every decision a person takes runs a template (icx-cnf-02)
+
+Each decision route in Cortex and ACE names a template under
+`args/workflow_hitl_templates/` (`decides:` plus one manual stage held by a role).
+The route takes the person's step before its effect. Machine callers and people
+without the role only propose; a holder decides at `/decisions`.
+
+```bash
+python -m tools.workflow_hitl.declared --json              # templates and shape errors
+python -m tools.workflow_hitl.declared --seed --json       # seed them into wf_templates
+python -m tools.workflow_hitl.declared --list --status pending --json
+python tools/workflow/coherence_checker.py --check hitl_workflow --json
+```
+
+Console: `/decisions`. MCP: `workflow_decision_steps` (read-only).
+## Governance twins — Cortex, ACE, Co-Workers, the conformance audit (icx-cnf-03)
+
+Observe a governed subsystem, record the evidence, replay it. Every finding names
+its thread. An unreadable source is unverified, never a pass. Doc:
+`docs/features/twx-cov-02-twin-coverage-audit.md` section 5.
+
+```bash
+python -m tools.twin_core.governance --observe --json               # observe and record every governance twin
+python -m tools.twin_core.governance --observe --canvas cortex --no-record --json
+python -m tools.twin_core.governance --list --canvas ace --json      # recorded observations, newest first
+python -m tools.twin_core.governance --replay <observation_id>      # exit 1 when it no longer matches
+python -m tools.twin_core.governance --thread cortex_audit:<id>     # a finding's record and provenance
+```
+
+Console: `/twin-observatory/governance`. MCP: `twin_governance` (read-only).
+
+## cortex_audit hash chain and Cortex provenance (icx-cnf-06)
+
+`cortex_audit` rows carry `chain_seq`, `prev_hash` and `row_hash`; UPDATE and
+DELETE are refused by triggers (SQLite and PostgreSQL). Rows written before the
+chain are never rewritten: one `cortex_audit_chain_genesis` row records their
+count and digest. Migration `20261114175314_cortex_audit_hash_chain`. The cortex
+governance twin runs `verify` on every observation.
+
+```bash
+python -m tools.cortex.db.audit_chain --verify --json   # walk the chain; exit 1 when broken
+python -m tools.cortex.db.audit_chain --ensure --json   # columns, genesis, triggers (idempotent)
+```
+
 ## Cards — the per-card incident records (xrv-docs-02)
 
 These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —

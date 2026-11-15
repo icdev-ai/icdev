@@ -681,6 +681,12 @@ def seed() -> None:
         for t in TEAM_TEMPLATES:
             _upsert_team(conn, t)
 
+        # icx-cnf-02: the decision templates declared under args/workflow_hitl_templates/.
+        print("\n-- Declared Decision Templates --")
+        from tools.workflow_hitl.declared import seed_declared_templates
+        out = seed_declared_templates(conn)
+        print(f"  [+] {len(out['seeded'])} seeded, {len(out['updated'])} updated")
+
         try:
             conn.commit()
         except Exception:

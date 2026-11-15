@@ -1,0 +1,10 @@
+# CUI // SP-CTI
+# Feature conformance census -- every OPEN gap against the five rules, BY NAME.
+#
+# Policy and scope: args/feature_conformance.yaml
+# Re-derive:        python tools/conformance/feature_audit.py --census
+# The gate:         python tools/conformance/feature_audit.py --check
+#
+# ENUMERATED, NOT COUNTED: a count can hold while the set churns. A line that
+# disappears is a gap someone closed -- prune it and lower `census_max`. A line
+# that appears is a new gap; it fails --check until it is reviewed in here.

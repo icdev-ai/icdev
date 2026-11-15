@@ -1,0 +1,7 @@
+{
+  "description": "declared decision steps ledger and Cortex finding adjudications (icx-cnf-02)",
+  "date": "2026-11-14",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

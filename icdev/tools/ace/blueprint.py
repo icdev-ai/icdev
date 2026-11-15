@@ -80,6 +80,23 @@ def _q(conn, sql: str) -> str:
     return sql.replace("?", "%s") if is_pg else sql
 
 
+def _decision_step(template_id: str, surface: str, decision: str, *, subject: str = "",
+                   reason: str = ""):
+    """The person's step of a declared template, taken in this request (icx-cnf-02).
+
+    Every decision route here runs through its template under
+    ``args/workflow_hitl_templates/`` before its effect. Returns ``(step, None)``,
+    or ``(None, response)`` when the step is refused; the effect must not run then.
+    """
+    from icdev.tools.workflow_hitl import declared
+
+    try:
+        return declared.take_step(template_id, surface=surface, decision=decision,
+                                  subject=subject, reason=reason), None
+    except declared.StepRefused as exc:
+        return None, (jsonify(exc.to_dict()), exc.status)
+
+
 def _rows(cur) -> list[dict]:
     """Materialize a cursor into a list of plain dicts (backend-agnostic)."""
     desc = getattr(cur, "description", None)
@@ -324,7 +341,26 @@ def roles():
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace roles load failed: %s", exc)
         role_list = []
-    return _render_page("coworker/roles.html", roles=role_list)
+    # icx-cnf-07: the generated profiles, each deletable from this page. The
+    # delete is the person's step of decl-wft-ace-profile-delete, taken by the
+    # route itself; the button is offered only to a holder, and the route still
+    # refuses anyone else. Built-in roles are never listed here.
+    from icdev.tools.workflow_hitl import declared
+
+    tmpl = declared.template_for("ace_api.api_profiles_delete") or {}
+    try:
+        from icdev.tools.ace.profile_generator import list_profiles
+
+        generated = [p for p in list_profiles() if p.get("source", "builtin") != "builtin"]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace roles: list_profiles failed: %s", exc)
+        generated = []
+    holders = list(declared.manual_stage(tmpl).get("holders") or []) if tmpl else []
+    return _render_page(
+        "coworker/roles.html", roles=role_list, generated=generated,
+        delete_template=tmpl.get("id", ""), delete_holders=holders,
+        can_delete=bool(tmpl) and declared.can_hold(tmpl["id"], declared.current_actor()),
+    )
 
 
 @ace_bp.route("/profiles/new")
@@ -349,6 +385,12 @@ def trust_leaderboard():
 def sessions_list():
     """Agent session replay — list of all saved agent_loop_sessions."""
     return _render_page("ace/sessions.html")
+
+
+@ace_bp.route("/chat")
+def chat_page():
+    """Multi-turn ACE chat with persisted history; drives ``POST /api/ace/chat`` (icx-cnf-05)."""
+    return _render_page("ace/chat.html")
 
 
 @ace_bp.route("/sessions/<session_id>")
@@ -556,6 +598,12 @@ def api_launch():
         role_ids = [role_ids]
     role_ids = [r for r in role_ids if isinstance(r, str) and r.strip()]
 
+    # The launch is the person's step (decl-wft-ace-run-launch).
+    step, refused = _decision_step("decl-wft-ace-run-launch", "ace_api.api_launch", "launch",
+                                   subject=problem_text[:200])
+    if refused:
+        return refused
+
     # DIC context injection — prepend BM25 results from attached collections.
     # Use an explicit context_query if the caller provided one; this avoids
     # searching with a report-generation prompt and instead searches with a
@@ -616,7 +664,7 @@ def api_launch():
         except Exception as exc:  # noqa: BLE001
             logger.warning("ace launch: failed to persist DIC context links: %s", exc)
 
-    return jsonify({"instance_id": instance_id}), 202
+    return jsonify({"instance_id": instance_id, "decision_step": step}), 202
 
 
 @ace_api_bp.route("/instances", methods=["GET"])
@@ -812,8 +860,15 @@ def api_abort(instance_id: str):
     (The schema CHECK constraint allows ``cancelled``, not ``aborted`` — the
     controller's ``abort()`` sets the canonical terminal state.)
     """
+    actor = "api"
     try:
-        ACEController.get_instance().abort(instance_id)
+        from flask import g
+
+        actor = str((getattr(g, "current_user", None) or {}).get("id") or "api")
+    except Exception:  # noqa: BLE001 - outside a request context the actor stays "api"
+        pass
+    try:
+        ACEController.get_instance().abort(instance_id, actor=actor)
     except LookupError:
         return jsonify({"error": "not_found", "instance_id": instance_id}), 404
     except Exception as exc:  # noqa: BLE001
@@ -837,6 +892,13 @@ def api_hitl_resolve(instance_id: str):
     approved = bool(data.get("approved", True))
     if not coworker_id or not detail:
         return jsonify({"error": "coworker_id and detail are required"}), 400
+    # The person's step (decl-wft-ace-hitl-resolve), before the gate moves.
+    step, refused = _decision_step(
+        "decl-wft-ace-hitl-resolve", "ace_api.api_hitl_resolve",
+        "approve" if approved else "reject", subject=f"{instance_id}/{coworker_id}",
+        reason=str(data.get("reason") or ""))
+    if refused:
+        return refused
     try:
         from icdev.tools.ace.coworker_thread import HITLGate
 
@@ -852,6 +914,7 @@ def api_hitl_resolve(instance_id: str):
             "coworker_id": coworker_id,
             "resolved": True,
             "approved": approved,
+            "decision_step": step,
         })
     except Exception as exc:
         logger.warning("ace hitl resolve failed for %s/%s: %s", instance_id, coworker_id, exc)
@@ -1103,7 +1166,11 @@ def api_session_rerun(session_id: str):
     if not problem_text.strip():
         return jsonify({"error": "could not reconstruct problem_text from source session"}), 422
 
-    # 4. Launch new run
+    # 4. The rerun is the person's step (decl-wft-ace-run-launch), then the launch.
+    step, refused = _decision_step("decl-wft-ace-run-launch", "ace_api.api_session_rerun",
+                                   "rerun", subject=session_id)
+    if refused:
+        return refused
     try:
         new_instance_id = ACEController.get_instance().launch(
             problem_text=problem_text,
@@ -1121,6 +1188,7 @@ def api_session_rerun(session_id: str):
         "source_session_id": session_id,
         "source_instance_id": source_instance_id,
         "patched_prompt_preview": problem_text[:300],
+        "decision_step": step,
     }), 202
 
 
@@ -1473,13 +1541,20 @@ def api_profiles_generate():
 
 @ace_api_bp.route("/profiles/<role_id>", methods=["DELETE"])
 def api_profiles_delete(role_id: str):
-    """Delete a generated profile (built-in profiles are protected)."""
+    """Delete a generated profile (built-in profiles are protected).
+
+    The deletion is the person's step (decl-wft-ace-profile-delete).
+    """
+    step, refused = _decision_step("decl-wft-ace-profile-delete", "ace_api.api_profiles_delete",
+                                   "delete", subject=role_id)
+    if refused:
+        return refused
     try:
         from icdev.tools.ace.profile_generator import delete_profile
         result = delete_profile(role_id)
         if "error" in result:
-            return jsonify(result), 400
-        return jsonify({"ok": True, **result})
+            return jsonify({**result, "decision_step": step}), 400
+        return jsonify({"ok": True, **result, "decision_step": step})
     except Exception as exc:
         logger.warning("ace profiles delete failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
@@ -1664,24 +1739,11 @@ def api_ace_events():
         return jsonify({"error": str(exc)}), 500
 
 
-@ace_api_bp.route("/events/emit", methods=["POST"])
-def api_ace_events_emit():
-    """Manually emit an ACE event (for testing / canvas integration)."""
-    try:
-        from icdev.tools.ace.event_bus import emit, DISPATCH_TOPICS
-        body = request.get_json(silent=True) or {}
-        topic = body.get("topic", "")
-        if topic not in DISPATCH_TOPICS:
-            return jsonify({"error": f"Unknown topic. Valid: {sorted(DISPATCH_TOPICS)}"}), 400
-        event_id = emit(
-            topic=topic,
-            payload=body.get("payload", {}),
-            source_canvas=body.get("source_canvas", "manual"),
-            source_id=body.get("source_id", ""),
-        )
-        return jsonify({"ok": True, "event_id": event_id})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+# POST /api/ace/events/emit was retired here (icx-cnf-05). It imported ``emit``
+# and ``DISPATCH_TOPICS`` from ``icdev.tools.ace.event_bus``, which defines
+# neither (the module is the per-instance SSE queue only), so every call answered
+# 500. No page, script or test called it. The topics route below says the same
+# registry is missing and answers 404 until it exists.
 
 
 @ace_api_bp.route("/events/topics", methods=["GET"])
@@ -1983,7 +2045,22 @@ def api_suggestion_confirm(suggestion_id: str):
             ),
         }), 402
 
-    result = chat_trigger.confirm_proposal(suggestion_id, user_id=_suggestion_actor())
+    proposal = chat_trigger.get_proposal(suggestion_id)
+    if not proposal:
+        return jsonify({"error": "unknown suggestion"}), 404
+    step, user_id = None, "system"
+    if proposal.get("state") == "proposed":
+        # The person's step (decl-wft-ace-team-suggestion), before anything launches.
+        # A proposal already launched or closed takes no new decision: confirm stays
+        # idempotent for a double click.
+        step, refused = _decision_step("decl-wft-ace-team-suggestion",
+                                       "ace_api.api_suggestion_confirm", "confirm",
+                                       subject=suggestion_id)
+        if refused:
+            return refused
+        user_id = step["decided_by"]
+
+    result = chat_trigger.confirm_proposal(suggestion_id, user_id=user_id)
     if not result["ok"]:
         status = 404 if result["error"] == "unknown suggestion" else 409
         return jsonify({"error": result["error"]}), status
@@ -1993,6 +2070,7 @@ def api_suggestion_confirm(suggestion_id: str):
         "ok": True,
         "instance_id": instance_id,
         "deep_link": f"/coworker/{instance_id}",
+        "decision_step": step,
     })
 
 
@@ -2002,20 +2080,20 @@ def api_suggestion_decline(suggestion_id: str):
     from icdev.tools.ace import chat_trigger
 
     data = request.get_json(silent=True) or {}
-    ok = chat_trigger.decline_proposal(suggestion_id, str(data.get("reason") or ""))
-    if not ok:
+    reason = str(data.get("reason") or "")
+    proposal = chat_trigger.get_proposal(suggestion_id)
+    if not proposal or proposal.get("state") != "proposed":
         return jsonify({"error": "not declinable"}), 409
-    return jsonify({"ok": True})
-
-
-def _suggestion_actor() -> str:
-    """Best-effort identity of whoever clicked approve, for the audit trail."""
-    try:
-        from flask import g
-
-        return str(getattr(g, "current_user", "") or "system")
-    except Exception:  # noqa: BLE001
-        return "system"
+    # The person's step (decl-wft-ace-team-suggestion).
+    step, refused = _decision_step("decl-wft-ace-team-suggestion",
+                                   "ace_api.api_suggestion_decline", "decline",
+                                   subject=suggestion_id, reason=reason)
+    if refused:
+        return refused
+    ok = chat_trigger.decline_proposal(suggestion_id, reason)
+    if not ok:
+        return jsonify({"error": "not declinable", "decision_step": step}), 409
+    return jsonify({"ok": True, "decision_step": step})
 
 
 def _sme_tier_allows() -> tuple[bool, str]:

@@ -477,16 +477,42 @@ def _gate_redact_output(text: str) -> tuple:
 def _gate_register_provenance(
     output_text: str, ctx: CortexContext, operation: str, record_id: str
 ) -> str:
-    """Gate 7a: unified source_citation_registry row. Returns registry id."""
-    return _mod("provenance.registry").register_citation(
-        citation_type="cortex",
-        source_table="cortex_governance",
-        source_record_id=record_id,
-        source_doc=operation,
-        source_hash=hashlib.sha256(output_text.encode("utf-8")).hexdigest(),
-        classification=ctx.classification or "CUI",
-        project_id=ctx.tenant_id or None,
-    )
+    """Gate 7a: unified source_citation_registry row. Returns registry id.
+
+    Written on a connection to the SAME database the audit row (gate 7b) goes
+    to, with the registry table ensured first, and a database error RAISES so
+    the gate records why (icx-cnf-06). Before that the registry opened its own
+    default path, which on SQLite is this checkout's ``data/icdev.db`` whatever
+    ``ICDEV_DB_PATH`` says, and swallowed every error into ``""``: on one
+    database 52 of 57 governed calls recorded provenance ``warn`` and no row,
+    because the file it wrote to had no registry table at all.
+    """
+    from tools.db.storage import get_connection
+
+    cortex_db = _mod("cortex.db.init_db")
+    conn = get_connection()
+    try:
+        cortex_db._ensure_schema(conn)
+        registry_id = _mod("provenance.registry").register_citation(
+            citation_type="cortex",
+            source_table="cortex_governance",
+            source_record_id=record_id,
+            source_doc=operation,
+            source_hash=hashlib.sha256(output_text.encode("utf-8")).hexdigest(),
+            classification=ctx.classification or "CUI",
+            project_id=ctx.tenant_id or None,
+            conn=conn,
+        )
+        conn.commit()
+        return registry_id
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:  # noqa: BLE001 — the original error is the one to report
+            pass
+        raise
+    finally:
+        conn.close()
 
 
 def _gate_record_audit(payload: dict) -> None:
@@ -845,6 +871,8 @@ class GovernancePipeline:
         provenance_id: str = "",
         result=None,
         clock: Optional[_Stopwatch] = None,
+        record_id: str = "",
+        provenance_detail: str = "",
     ) -> None:
         # Stamp the call's wall time before the payload is built, so the audit
         # row and the in-memory report the caller gets back carry the SAME
@@ -856,7 +884,9 @@ class GovernancePipeline:
             report.total_ms = clock.total_ms()
         try:
             payload = {
-                "record_id": f"cgov-{uuid.uuid4().hex[:16]}",
+                # The provenance row names this id as its source_record_id
+                # (icx-cnf-06), so the audit row and its citation join both ways.
+                "record_id": record_id or f"cgov-{uuid.uuid4().hex[:16]}",
                 "operation": self.operation,
                 "agent_id": self.agent_id,
                 "session_id": getattr(ctx, "session_id", "") or "",
@@ -875,6 +905,7 @@ class GovernancePipeline:
                 "outcomes": dict(report.outcomes),
                 "redactions_applied": report.redactions_applied,
                 "provenance_id": provenance_id,
+                "provenance_detail": provenance_detail,
                 # Wall-clock cost of the chain itself (ctx-obs-02). Carried in
                 # the same free-form gates_json blob as the spend accounting
                 # below — gates_json already holds the per-gate outcomes, so
@@ -1396,12 +1427,15 @@ class GovernancePipeline:
         # 8. Provenance record + audit row — never skipped, never blocking.
         record_id = f"cgov-{uuid.uuid4().hex[:16]}"
         registry_id = ""
+        provenance_detail = ""
         try:
             registry_id = _gate_register_provenance(text, ctx, self.operation, record_id)
+            if not registry_id:
+                provenance_detail = "registry insert returned no id"
             self._record(
                 report, GATE_PROVENANCE,
                 OUTCOME_PASS if registry_id else OUTCOME_WARN,
-                registry_id or "registry insert returned no id",
+                registry_id or provenance_detail,
             )
         except ValueError as exc:
             # A ValueError from register_citation means the citation_type is not
@@ -1424,11 +1458,13 @@ class GovernancePipeline:
                 "cortex governance provenance MISCONFIGURED (not a transient "
                 "failure): %s", exc,
             )
+            provenance_detail = f"misconfigured: {exc}"
             self._record(report, GATE_PROVENANCE, OUTCOME_FAIL, str(exc))
         except Exception as exc:
             # Genuine operational failure — connection refused, timeout, table
             # missing. Degrades to warn, which is the fail-open posture.
             logger.warning("cortex governance provenance record failed: %s", exc)
+            provenance_detail = f"{type(exc).__name__}: {exc}"[:500]
             self._record(report, GATE_PROVENANCE, OUTCOME_WARN, str(exc))
         # Split BEFORE the audit write (gate 7b): _audit stamps total_ms, and the
         # write that persists a measurement cannot be inside it. Every segment up
@@ -1436,7 +1472,7 @@ class GovernancePipeline:
         # the chain to completion.
         clock.split(report, GATE_PROVENANCE)
         self._audit(report, ctx, provenance_id=registry_id or "", result=result,
-                    clock=clock)
+                    clock=clock, record_id=record_id, provenance_detail=provenance_detail)
 
         if attach and is_cortex_result:
             result.governance = report
