@@ -3609,10 +3609,35 @@ CREATE TABLE IF NOT EXISTS cortex_audit (
         CHECK (outcome IN ('pass', 'warn', 'fail', 'blocked')),
     blocked         INTEGER NOT NULL DEFAULT 0,
     provenance_id   TEXT,
-    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    -- icx-cnf-06 hash chain (migration 20261114175314, tools/cortex/db/audit_chain.py)
+    chain_seq       INTEGER,
+    prev_hash       TEXT,
+    row_hash        TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_session ON cortex_audit(session_id);
 CREATE INDEX IF NOT EXISTS idx_cortex_audit_tenant ON cortex_audit(tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cortex_audit_chain_seq ON cortex_audit(chain_seq);
+-- Where the chain starts; the first write records it (audit_chain.next_link).
+CREATE TABLE IF NOT EXISTS cortex_audit_chain_genesis (
+    id              TEXT PRIMARY KEY,
+    genesis_hash    TEXT NOT NULL,
+    prior_rows      INTEGER NOT NULL,
+    prior_digest    TEXT NOT NULL,
+    hash_algorithm  TEXT NOT NULL DEFAULT 'sha256',
+    note            TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS cortex_audit_no_update BEFORE UPDATE ON cortex_audit
+    BEGIN SELECT RAISE(ABORT, 'cortex_audit is append-only (NIST AU-9)'); END;
+CREATE TRIGGER IF NOT EXISTS cortex_audit_no_delete BEFORE DELETE ON cortex_audit
+    BEGIN SELECT RAISE(ABORT, 'cortex_audit is append-only (NIST AU-9)'); END;
+CREATE TRIGGER IF NOT EXISTS cortex_audit_chain_genesis_no_update
+    BEFORE UPDATE ON cortex_audit_chain_genesis
+    BEGIN SELECT RAISE(ABORT, 'cortex_audit_chain_genesis is append-only (NIST AU-9)'); END;
+CREATE TRIGGER IF NOT EXISTS cortex_audit_chain_genesis_no_delete
+    BEFORE DELETE ON cortex_audit_chain_genesis
+    BEGIN SELECT RAISE(ABORT, 'cortex_audit_chain_genesis is append-only (NIST AU-9)'); END;
 
 -- Cortex service keys (migration 265) — external-caller auth for the Cortex
 -- REST/MCP surface. No classification column on purpose (verified pre-RLS).

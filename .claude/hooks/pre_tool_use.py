@@ -427,6 +427,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # call (ctx-govern-03, NIST AU). cortex_sessions is intentionally NOT here
         # (mutable session lifecycle: status/updated_at).
         "cortex_audit",
+        # Where the cortex_audit hash chain starts (icx-cnf-06, migration
+        # 20261114175314): the count and digest of the rows written before it.
+        # Editing it would let a changed pre-chain row verify again.
+        "cortex_audit_chain_genesis",
         # Phase 69 — Codebase Assistant (D-CA-6)
         "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)
