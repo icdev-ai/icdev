@@ -85,7 +85,8 @@ Twin-less canvases were audited for a **design-graph what-if surface** (a
 - **BI Studio, AISG, Cortex, DIC, AI-ify, logs, docgen, slides, demo_runner,
   ACE, foundry, integrity, canvas_health, coworkers, second_brain, wfc,
   rfi_canvas** — content / AI-service / reporting canvases with **no design-graph
-  or snapshot-worthy state + delta**. No twin justified.
+  or snapshot-worthy state + delta**. No twin justified. *(Reversed for Cortex,
+  ACE and Co-Workers on 2026-11-14: see section 5.)*
 
 ## 4. Net outcome
 - Twin coverage: 10 → **12** (QDC/AADC in wave-1; AIML in wave-2).
@@ -93,3 +94,52 @@ Twin-less canvases were audited for a **design-graph what-if surface** (a
   the new generic `twin_freshness_sweep`.
 - Wave-2 budget: 1 of 2 spent (AIML); MDC is the documented wave-2b candidate;
   all operational/service canvases parked with rationale above.
+
+## 5. Amendment: governance twins for Cortex, ACE and Co-Workers (icx-cnf-03)
+
+**Decision reversed by the owner, 2026-11-14.** Section 3 parked Cortex, ACE and
+Co-Workers because none has a design graph to snapshot and a delta to simulate.
+That is still true. The owner's five rules (2026-11-14) require every feature to
+be observed in the twin anyway, with each finding's thread and a replay. A
+subsystem without a design graph still has governed behaviour worth observing.
+
+So these get **governance twins**, not design twins. A governance twin
+(`tools/twin_core/governance.py`) reads evidence, judges it with a pure function,
+records the evidence and the verdict's digest in the append-only
+`twin_governance_observations`, and can replay it. It never simulates a delta
+(`supports_simulation` is false).
+
+| Canvas | Adapter | Observes |
+|--------|---------|----------|
+| Cortex | `tools/twin_core/adapters/cortex.py` (`cortex`) | TRUST-gate outcomes (blocked and redacted counts by gate, mandatory-gate holes, fail-open gates, calls with no provenance); `cortex_audit` health (hook declaration, database triggers, hash chain); conflicts awaiting a person, aged; backend liveness (`capability_consumption.probe_cortex_backend`) |
+| ACE | `tools/twin_core/adapters/ace.py` (`ace`) | stuck and failed runs; checkpoints waiting on a person, aged; aborts (advisory); NOVA trust band drops and probationary roles |
+| Co-Workers | `tools/twin_core/adapters/cwk.py` (`cwk`) | the roster's config sources: files that silently drop out, id collisions |
+| Conformance audit | `tools/twin_core/adapters/conformance.py` (`twin_observatory`, observes `conformance.audit`) | the committed snapshot against the census and `census_max` |
+
+Rules they share:
+
+- Nothing observed is never a pass. A source that cannot be read is
+  *unverified*: it lowers `coverage_score` and is stated as a low-severity
+  finding. The verdict is `pass` only when every check was read and nothing was
+  found; otherwise it is `unknown` at best.
+- Every finding carries a `thread_id` (`cortex_audit:<id>`,
+  `cortex_finding:<id>`, `ace_instance:<id>`, `ace_audit:<id>`,
+  `ace_trust:<id>`, `config:<path>@<sha>`, `conformance:<feature>`,
+  `twin_obs:<observation>#<check>`). `resolve_thread` follows it to the record
+  and, where the record names one, to its `source_citation_registry` row.
+- `replay()` re-judges the recorded evidence with the thresholds recorded with
+  it. It reports `match`, whether the evidence still hashes to its digest, and
+  whether the judge version changed.
+- `tools/twin_core/schema.py` is unchanged (ICOS vendors it verbatim). The
+  envelope comes from `twin_verdict`; `thread_id` is added to each canonical
+  violation after.
+
+Console: `/twin-observatory/governance` (linked from the Twin Observatory), with
+*why* (the thread) per finding, *Replay*, and *Observe now*. JSON under
+`/twin-observatory/api/governance`. MCP: `twin_governance` (read-only; it never
+records). CLI: `python -m tools.twin_core.governance`. Thresholds:
+`args/twin_governance.yaml`. Freshness: the observations are these twins'
+snapshots, so `twin_freshness_sweep` nudges them like any other twin.
+
+Twin coverage: 15 registered twins before this amendment → **19**
+(`TwinRegistry.keys()`, 2026-11-14).

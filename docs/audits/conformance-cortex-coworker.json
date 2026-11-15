@@ -40,14 +40,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes ace.abort (canvas_key 'ace' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/ace.py::ACEGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -94,14 +91,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes ace.hitl (canvas_key 'ace' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/ace.py::ACEGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [],
@@ -165,14 +159,11 @@
           "status": "gap"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes ace.profiles (canvas_key 'ace' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/ace.py::ACEGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [],
@@ -228,14 +219,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes ace.runs (canvas_key 'ace' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/ace.py::ACEGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -298,14 +286,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes ace.trust_sessions (canvas_key 'ace' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/ace.py::ACEGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -348,14 +333,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes conformance.audit (canvas_key 'twin_observatory' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/conformance.py::ConformanceAuditTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -401,14 +383,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.agent_launch (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -460,14 +439,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.airgap_guard (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -510,14 +486,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.findings (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [],
@@ -565,14 +538,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.govern (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -624,14 +594,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.governed_verbs (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -676,14 +643,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.intake (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -726,14 +690,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.metrics (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -787,14 +748,11 @@
           "status": "gap"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.pmo (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [],
@@ -849,14 +807,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.search_ask (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -899,14 +854,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cortex.service_keys (canvas_key 'cortex' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cortex.py::CortexGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -950,14 +902,11 @@
           "status": "pass"
         },
         "twin": {
-          "evidence": [],
-          "gaps": [
-            {
-              "detail": "no @register_twin adapter observes cwk.canvas (canvas_key 'cwk' or observes)",
-              "id": "twin:no-adapter"
-            }
+          "evidence": [
+            "adapter tools/twin_core/adapters/cwk.py::CoWorkersGovernanceTwin"
           ],
-          "status": "gap"
+          "gaps": [],
+          "status": "pass"
         },
         "workflow": {
           "evidence": [
@@ -988,119 +937,119 @@
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "ace.hitl": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 3
       },
       "ace.profiles": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 1,
-        "twin": 1,
+        "twin": 0,
         "workflow": 1
       },
       "ace.runs": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 2
       },
       "ace.trust_sessions": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "conformance.audit": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "cortex.agent_launch": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 2
       },
       "cortex.airgap_guard": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "cortex.findings": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 1
       },
       "cortex.govern": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "cortex.governed_verbs": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "cortex.intake": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "cortex.metrics": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "cortex.pmo": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 1,
-        "twin": 1,
+        "twin": 0,
         "workflow": 2
       },
       "cortex.search_ask": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "cortex.service_keys": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       },
       "cwk.canvas": {
         "ai_native": 0,
         "architecture": 1,
         "gui": 0,
-        "twin": 1,
+        "twin": 0,
         "workflow": 0
       }
     },
@@ -1108,10 +1057,10 @@
       "ai_native": 0,
       "architecture": 17,
       "gui": 2,
-      "twin": 17,
+      "twin": 0,
       "workflow": 11
     },
-    "gaps_total": 47
+    "gaps_total": 30
   },
   "tool": "feature_audit",
   "version": 1
