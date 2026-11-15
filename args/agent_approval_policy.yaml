@@ -109,6 +109,12 @@ tools:
     - git_commit
     - kanban_create_task
     - kanban_update_task
+    # A stop (owner, 2026-11-14, icx-cnf-04). Aborting an ACE team run only LOWERS autonomy, so it never waits on a
+    # person: the route and the MCP tool stop the run at once, and an agent calling it must not be held at the
+    # default `unknown` tier. It is not `reversible`, because it acts (it ends the run and writes an `abort` row to
+    # ace_audit_log). It is recoverable in the tier's sense: an aborted run can be rerun, and a rerun is a person's
+    # decision (declared workflow, icx-cnf-02).
+    - ace_abort
 
   # ---------------------------------------------------------------------------
   # Irreversible — publishes, destroys, or writes immutable evidence.

@@ -304,6 +304,32 @@ def test_architecture_an_orphan_element_and_a_missing_test_are_gaps(demo):
     assert gaps(run(demo), "architecture") == ["architecture:no-requirement"]
 
 
+def test_architecture_a_cited_test_or_symbol_must_exist_and_interfaces_count(demo):
+    """icx-cnf-04: a test is a pytest node and code may name a symbol; both are checked.
+
+    An interface is an element, so one no requirement names is an orphan.
+    """
+    def model(test: str, code: str, iface_used: bool) -> None:
+        _write(demo["root"], "args/platform_model/demo.yaml", yaml.safe_dump({
+            "requirements": [{"id": "REQ-DEMO-1", "features": ["demo.core"],
+                              "elements": ["demo.blueprint"] + (["if.demo"] if iface_used else []),
+                              "tests": [test]}],
+            "elements": [{"id": "demo.blueprint", "type": "sysml_element",
+                          "features": ["demo.core"], "code": [code]}],
+            "interfaces": [{"id": "if.demo", "type": "sysml_element", "features": ["demo.core"],
+                            "code": ["tools/demo/blueprint.py"]}],
+        }))
+
+    model("tests/test_demo.py::test_demo", "tools/demo/blueprint.py::index", True)
+    assert gaps(run(demo), "architecture") == []
+    model("tests/test_demo.py::test_invented", "tools/demo/blueprint.py::index", True)
+    assert gaps(run(demo), "architecture") == ["architecture:untested:REQ-DEMO-1"]
+    model("tests/test_demo.py::test_demo", "tools/demo/blueprint.py::no_such_view", True)
+    assert gaps(run(demo), "architecture") == ["architecture:no-code:demo.blueprint"]
+    model("tests/test_demo.py::test_demo", "tools/demo/blueprint.py::index", False)
+    assert gaps(run(demo), "architecture") == ["architecture:orphan-element:if.demo"]
+
+
 def test_ai_native_no_read_tool_is_a_gap(demo):
     demo["mcp"]["demo_read"]["read_only"] = False
     demo["mcp"]["demo_read"]["tier"] = "write"
