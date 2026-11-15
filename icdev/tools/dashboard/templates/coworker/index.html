@@ -88,6 +88,9 @@
     <div id="ace-launch-status" style="font-size:12px; color:var(--text-secondary,#7a8cb0); margin-top:8px;"></div>
   </div>
 
+  <!-- ── Event feed + Auto-dispatch (icx-ace-01) ────────────────── -->
+  {% include "coworker/_dispatch_panels.html" %}
+
   <!-- ── IQE widget ─────────────────────────────────────────────── -->
   {% set iqe_canvas = "ace" %}
   {% set iqe_api_route = "/api/ace/iqe-query" %}

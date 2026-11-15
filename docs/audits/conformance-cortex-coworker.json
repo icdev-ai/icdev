@@ -31,7 +31,7 @@
         "gui": {
           "evidence": [
             "/coworker/<instance_id> linked from a nav page",
-            "ace_api.api_abort called from tools/dashboard/templates/coworker/instance.html",
+            "ace_api.api_abort called from tools/dashboard/templates/coworker/_dispatch_panels.html",
             "page /coworker/<instance_id> renders coworker/instance.html",
             "registry entry 'ace'"
           ],
@@ -223,6 +223,8 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "ace_auto_dispatch_grants read-only, tool_authorization tier 'read'",
+            "ace_events read-only, tool_authorization tier 'read'",
             "nova_get_dispatch_config read-only, tool_authorization tier 'read'",
             "nova_get_trust_score read-only, tool_authorization tier 'read'",
             "nova_record_trust_event mutating, approval tier 'unknown' (default_tier) halts",
@@ -235,7 +237,12 @@
           "evidence": [
             "PM-ACE-11 -> ace.trust, if.ace.api -> tests/test_ace_nova_state_endpoint.py::test_nova_state_trust_score_present, tests/test_ace_nova_state_endpoint.py::test_nova_state_default_trust_when_no_ledger, tests/test_ace_nova_state_endpoint.py::test_nova_state_legacy_improvement_reports_no_evidence_honestly",
             "PM-ACE-12 -> ace.trust -> tests/test_ace_event_bus.py::TestPublishSubscribe::test_different_instances_isolated, tests/test_ace_event_bus.py::TestPublishSubscribe::test_full_queue_drops_event, tests/test_ace_event_bus.py::TestThreadSafety::test_concurrent_publish_and_subscribe",
-            "PM-ACE-13 -> ace.evaluations -> tests/test_ace_eval_routes.py::test_post_scores_a_stored_session_and_persists_it, tests/test_ace_eval_routes.py::test_an_unknown_session_is_a_404_and_writes_nothing, tests/test_ace_eval_routes.py::test_the_read_side_returns_what_was_stored, tests/test_agent_evaluator.py::TestScoreFromDB::test_score_existing_session, tests/test_agent_evaluator.py::TestSaveAndGetEval::test_save_and_retrieve, tests/test_agent_evaluator.py::TestEvalRunner::test_load_suite_parses_entries, tests/test_agent_evaluator.py::TestEvalRunner::test_run_eval_router_failure, tests/test_eval_trends.py::TestGetEvalTrends::test_fallback_query_used_when_join_fails"
+            "PM-ACE-13 -> ace.evaluations -> tests/test_ace_eval_routes.py::test_post_scores_a_stored_session_and_persists_it, tests/test_ace_eval_routes.py::test_an_unknown_session_is_a_404_and_writes_nothing, tests/test_ace_eval_routes.py::test_the_read_side_returns_what_was_stored, tests/test_agent_evaluator.py::TestScoreFromDB::test_score_existing_session, tests/test_agent_evaluator.py::TestSaveAndGetEval::test_save_and_retrieve, tests/test_agent_evaluator.py::TestEvalRunner::test_load_suite_parses_entries, tests/test_agent_evaluator.py::TestEvalRunner::test_run_eval_router_failure, tests/test_eval_trends.py::TestGetEvalTrends::test_fallback_query_used_when_join_fails",
+            "PM-ACE-14 -> ace.event_log, if.ace.api, if.ace.mcp, if.ace.dispatch_console -> tests/ace/test_event_log.py::test_emit_pending_result_recent_processed, tests/ace/test_event_log.py::test_an_undeclared_topic_is_refused, tests/ace/test_event_log.py::test_topics_are_derived_from_the_roles, tests/ace/test_event_log.py::test_the_events_route_answers_200_with_rows, tests/ace/test_event_log.py::test_the_events_route_answers_503_when_the_log_cannot_be_read, tests/ace/test_event_log.py::test_the_topics_route_answers_200_with_the_derived_map, tests/ace/test_event_log.py::test_the_completion_event_reaches_the_log, tests/ace/test_event_log.py::test_the_mcp_tools_are_declared_read_only_and_read_the_log, tests/ace/test_auto_dispatch_grant.py::test_the_coworker_page_carries_both_panels_and_calls_the_routes",
+            "PM-ACE-15 -> ace.dispatch -> tests/ace/test_event_dispatch.py::test_no_grant_means_a_pending_recommendation_and_no_launch, tests/ace/test_event_dispatch.py::test_a_decided_recommendation_launches_exactly_once, tests/ace/test_event_dispatch.py::test_a_declined_recommendation_launches_nothing, tests/ace/test_event_dispatch.py::test_a_withdrawn_recommendation_launches_nothing, tests/ace/test_event_dispatch.py::test_the_dispatcher_cannot_decide_its_own_recommendation, tests/ace/test_event_dispatch.py::test_a_recommendation_for_what_changed_is_withdrawn_not_launched, tests/ace/test_event_dispatch.py::test_an_undecided_recommendation_lapses, tests/test_nova_reflexion_trigger.py::test_full_round_trip_emit_recommend_decide_launch",
+            "PM-ACE-16 -> ace.auto_dispatch, ace.dispatch -> tests/ace/test_event_dispatch.py::test_under_a_live_grant_the_role_launches_on_auto, tests/ace/test_event_dispatch.py::test_a_revoked_grant_recommends_again, tests/ace/test_event_dispatch.py::test_stop_all_recommends_again_until_resumed, tests/ace/test_event_dispatch.py::test_an_expired_grant_recommends_and_records_its_expiry, tests/ace/test_event_dispatch.py::test_over_max_per_day_recommends, tests/ace/test_event_dispatch.py::test_falling_trust_suspends_the_grant_for_good, tests/ace/test_auto_dispatch_grant.py::test_a_grant_is_refused_and_leaves_no_decision, tests/ace/test_auto_dispatch_grant.py::test_a_grant_is_refused_below_trusted, tests/ace/test_auto_dispatch_grant.py::test_only_a_holder_may_grant, tests/ace/test_auto_dispatch_grant.py::test_a_holders_grant_is_a_decided_step_bound_to_its_payload, tests/ace/test_auto_dispatch_grant.py::test_revoke_is_immediate_with_a_reason_and_no_step, tests/ace/test_auto_dispatch_grant.py::test_stop_all_is_immediate_and_resume_needs_the_step, tests/ace/test_auto_dispatch_grant.py::test_the_role_loader_refuses_an_eligible_topic_the_role_does_not_hear",
+            "PM-ACE-17 -> ace.dispatch_twin -> tests/ace/test_ace_twin_dispatch.py::test_the_twin_flags_dispatch_and_grants_with_their_threads, tests/ace/test_ace_twin_dispatch.py::test_the_dispatch_checks_are_unverified_when_the_tables_are_missing",
+            "PM-ACE-18 -> ace.event_log -> tests/ace/test_ace_import_resolution.py::test_the_walk_finds_the_imports_that_broke, tests/ace/test_ace_import_resolution.py::test_every_imported_ace_name_resolves"
           ],
           "gaps": [],
           "status": "pass"
@@ -244,6 +251,10 @@
           "evidence": [
             "/coworker/sessions/<session_id> linked from a nav page",
             "/coworker/trust linked from a nav page",
+            "ace_api.api_auto_dispatch_grant called from tools/dashboard/templates/coworker/_dispatch_panels.html",
+            "ace_api.api_auto_dispatch_resume_all called from tools/dashboard/templates/coworker/_dispatch_panels.html",
+            "ace_api.api_auto_dispatch_revoke called from tools/dashboard/templates/coworker/_dispatch_panels.html",
+            "ace_api.api_auto_dispatch_stop_all called from tools/dashboard/templates/coworker/_dispatch_panels.html",
             "ace_api.api_iqe_query called from tools/dashboard/templates/ace/chat.html",
             "ace_api.api_session_eval_post called from tools/dashboard/templates/ace/evals.html",
             "nav links /coworker/sessions",
@@ -266,15 +277,18 @@
         },
         "workflow": {
           "evidence": [
-            "2 mutating route(s), none a decision a person takes"
+            "ace_api.api_auto_dispatch_grant (declared (tools/ace/blueprint.py: \"A person turns auto-dispatch on for one role/topic\")) -> template decl-wft-ace-auto-dispatch (args/workflow_hitl_templates/ace-auto-dispatch.yaml)",
+            "ace_api.api_auto_dispatch_resume_all (declared (tools/ace/blueprint.py: \"Lift stop-all. The holder's declared step\")) -> template decl-wft-ace-auto-dispatch (args/workflow_hitl_templates/ace-auto-dispatch.yaml)",
+            "ace_api.api_auto_dispatch_revoke: stop, immediate (stated reason)",
+            "ace_api.api_auto_dispatch_stop_all: stop, immediate (stated reason)"
           ],
           "gaps": [],
-          "status": "n/a"
+          "status": "pass"
         }
       },
       "component": "ace",
       "key": "ace.trust_sessions",
-      "label": "ACE: trust (NOVA), sessions, evaluations, trends"
+      "label": "ACE: trust (NOVA), sessions, evaluations, trends, event feed and auto-dispatch"
     },
     {
       "cells": {

@@ -2268,3 +2268,23 @@ declared_decisions:
     service key never holds a person's step; it proposes, and re-posts the decided
     step id once. ACE abort stays an immediate stop with its stated reason.
 
+
+# ACE auto-dispatch gate (icx-ace-01)
+#
+# Every ACE event is a recommendation a person decides (decl-wft-ace-run-launch).
+# A role/topic launches on its own only under a live grant. Enforced by
+# tools/ace/auto_dispatch.py and tested in tests/ace/ (gated: core.d/icx-ace-01.txt).
+ace_auto_dispatch:
+  blocking:
+    - grant_without_eligibility     # the role YAML does not declare the topic auto-eligible
+    - grant_below_trust             # NOVA band below min_trust_band (args/ace/auto_dispatch.yaml)
+    - grant_without_reason          # turning auto on needs a stated reason
+    - grant_past_max_expiry         # expiry later than max_grant_days, or none
+    - grant_by_non_person           # a service key or agent cannot take the step
+    - launch_without_decided_step   # no launch from an event without a spent step or a live grant
+  warning:
+    - recommendation_undecided      # twin: ace.recommendation.undecided
+    - grant_expiring                # twin: ace.grant.expiring
+  note: >
+    Revoke and stop-all are stops: immediate, with a stated reason, no approval.
+    Lifting stop-all is the holder's step. A grant suspends itself when trust falls.

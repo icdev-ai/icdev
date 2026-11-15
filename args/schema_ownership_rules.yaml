@@ -35,7 +35,21 @@ default: it
 # column. EMPTY at adoption: this task changes no RLS behaviour. Add a table
 # here (with a reason in the PR) and `--regenerate`; tools/security/
 # row_security.py reads the generated `rls_exempt` list.
-rls_exempt: []
+rls_exempt:
+  # icx-ace-01: the declared-decision ledger (icx-cnf-02, migration
+  # 20261114162849) has no classification/tenant_id column, so the predicate made
+  # every signed-in /decisions read and decide fail on PostgreSQL with
+  # UndefinedColumn ("the decision ledger cannot be read"). A step's subject is
+  # gated by its template's holders, not by row labels; the wf_instances,
+  # wf_approvals and wf_feedback rows each decision opens keep their predicate.
+  - wf_decision_steps
+  # icx-ace-01: NOVA trust. tools/ace/trust_calibrator.get_trust_score reads
+  # ace_coworkers (a canvas table) then ace_trust_ledger, neither of which has a
+  # classification/tenant_id column; inside a signed-in request the predicate
+  # raised UndefinedColumn and the score fell back to the 0.5 default, so the
+  # auto-dispatch grant route judged a different trust than the dispatcher.
+  - ace_coworkers
+  - ace_trust_ledger
 
 packages:
   # declaring package (tools/<pkg>) -> owner, consulted when no prefix matched

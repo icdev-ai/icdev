@@ -111,3 +111,7 @@ tests/test_cortex_audit_integrity_pg.py
 # through the engine, propose/decide/spend, the PL/pgSQL append-only triggers
 # (SQLite hid a RAISE bug in their migration) and a Cortex finding adjudication.
 tests/pg_tier/test_declared_decisions_pg.py
+# icx-ace-01: the ACE event log and auto-dispatch grants on PG -- RETURNING ids,
+# the new ace_event_results columns (ADD COLUMN on the snapshot's table) and the
+# PL/pgSQL append-only trigger on ace_dispatch_grants (migration 20261115114944).
+tests/test_ace_event_dispatch_ambient.py

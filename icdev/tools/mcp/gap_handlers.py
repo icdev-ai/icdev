@@ -4551,6 +4551,39 @@ def handle_ace_checkpoints(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_ace_events(args: dict) -> dict:
+    """MCP: the ACE event feed, pending count and derived topics (icx-ace-01)."""
+    try:
+        from icdev.tools.ace import event_log
+
+        try:
+            limit = max(1, min(int(args.get("limit") or 50), 200))
+        except (TypeError, ValueError):
+            limit = 50
+        results = event_log.get_recent_results(limit=limit)
+        return {"classification": CORTEX_CLASSIFICATION, "pending": event_log.pending_count(),
+                "results": results, "count": len(results),
+                "topics": event_log.dispatch_topics()}
+    except Exception as exc:  # noqa: BLE001 — a read reports its fault, never raises
+        logger.warning("handle_ace_events: %s", exc)
+        return {"error": "the event log cannot be read", "detail": str(exc)}
+
+
+def handle_ace_auto_dispatch_grants(args: dict) -> dict:
+    """MCP: ACE auto-dispatch eligibility, grants and stop-all (icx-ace-01)."""
+    try:
+        from icdev.tools.ace import auto_dispatch
+
+        grants = auto_dispatch.grants(include_closed=not bool(args.get("live_only")))
+        return {"classification": CORTEX_CLASSIFICATION,
+                "eligible": auto_dispatch.eligible(), "grants": grants, "count": len(grants),
+                "stop_all": auto_dispatch.stop_all_state(),
+                "decide_at": "/coworker (Auto-dispatch panel)"}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_ace_auto_dispatch_grants: %s", exc)
+        return {"error": "the auto-dispatch grants cannot be read", "detail": str(exc)}
+
+
 def handle_coworkers_roster(args: dict) -> dict:
     """MCP: the Co-Workers roster (personas and ACE roles)."""
     try:

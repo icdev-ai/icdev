@@ -81,7 +81,7 @@ def _q(conn, sql: str) -> str:
 
 
 def _decision_step(template_id: str, surface: str, decision: str, *, subject: str = "",
-                   reason: str = ""):
+                   reason: str = "", payload=None):
     """The person's step of a declared template, taken in this request (icx-cnf-02).
 
     Every decision route here runs through its template under
@@ -92,7 +92,7 @@ def _decision_step(template_id: str, surface: str, decision: str, *, subject: st
 
     try:
         return declared.take_step(template_id, surface=surface, decision=decision,
-                                  subject=subject, reason=reason), None
+                                  subject=subject, reason=reason, payload=payload), None
     except declared.StepRefused as exc:
         return None, (jsonify(exc.to_dict()), exc.status)
 
@@ -1720,56 +1720,167 @@ def api_iqe_query():
 
 
 # ---------------------------------------------------------------------------
-# Event Bus API — auto-dispatch feed
+# Event log + dispatch (icx-ace-01): every event is a recommendation a person
+# decides at /decisions; a role/topic runs on auto only under a live grant.
 # ---------------------------------------------------------------------------
 
 
 @ace_api_bp.route("/events", methods=["GET"])
 def api_ace_events():
-    """Recent auto-dispatch event results for the event feed UI."""
+    """Recent ACE events and what each led to per role, for the Event feed panel.
+
+    Each result is recommended (a pending decl-wft-ace-run-launch step, decided at
+    /decisions), launched, declined, withdrawn, auto_launched (under a grant) or
+    auto_refused. 503 when the event log cannot be read: never a traceback string.
+    """
+    from icdev.tools.ace import event_log
+
     try:
-        from icdev.tools.ace.event_bus import get_recent_results, pending_count
-        limit = min(int(request.args.get("limit", 50)), 200)
-        return jsonify({
-            "ok": True,
-            "pending": pending_count(),
-            "results": get_recent_results(limit=limit),
-        })
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
-
-# POST /api/ace/events/emit was retired here (icx-cnf-05). It imported ``emit``
-# and ``DISPATCH_TOPICS`` from ``icdev.tools.ace.event_bus``, which defines
-# neither (the module is the per-instance SSE queue only), so every call answered
-# 500. No page, script or test called it. The topics route below says the same
-# registry is missing and answers 404 until it exists.
+        limit = max(1, min(int(request.args.get("limit", 50)), 200))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        return jsonify({"ok": True, "pending": event_log.pending_count(),
+                        "results": event_log.get_recent_results(limit=limit)})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace events: the event log cannot be read: %s", exc)
+        return jsonify({"ok": False, "error": "unavailable",
+                        "message": "the event log cannot be read"}), 503
 
 
 @ace_api_bp.route("/events/topics", methods=["GET"])
 def api_ace_event_topics():
-    """Return all dispatch topics and which roles listen to each.
+    """Every topic a role declares, and the roles that listen to each.
 
-    gap C-2: icdev.tools.ace.event_bus has no DISPATCH_TOPICS registry (the
-    module only implements the queue itself, not a canonical topic list) —
-    this endpoint has never actually been wired. 404 rather than 500 until
-    that registry exists.
+    Derived from args/ace/roles/*.yaml (listen_topics and emit_topics), never a
+    hand-kept list. Wildcard topics are listed as declared; dispatch is exact.
     """
+    from icdev.tools.ace import event_log
+
     try:
-        from icdev.tools.ace.event_bus import DISPATCH_TOPICS
-    except ImportError:
-        return jsonify({"error": "not_implemented", "detail": "no dispatch topic registry"}), 404
+        return jsonify({"ok": True, "topics": event_log.dispatch_topics()})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace event topics: roles unreadable: %s", exc)
+        return jsonify({"ok": False, "error": "unavailable",
+                        "message": "the role catalog cannot be read"}), 503
+
+
+def _grant_refused(exc) -> tuple:
+    return jsonify(exc.to_dict()), exc.status
+
+
+@ace_api_bp.route("/auto-dispatch", methods=["GET"])
+def api_auto_dispatch():
+    """Auto-dispatch state for the panel: eligible role/topics with their trust,
+    every grant with its derived state and today's count, the stop-all switch."""
+    from icdev.tools.ace import auto_dispatch
+    from icdev.tools.workflow_hitl import declared
+
     try:
-        from icdev.tools.ace.role_loader import RoleLoader
-        roles = RoleLoader().list_roles()
-        topic_map: dict[str, list[str]] = {t: [] for t in sorted(DISPATCH_TOPICS)}
-        for role in roles:
-            for topic in (role.communication.get("listen_topics") or []):
-                if topic in topic_map:
-                    topic_map[topic].append(role.role_id)
-        return jsonify({"ok": True, "topics": topic_map})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        cfg = auto_dispatch.load_config()
+        actor = declared.current_actor()
+        return jsonify({
+            "ok": True,
+            "eligible": auto_dispatch.eligible(cfg=cfg),
+            "grants": auto_dispatch.grants(),
+            "stop_all": auto_dispatch.stop_all_state(),
+            "limits": {k: cfg[k] for k in ("min_trust_band", "max_grant_days",
+                                           "max_per_day_ceiling")},
+            "can_grant": declared.can_hold(auto_dispatch.TEMPLATE_ID, actor),
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace auto-dispatch state unreadable: %s", exc)
+        return jsonify({"ok": False, "error": "unavailable",
+                        "message": "the auto-dispatch grants cannot be read"}), 503
+
+
+@ace_api_bp.route("/auto-dispatch/grant", methods=["POST"])
+def api_auto_dispatch_grant():
+    """A person turns auto-dispatch on for one role/topic (decl-wft-ace-auto-dispatch).
+
+    The grant is the person's step, with a reason, an expiry and max_per_day. It
+    is checked first (declared eligible, trust, limits) so a refused grant leaves
+    no decision behind; then the step is taken and the grant recorded.
+    """
+    from icdev.tools.ace import auto_dispatch
+
+    data = request.get_json(silent=True) or {}
+    try:
+        payload = auto_dispatch.check_grant(
+            data.get("role_id"), data.get("topic"), reason=data.get("reason"),
+            expires_at=data.get("expires_at"), max_per_day=data.get("max_per_day"))
+    except auto_dispatch.GrantRefused as exc:
+        return _grant_refused(exc)
+    step, refused = _decision_step(auto_dispatch.TEMPLATE_ID, auto_dispatch.GRANT_SURFACE,
+                                   "grant", subject=f"{payload['role_id']}:{payload['topic']}",
+                                   reason=payload["reason"], payload=payload)
+    if refused:
+        return refused
+    from icdev.tools.workflow_hitl import declared
+
+    grant = auto_dispatch.record_grant(
+        payload, actor=declared.current_actor() or {"id": step["decided_by"]},
+        step_id=step["step_id"])
+    return jsonify({"ok": True, "grant": grant, "decision_step": step}), 201
+
+
+@ace_api_bp.route("/auto-dispatch/<grant_id>/revoke", methods=["POST"])
+def api_auto_dispatch_revoke(grant_id: str):
+    """Turn one grant off now. A stop: any holder, a stated reason, no approval."""
+    from icdev.tools.ace import auto_dispatch
+    from icdev.tools.workflow_hitl import declared
+
+    actor = declared.current_actor()
+    if not declared.can_hold(auto_dispatch.TEMPLATE_ID, actor):
+        return jsonify({"error": f"only a holder of {auto_dispatch.TEMPLATE_ID} may revoke "
+                        "a grant", "code": "role"}), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"ok": True, **auto_dispatch.revoke(
+            grant_id, actor=actor, reason=str(data.get("reason") or ""))})
+    except auto_dispatch.GrantRefused as exc:
+        return _grant_refused(exc)
+
+
+@ace_api_bp.route("/auto-dispatch/stop-all", methods=["POST"])
+def api_auto_dispatch_stop_all():
+    """Stop every auto-dispatch at once. A stop: anyone signed in, a stated reason,
+    no approval. Every later event is a recommendation until a holder resumes."""
+    from icdev.tools.ace import auto_dispatch
+    from icdev.tools.workflow_hitl import declared
+
+    actor = declared.current_actor()
+    if not actor:
+        return jsonify({"error": "sign in to stop auto-dispatch", "code": "no_person"}), 401
+    data = request.get_json(silent=True) or {}
+    try:
+        return jsonify({"ok": True, "stop_all": auto_dispatch.stop_all(
+            actor=actor, reason=str(data.get("reason") or ""))})
+    except auto_dispatch.GrantRefused as exc:
+        return _grant_refused(exc)
+
+
+@ace_api_bp.route("/auto-dispatch/resume-all", methods=["POST"])
+def api_auto_dispatch_resume_all():
+    """Lift stop-all. The holder's declared step (decl-wft-ace-auto-dispatch, resume)."""
+    from icdev.tools.ace import auto_dispatch
+
+    data = request.get_json(silent=True) or {}
+    reason = str(data.get("reason") or "").strip()
+    try:
+        auto_dispatch.check_resume()
+    except auto_dispatch.GrantRefused as exc:
+        return _grant_refused(exc)
+    step, refused = _decision_step(auto_dispatch.TEMPLATE_ID, auto_dispatch.RESUME_SURFACE,
+                                   "resume", subject="stop-all", reason=reason)
+    if refused:
+        return refused
+    from icdev.tools.workflow_hitl import declared
+
+    state = auto_dispatch.record_resume(
+        actor=declared.current_actor() or {"id": step["decided_by"]}, reason=reason,
+        step_id=step["step_id"])
+    return jsonify({"ok": True, "stop_all": state, "decision_step": step})
 
 
 @ace_api_bp.route("/<instance_id>/nova-state", methods=["GET"])

@@ -49,7 +49,7 @@ def test_seed_converges():
     assert declared.seed_declared_templates() == {"seeded": [], "updated": []}
     rows = _one("SELECT COUNT(*) FROM wf_templates WHERE id LIKE %s AND is_default = 0",
                 ("decl-wft-%",))
-    assert rows == [(8,)]
+    assert rows == [(len(declared.load_templates()),)]
 
 
 def test_a_persons_step_runs_through_the_engine():

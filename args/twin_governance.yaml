@@ -32,5 +32,11 @@ ace:
   # A checkpoint (hitl_pending) waiting on a person, by age.
   checkpoint_warn_hours: 4
   checkpoint_fail_hours: 24
+  # icx-ace-01: an event the dispatcher has not processed after this long.
+  events_stale_minutes: 15
+  # A recommendation (pending decl-wft-ace-run-launch step) undecided this long.
+  recommendation_warn_hours: 24
+  # A live auto-dispatch grant expiring within this many days.
+  grant_expiry_warn_days: 3
   # Newest rows read per table.
   scan_limit: 500

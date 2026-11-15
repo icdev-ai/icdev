@@ -43,12 +43,21 @@ def test_checked_in_manifests_are_fresh_complete_and_disjoint():
     assert rep["manifest_size"] >= 1874
 
 
-def test_manifests_are_one_line_per_table_and_carry_no_exemptions_yet():
+#: The reviewed row-security exemptions (args/schema_ownership_rules.yaml, each
+#: with its reason). Empty at adoption; icx-ace-01 added the three tables with no
+#: classification/tenant_id column that signed-in requests read.
+REVIEWED_RLS_EXEMPT = {"wf_decision_steps", "ace_trust_ledger", "ace_coworkers"}
+
+
+def test_manifests_are_one_line_per_table_and_carry_only_the_reviewed_exemptions():
+    exempt: list[str] = []
     for rel in (so.CORE_MANIFEST_RELPATH, so.DOMAIN_MANIFEST_RELPATH):
         data = yaml.safe_load((REPO_ROOT / rel).read_text(encoding="utf-8"))
         assert set(data) == {"tables", "rls_exempt"}
         assert all(isinstance(v, str) for v in data["tables"].values())
-        assert data["rls_exempt"] == []
+        assert set(data["rls_exempt"]) <= set(data["tables"])  # a manifest exempts only its own
+        exempt += data["rls_exempt"]
+    assert sorted(exempt) == sorted(REVIEWED_RLS_EXEMPT)
     core = yaml.safe_load((REPO_ROOT / so.CORE_MANIFEST_RELPATH).read_text(encoding="utf-8"))["tables"]
     assert set(core.values()) == {"core"}
     dom = yaml.safe_load((REPO_ROOT / so.DOMAIN_MANIFEST_RELPATH).read_text(encoding="utf-8"))["tables"]

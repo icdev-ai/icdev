@@ -1,0 +1,47 @@
+# CUI // SP-CTI
+# ACE event dispatch and auto-dispatch (icx-ace-01).
+#
+# Read by tools/ace/event_dispatcher.py and tools/ace/auto_dispatch.py.
+#
+# THE RULE (owner, 2026-11-15). Every ACE event becomes a RECOMMENDATION: a
+# pending step of decl-wft-ace-run-launch that a person decides at /decisions
+# (HITL). Nothing launches from an event by default.
+#
+# A role/topic may run on auto (HOTL) only when ALL of these hold:
+#   * the role's reviewed YAML declares it: auto_dispatch: {eligible_topics: [...],
+#     reason: "..."} (absent means never auto);
+#   * the role's NOVA trust band is trusted or autonomous (min_trust_band);
+#   * a holder granted it through decl-wft-ace-auto-dispatch with a reason, an
+#     expiry no later than max_grant_days, and a max_per_day at most
+#     max_per_day_ceiling;
+#   * the grant is not revoked, expired or over today's count, and stop-all is off.
+# Trust falling below min_trust_band suspends the grant by itself.
+# Revoke and stop-all are immediate (no approval). Resume needs the step.
+#
+# Raising a ceiling here is a reviewed config change. Never lower min_trust_band.
+
+# Start the dispatcher thread when the dashboard server starts
+# (python tools/dashboard/app.py, ACE enabled). Tests call
+# ACEEventDispatcher._process_pending() directly; imports never start it.
+dispatcher_enabled: true
+
+# Seconds between dispatcher cycles.
+poll_seconds: 5
+
+# At most this many roles are acted on per event (fanout cap).
+max_roles_per_event: 3
+
+# The same role and topic are acted on at most once in this window (seconds).
+dedup_window_seconds: 30
+
+# A recommendation nobody decides is withdrawn after this many hours.
+recommendation_expiry_hours: 72
+
+# The lowest NOVA band a role may run on auto at (tools/ace/trust_calibrator).
+min_trust_band: trusted
+
+# A grant's expiry is at most this many days ahead.
+max_grant_days: 30
+
+# A grant's max_per_day is at most this.
+max_per_day_ceiling: 50

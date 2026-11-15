@@ -3712,6 +3712,23 @@ CREATE TABLE IF NOT EXISTS ace_step_audit_log (
     duration_ms REAL,
     created_at  TEXT    NOT NULL
 );
+-- icx-ace-01: the ACE auto-dispatch grants log, append-only (mirrors
+-- tools/ace/db/init_db.py and migration 20261115114944).
+CREATE TABLE IF NOT EXISTS ace_dispatch_grants (
+    event_id        TEXT PRIMARY KEY,
+    grant_id        TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('granted', 'revoked', 'suspended',
+                                                  'expired', 'stop_all', 'resume_all')),
+    role_id         TEXT NOT NULL DEFAULT '',
+    topic           TEXT NOT NULL DEFAULT '',
+    expires_at      TEXT NOT NULL DEFAULT '',
+    max_per_day     INTEGER NOT NULL DEFAULT 0,
+    reason          TEXT NOT NULL DEFAULT '',
+    actor           TEXT NOT NULL DEFAULT '',
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ace_webhook_log (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     instance_id       TEXT NOT NULL DEFAULT '',
@@ -4965,7 +4982,10 @@ def wf_db(icdev_db, monkeypatch):
     monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
     monkeypatch.setenv("ICDEV_DB_PATH", str(icdev_db))
     real = storage.get_connection
-    for name, mod in list(sys.modules.items()):
+    # sys.modules.copy() is one atomic snapshot. list(sys.modules.items()) is not:
+    # a thread an earlier test started (the dashboard app's) can import a module
+    # mid-iteration, which raised "dictionary changed size during iteration" in CI.
+    for name, mod in sys.modules.copy().items():
         bare = name[len("icdev."):] if name.startswith("icdev.") else name
         if (mod is not None and bare.startswith(("tools.workflow_hitl", "tools.cortex"))
                 and getattr(mod, "get_connection", real) is not real):

@@ -15,7 +15,15 @@ is what this twin observes:
 * **Trust drift (NOVA)** — per role in ``ace_trust_ledger``: a band that fell in
   the window, and a role now ``probationary`` (dispatch paused).
 
-Threads: ``ace_instance:<id>``, ``ace_audit:<id>``, ``ace_trust:<ledger id>``.
+* **Event dispatch (icx-ace-01)** — ``ace_events`` not processed after
+  ``events_stale_minutes``; recommendations (pending ``decl-wft-ace-run-launch``
+  steps) undecided past ``recommendation_warn_hours``; auto-launches that failed
+  or were refused; and the auto-dispatch grants log (``ace_dispatch_grants``):
+  grants at today's ``max_per_day``, grants expiring within
+  ``grant_expiry_warn_days``, grants suspended because trust fell.
+
+Threads: ``ace_instance:<id>``, ``ace_audit:<id>``, ``ace_trust:<ledger id>``,
+``ace_event:<event id>``, ``ace_grant:<grant id>``.
 ACE tables are canvas tables (``get_canvas_connection``); the trust ledger is in
 the platform database, as ``tools/ace/trust_calibrator`` reads it.
 """
@@ -74,7 +82,8 @@ class ACEGovernanceTwin(GovernanceTwinAdapter):
                  ).isoformat(timespec="seconds")
         ev: dict = {"canvas": self.canvas_key, "target_id": "fleet", "observed_at": now_iso(),
                     "since": since, "policy": policy, "instances": None, "hitl": None,
-                    "trust": None, "errors": {}}
+                    "trust": None, "events": None, "results": None, "grants": None,
+                    "errors": {}}
         conn = None
         try:
             conn = get_canvas_connection("ICDEV_ACE_DB_URL")
@@ -113,6 +122,8 @@ class ACEGovernanceTwin(GovernanceTwinAdapter):
         finally:
             close_quietly(conn)
 
+        self._collect_dispatch(ev, since, limit)
+
         conn = None
         try:
             conn = get_connection()
@@ -134,6 +145,67 @@ class ACEGovernanceTwin(GovernanceTwinAdapter):
         finally:
             close_quietly(conn)
         return ev
+
+    def _collect_dispatch(self, ev: dict, since: str, limit: int) -> None:
+        """Events, their results and the grants log (icx-ace-01)."""
+        from tools.db.storage import get_canvas_connection, table_exists
+
+        conn = None
+        try:
+            conn = get_canvas_connection("ICDEV_ACE_DB_URL")
+            if not table_exists(conn, "ace_events"):
+                ev["errors"]["events"] = "ace_events does not exist"
+            else:
+                cols = ("id", "topic", "source_canvas", "created_at")
+                rows = rows_as_dicts(conn.execute(
+                    "SELECT id, topic, source_canvas, created_at FROM ace_events "
+                    "WHERE processed = 0 ORDER BY created_at ASC, id ASC LIMIT %s",
+                    (limit,)), cols)
+                ev["events"] = [{"id": str(r["id"]), "topic": str(r["topic"]),
+                                 "source_canvas": str(r["source_canvas"] or ""),
+                                 "at": ts_text(r["created_at"])} for r in rows]
+            if not table_exists(conn, "ace_event_results"):
+                ev["errors"]["results"] = "ace_event_results does not exist"
+            else:
+                cols = ("id", "event_id", "role_id", "instance_id", "status", "grant_id",
+                        "reason", "created_at", "state")
+                rows = rows_as_dicts(conn.execute(
+                    "SELECT r.id, r.event_id, r.role_id, r.instance_id, r.status, r.grant_id, "
+                    "r.reason, r.created_at, i.state FROM ace_event_results r "
+                    "LEFT JOIN ace_instances i ON i.id = r.instance_id "
+                    "WHERE r.status = 'recommended' OR (r.status IN "
+                    "('auto_launched', 'auto_refused') AND r.created_at >= %s) "
+                    "ORDER BY r.created_at ASC, r.id ASC LIMIT %s",
+                    (since.replace("T", " ")[:19], limit * 4)), cols)
+                ev["results"] = [{"id": str(r["id"]), "event_id": str(r["event_id"]),
+                                  "role_id": str(r["role_id"]),
+                                  "instance_id": str(r["instance_id"] or ""),
+                                  "status": str(r["status"]),
+                                  "grant_id": str(r["grant_id"] or ""),
+                                  "reason": str(r["reason"] or ""),
+                                  "instance_state": str(r["state"] or ""),
+                                  "at": ts_text(r["created_at"])} for r in rows]
+            if not table_exists(conn, "ace_dispatch_grants"):
+                ev["errors"]["grants"] = "ace_dispatch_grants does not exist"
+            else:
+                cols = ("event_id", "grant_id", "event", "role_id", "topic", "expires_at",
+                        "max_per_day", "reason", "created_at")
+                rows = rows_as_dicts(conn.execute(
+                    "SELECT event_id, grant_id, event, role_id, topic, expires_at, max_per_day, "
+                    "reason, created_at FROM ace_dispatch_grants "
+                    "ORDER BY created_at ASC, event_id ASC LIMIT %s", (limit * 4,)), cols)
+                ev["grants"] = [{"event_id": str(r["event_id"]), "grant_id": str(r["grant_id"]),
+                                 "event": str(r["event"]), "role_id": str(r["role_id"] or ""),
+                                 "topic": str(r["topic"] or ""),
+                                 "expires_at": ts_text(r["expires_at"]),
+                                 "max_per_day": int(r["max_per_day"] or 0),
+                                 "reason": str(r["reason"] or ""),
+                                 "at": ts_text(r["created_at"])} for r in rows]
+        except Exception as exc:  # noqa: BLE001 — unreadable is unverified
+            for key in ("events", "results", "grants"):
+                ev["errors"].setdefault(key, str(exc))
+        finally:
+            close_quietly(conn)
 
     # -- judge (pure) --------------------------------------------------------
 
@@ -227,7 +299,10 @@ class ACEGovernanceTwin(GovernanceTwinAdapter):
                     recommendation="Every decision of this role needs a person until trust "
                                    "recovers."))
 
+        dispatch = self._judge_dispatch(evidence, policy, cap, now, errors, checks, findings)
+
         summary = {
+            **dispatch,
             "live_runs": sum(1 for r in inst or [] if r["state"] in LIVE_STATES),
             "stuck": len(stuck),
             "failed_in_window": len(failed),
@@ -236,3 +311,94 @@ class ACEGovernanceTwin(GovernanceTwinAdapter):
             "roles_by_band": {b: sum(1 for v in bands_now.values() if v == b) for b in BANDS},
         }
         return {"checks": checks, "findings": findings, "summary": summary}
+
+    @staticmethod
+    def _judge_dispatch(evidence: dict, policy: dict, cap: int, now: str, errors: dict,
+                        checks: list, findings: list) -> dict:
+        """Event dispatch and auto-dispatch grants (icx-ace-01). Pure."""
+        events = evidence.get("events")
+        checks.append(check("ace.events", "ACE events processed by the dispatcher",
+                            events is not None, errors.get("events") or "ace_events not read"))
+        stale_h = float(policy.get("events_stale_minutes", 15)) / 60.0
+        stale = [(e, age_hours(e["at"], now)) for e in events or []]
+        stale = [(e, h) for e, h in stale if h is not None and h >= stale_h]
+        for e, hours in stale[:cap]:
+            findings.append(finding(
+                "ace.event.unprocessed", "medium",
+                f"Event '{e['topic']}' not processed for {hours * 60:.0f} min",
+                thread_id=f"ace_event:{e['id']}", detail=f"from {e['source_canvas'] or '?'}",
+                recommendation="Is the event dispatcher running (args/ace/auto_dispatch.yaml)?"))
+
+        results = evidence.get("results")
+        checks.append(check("ace.recommendations", "Recommendations and auto-launches",
+                            results is not None,
+                            errors.get("results") or "ace_event_results not read"))
+        warn_h = float(policy.get("recommendation_warn_hours", 24))
+        undecided = [(r, age_hours(r["at"], now)) for r in results or []
+                     if r["status"] == "recommended"]
+        undecided = [(r, h) for r, h in undecided if h is not None and h >= warn_h]
+        for r, hours in undecided[:cap]:
+            findings.append(finding(
+                "ace.recommendation.undecided", "medium",
+                f"Recommendation for '{r['role_id']}' undecided for {hours:.1f}h",
+                thread_id=f"ace_event:{r['event_id']}",
+                recommendation="Decide it at /decisions (launch, or let it lapse)."))
+        auto_failed = [r for r in results or [] if r["status"] == "auto_refused"
+                       or (r["status"] == "auto_launched" and r["instance_state"] == "failed")]
+        for r in auto_failed[:cap]:
+            findings.append(finding(
+                "ace.auto.failed", "high",
+                f"Auto-launch of '{r['role_id']}' under grant {r['grant_id']} failed",
+                thread_id=f"ace_event:{r['event_id']}",
+                detail=r["reason"] or f"instance {r['instance_id']} failed",
+                recommendation="Read the run; consider revoking the grant."))
+
+        log = evidence.get("grants")
+        checks.append(check("ace.grants", "Auto-dispatch grants", log is not None,
+                            errors.get("grants") or "ace_dispatch_grants not read"))
+        grants: dict = {}
+        for g in log or []:  # oldest first
+            if g["grant_id"] == "*":
+                continue
+            if g["event"] == "granted":
+                grants[g["grant_id"]] = dict(g, state="live", closed_at="")
+            elif g["grant_id"] in grants and grants[g["grant_id"]]["state"] == "live":
+                grants[g["grant_id"]].update(state=g["event"], closed_at=g["at"])
+        day = now[:10]
+        today: dict = {}
+        for r in results or []:
+            if r["status"] == "auto_launched" and r["at"][:10] == day:
+                today[r["grant_id"]] = today.get(r["grant_id"], 0) + 1
+        warn_days = float(policy.get("grant_expiry_warn_days", 3))
+        live = 0
+        for gid, g in sorted(grants.items()):
+            left = age_hours(now, g["expires_at"])
+            if g["state"] == "live" and left is not None and left <= 0:
+                g["state"] = "expired"
+            if g["state"] == "live":
+                live += 1
+                if today.get(gid, 0) >= g["max_per_day"] > 0:
+                    findings.append(finding(
+                        "ace.grant.at_limit", "medium",
+                        f"Grant {gid} ({g['role_id']}/{g['topic']}) hit max_per_day "
+                        f"{g['max_per_day']}",
+                        thread_id=f"ace_grant:{gid}",
+                        recommendation="Later events today are recommendations; raise the "
+                                       "limit only through a new grant."))
+                if left is not None and left <= warn_days * 24:
+                    findings.append(finding(
+                        "ace.grant.expiring", "low",
+                        f"Grant {gid} ({g['role_id']}/{g['topic']}) expires in {left:.0f}h",
+                        thread_id=f"ace_grant:{gid}",
+                        recommendation="Grant it again on /coworker if it should continue."))
+            elif g["state"] == "suspended":
+                findings.append(finding(
+                    "ace.grant.suspended", "medium",
+                    f"Grant {gid} ({g['role_id']}/{g['topic']}) suspended: trust fell",
+                    thread_id=f"ace_grant:{gid}", detail=f"at {g['closed_at']}",
+                    recommendation="Events are recommendations again; a person may grant anew "
+                                   "once trust recovers."))
+        return {"events_unprocessed": len(events or []),
+                "recommendations_pending": sum(1 for r in results or []
+                                               if r["status"] == "recommended"),
+                "auto_failed": len(auto_failed), "grants_live": live}

@@ -70,7 +70,11 @@ def test_normalise_folds_separators():
 
 def test_rls_exempt_tables_reads_the_generated_manifests(it_domain, monkeypatch):
     sens._manifest_exempt.cache_clear()
-    assert sens.rls_exempt_tables(it_domain) == frozenset()  # nothing exempt at adoption
+    # Empty at adoption; icx-ace-01 exempted the three tables with no
+    # classification/tenant_id column that request reads hit (reasons in
+    # args/schema_ownership_rules.yaml). A new entry is a reviewed change here too.
+    assert sens.rls_exempt_tables(it_domain) == frozenset(
+        {"wf_decision_steps", "ace_trust_ledger", "ace_coworkers"})
     monkeypatch.setenv("ICDEV_RLS_EXEMPT_DISABLE", "1")
     assert sens.rls_exempt_tables(it_domain) == frozenset()
 

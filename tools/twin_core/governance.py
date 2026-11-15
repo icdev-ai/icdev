@@ -629,7 +629,15 @@ _THREAD_TABLES = {
     "ace_trust": ("rls", "ace_trust_ledger", "id",
                   ("id", "role_id", "delta", "reason", "new_score", "source_task_id",
                    "recorded_at")),
+    # icx-ace-01: an ACE event, and an auto-dispatch grant (its log rows).
+    "ace_event": ("ace", "ace_events", "id",
+                  ("id", "topic", "source_canvas", "source_id", "processed", "created_at")),
+    "ace_grant": ("ace", "ace_dispatch_grants", "grant_id",
+                  ("grant_id", "event", "role_id", "topic", "expires_at", "max_per_day",
+                   "reason", "actor", "step_id", "created_at")),
 }
+#: Thread kinds whose ref is an integer row id.
+_INT_REFS = ("ace_audit", "ace_event")
 
 
 def _thread_conn(kind: str):
@@ -681,7 +689,7 @@ def resolve_thread(thread_id: str) -> dict:
             conn = _thread_conn(conn_kind)
             rows = rows_as_dicts(conn.execute(
                 f"SELECT {', '.join(cols)} FROM {table} WHERE {id_col} = %s",  # nosec B608
-                (int(ref) if kind == "ace_audit" and ref.isdigit() else ref,)), cols)
+                (int(ref) if kind in _INT_REFS and ref.isdigit() else ref,)), cols)
         except Exception as exc:  # noqa: BLE001
             out["reason"] = f"{table} unreadable: {exc}"
             return out
@@ -690,6 +698,9 @@ def resolve_thread(thread_id: str) -> dict:
         if not rows:
             out["reason"] = f"no {table} row {ref}"
             return out
+        if table == "ace_dispatch_grants":  # the grant itself, then what followed
+            rows.sort(key=lambda r: (r["event"] != "granted", str(r["created_at"])))
+            out["events"] = [r["event"] for r in rows]
         out.update(resolved=True, record=rows[0], source=table)
         out["provenance"] = _provenance(str(rows[0].get("provenance_id") or ""))
         return out

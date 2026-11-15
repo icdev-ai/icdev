@@ -8959,6 +8959,21 @@ RESOURCE_REGISTRY = {
         "description": "Read the pending mid-run HITL checkpoints of one ACE instance (tool, coworker, detail, when) and, given a suggestion id, the state of a suggested-team proposal. Read-only; resolves, confirms and declines nothing -- those are a person's decisions in the console.",
         "input_schema": {"type": "object", "properties": {"instance_id": {"type": "string", "description": "ACE instance id"}, "suggestion_id": {"type": "string", "description": "Optional suggested-team proposal id"}}, "required": ["instance_id"]},
     },
+    # -- ACE event log and dispatch (icx-ace-01) -----------------------------
+    "ace_events": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_events",
+        "description": "Read the ACE event feed: recent events and what each led to per listening role (recommended -- a pending decl-wft-ace-run-launch step a person decides at /decisions --, launched, declined, withdrawn, auto_launched under a grant, auto_refused), the count still waiting to be processed, and the topics each role listens to (derived from the role YAMLs). Read-only: emits, decides and launches nothing.",
+        "input_schema": {"type": "object", "properties": {"limit": {"type": "integer", "default": 50, "description": "Newest results to return (1-200)"}}},
+    },
+    "ace_auto_dispatch_grants": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_auto_dispatch_grants",
+        "description": "Read ACE auto-dispatch: the role/topics a reviewed role YAML declares auto-eligible with their NOVA trust band, every grant with its derived state (live, revoked, suspended, expired), today's auto-launch count against its limit and expiry, and whether stop-all is set. Read-only: grants, revokes, stops and resumes nothing -- turning auto on is a person's step on /coworker.",
+        "input_schema": {"type": "object", "properties": {"live_only": {"type": "boolean", "default": False, "description": "Only live grants"}}},
+    },
     "coworkers_roster": {
         "category": "ace",
         "module": "tools.mcp.gap_handlers",
@@ -9704,6 +9719,9 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "cortex_airgap_posture":                    True,
     "ace_checkpoints":                          True,
     "coworkers_roster":                         True,
+    # icx-ace-01: the event feed and the auto-dispatch grants; reads only.
+    "ace_events":                               True,
+    "ace_auto_dispatch_grants":                 True,
     "platform_model_trace":                     True,
     # -- declared decisions (icx-cnf-02) -------------------------------------
     # Reads the templates and the ledger; never takes or proposes a step.

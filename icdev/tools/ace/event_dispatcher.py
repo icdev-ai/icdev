@@ -1,37 +1,70 @@
 # CUI // SP-CTI
-"""ACE Event Dispatcher — background thread that auto-routes events to coworker roles.
+"""ACE Event Dispatcher — turns ACE events into recommendations, or auto-launches under a grant.
 
-Polls ace_events every few seconds, matches each event's topic against all loaded
-roles' listen_topics, and launches an ACE session per matched role.
+Polls the event log (``event_log.py``: ``ace_events``), matches each event's
+topic against the roles' ``listen_topics`` (exact match), and for each matched
+role (icx-ace-01, owner 2026-11-15):
 
-Design
-------
-- Single daemon thread, started once in create_app()
-- Reads role listen_topics from the RoleLoader (hot-reloads every 60 s)
-- Uses ACEController.launch() — fully non-blocking, returns instance_id
-- Writes results to ace_event_results for the event feed UI
-- Rate-limits: max 1 dispatch per role per topic per 30 s (dedup window)
-- Caps auto-dispatches: max 3 roles per event (prevent fanout storms)
+1. **Under a live auto-dispatch grant** (``auto_dispatch.live_grant``: declared
+   eligible in the role YAML, trust >= trusted, granted by a person, not revoked,
+   expired, over today's limit or stopped) it launches the role and records
+   ``auto_launched`` with the grant id. A person is on the loop: the feed shows
+   it and the run can be aborted at once.
+2. **Otherwise** it RECOMMENDS: ``declared.propose`` records a pending step of
+   ``decl-wft-ace-run-launch`` (surface ``ace_api.api_launch``) as the dispatcher's
+   service actor, and the result row is ``recommended`` with the step id.
+   Nothing launches.
+3. Each cycle it sweeps its own ``recommended`` rows. A step a person decided
+   (affirm) is SPENT once, for exactly the launch spec that was proposed, and
+   only then launched (``launched``). A declined step is ``declined``; one
+   withdrawn, or undecided past ``recommendation_expiry_hours``, is ``withdrawn``.
 
-Supported topic → role topic mapping is declared in each role's YAML:
-    communication:
-      listen_topics: ["text.produced", "document.analyzed"]
+The dispatcher never decides: its actor is a service key, which ``declared``
+refuses as a decider. Fanout cap and dedup window are kept, from
+``args/ace/auto_dispatch.yaml``. One daemon thread, started by the dashboard
+server (``start_if_enabled``) when ``dispatcher_enabled`` is true; tests call
+``_process_pending()`` directly.
 """
 from __future__ import annotations
 
-from tools.logging.icdev_logger import get_logger
 import threading
 import time
-from typing import TYPE_CHECKING
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any
+
+from tools.logging.icdev_logger import get_logger
 
 if TYPE_CHECKING:
     from icdev.tools.ace.role_loader import RoleTemplate
 
 logger = get_logger("icdev.ace.event_dispatcher")
 
-_POLL_INTERVAL = 5        # seconds between DB polls
-_MAX_ROLES_PER_EVENT = 3  # fanout cap
-_DEDUP_WINDOW = 30        # seconds — skip if same role+topic dispatched recently
+LAUNCH_TEMPLATE = "decl-wft-ace-run-launch"
+LAUNCH_SURFACE = "ace_api.api_launch"
+#: The dispatcher's principal. A service key proposes and spends; it never decides.
+DISPATCHER_ACTOR = {"id": "ace-dispatcher", "role": "service"}
+
+_FIRST_CYCLE_DELAY = 8  # seconds: let the server finish starting
+
+
+def launch_spec(role: "RoleTemplate", event: dict) -> dict[str, Any]:
+    """The launch an event asks of a role. Deterministic: a decided step is spent
+    for exactly this payload, rebuilt from the stored event and the role."""
+    payload = event.get("payload") or {}
+    content = str(payload.get("content") or "")
+    canvas = event.get("source_canvas") or "ecosystem"
+    topic = event["topic"]
+    steps = ", ".join(getattr(s, "name", str(s)) for s in role.steps)
+    task = (
+        f"[ACE EVENT | topic={topic} | source={canvas}]\n\n"
+        f"Role: {role.display_name}\n"
+        f"Task: Apply your expertise to the following content from {canvas}.\n\n"
+        f"--- CONTENT ---\n{content[:2500]}\n--- END ---\n\n"
+        f"Steps to execute: {steps}"
+    )
+    return {"problem_text": task, "role_ids": [role.role_id],
+            "trigger_source": f"ace_event:{topic}", "trigger_ref": str(event["id"]),
+            "user_id": DISPATCHER_ACTOR["id"]}
 
 
 class ACEEventDispatcher:
@@ -48,11 +81,13 @@ class ACEEventDispatcher:
                     cls._instance = cls()
         return cls._instance
 
-    def __init__(self) -> None:
+    def __init__(self, roles: list | None = None) -> None:
         self._running = False
         self._thread: threading.Thread | None = None
-        # Dedup cache: (role_id, topic) → last_dispatch_time
+        # Dedup cache: (role_id, topic) -> last time acted on
         self._recent: dict[tuple[str, str], float] = {}
+        # Roles to use instead of RoleLoader (tests).
+        self._roles_override = roles
 
     # ------------------------------------------------------------------
     # Public
@@ -67,7 +102,7 @@ class ACEEventDispatcher:
             target=self._loop, name="ace-event-dispatcher", daemon=True
         )
         self._thread.start()
-        logger.info("ACE Event Dispatcher started (poll every %ds)", _POLL_INTERVAL)
+        logger.info("ACE Event Dispatcher started (recommend by default; auto only under a grant)")
 
     def stop(self) -> None:
         self._running = False
@@ -77,87 +112,193 @@ class ACEEventDispatcher:
     # ------------------------------------------------------------------
 
     def _loop(self) -> None:
-        # Stagger startup to let Flask finish initializing
-        time.sleep(8)
+        from icdev.tools.ace.auto_dispatch import load_config
+
+        time.sleep(_FIRST_CYCLE_DELAY)
         while self._running:
             try:
                 self._process_pending()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — a cycle never kills the thread
                 logger.warning("Dispatcher cycle error: %s", exc)
-            time.sleep(_POLL_INTERVAL)
+            time.sleep(max(1, int(load_config()["poll_seconds"])))
 
-    def _process_pending(self) -> None:
-        from icdev.tools.ace.event_bus import get_pending, mark_processed, store_result
-        events = get_pending(limit=20)
+    def _process_pending(self) -> dict[str, int]:
+        """One cycle: sweep recommendations, then act on new events. Returns counts."""
+        from icdev.tools.ace import event_log
+        from icdev.tools.ace.auto_dispatch import load_config
+
+        cfg = load_config()
+        counts = self._sweep(cfg)
+        events = event_log.get_pending(limit=20)
         if not events:
-            return
-
-        # Refresh roles (hot-reload built into RoleLoader)
+            return counts
         roles = self._get_roles()
         if not roles:
-            return
+            return counts  # leave events unprocessed until roles load
 
-        # Build topic → [role] index
         topic_index: dict[str, list[RoleTemplate]] = {}
         for role in roles:
             for topic in (role.communication.get("listen_topics") or []):
                 topic_index.setdefault(topic, []).append(role)
 
         for event in events:
-            matched = topic_index.get(event["topic"], [])
-            dispatched = 0
-            for role in matched:
-                if dispatched >= _MAX_ROLES_PER_EVENT:
+            acted, failed = 0, False
+            for role in topic_index.get(event["topic"], []):
+                if acted >= int(cfg["max_roles_per_event"]):
                     break
                 key = (role.role_id, event["topic"])
                 now = time.monotonic()
-                if now - self._recent.get(key, 0) < _DEDUP_WINDOW:
+                if now - self._recent.get(key, -1e9) < float(cfg["dedup_window_seconds"]):
                     continue  # too recent
-                instance_id = self._launch(role, event)
-                if instance_id:
-                    store_result(event["id"], role.role_id, instance_id)
-                    self._recent[key] = now
-                    dispatched += 1
-                    logger.info(
-                        "Dispatched %s → role=%s instance=%s",
-                        event["topic"], role.role_id, instance_id,
-                    )
-            mark_processed(event["id"])
+                outcome = self._dispatch(role, event)
+                if outcome is None:
+                    failed = True
+                    continue
+                counts[outcome] = counts.get(outcome, 0) + 1
+                self._recent[key] = now
+                acted += 1
+            if not failed:
+                event_log.mark_processed(event["id"])
+        return counts
 
-    def _launch(self, role: "RoleTemplate", event: dict) -> str | None:
-        """Launch an ACE session for the given role + event. Returns instance_id."""
+    def _dispatch(self, role: "RoleTemplate", event: dict) -> str | None:
+        """Auto-launch under a live grant, or recommend. Returns the status recorded,
+        or None when nothing could be recorded (the event is retried)."""
+        from icdev.tools.ace import auto_dispatch, event_log
+        from icdev.tools.workflow_hitl import declared
+
+        spec = launch_spec(role, event)
+        grant, why = auto_dispatch.live_grant(role.role_id, event["topic"],
+                                              roles=self._roles_override)
+        if grant:
+            try:
+                instance_id = self._launch(spec)
+            except Exception as exc:  # noqa: BLE001
+                event_log.store_result(event["id"], role.role_id, "", "auto_refused",
+                                       grant_id=grant["grant_id"],
+                                       reason=f"launch failed: {exc}")
+                return "auto_refused"
+            event_log.store_result(event["id"], role.role_id, instance_id, "auto_launched",
+                                   grant_id=grant["grant_id"],
+                                   reason=f"auto, under grant {grant['grant_id']}")
+            logger.info("Auto-launched %s -> role=%s instance=%s (grant %s)",
+                        event["topic"], role.role_id, instance_id, grant["grant_id"])
+            return "auto_launched"
+
+        note = f"{event['topic']} from {event.get('source_canvas') or 'ecosystem'} " \
+               f"(event {event['id']})"
         try:
-            from icdev.tools.ace.controller import ACEController
-            payload = event.get("payload") or {}
-            content = payload.get("content", "")
-            canvas = event.get("source_canvas", "ecosystem")
-            topic = event["topic"]
-
-            task = (
-                f"[ACE AUTO-DISPATCH | topic={topic} | source={canvas}]\n\n"
-                f"Role: {role.display_name}\n"
-                f"Task: Apply your expertise to the following content from {canvas}.\n\n"
-                f"--- CONTENT ---\n{content[:2500]}\n--- END ---\n\n"
-                f"Steps to execute: {', '.join(role.steps)}"
-            )
-
-            return ACEController.get_instance().launch(
-                problem_text=task,
-                trigger_source=f"ace_event:{topic}",
-                trigger_ref=str(event["id"]),
-                user_id="system",
-            )
-        except Exception as exc:
-            logger.warning("Launch failed for role %s: %s", role.role_id, exc)
+            step = declared.propose(LAUNCH_TEMPLATE, surface=LAUNCH_SURFACE, subject=role.role_id,
+                                    payload=spec, actor=dict(DISPATCHER_ACTOR), note=note)
+        except declared.StepRefused as exc:
+            logger.warning("Recommendation for %s not recorded: %s", role.role_id, exc)
             return None
+        try:
+            event_log.store_result(event["id"], role.role_id, "", "recommended",
+                                   step_id=step["step_id"], reason=why)
+        except Exception as exc:  # noqa: BLE001 — no feed row: nothing would spend it
+            declared.withdraw(step["step_id"], f"the event feed could not record it ({exc})")
+            return None
+        return "recommended"
+
+    def _sweep(self, cfg: dict) -> dict[str, int]:
+        """Move this dispatcher's recommendations on, from what people decided."""
+        from icdev.tools.ace import event_log
+        from icdev.tools.workflow_hitl import declared
+
+        counts: dict[str, int] = {}
+
+        def _set(row: dict, status: str, reason: str, instance_id: str = "") -> None:
+            event_log.update_result(row["id"], status, instance_id=instance_id, reason=reason)
+            counts[status] = counts.get(status, 0) + 1
+
+        expiry = timedelta(hours=float(cfg["recommendation_expiry_hours"]))
+        roles = {r.role_id: r for r in self._get_roles()}
+        for row in event_log.results_with_status("recommended"):
+            state = declared.step_state(row["step_id"]) if row["step_id"] else None
+            if state is None:
+                _set(row, "withdrawn", "its step is not in the ledger")
+                continue
+            if state["status"] == "withdrawn":
+                _set(row, "withdrawn", "its step was withdrawn")
+            elif state["status"] == "spent":
+                _set(row, "withdrawn", "its step was already spent")
+            elif state["status"] == "pending":
+                if _older_than(state["proposed_at"], expiry):
+                    declared.withdraw(row["step_id"], "undecided past "
+                                      f"{cfg['recommendation_expiry_hours']}h")
+                    _set(row, "withdrawn", "undecided past "
+                         f"{cfg['recommendation_expiry_hours']}h")
+            elif not state["affirmative"]:
+                _set(row, "declined", f"declined by {state['decided_by']}")
+            else:
+                event = event_log.get_event(row["event_id"])
+                role = roles.get(row["role_id"])
+                if event is None or role is None:
+                    _set(row, "withdrawn", "its event or role no longer exists")
+                    continue
+                try:
+                    declared.spend(row["step_id"], template_id=LAUNCH_TEMPLATE,
+                                   surface=LAUNCH_SURFACE, payload=launch_spec(role, event),
+                                   actor=dict(DISPATCHER_ACTOR))
+                except declared.StepRefused as exc:
+                    _set(row, "withdrawn", f"not launched: {exc}")
+                    continue
+                try:
+                    instance_id = self._launch(launch_spec(role, event))
+                except Exception as exc:  # noqa: BLE001
+                    _set(row, "withdrawn", f"decided, but the launch failed: {exc}")
+                    continue
+                _set(row, "launched", f"decided by {state['decided_by']}", instance_id)
+        return counts
+
+    def _launch(self, spec: dict[str, Any]) -> str:
+        """Launch a team for exactly this spec. Returns the instance id; raises on failure."""
+        from icdev.tools.ace.controller import ACEController
+
+        instance_id = ACEController.get_instance().launch(
+            problem_text=spec["problem_text"],
+            trigger_source=spec["trigger_source"],
+            trigger_ref=spec["trigger_ref"],
+            user_id=spec["user_id"],
+            role_ids=list(spec["role_ids"]),
+        )
+        if not instance_id:
+            raise RuntimeError("the controller returned no instance")
+        return str(instance_id)
 
     def _get_roles(self) -> list["RoleTemplate"]:
+        if self._roles_override is not None:
+            return list(self._roles_override)
         try:
             from icdev.tools.ace.role_loader import RoleLoader
             return RoleLoader().list_roles()
         except Exception as exc:
             logger.debug("RoleLoader failed: %s", exc)
             return []
+
+
+def _older_than(stamp: str, age: timedelta) -> bool:
+    try:
+        when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - when > age
+
+
+def start_if_enabled() -> bool:
+    """Start the process's dispatcher when ``dispatcher_enabled`` (the dashboard server)."""
+    from icdev.tools.ace.auto_dispatch import load_config
+
+    if not load_config()["dispatcher_enabled"]:
+        logger.info("ACE Event Dispatcher disabled (args/ace/auto_dispatch.yaml)")
+        return False
+    ACEEventDispatcher.get_instance().start()
+    return True
+
+
 
 
 # ---------------------------------------------------------------------------
