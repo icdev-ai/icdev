@@ -731,3 +731,44 @@ exemptions:
       discriminating proof for this PR is
       tests/genesis/test_kpr_watch_25_git_first_without_baseline.py. Remove
       this exemption if a later change to this file adds a new assertion.
+  - pattern: "tests/cortex/test_rest_bom.py"
+    reason: >-
+      icx-cnf-04 TRACES EXISTING BEHAVIOUR INTO THE PLATFORM MODEL AND ASSERTS
+      NO NEW BEHAVIOUR. This file is the test evidence for PM-CTX-17
+      (args/platform_model/cortex.yaml): POST /cortex/api/v1/bom already needed
+      a caller and the cortex:bom scope, already returned an undeclared
+      credibility tier as `ai_proposed` with a rationale, already bound only
+      the caller's declared tier as `set_by: human`, and already answered an
+      empty body with a 400. The card changed no code behind that route
+      (tools/cortex/rest_v1.py and tools/bom are untouched), so it passes at
+      the merge base by construction. So that "traces existing behaviour" is
+      not a way to ship a test that asserts nothing, it was checked by
+      mutation on 2026-11-14: making api_v1_bom stamp `set_by = "human"`
+      unconditionally turns it RED (1 failed, 3 passed). Remove this
+      exemption if a later change to this file asserts new behaviour.
+  - pattern: "tests/test_ace_eval_routes.py"
+    reason: >-
+      icx-cnf-04 TRACES EXISTING BEHAVIOUR INTO THE PLATFORM MODEL AND ASSERTS
+      NO NEW BEHAVIOUR. This file is the test evidence for PM-ACE-13
+      (args/platform_model/ace.yaml): the ACE session-eval routes (POST and GET
+      /api/ace/sessions/<id>/eval, GET /api/ace/evals and /evals/trends)
+      already scored, persisted, replaced and read back an eval, and already
+      404ed an unknown session. The card's only change to tools/ace/blueprint.py
+      is the actor passed to abort(), which these routes do not reach, so it
+      passes at the merge base by construction. Checked by mutation on
+      2026-11-14: removing the `not_found` -> 404 branch from
+      api_session_eval_post turns it RED (1 failed, 2 passed). Remove this
+      exemption if a later change to this file asserts new behaviour.
+  - pattern: "tests/test_coworkers_canvas.py"
+    reason: >-
+      icx-cnf-04 TRACES EXISTING BEHAVIOUR INTO THE PLATFORM MODEL AND ASSERTS
+      NO NEW BEHAVIOUR. This file is the test evidence for PM-CWK-02
+      (args/platform_model/cwk.yaml): the Co-Workers canvas already built its
+      roster from config only (chat personas with the plumbing persona hidden,
+      then ACE roles), already handed off to /chat by a relative link, already
+      showed an empty roster instead of a 500, and already counted the roster
+      by kind. The card changed nothing under tools/coworkers, so it passes at
+      the merge base by construction. Checked by mutation on 2026-11-14:
+      dropping the HIDDEN_PERSONA_KEYS filter from registry._personas turns it
+      RED (3 failed, 4 passed). Remove this exemption if a later change to this
+      file asserts new behaviour.
