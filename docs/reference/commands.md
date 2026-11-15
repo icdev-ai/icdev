@@ -9893,6 +9893,21 @@ MCP (all read-only, tier `read`): `cortex_pmo_status`, `cortex_intake_sessions`,
 `cortex_trust_chain` (the read of `cortex_govern`, which stays mutating),
 `cortex_findings_list`, `cortex_metrics`, `cortex_agent_launches`,
 `cortex_service_keys`, `cortex_airgap_posture`, `ace_checkpoints`, `coworkers_roster`.
+## Declared decisions — every decision a person takes runs a template (icx-cnf-02)
+
+Each decision route in Cortex and ACE names a template under
+`args/workflow_hitl_templates/` (`decides:` plus one manual stage held by a role).
+The route takes the person's step before its effect. Machine callers and people
+without the role only propose; a holder decides at `/decisions`.
+
+```bash
+python -m tools.workflow_hitl.declared --json              # templates and shape errors
+python -m tools.workflow_hitl.declared --seed --json       # seed them into wf_templates
+python -m tools.workflow_hitl.declared --list --status pending --json
+python tools/workflow/coherence_checker.py --check hitl_workflow --json
+```
+
+Console: `/decisions`. MCP: `workflow_decision_steps` (read-only).
 ## Governance twins — Cortex, ACE, Co-Workers, the conformance audit (icx-cnf-03)
 
 Observe a governed subsystem, record the evidence, replay it. Every finding names

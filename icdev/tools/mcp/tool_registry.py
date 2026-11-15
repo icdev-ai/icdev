@@ -8966,6 +8966,24 @@ RESOURCE_REGISTRY = {
         "description": "List the Co-Workers roster the /coworkers canvas shows: chat personas and ACE autonomous roles (id, name, role, description, kind, tags), with counts by kind. Read-only, config-driven.",
         "input_schema": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["persona", "ace"], "description": "Only this kind"}}},
     },
+    # -- declared decisions (icx-cnf-02 — every decision a person takes runs a template) --
+    "workflow_decision_steps": {
+        "category": "workflow",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_workflow_decision_steps",
+        "description": "Read the declared decision steps: the templates under args/workflow_hitl_templates/ (which Cortex/ACE surface each decides, the manual stage and the roles that hold it) and the ledger of steps proposed, decided, spent or withdrawn. Read-only: an agent can see what waits for a person; only a person decides, at /decisions or on the page that raised it.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["", "pending", "decided", "spent", "withdrawn"],
+                    "description": "Only steps in this state ('' for all)",
+                },
+                "limit": {"type": "integer", "default": 100},
+            },
+        },
+    },
     # -- governance twins (icx-cnf-03 — Cortex, ACE, Co-Workers, the audit) -----
     "twin_governance": {
         "category": "conformance",
@@ -9668,6 +9686,9 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "cortex_airgap_posture":                    True,
     "ace_checkpoints":                          True,
     "coworkers_roster":                         True,
+    # -- declared decisions (icx-cnf-02) -------------------------------------
+    # Reads the templates and the ledger; never takes or proposes a step.
+    "workflow_decision_steps":                  True,
     # Replays and reads recorded observations; never observes or records.
     "twin_governance":                          True,
 })

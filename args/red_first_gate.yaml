@@ -145,6 +145,22 @@ exemptions:
       Scoped to this one file. It runs in Test (PostgreSQL) via
       tests/pg_tier_allowlist.txt, and is excluded from CI gating for the
       reason written in args/test_gating_gate.yaml.
+  - pattern: "tests/pg_tier/test_declared_decisions_pg.py"
+    reason: >-
+      THE GATE CANNOT SEE THIS FILE: a module-level `skipif` on ICDEV_PYTEST_PG,
+      which the gate does not set, so both runs are "6 skipped" and it correctly
+      reports that it learned nothing. THE RED WAS TAKEN UNDER THE TIER INSTEAD
+      AND IS RECORDED (icx-cnf-02, 2026-11-14). Against a scratch PostgreSQL 16
+      bootstrapped fresh from the merge-base tree (17580dfb3), this file ran
+      5 failed, 1 passed: tools.workflow_hitl.declared and migration
+      20261114162849 do not exist there, and only the backend sentinel passes.
+      On this branch's tree it is 6 passed. The append-only assertion was also
+      checked by mutation: dropping the wf_decision_steps no_update/no_delete
+      triggers on this branch's database turns
+      test_the_ledger_is_append_only_on_postgresql RED (1 failed, 5 passed).
+      Scoped to this one file. It runs in Test (PostgreSQL) via
+      tests/pg_tier_allowlist.txt, and is excluded from CI gating for the
+      reason written in args/test_gating_gate.yaml.
   - pattern: "tests/pg_tier/test_cortex_rls_index_plan.py"
     reason: >-
       THE GATE CANNOT SEE THIS FILE: a module-level `skipif` on ICDEV_PYTEST_PG,
