@@ -2210,3 +2210,22 @@ agent_detection_rules:
     someone believes it does. A finding is a RULE MATCH AND NOT PROOF OF
     EXECUTION; see docs/features/agov-det-coverage-and-limits.md for what the
     detector does not see before treating a clean run as evidence.
+
+# Feature conformance gate (icx-cnf-01)
+#
+# Each feature in args/feature_conformance.yaml is judged against the five rules
+# (GUI, workflow, twin, architecture, AI-native). WARN while the gaps queued as
+# icx-cnf-02..05 remain; `enforcement: fail` in that file promotes the open-gap
+# condition to blocking in the coherence check.
+# Run: python tools/conformance/feature_audit.py --check
+#      python tools/workflow/coherence_checker.py --check feature_conformance --json
+feature_conformance:
+  blocking: []            # every condition blocks once enforcement: fail
+  warning:
+    - open_conformance_gap        # a feature misses a rule with no stated reason
+    - unregistered_conformance_gap  # a gap with no line in args/feature_conformance_census.txt
+    - stale_conformance_record    # the doc, snapshot or a stated reason no longer matches the evidence
+  note: >
+    A stated reason excuses only its own rule and goes stale when the rule
+    holds without it. The census enumerates every open gap by name and its
+    ceiling (census_max) may only go down.

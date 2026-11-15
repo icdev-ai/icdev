@@ -43,6 +43,35 @@ def api_data():
     ))
 
 
+def _conformance() -> dict:
+    """The committed feature-conformance report (icx-cnf-01), or why it is absent.
+
+    Served from the snapshot ``tools/conformance/feature_audit.py --markdown``
+    writes, never re-derived per request: the audit probes the whole url_map in a
+    subprocess (~25s). ``--check`` fails when the snapshot is stale.
+    """
+    try:
+        from tools.conformance.feature_audit import load_snapshot
+
+        return {"ok": True, "report": load_snapshot()}
+    except Exception as exc:  # noqa: BLE001 — the page states the cause, never a blank grid
+        logger.warning("twin_observatory conformance unavailable: %s", exc)
+        return {"ok": False, "error": str(exc), "report": None}
+
+
+@twin_observatory_bp.route("/conformance")
+def conformance_page():
+    """Feature conformance: each feature judged against the five rules, with evidence."""
+    return render_template("twin_observatory/conformance.html", **_conformance())
+
+
+@twin_observatory_bp.route("/api/conformance")
+def api_conformance():
+    """JSON: the feature-conformance report (read-only)."""
+    data = _conformance()
+    return jsonify(data), (200 if data["ok"] else 503)
+
+
 @twin_observatory_bp.route("/api/iqe-query", methods=["POST"])
 def api_iqe_query():
     """Answer a plain-English question over the twin_observatory.* collections.

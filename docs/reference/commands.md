@@ -9856,6 +9856,22 @@ additive to every retry already on the board.
 
 ---
 
+## Feature conformance — the five rules, per feature (icx-cnf-01)
+
+Judges each feature listed in `args/feature_conformance.yaml` (Cortex, ACE,
+Co-Workers to start) against the five rules: console GUI, a declared workflow for
+every decision, twin observation, an architecture trace and an AI-native tool.
+Every cell lists its evidence. Doc: `docs/audits/conformance-cortex-coworker.md`.
+
+```bash
+python tools/conformance/feature_audit.py                      # JSON report (probes the url_map, ~25s)
+python tools/conformance/feature_audit.py --markdown --census  # rewrite the doc tables, snapshot, census
+python tools/conformance/feature_audit.py --check              # exit 1: stale doc, snapshot, reason or census
+python tools/workflow/coherence_checker.py --check feature_conformance --json
+```
+
+Console: `/twin-observatory/conformance`. MCP: `feature_conformance` (read-only).
+
 ## Cards — the per-card incident records (xrv-docs-02)
 
 These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —

@@ -1,0 +1,1216 @@
+{
+  "config": "args/feature_conformance.yaml",
+  "config_errors": [],
+  "enforcement": "warn",
+  "features": [
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "ace_abort mutating, approval tier 'unknown' (default_tier) halts"
+          ],
+          "excused": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "gaps": [],
+          "reason": "A stop has nothing of its own to read. An agent reads the run it would stop through ace_status, a read-only tool judged under ace.runs, and ace_abort itself halts at the approval gate (default tier unknown).",
+          "status": "excused"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names ace.abort",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "/coworker/<instance_id> linked from a nav page",
+            "ace_api.api_abort called from tools/dashboard/templates/coworker/instance.html",
+            "page /coworker/<instance_id> renders coworker/instance.html",
+            "registry entry 'ace'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes ace.abort (canvas_key 'ace' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "ace_api.api_abort: stop, immediate (stated reason)",
+            "mcp:ace_abort: stop, immediate (stated reason)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "ace",
+      "key": "ace.abort",
+      "label": "ACE: abort"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names ace.hitl",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "/coworker/<instance_id> linked from a nav page",
+            "ace_api.api_hitl_resolve called from tools/dashboard/templates/coworker/hitl.html",
+            "ace_api.api_suggestion_confirm called from tools/dashboard/templates/includes/_chat_action_card.html",
+            "ace_api.api_suggestion_decline called from tools/dashboard/templates/includes/_chat_action_card.html",
+            "page /coworker/<instance_id> renders coworker/instance.html",
+            "registry entry 'ace'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes ace.hitl (canvas_key 'ace' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "ace_api.api_hitl_resolve is a decision (name carries 'hitl') with no declared workflow template",
+              "id": "workflow:undeclared:ace_api.api_hitl_resolve"
+            },
+            {
+              "detail": "ace_api.api_suggestion_confirm is a decision (name carries 'confirm') with no declared workflow template",
+              "id": "workflow:undeclared:ace_api.api_suggestion_confirm"
+            },
+            {
+              "detail": "ace_api.api_suggestion_decline is a decision (name carries 'decline') with no declared workflow template",
+              "id": "workflow:undeclared:ace_api.api_suggestion_decline"
+            }
+          ],
+          "status": "gap"
+        }
+      },
+      "component": "ace",
+      "key": "ace.hitl",
+      "label": "ACE: mid-run HITL checkpoint, suggested-team confirm"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "ace_ensure_sme mutating, approval tier 'unknown' (default_tier) halts",
+            "ace_persona_query read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names ace.profiles",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "/coworker/roles linked from a nav page",
+            "ace_api.api_profiles_generate called from tools/dashboard/templates/coworker/profile_new.html",
+            "ace_api.api_profiles_preview called from tools/dashboard/templates/coworker/profile_new.html",
+            "ace_api.api_profiles_suggest_name called from tools/dashboard/templates/coworker/profile_new.html",
+            "page /coworker/profiles/new renders coworker/profile_new.html",
+            "page /coworker/roles renders coworker/roles.html",
+            "registry entry 'ace'"
+          ],
+          "gaps": [
+            {
+              "detail": "mutating route /api/ace/profiles/<role_id> is called by no page",
+              "id": "gui:uncalled:ace_api.api_profiles_delete"
+            }
+          ],
+          "status": "gap"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes ace.profiles (canvas_key 'ace' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "ace_api.api_profiles_delete is a decision (name carries 'delete') with no declared workflow template",
+              "id": "workflow:undeclared:ace_api.api_profiles_delete"
+            }
+          ],
+          "status": "gap"
+        }
+      },
+      "component": "ace",
+      "key": "ace.profiles",
+      "label": "ACE: role profiles"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "ace_launch mutating, approval tier 'unknown' (default_tier) halts",
+            "ace_status read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names ace.runs",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "/coworker/<instance_id> linked from a nav page",
+            "ace_api.api_launch called from tools/dashboard/templates/coworker/index.html",
+            "ace_api.api_session_rerun called from tools/dashboard/templates/ace/session_detail.html",
+            "nav links /coworker",
+            "page /coworker renders coworker/index.html",
+            "page /coworker/ renders coworker/index.html",
+            "page /coworker/<instance_id> renders coworker/instance.html",
+            "page /coworker/live/<instance_id> renders ace/live.html",
+            "registry entry 'ace'"
+          ],
+          "gaps": [
+            {
+              "detail": "mutating route /api/ace/chat is called by no page",
+              "id": "gui:uncalled:ace_api.api_ace_chat"
+            }
+          ],
+          "status": "gap"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes ace.runs (canvas_key 'ace' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "mcp:ace_launch (name carries 'launch') -> approval tier 'unknown' (default_tier) halts in args/agent_approval_policy.yaml"
+          ],
+          "gaps": [
+            {
+              "detail": "ace_api.api_launch is a decision (name carries 'launch') with no declared workflow template",
+              "id": "workflow:undeclared:ace_api.api_launch"
+            },
+            {
+              "detail": "ace_api.api_session_rerun is a decision (name carries 'rerun') with no declared workflow template",
+              "id": "workflow:undeclared:ace_api.api_session_rerun"
+            }
+          ],
+          "status": "gap"
+        }
+      },
+      "component": "ace",
+      "key": "ace.runs",
+      "label": "ACE: launch, run, rerun"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "nova_get_dispatch_config read-only, tool_authorization tier 'read'",
+            "nova_get_trust_score read-only, tool_authorization tier 'read'",
+            "nova_record_trust_event mutating, approval tier 'unknown' (default_tier) halts",
+            "nova_trust_summary read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names ace.trust_sessions",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "/coworker/sessions/<session_id> linked from a nav page",
+            "/coworker/trust linked from a nav page",
+            "ace_api.api_iqe_query called from tools/dashboard/templates/coworker/index.html",
+            "ace_api.api_session_eval_post called from tools/dashboard/templates/ace/evals.html",
+            "nav links /coworker/sessions",
+            "page /coworker/evals renders ace/evals.html",
+            "page /coworker/evals/trends renders ace/trends.html",
+            "page /coworker/sessions renders ace/sessions.html",
+            "page /coworker/sessions/<session_id> renders ace/session_detail.html",
+            "page /coworker/trust renders ace/trust.html",
+            "registry entry 'ace'"
+          ],
+          "gaps": [
+            {
+              "detail": "mutating route /api/ace/events/emit is called by no page",
+              "id": "gui:uncalled:ace_api.api_ace_events_emit"
+            }
+          ],
+          "status": "gap"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes ace.trust_sessions (canvas_key 'ace' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "3 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "ace",
+      "key": "ace.trust_sessions",
+      "label": "ACE: trust (NOVA), sessions, evaluations, trends"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "feature_conformance read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names conformance.audit",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "/twin-observatory/conformance linked from a nav page",
+            "page /twin-observatory/conformance renders twin_observatory/conformance.html",
+            "registry entry 'twin_observatory'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes conformance.audit (canvas_key 'twin_observatory' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "0 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "twin_observatory",
+      "key": "conformance.audit",
+      "label": "Feature conformance audit (this tool)"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "cortex_agent_launch mutating, approval tier 'unknown' (default_tier) halts"
+          ],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.agent_launch",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "cortex.api_chat called from tools/dashboard/templates/cortex/index.html",
+            "cortex.api_v1_agent machine surface (stated reason)",
+            "nav links /cortex",
+            "page /cortex/ renders cortex/index.html",
+            "registry entry 'cortex'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.agent_launch (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "mcp:cortex_agent_launch (name carries 'launch') -> approval tier 'unknown' (default_tier) halts in args/agent_approval_policy.yaml"
+          ],
+          "gaps": [
+            {
+              "detail": "cortex.api_chat is a decision (declared (tools/cortex/blueprint.py: \"confirm to proceed\")) with no declared workflow template",
+              "id": "workflow:undeclared:cortex.api_chat"
+            },
+            {
+              "detail": "cortex.api_v1_agent is a decision (declared (tools/cortex/rest_v1.py: \"it is the one endpoint here that\")) with no declared workflow template",
+              "id": "workflow:undeclared:cortex.api_v1_agent"
+            }
+          ],
+          "status": "gap"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.agent_launch",
+      "label": "Cortex: agent launch"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.airgap_guard",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "registry entry 'cortex'"
+          ],
+          "gaps": [
+            {
+              "detail": "no GET route of this feature renders a template",
+              "id": "gui:no-page"
+            }
+          ],
+          "status": "gap"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.airgap_guard (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "0 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.airgap_guard",
+      "label": "Cortex: air-gap guard and health"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.findings",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "nav links /document-intelligence/explorer",
+            "page /document-intelligence/explorer renders document_intelligence/explorer.html",
+            "registry entry 'cortex'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.findings (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "a person decides this (tools/cortex/finding_store.py: \"A conflict is a finding a HUMAN adjudicates\") but no endpoint takes the decision",
+              "id": "workflow:no-endpoint:cortex.findings.adjudicate"
+            }
+          ],
+          "status": "gap"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.findings",
+      "label": "Cortex: resolution findings"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "cortex_govern mutating, approval tier 'unknown' (default_tier) halts"
+          ],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.govern",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "registry entry 'cortex'"
+          ],
+          "gaps": [
+            {
+              "detail": "no GET route of this feature renders a template",
+              "id": "gui:no-page"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/govern is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_govern"
+            }
+          ],
+          "status": "gap"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.govern (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "1 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.govern",
+      "label": "Cortex: govern (TRUST chain)"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "cortex_classify mutating, approval tier 'unknown' (default_tier) halts",
+            "cortex_complete mutating, approval tier 'unknown' (default_tier) halts",
+            "cortex_extract mutating, approval tier 'unknown' (default_tier) halts",
+            "cortex_reason mutating, approval tier 'unknown' (default_tier) halts",
+            "cortex_resolve read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.governed_verbs",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "registry entry 'cortex'"
+          ],
+          "gaps": [
+            {
+              "detail": "no GET route of this feature renders a template",
+              "id": "gui:no-page"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/classify is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_classify"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/complete is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_complete"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/extract is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_extract"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/reason is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_reason"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/resolve is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_resolve"
+            }
+          ],
+          "status": "gap"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.governed_verbs (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "5 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.governed_verbs",
+      "label": "Cortex: resolve, complete, reason, classify, extract"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.intake",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "registry entry 'cortex'"
+          ],
+          "gaps": [
+            {
+              "detail": "no GET route of this feature renders a template",
+              "id": "gui:no-page"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/intake/session is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_intake_session_create"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/intake/turn is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_intake_turn"
+            }
+          ],
+          "status": "gap"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.intake (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "2 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.intake",
+      "label": "Cortex: intake bridge"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.metrics",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "/cortex/metrics linked from a nav page",
+            "page /cortex/metrics renders cortex/metrics.html",
+            "registry entry 'cortex'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.metrics (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "0 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.metrics",
+      "label": "Cortex: metrics"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.pmo",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "registry entry 'cortex'"
+          ],
+          "gaps": [
+            {
+              "detail": "no GET route of this feature renders a template",
+              "id": "gui:no-page"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/award is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_award"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/bom is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_bom"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/cost_volume is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_cost_volume"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/dashboard is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_dashboard"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/slides is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_slides"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/staffing_matrix is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_staffing_matrix"
+            },
+            {
+              "detail": "mutating route /cortex/api/v1/win_themes is called by no page",
+              "id": "gui:uncalled:cortex.api_v1_win_themes"
+            }
+          ],
+          "status": "gap"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.pmo (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "cortex.api_v1_award is a decision (name carries 'award') with no declared workflow template",
+              "id": "workflow:undeclared:cortex.api_v1_award"
+            },
+            {
+              "detail": "cortex.api_v1_bom is a decision (declared (tools/cortex/rest_v1.py: \"Only a human's designation binds\")) with no declared workflow template",
+              "id": "workflow:undeclared:cortex.api_v1_bom"
+            }
+          ],
+          "status": "gap"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.pmo",
+      "label": "Cortex: PMO verbs (slides, win themes, staffing, cost, dashboard, award, BOM)"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "cortex_ask read-only, tool_authorization tier 'read'",
+            "cortex_search read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.search_ask",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "cortex.api_chat called from tools/dashboard/templates/cortex/index.html",
+            "cortex.api_iqe_query called from tools/dashboard/templates/cortex/index.html",
+            "cortex.api_v1_ask machine surface (stated reason)",
+            "cortex.api_v1_search machine surface (stated reason)",
+            "nav links /cortex",
+            "page /cortex/ renders cortex/index.html",
+            "registry entry 'cortex'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.search_ask (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "cortex.api_chat: not a decision (stated reason)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.search_ask",
+      "label": "Cortex: search and ask"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cortex.service_keys",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "registry entry 'cortex'"
+          ],
+          "gaps": [
+            {
+              "detail": "no GET route of this feature renders a template",
+              "id": "gui:no-page"
+            }
+          ],
+          "status": "gap"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cortex.service_keys (canvas_key 'cortex' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "0 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "cortex",
+      "key": "cortex.service_keys",
+      "label": "Cortex: service keys"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no declared read-only MCP tool serves this feature",
+              "id": "ai:no-read-tool"
+            }
+          ],
+          "status": "gap"
+        },
+        "architecture": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no requirement in args/platform_model names cwk.canvas",
+              "id": "architecture:no-requirement"
+            }
+          ],
+          "status": "gap"
+        },
+        "gui": {
+          "evidence": [
+            "nav links /coworkers",
+            "page /coworkers renders coworkers/index.html",
+            "page /coworkers/ renders coworkers/index.html",
+            "registry entry 'cwk'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [],
+          "gaps": [
+            {
+              "detail": "no @register_twin adapter observes cwk.canvas (canvas_key 'cwk' or observes)",
+              "id": "twin:no-adapter"
+            }
+          ],
+          "status": "gap"
+        },
+        "workflow": {
+          "evidence": [
+            "0 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "cwk",
+      "key": "cwk.canvas",
+      "label": "Co-Workers canvas"
+    }
+  ],
+  "rules": [
+    "gui",
+    "workflow",
+    "twin",
+    "architecture",
+    "ai_native"
+  ],
+  "stale_reasons": [],
+  "summary": {
+    "features": 17,
+    "features_conforming": 0,
+    "gaps_by_feature": {
+      "ace.abort": {
+        "ai_native": 0,
+        "architecture": 1,
+        "gui": 0,
+        "twin": 1,
+        "workflow": 0
+      },
+      "ace.hitl": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 0,
+        "twin": 1,
+        "workflow": 3
+      },
+      "ace.profiles": {
+        "ai_native": 0,
+        "architecture": 1,
+        "gui": 1,
+        "twin": 1,
+        "workflow": 1
+      },
+      "ace.runs": {
+        "ai_native": 0,
+        "architecture": 1,
+        "gui": 1,
+        "twin": 1,
+        "workflow": 2
+      },
+      "ace.trust_sessions": {
+        "ai_native": 0,
+        "architecture": 1,
+        "gui": 1,
+        "twin": 1,
+        "workflow": 0
+      },
+      "conformance.audit": {
+        "ai_native": 0,
+        "architecture": 1,
+        "gui": 0,
+        "twin": 1,
+        "workflow": 0
+      },
+      "cortex.agent_launch": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 0,
+        "twin": 1,
+        "workflow": 2
+      },
+      "cortex.airgap_guard": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 1,
+        "twin": 1,
+        "workflow": 0
+      },
+      "cortex.findings": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 0,
+        "twin": 1,
+        "workflow": 1
+      },
+      "cortex.govern": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 2,
+        "twin": 1,
+        "workflow": 0
+      },
+      "cortex.governed_verbs": {
+        "ai_native": 0,
+        "architecture": 1,
+        "gui": 6,
+        "twin": 1,
+        "workflow": 0
+      },
+      "cortex.intake": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 3,
+        "twin": 1,
+        "workflow": 0
+      },
+      "cortex.metrics": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 0,
+        "twin": 1,
+        "workflow": 0
+      },
+      "cortex.pmo": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 8,
+        "twin": 1,
+        "workflow": 2
+      },
+      "cortex.search_ask": {
+        "ai_native": 0,
+        "architecture": 1,
+        "gui": 0,
+        "twin": 1,
+        "workflow": 0
+      },
+      "cortex.service_keys": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 1,
+        "twin": 1,
+        "workflow": 0
+      },
+      "cwk.canvas": {
+        "ai_native": 1,
+        "architecture": 1,
+        "gui": 0,
+        "twin": 1,
+        "workflow": 0
+      }
+    },
+    "gaps_by_rule": {
+      "ai_native": 10,
+      "architecture": 17,
+      "gui": 24,
+      "twin": 17,
+      "workflow": 11
+    },
+    "gaps_total": 79
+  },
+  "tool": "feature_audit",
+  "version": 1
+}

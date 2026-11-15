@@ -1,0 +1,337 @@
+# CUI // SP-CTI
+# Feature conformance — the five rules, per feature (icx-cnf-01).
+#
+# Judged by: python tools/conformance/feature_audit.py
+# Doc:       docs/audits/conformance-cortex-coworker.md (generated tables)
+# Census:    args/feature_conformance_census.txt (every open gap, BY NAME)
+#
+# THE FIVE RULES (owner, 2026-11-14). Every feature has:
+#   gui           a console page: its routes render a template reachable from the
+#                 nav, and every mutating route is called by a page;
+#   workflow      a declared workflow for every decision a person takes: each
+#                 decision endpoint maps to a template under
+#                 args/workflow_hitl_templates/ (or, for an MCP tool, a tier in
+#                 args/agent_approval_policy.yaml that halts). Stops stay immediate,
+#                 with a stated reason;
+#   twin          a registered tools/twin_core adapter that observes it, whose
+#                 violations carry thread ids and whose observation replays;
+#   architecture  ICDEV's own platform model (args/platform_model/*.yaml, the
+#                 source the MBSE digital thread is seeded from) traces each
+#                 requirement to an element, its code and an existing test;
+#   ai_native     a declared read-only MCP tool; any mutating tool halts at the
+#                 approval gate.
+#
+# WHAT THIS FILE MAY SAY. Which features are in scope and which surfaces each one
+# owns. It may NOT make a rule pass. The audit derives every verdict from the
+# repository. A rule that genuinely does not apply takes a stated reason under
+# `reasons:`; that reason excuses ONLY its own rule, and a reason the evidence no
+# longer needs is STALE and fails `--check`. The same holds for `stops:` and
+# `not_decisions:`: each names one surface and goes stale when that surface is no
+# longer read as a decision.
+#
+# `served_by` names a page another feature owns that serves this one in the
+# console (GUI evidence only, never ownership). Like a declared decision it
+# quotes the text that proves it, and a quotation that is not in the named file
+# fails `--check`.
+#
+# Adding a feature: list it below with the endpoints (Flask endpoint names, as the
+# url_map prints them) and MCP tools it owns, then run
+#   python tools/conformance/feature_audit.py --markdown --census
+# and review the census diff. Every endpoint of a blueprint named under
+# `components:` must be owned by exactly one feature, and every MCP tool whose name
+# starts with a listed prefix likewise, or `--check` fails: nothing is skipped
+# silently.
+
+version: 1
+
+# warn: the coherence check `feature_conformance` warns while gaps remain.
+# fail: any open gap fails it. Flip this when icx-cnf-02..05 have landed.
+enforcement: warn
+
+# The ceiling on args/feature_conformance_census.txt. It may only go DOWN.
+census_max: 79
+
+doc: docs/audits/conformance-cortex-coworker.md
+snapshot: docs/audits/conformance-cortex-coworker.json
+census: args/feature_conformance_census.txt
+workflow_templates_dir: args/workflow_hitl_templates
+platform_model_dir: args/platform_model
+approval_policy: args/agent_approval_policy.yaml
+twin_adapters_dir: tools/twin_core/adapters
+
+# Blueprints and MCP prefixes each component owns in full.
+components:
+  cortex:
+    blueprints: [cortex]
+    mcp_prefixes: [cortex_]
+  ace:
+    blueprints: [ace, ace_api]
+    mcp_prefixes: [ace_]
+  cwk:
+    blueprints: [coworkers]
+    mcp_prefixes: []
+
+features:
+  # ── ICDEV Cortex (tools/cortex) ───────────────────────────────────────────
+  - key: cortex.search_ask
+    component: cortex
+    label: "Cortex: search and ask"
+    endpoints:
+      - cortex.index
+      - cortex.api_chat
+      - cortex.api_session
+      - cortex.api_iqe_query
+      - cortex.api_v1_search
+      - cortex.api_v1_ask
+    mcp_tools: [cortex_search, cortex_ask]
+    machine_endpoints:
+      - endpoint: cortex.api_v1_search
+        reason: >-
+          The versioned REST surface for external consumers. The /cortex page
+          reaches the same governed facade through /cortex/api/chat, whose intent
+          router sends a question to search or ask.
+      - endpoint: cortex.api_v1_ask
+        reason: >-
+          The versioned REST surface for external consumers. The /cortex page
+          reaches the same governed facade through /cortex/api/chat.
+    not_decisions:
+      - surface: cortex.api_chat
+        reason: >-
+          Its confirm branch is the agent-launch decision, judged under
+          cortex.agent_launch. A search or ask through chat decides nothing.
+
+  - key: cortex.governed_verbs
+    component: cortex
+    label: "Cortex: resolve, complete, reason, classify, extract"
+    endpoints:
+      - cortex.api_v1_resolve
+      - cortex.api_v1_complete
+      - cortex.api_v1_reason
+      - cortex.api_v1_classify
+      - cortex.api_v1_extract
+    mcp_tools: [cortex_resolve, cortex_complete, cortex_reason, cortex_classify, cortex_extract]
+
+  - key: cortex.govern
+    component: cortex
+    label: "Cortex: govern (TRUST chain)"
+    endpoints: [cortex.api_v1_govern]
+    mcp_tools: [cortex_govern]
+
+  - key: cortex.agent_launch
+    component: cortex
+    label: "Cortex: agent launch"
+    endpoints: [cortex.api_v1_agent]
+    mcp_tools: [cortex_agent_launch]
+    machine_endpoints:
+      - endpoint: cortex.api_v1_agent
+        reason: >-
+          The versioned REST surface for external callers. The console launches
+          through the /cortex confirm card (served_by below), which reaches the
+          same governed agent facade.
+    served_by:
+      - endpoint: cortex.index
+        evidence:
+          file: tools/cortex/blueprint.py
+          text: "confirm to proceed"
+      - endpoint: cortex.api_chat
+        evidence:
+          file: tools/cortex/blueprint.py
+          text: "The confirmed branch: actually launch, through the governed facade."
+    declared_decisions:
+      - id: cortex.agent_launch.rest
+        endpoint: cortex.api_v1_agent
+        evidence:
+          file: tools/cortex/rest_v1.py
+          text: "it is the one endpoint here that"
+      - id: cortex.agent_launch.chat_confirm
+        endpoint: cortex.api_chat
+        evidence:
+          file: tools/cortex/blueprint.py
+          text: "confirm to proceed"
+
+  - key: cortex.findings
+    component: cortex
+    label: "Cortex: resolution findings"
+    endpoints:
+      - dic.explorer
+      - dic.api_explorer_cortex_findings
+    mcp_tools: []
+    declared_decisions:
+      - id: cortex.findings.adjudicate
+        evidence:
+          file: tools/cortex/finding_store.py
+          text: "A conflict is a finding a HUMAN adjudicates"
+
+  - key: cortex.pmo
+    component: cortex
+    label: "Cortex: PMO verbs (slides, win themes, staffing, cost, dashboard, award, BOM)"
+    endpoints:
+      - cortex.api_v1_slides
+      - cortex.api_v1_win_themes
+      - cortex.api_v1_staffing_matrix
+      - cortex.api_v1_cost_volume
+      - cortex.api_v1_dashboard
+      - cortex.api_v1_award
+      - cortex.api_v1_bom
+    mcp_tools: []
+    declared_decisions:
+      - id: cortex.pmo.bom_designation
+        endpoint: cortex.api_v1_bom
+        evidence:
+          file: tools/cortex/rest_v1.py
+          text: "Only a human's designation binds"
+
+  - key: cortex.intake
+    component: cortex
+    label: "Cortex: intake bridge"
+    endpoints:
+      - cortex.api_v1_intake_session_create
+      - cortex.api_v1_intake_turn
+      - cortex.api_v1_intake_session_get
+    mcp_tools: []
+
+  - key: cortex.service_keys
+    component: cortex
+    label: "Cortex: service keys"
+    endpoints: []
+    mcp_tools: []
+
+  - key: cortex.metrics
+    component: cortex
+    label: "Cortex: metrics"
+    endpoints:
+      - cortex.metrics_page
+      - cortex.api_metrics
+      - cortex.api_metrics_tile
+    mcp_tools: []
+
+  - key: cortex.airgap_guard
+    component: cortex
+    label: "Cortex: air-gap guard and health"
+    endpoints: [cortex.api_v1_health]
+    mcp_tools: []
+
+  # ── ACE Co-Worker Engine (tools/ace) ──────────────────────────────────────
+  - key: ace.runs
+    component: ace
+    label: "ACE: launch, run, rerun"
+    endpoints:
+      - ace.index
+      - ace.instance_detail
+      - ace.live_monitor
+      - ace.instance_resume
+      - ace_api.api_launch
+      - ace_api.api_instances
+      - ace_api.api_status
+      - ace_api.api_messages
+      - ace_api.api_artifacts
+      - ace_api.api_audit
+      - ace_api.api_stream
+      - ace_api.api_session_rerun
+      - ace_api.api_ace_chat
+    mcp_tools: [ace_launch, ace_status]
+
+  - key: ace.hitl
+    component: ace
+    label: "ACE: mid-run HITL checkpoint, suggested-team confirm"
+    endpoints:
+      - ace_api.api_hitl_pending
+      - ace_api.api_hitl_resolve
+      - ace_api.api_suggestion_get
+      - ace_api.api_suggestion_confirm
+      - ace_api.api_suggestion_decline
+    mcp_tools: []
+    served_by:
+      - endpoint: ace.instance_detail
+        evidence:
+          file: tools/dashboard/templates/coworker/instance.html
+          text: '{% include "coworker/hitl.html" %}'
+
+  - key: ace.abort
+    component: ace
+    label: "ACE: abort"
+    endpoints: [ace_api.api_abort]
+    mcp_tools: [ace_abort]
+    reasons:
+      ai_native: >-
+        A stop has nothing of its own to read. An agent reads the run it would
+        stop through ace_status, a read-only tool judged under ace.runs, and
+        ace_abort itself halts at the approval gate (default tier unknown).
+    served_by:
+      - endpoint: ace.instance_detail
+        evidence:
+          file: tools/dashboard/templates/coworker/instance.html
+          text: '<div class="abort-zone">'
+    stops:
+      - surface: ace_api.api_abort
+        reason: >-
+          A stop. Abort cancels a running team at once and never waits for a
+          signature; putting it behind a workflow would leave a runaway team
+          running while the approval queues.
+      - surface: mcp:ace_abort
+        reason: >-
+          A stop, the same as the route: an agent may halt a team it launched
+          without asking first.
+
+  - key: ace.profiles
+    component: ace
+    label: "ACE: role profiles"
+    endpoints:
+      - ace.roles
+      - ace.profiles_new
+      - ace_api.api_presets_list
+      - ace_api.api_profiles_list
+      - ace_api.api_profiles_suggest_name
+      - ace_api.api_profiles_preview
+      - ace_api.api_profiles_generate
+      - ace_api.api_profiles_delete
+    mcp_tools: [ace_ensure_sme, ace_persona_query]
+
+  - key: ace.trust_sessions
+    component: ace
+    label: "ACE: trust (NOVA), sessions, evaluations, trends"
+    endpoints:
+      - ace.trust_leaderboard
+      - ace.sessions_list
+      - ace.session_detail
+      - ace.evals_page
+      - ace.evals_trends_page
+      - ace_api.api_sessions_list
+      - ace_api.api_session_detail
+      - ace_api.api_session_eval_get
+      - ace_api.api_session_eval_post
+      - ace_api.api_session_eval_suggestions
+      - ace_api.api_session_eval_compare
+      - ace_api.api_evals_trends
+      - ace_api.api_evals_list
+      - ace_api.api_monitor_summary
+      - ace_api.api_coworker_stats
+      - ace_api.api_nova_state
+      - ace_api.api_ace_events
+      - ace_api.api_ace_events_emit
+      - ace_api.api_ace_event_topics
+      - ace_api.api_iqe_query
+    mcp_tools:
+      - nova_get_trust_score
+      - nova_record_trust_event
+      - nova_get_dispatch_config
+      - nova_trust_summary
+
+  # ── Co-Workers canvas (tools/coworkers) ───────────────────────────────────
+  - key: cwk.canvas
+    component: cwk
+    label: "Co-Workers canvas"
+    endpoints:
+      - coworkers.index
+      - coworkers.open_chat
+      - coworkers.status
+    mcp_tools: []
+
+  # ── The audit itself (it follows the five rules too) ──────────────────────
+  - key: conformance.audit
+    component: twin_observatory
+    label: "Feature conformance audit (this tool)"
+    endpoints:
+      - twin_observatory.conformance_page
+      - twin_observatory.api_conformance
+    mcp_tools: [feature_conformance]
