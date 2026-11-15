@@ -90,6 +90,12 @@ def calls(monkeypatch):
     return seen
 
 
+@pytest.fixture(autouse=True)
+def _wf_db(wf_db):
+    """The launch is a declared decision (icx-cnf-02): its steps need the wf tables."""
+    return wf_db
+
+
 def _authed_client():
     return make_client(binding=_binding(["cortex:agent"]))
 
@@ -115,9 +121,12 @@ def test_scope_missing_403(calls):
 
 
 def test_scope_granted_passes(calls):
+    # The scope is the authority: a service key with cortex:agent launches at once,
+    # with no person's step (owner, 2026-11-14).
     resp = _authed_client().post("/cortex/api/v1/agent", json={"goal": "do the thing"})
     assert resp.status_code == 200
     assert resp.get_json()["launched"] is True
+    assert resp.get_json()["decision_step"] is None
     assert len(calls) == 1
 
 

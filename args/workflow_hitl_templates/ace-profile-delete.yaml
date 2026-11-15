@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+id: decl-wft-ace-profile-delete
+name: "ACE: delete a generated role profile"
+description: >-
+  Deleting a generated role profile cannot be undone. Built-in profiles stay
+  protected by profile_generator.
+decides: [ace_api.api_profiles_delete]
+effect: profile_generator.delete_profile, unchanged.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: A person asked to delete the profile.
+  - name: delete
+    step_type: manual
+    role: profile_owner
+    holders: [admin, pm]
+    decisions: {delete: affirm}
+    reason_required: []

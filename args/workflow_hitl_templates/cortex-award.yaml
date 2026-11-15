@@ -1,0 +1,24 @@
+# CUI // SP-CTI
+id: decl-wft-cortex-award
+name: "Cortex: accept a won bid's delivery baseline"
+description: >-
+  A won bid becomes a DRAFT contract in /cpmp. A won bid does not self-approve:
+  a contracts person other than the proposer accepts or rejects the baseline at
+  /decisions. The contract stays a draft until contracts staff complete it.
+decides: [cortex.api_v1_award]
+effect: >-
+  portfolio_manager.transition_from_opportunity (draft contract), unchanged.
+  The acceptance records the person's decision.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: The award call created the draft baseline.
+  - name: accept
+    step_type: manual
+    role: contracts_approver
+    holders: [admin, pm, co, cor, contract_mgr]
+    separate_from: proposer
+    decisions: {accept: affirm, reject: deny}
+    reason_required: [reject]
