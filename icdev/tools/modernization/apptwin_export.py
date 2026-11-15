@@ -13,9 +13,11 @@ produced, so every section is traceable to the tool that made it:
     --integrity   integrity                              python tools/integrity/engine.py --json (SIPA)
     --seven-r     seven_r                                python tools/modernization/seven_r_assessor.py --json
     (database)    migration                              the latest migration_plans row and its migration_tasks
-    --waves       migration.waves                        the migration canvas wave planner's waves (JSON list)
+    --waves       migration.waves                        tools/modernization/app_wave_planner.py (the application's own
+                                                         waves, osx-fth-13), or the migration canvas's (JSON list)
     --strangler   migration.strangler                    tools/modernization/strangler_fig_manager.py status (JSON)
-    --refactor    refactor                               tools/migration_canvas/cam_refactor_engine.py jobs (JSON list)
+    --refactor    refactor                               tools/modernization/refactor_jobs.py (CAM's jobs), or
+                                                         cam_refactor_engine.py --list-jobs rows (JSON list)
     --ivv/--sbd/--rtm/--coherence/--readiness            already in the bundle's section shape
 
 A verification result (``--ivv``/``--sbd``/``--rtm``/``--coherence``) is passed through as it was made, with the
@@ -52,9 +54,9 @@ _BASE = repo_root(__file__)
 
 SCHEMA = "icos-apptwin/v1"
 SCHEMA_PATH = _BASE / "context" / "icos" / "apptwin.schema.json"
-#: The digest of the vendored ICDEV[OS] contract (1.180.0: a feature's provenance and confidence, ICDEV[OS] osx-fth-12).
-#: A changed file is refused, never silently used.
-SCHEMA_SHA256 = "92df2bb2ae2ea0db601c6b81013a526e33bfeb69544d3201416a274ad0f17ec3"
+#: The digest of the vendored ICDEV[OS] contract (1.181.0: a refactor job's artefacts, each by SHA-256, its summary and
+#: review, ICDEV[OS] osx-fth-13). A changed file is refused, never silently used.
+SCHEMA_SHA256 = "fa6d7e6347d0c77b1679596718d0b848cb89426ec17f5e4f9197643a3669f959"
 PRODUCER = "icdev-it/apptwin_export"
 PASSTHROUGH = ("ivv", "sbd", "rtm", "coherence", "readiness")
 
@@ -350,9 +352,12 @@ def migration_from_plan(app_id: str, conn, *, at: str, waves: list | None = None
            "tasks_total": len(tasks), "tasks_done": sum(t["status"] == "completed" for t in tasks), "tasks_by_type": by}
     if p.get("target_architecture"):
         out["target_architecture"] = p["target_architecture"]
+    if isinstance(waves, dict):                       # app_wave_planner's report: its waves
+        waves = waves.get("waves")
     out["waves"] = [{"id": str(w.get("id") or f"w{w.get('wave_number')}"), "title": str(w.get("name") or w.get("title")),
                      "order": int(w.get("wave_number") or w.get("order") or i + 1),
                      "status": _WAVE.get(str(w.get("status") or "planned"), "planned"),
+                     **({"components": [str(c) for c in w["components"]]} if w.get("components") else {}),
                      **({"backout": str(w["backout"])} if w.get("backout") else {}),
                      **({"ends": str(w["cutover_date"])} if w.get("cutover_date") else {})} for i, w in enumerate(waves or [])]
     out["strangler"] = [{"component": _slug(str(s["component"])), "status": s["status"],
@@ -361,24 +366,59 @@ def migration_from_plan(app_id: str, conn, *, at: str, waves: list | None = None
     return out
 
 
-def refactor_from_jobs(jobs: list, *, at: str) -> dict:
-    """CAM's refactor jobs (ICDEV[OS] Phase 247). An artefact is named by the SHA-256 of its first file when it exists
-    here; otherwise by nothing -- never a guessed digest."""
+def _manifest_digest(arts: list[dict]) -> str:
+    """ICDEV[OS]'s binding of a job's artefacts (its apptwin.manifest_digest): SHA-256 over ``"<sha256>  <path>\\n"`` per
+    file, sorted by path -- what ``sha256sum`` prints for them."""
+    return hashlib.sha256("".join(f"{a['sha256']}  {a['path']}\n" for a in sorted(arts, key=lambda a: a["path"])).encode()).hexdigest()
+
+
+def _job_artefacts(j: dict) -> list[dict] | None:
+    """Each file a CAM job wrote, by its path under the job's output and the SHA-256 of the bytes on disk now. A file
+    that is gone is not listed (never a guessed digest); a job that lists files none of which is here gives None."""
+    arts = _json(j.get("artifacts_json"), []) if "artifacts_json" in j and not j.get("artifacts") else j.get("artifacts") or []
+    if not arts or not all(isinstance(a, dict) for a in arts):
+        return None
+    out = {}
+    root = Path(j["output_path"]) if j.get("output_path") else None
+    for a in arts:
+        f = Path(str(a.get("path") or ""))
+        if not f.is_file():
+            continue
+        rel = a.get("rel") or (f.relative_to(root).as_posix() if root is not None and f.is_relative_to(root) else f.name)
+        out[rel] = {"path": rel, "sha256": hashlib.sha256(f.read_bytes()).hexdigest()}
+    return [out[k] for k in sorted(out)] or None
+
+
+def refactor_from_jobs(jobs, *, at: str) -> dict:
+    """CAM's refactor jobs (ICDEV[OS] Phase 247; osx-fth-13). A job's artefacts are each file it wrote, by its SHA-256,
+    and ``artefact_digest`` binds them all (``_manifest_digest``). What a migrator writes is generated code that nobody
+    here reviewed, so a job that wrote files says ``review: unreviewed``. The older form (``artifacts_json`` a list of
+    paths under the repository) is digested by its first file, as before; never a guessed digest."""
+    if isinstance(jobs, dict):                        # refactor_jobs.py's report: its jobs
+        jobs = jobs.get("jobs") or []
     out = []
     for j in jobs:
-        arts = _json(j.get("artifacts_json"), []) if "artifacts_json" in j else j.get("artifacts") or []
-        first = _BASE / str(arts[0]) if arts else None
-        dig = hashlib.sha256(first.read_bytes()).hexdigest() if first is not None and first.is_file() else None
+        files = _job_artefacts(j)
+        if files:
+            extra = {"artefact_digest": _manifest_digest(files), "artefacts": files, "review": "unreviewed"}
+        else:
+            arts = _json(j.get("artifacts_json"), []) if "artifacts_json" in j else j.get("artifacts") or []
+            first = _BASE / str(arts[0]) if arts and isinstance(arts[0], str) else None
+            dig = hashlib.sha256(first.read_bytes()).hexdigest() if first is not None and first.is_file() else None
+            extra = {"artefact_digest": dig} if dig else {}
+        why = j.get("result_summary") if j.get("status") != "failed" else j.get("error_message") or j.get("result_summary")
         out.append({"id": str(j["id"]), "kind": str(j.get("refactor_type") or j.get("kind")),
                     **({"component": str(j["component_name"])} if j.get("component_name") else {}),
-                    "status": str(j.get("status") or "queued"), **({"artefact_digest": dig} if dig else {})})
+                    "status": str(j.get("status") or "queued"), **extra,
+                    **({"summary": re.sub(r"(?:[A-Za-z]:)?[/\\][^\s'\"]+", lambda m: Path(m.group()).name, str(why))[:300]}
+                       if why else {})})   # a summary never says where the job ran
     return {"tool": "icdev-it/cam_refactor_engine", "assessed_at": at, "jobs": out}
 
 
 def build(app_id: str, conn, *, at: str | None = None, features: dict | None = None, processes: list[dict] = (),
           aiify: dict | None = None, integrity: dict | None = None, seven_r: dict | None = None,
-          sections: dict | None = None, waves: list | None = None, strangler: list | None = None,
-          refactor: list | None = None, static_features: dict | None = None) -> dict:
+          sections: dict | None = None, waves: list | dict | None = None, strangler: list | None = None,
+          refactor: list | dict | None = None, static_features: dict | None = None) -> dict:
     at = at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if features is not None and static_features is not None:
         raise BundleError("give observed features or static features, not both: each is one tool's report")

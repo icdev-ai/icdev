@@ -13,13 +13,15 @@ Every step is the existing tool, run as a subprocess with the scratch database i
         static_features            the entry points grouped into features (features, provenance static)
      3. architecture_extractor     --extract db-schema          (the bundle's data)
      4. seven_r_assessor           --json                       (seven_r)
-     5. db_migration_planner       --type all --target postgresql (artefacts only)
-     6. version_migrator           the declared language level -> the current one (artefacts only)
-     7. framework_migrator         EJB / Struts / WCF / WebForms (artefacts only)
-     8. aiify.engine scan          (aiify)
-     9. processify --from-doc      the README (processes); skipped by --no-model, the only step that calls a model
-    10. monolith_decomposer        --create-plan with the strategy (migration)
-    11. apptwin_export             every section a step produced
+     5. refactor_jobs              the migrators as CAM refactor jobs (refactor; osx-fth-13): the version migrator
+                                   (declared level -> current), the framework migrator (EJB / Struts / WCF) and the
+                                   database planner (over the extracted schema), each a job whose files are bound by
+                                   SHA-256 in the bundle and labelled unreviewed
+     6. aiify.engine scan          (aiify)
+     7. processify --from-doc      the README (processes); skipped by --no-model, the only step that calls a model
+     8. monolith_decomposer        --create-plan with the strategy (migration)
+     9. app_wave_planner           the plan's waves, each with its backout (migration.waves; osx-fth-13)
+    10. apptwin_export             every section a step produced
 
 The source is UNTRUSTED DATA: it is read, never built or run, and a step that would need the application running
 (observed inventory) is reported, not attempted: features are reported statically, from the entry points the
@@ -45,8 +47,6 @@ from icdev.core.paths import repo_root
 
 BASE = repo_root(__file__)
 PY = sys.executable
-UPGRADE_TO = {"java": "17", "csharp": "8.0"}
-FRAMEWORK_TO = {"ejb": "spring", "struts": "spring-boot", "wcf": "aspnet-core-grpc", "webforms": "razor"}
 
 
 class PipelineError(RuntimeError):
@@ -69,19 +69,15 @@ def _summary(res) -> dict:
             if not isinstance(v, (list, dict)) and not (isinstance(v, str) and v.startswith(("/", "\\")))}
 
 
-def _digests(root: Path) -> list[dict]:
-    if not root.exists():
-        return []
-    return [{"path": p.relative_to(root).as_posix(), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
-            for p in sorted(root.rglob("*")) if p.is_file()]
-
-
 class Run:
     def __init__(self, scratch_db: Path, out: Path):
         self.out, self.steps = out, []
         self.env = {**os.environ, "ICDEV_DB_PATH": str(scratch_db), "ICDEV_STORAGE_BACKEND": "sqlite",
                     "ICDEV_CANVAS_STORAGE_BACKEND": "sqlite", "AIIFY_STORAGE_BACKEND": "sqlite",
-                    "AIIFY_DB_PATH": str(scratch_db.with_name("aiify_canvas.db")), "PYTHONPATH": str(BASE)}
+                    "AIIFY_DB_PATH": str(scratch_db.with_name("aiify_canvas.db")), "PYTHONPATH": str(BASE),
+                    # CAM's canvas database and its jobs' files: the run's own, never data/ (osx-fth-13)
+                    "MC_DB_PATH": str(scratch_db.with_name("migration_canvas.db")),
+                    "CAM_ARTIFACTS_DIR": str(out / "artefacts" / "cam")}
 
     def tool(self, step: str, *args: str, timeout: int = 1800) -> tuple[int, str, str]:
         cmd = [PY, *args] if args[0] == "-m" else [PY, str(BASE / args[0]), *args[1:]]
@@ -145,7 +141,7 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
                   for t in ("legacy_components", "legacy_apis", "legacy_dependencies")}
     finally:
         c.close()
-    lang, fw = a["primary_language"], (a["framework"] or "").strip().lower()
+    lang = a["primary_language"]
     r.note("analyze", True, app_id=app, language=lang, language_version=a["language_version"], framework=a["framework"],
            **counts)
 
@@ -178,34 +174,18 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
     r.note("seven-r", bool(seven), "seven_r", None if seven else _why(se, so),
            recommended=(seven or {}).get("recommended_strategy"))
 
-    db_out = out / "artefacts" / "db"
-    rc, so, se = r.tool("db-plan", "tools/modernization/db_migration_planner.py", "--app-id", app, "--target", "postgresql",
-                        "--source-path", str(source), "--output-dir", str(db_out), "--type", "all", "--json")
-    r.note("db-plan", rc == 0 and bool(_digests(db_out)), None, None if rc == 0 else _why(se, so),
-           artefacts=_digests(db_out))
-
-    ver = a["language_version"]
-    if lang in UPGRADE_TO and ver:
-        v_out = out / "artefacts" / "version"
-        frm = {"framework-4": "4.8"}.get(ver, ver)
-        rc, so, se = r.tool("version", "tools/modernization/version_migrator.py", "--source", str(source), "--output",
-                            str(v_out), "--language", lang, "--from", frm, "--to", UPGRADE_TO[lang], "--json")
-        res = _last_json(so) if rc == 0 else None
-        r.note("version", rc == 0, None, None if rc == 0 else _why(se, so), from_version=frm, to_version=UPGRADE_TO[lang],
-               summary=_summary(res),
-               artefacts=len(_digests(v_out)))
-    else:
-        r.note("version", False, None, f"no upgrade rule for {lang} at a declared level ({ver or 'none declared'})")
-
-    if fw in FRAMEWORK_TO:
-        f_out = out / "artefacts" / "framework"
-        rc, so, se = r.tool("framework", "tools/modernization/framework_migrator.py", "--source", str(source), "--output",
-                            str(f_out), "--from", fw, "--to", FRAMEWORK_TO[fw], "--report", "--json")
-        res = _last_json(so) if rc == 0 else None
-        r.note("framework", rc == 0, None, None if rc == 0 else _why(se, so), migration=f"{fw} -> {FRAMEWORK_TO[fw]}",
-               summary=_summary(res),
-               artefacts=len(_digests(f_out)))
-    else:
+    chosen = strategy or (seven or {}).get("recommended_strategy")
+    ref_path = out / "refactor.json"
+    rc, so, se = r.tool("refactor", "tools/modernization/refactor_jobs.py", "--app-id", app, "--out", str(ref_path),
+                        *(["--strategy", chosen] if chosen else []))
+    ref = json.loads(ref_path.read_text()) if rc == 0 and ref_path.is_file() else None
+    jobs = (ref or {}).get("jobs") or []
+    r.note("refactor", bool(jobs), "refactor", None if jobs else
+           (_why(se, so) if rc else f"no CAM rule applies to {lang} {a['language_version'] or ''} / "
+                                    f"{a['framework'] or 'no framework'}, and no schema was extracted"),
+           jobs=[{"kind": j["refactor_type"], "status": j["status"], "files": len(j.get("artifacts") or []),
+                  **({"error": _why(j["error_message"], "")} if j.get("error_message") else {})} for j in jobs])
+    if not any(j["refactor_type"] == "framework_migration" for j in jobs):
         r.note("framework", False, None, f"no framework migrator for {a['framework'] or 'an undetected framework'}")
 
     rc, so, se = r.tool("aiify", "-m", "tools.aiify.engine", "scan", "--input-type", "code", "--input-ref", str(source),
@@ -232,7 +212,6 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
             procs.append(out / "process.json")
         r.note("processify", bool(d), "processes", None if d else _why(se, so))
 
-    chosen = strategy or (seven or {}).get("recommended_strategy")
     if chosen:
         rc, so, se = r.tool("plan", "tools/modernization/monolith_decomposer.py", "--app-id", app, "--create-plan",
                             "--project-id", project, "--strategy", chosen, "--target-arch", "modular_monolith", "--json")
@@ -240,6 +219,11 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
                strategy_from="--strategy" if strategy else "the 7R recommendation")
     else:
         r.note("plan", False, "migration", "no strategy: neither --strategy nor a 7R recommendation")
+    waves_path = out / "waves.json"
+    rc, so, se = r.tool("waves", "tools/modernization/app_wave_planner.py", "--app-id", app, "--out", str(waves_path))
+    waves = json.loads(waves_path.read_text()) if rc == 0 and waves_path.is_file() else None
+    r.note("waves", bool((waves or {}).get("waves")), "migration.waves", None if waves else _why(se, so),
+           waves=len((waves or {}).get("waves") or []), basis=(waves or {}).get("basis"))
 
     bundle_path = out / f"{name}.apptwin.json"
     args = ["tools/modernization/apptwin_export.py", "--app-id", app, "--out", str(bundle_path)]
@@ -249,6 +233,10 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
         args += ["--seven-r", str(out / "seven_r.json")]
     if aiify:
         args += ["--aiify", str(out / "aiify.json")]
+    if jobs:
+        args += ["--refactor", str(ref_path)]
+    if (waves or {}).get("waves"):
+        args += ["--waves", str(waves_path)]
     for p in procs:
         args += ["--process", str(p)]
     if at:
@@ -260,7 +248,6 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
     produced = {k for k, v in bundle.items() if v not in (None, [], {})}
     unproduced = {
         "consumers": "the exporter never carries consumers",
-        "refactor": "no CAM refactor job ran: the migrators above ran directly, and their outputs are artefacts here",
         "integrity": "no SIPA assessment was run",
         "ivv": "no IV&V assessment was run", "sbd": "no Secure by Design assessment was run",
         "rtm": "no requirements traceability was run", "coherence": "no coherence check was run",
@@ -270,8 +257,8 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
             unproduced[s["section"]] = s.get("reason") or "the step produced nothing"
     gaps = {k: unproduced.get(k, "no step produced it") for k in sorted(set(bundle) - produced - {"schema"})}
     if (bundle.get("migration") or {}) and not (bundle["migration"].get("waves")):
-        gaps["migration.waves"] = ("the wave planner plans server inventory sessions, not an application's migration "
-                                   "plan: no waves, so ICDEV[OS]'s migration-plan gate will block")
+        gaps["migration.waves"] = next((s.get("reason") for s in r.steps if s["step"] == "waves" and not s["ok"]),
+                                       None) or "no wave was planned, so ICDEV[OS]'s migration-plan gate will block"
     report = {"application": name, "source": source.name, "app_id": app, "project_id": project,
               "bundle": bundle_path.name, "bundle_sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
               "produced": sorted(produced - {"schema", "producer", "produced_at"}), "gaps": gaps, "steps": r.steps,

@@ -43,6 +43,11 @@ _ROOT = Path(__file__).resolve().parents[2]
 _REFACTOR_RULES_PATH = _ROOT / "context" / "migration" / "refactor_rules.yaml"
 _ARTIFACTS_BASE = _ROOT / "data" / "cam_artifacts"
 
+
+def _artifacts_base() -> Path:
+    """Where jobs write: ``CAM_ARTIFACTS_DIR`` when set (a run's own output, ICDEV[OS] osx-fth-13), else data/."""
+    return Path(os.environ["CAM_ARTIFACTS_DIR"]) if os.environ.get("CAM_ARTIFACTS_DIR") else _ARTIFACTS_BASE
+
 # ── Bedrock model identifiers for generated migration artifacts ──────────────
 # LLM config via .env — never hardcode model IDs in code.  These are the model
 # identifiers baked into the AWS Bedrock scaffolds this engine generates; they
@@ -180,7 +185,7 @@ def dispatch(project_id: str, component_name: str | None = None,
                 job_id = str(uuid.uuid4())
                 tech_key = comp_name.lower().split()[0]
                 output_path = str(
-                    _ARTIFACTS_BASE / project_id / job_id
+                    _artifacts_base() / project_id / job_id
                 )
                 job = {
                     "id": job_id,
@@ -219,31 +224,69 @@ def dispatch(project_id: str, component_name: str | None = None,
                     if existing:
                         continue
 
-                    conn.execute(
-                        "INSERT INTO mc_refactor_jobs "
-                        "(id, project_id, app_id, component_name, refactor_type, "
-                        " source_tech, target_tech, source_language, target_language, "
-                        " source_path, output_path, params_json, status, result_summary, "
-                        " artifacts_json, error_message, triggered_by, ai_opp_id, "
-                        " classification, created_at) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (
-                            job["id"], job["project_id"], job["app_id"],
-                            job["component_name"], job["refactor_type"],
-                            job["source_tech"], job["target_tech"],
-                            job["source_language"], job["target_language"],
-                            job["source_path"], job["output_path"],
-                            job["params_json"], job["status"],
-                            job["result_summary"], job["artifacts_json"],
-                            job["error_message"], job["triggered_by"],
-                            job["ai_opp_id"], job["classification"], job["created_at"],
-                        ),
-                    )
+                    _insert_job(conn, job)
                     conn.commit()
 
                 queued.append(job)
 
         return queued
+    finally:
+        conn.close()
+
+
+def _insert_job(conn, job: dict) -> None:
+    conn.execute(
+        "INSERT INTO mc_refactor_jobs "
+        "(id, project_id, app_id, component_name, refactor_type, "
+        " source_tech, target_tech, source_language, target_language, "
+        " source_path, output_path, params_json, status, result_summary, "
+        " artifacts_json, error_message, triggered_by, ai_opp_id, "
+        " classification, created_at) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (
+            job["id"], job["project_id"], job["app_id"],
+            job["component_name"], job["refactor_type"],
+            job["source_tech"], job["target_tech"],
+            job["source_language"], job["target_language"],
+            job["source_path"], job["output_path"],
+            job["params_json"], job["status"],
+            job["result_summary"], job["artifacts_json"],
+            job["error_message"], job["triggered_by"],
+            job.get("ai_opp_id"), job["classification"], job["created_at"],
+        ),
+    )
+
+
+def queue(project_id: str, inventory_id: str, spec: dict, triggered_by: str = "manual") -> dict:
+    """Queue ONE job for one inventory row from an explicit spec (the shape of a refactor_rules.yaml job), through
+    the same insert as ``dispatch``. Used where no rule can see what the job needs (ICDEV[OS] osx-fth-13: the database
+    job of a legacy application whose schema the analyser extracted)."""
+    conn = _mc_conn()
+    try:
+        comp = conn.execute(
+            "SELECT * FROM mc_app_inventory WHERE id=%s", (inventory_id,)
+        ).fetchone()
+        if not comp:
+            raise ValueError(f"No inventory row: {inventory_id}")
+        comp = dict(comp)
+        job_id = str(uuid.uuid4())
+        job = {
+            "id": job_id, "project_id": project_id, "app_id": inventory_id,
+            "component_name": comp.get("name", ""), "refactor_type": spec["type"],
+            "source_tech": comp.get("name", ""),
+            "target_tech": spec.get("target_tech", spec.get("target_db", spec.get("target_framework", ""))),
+            "source_language": spec.get("source_language", comp.get("language") or ""),
+            "target_language": spec.get("target_language", ""),
+            "source_path": comp.get("source_repo") or "",
+            "output_path": str(_artifacts_base() / project_id / job_id),
+            "params_json": json.dumps({k: v for k, v in spec.items() if k not in ("type", "description")}),
+            "status": "queued", "result_summary": spec.get("description", ""), "artifacts_json": "[]",
+            "error_message": "", "triggered_by": triggered_by, "ai_opp_id": None,
+            "classification": "CUI // SP-CTI", "created_at": _now(),
+        }
+        _insert_job(conn, job)
+        conn.commit()
+        return job
     finally:
         conn.close()
 
@@ -381,6 +424,17 @@ def _run_db_ddl_generation(job, params, source_path, output_dir) -> tuple[list[d
     source_db = params.get("source_db", "oracle")
     target_db = params.get("target_db", "aurora-postgresql")
 
+    if params.get("scope") == "full":
+        # A legacy application whose schema the analyser extracted (ICDEV[OS] osx-fth-13): the planner's full run over
+        # ITS schema, or a failure -- never the generic scaffold below, which describes no application.
+        from tools.modernization.db_migration_planner import generate_full_migration
+        res = generate_full_migration(job["app_id"], target_db, source_path, str(output_dir))
+        artifacts = _scan_artifacts(output_dir, "db_ddl")
+        if not artifacts:
+            raise RuntimeError(f"db_migration_planner wrote nothing for {job['app_id']}")
+        return artifacts, f"db_migration_planner, full ({target_db}): {len(artifacts)} file(s)" + (
+            f"; {len(res.get('errors') or [])} error(s)" if isinstance(res, dict) and res.get("errors") else "")
+
     # Attempt to delegate to db_migration_planner if legacy_applications row exists
     try:
         from tools.modernization.db_migration_planner import (
@@ -409,7 +463,10 @@ def _run_version_upgrade(job, params, source_path, output_dir) -> tuple[list[dic
         from tools.modernization.version_migrator import _dispatch_migration
         result = _dispatch_migration(src_lang, source_path, str(output_dir), src_ver, tgt_ver)
         artifacts = _scan_artifacts(output_dir, "source")
-        summary = f"{src_lang} {src_ver} → {tgt_ver} migration: {result.get('files_transformed', 0)} files transformed"
+        # version_migrator reports files_processed and transformations_applied (there is no files_transformed)
+        summary = (f"{src_lang} {src_ver} → {tgt_ver} migration: {result.get('files_processed', 0)} file(s) processed, "
+                   f"{len(result.get('transformations_applied') or [])} transformation(s)"
+                   + (f", {len(result['errors'])} error(s)" if result.get("errors") else ""))
         return artifacts, summary
     except Exception as exc:
         raise RuntimeError(f"version_migrator failed: {exc}") from exc
@@ -1479,11 +1536,12 @@ def _gen_stub_readme(job, params, output_dir) -> tuple[list[dict], str]:
 
 
 def _scan_artifacts(directory: Path, artifact_type: str) -> list[dict]:
-    """Scan an output directory and return artifact dicts."""
+    """Scan an output directory, at every depth (a migrator writes a tree), and return artifact dicts. ``rel`` is the
+    path under the job's output directory, so an export never names where the job ran."""
     return [
-        {"type": artifact_type, "path": str(f), "name": f.name,
+        {"type": artifact_type, "path": str(f), "rel": f.relative_to(directory).as_posix(), "name": f.name,
          "size_bytes": f.stat().st_size, "description": f.stem.replace("_", " ")}
-        for f in sorted(directory.iterdir()) if f.is_file()
+        for f in sorted(directory.rglob("*")) if f.is_file()
     ]
 
 

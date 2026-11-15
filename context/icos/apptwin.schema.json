@@ -224,6 +224,28 @@
       "title": "Application",
       "type": "object"
     },
+    "Artefact": {
+      "additionalProperties": false,
+      "description": "One file a refactor job wrote, by its path under the job's output and its SHA-256 (osx-fth-13).",
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "title": "Artefact",
+      "type": "object"
+    },
     "Check": {
       "additionalProperties": false,
       "properties": {
@@ -1081,6 +1103,13 @@
           "default": null,
           "title": "Artefact Digest"
         },
+        "artefacts": {
+          "items": {
+            "$ref": "#/$defs/Artefact"
+          },
+          "title": "Artefacts",
+          "type": "array"
+        },
         "component": {
           "anyOf": [
             {
@@ -1101,9 +1130,37 @@
           "title": "Kind",
           "type": "string"
         },
+        "review": {
+          "anyOf": [
+            {
+              "enum": [
+                "unreviewed",
+                "reviewed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review"
+        },
         "status": {
           "title": "Status",
           "type": "string"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
         }
       },
       "required": [
@@ -1904,6 +1961,6 @@
   ],
   "title": "AppTwin",
   "type": "object",
-  "x-icos-contract": "1.180.0",
+  "x-icos-contract": "1.181.0",
   "x-license": "Apache-2.0"
 }
