@@ -2229,3 +2229,23 @@ feature_conformance:
     A stated reason excuses only its own rule and goes stale when the rule
     holds without it. The census enumerates every open gap by name and its
     ceiling (census_max) may only go down.
+
+# Declared decision gate (icx-cnf-02)
+#
+# Every decision a person takes in Cortex and ACE runs through a template under
+# args/workflow_hitl_templates/ (a manual stage held by a role). The coherence
+# check hitl_workflow fails on a malformed template, a template no code runs, a
+# surface decided twice, or a decision endpoint the feature audit finds with no
+# template (a workflow: line in args/feature_conformance_census.txt).
+# Run: python tools/workflow/coherence_checker.py --check hitl_workflow --json
+declared_decisions:
+  blocking:
+    - undeclared_decision          # a decision endpoint with no declared template
+    - template_without_manual_stage  # no manual stage, no role, or a service key as holder
+    - template_not_run             # a template no route or tool takes a step through
+  warning: []
+  note: >
+    A step that cannot be recorded is refused and its effect does not run. A
+    service key never holds a person's step; it proposes, and re-posts the decided
+    step id once. ACE abort stays an immediate stop with its stated reason.
+

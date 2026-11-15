@@ -379,16 +379,26 @@ class TestResolvingFromTheInboxReleasesTheThread:
 # ---------------------------------------------------------------------------
 class TestResolvingInAceSettlesTheMirror:
     def _post_hitl(self, approved: bool):
-        """Call the real ``POST /api/ace/<id>/hitl`` view, the ACE UI's button."""
-        from flask import Flask
+        """Call the real ``POST /api/ace/<id>/hitl`` view, the ACE UI's button.
 
-        from icdev.tools.ace.blueprint import api_hitl_resolve
+        The click is also a person's declared workflow step (icx-cnf-02), recorded
+        in the platform DB's wf_ tables. That is covered in
+        tests/test_icx_cnf_02_declared_decisions.py; here ``get_connection`` is the
+        inbox's, so the step is stubbed and the subject stays the inbox mirror.
+        """
+        from unittest.mock import patch
+
+        from flask import Flask, g
+
+        import icdev.tools.ace.blueprint as ace_bp
 
         app = Flask(__name__)
+        step = {"step_id": "step-test", "decided_by": "u-op"}
         with app.test_request_context(
             json={"coworker_id": COWORKER, "detail": DETAIL, "approved": approved}
-        ):
-            return api_hitl_resolve(INSTANCE)
+        ), patch.object(ace_bp, "_decision_step", return_value=(step, None)):
+            g.current_user = {"id": "u-op", "role": "developer"}
+            return ace_bp.api_hitl_resolve(INSTANCE)
 
     def test_approving_through_the_ace_route_resolves_the_item(self, ace_db, inbox_db):
         _coworker_thread()._audit("hitl_pending", DETAIL)

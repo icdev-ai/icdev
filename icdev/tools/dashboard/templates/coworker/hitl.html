@@ -1,6 +1,7 @@
 {# -*- CUI // SP-CTI -*- HITL gate panel — included in coworker/instance.html #}
 {# Renders pending HITL decisions for a co-worker instance.              #}
 {# Host page must POST to /api/ace/<instance_id>/hitl to approve/reject. #}
+{# The click is the person's step of decl-wft-ace-hitl-resolve (icx-cnf-02). #}
 {% if pending_hitl %}
 <section class="hitl-panel" style="margin-top:1.25rem;">
   <h3 style="font-size:0.95rem; color:var(--text-primary); margin:0 0 0.6rem;">
@@ -59,8 +60,15 @@
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({coworker_id: coworker, detail: detail, approved: approved}),
     })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
+    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, d: d}; }); })
+    .then(function(res) {
+      // A refused step (no role, store down) moves nothing: say why (icx-cnf-02).
+      if (!res.ok) {
+        btn.disabled = false;
+        btn.textContent = approved ? 'Approve' : 'Reject';
+        alert('HITL action refused: ' + (res.d.error || 'unknown'));
+        return;
+      }
       var card = btn.closest('.hitl-card');
       if (card) card.style.opacity = '0.4';
       setTimeout(function() { location.reload(); }, 800);
