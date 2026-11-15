@@ -45,11 +45,14 @@
 version: 1
 
 # warn: the coherence check `feature_conformance` warns while gaps remain.
-# fail: any open gap fails it. Flip this when icx-cnf-02..05 have landed.
-enforcement: warn
+# fail: any open gap fails it. Flipped by icx-cnf-07, which closed the last two
+# gaps (17/17 conform): from here a new gap, or a stale record, fails the check.
+# Never flip it back to get a change through; close the gap or state its reason.
+enforcement: fail
 
-# The ceiling on args/feature_conformance_census.txt. It may only go DOWN.
-census_max: 2
+# The ceiling on args/feature_conformance_census.txt. It may only go DOWN; at 0,
+# no gap may be registered at all.
+census_max: 0
 
 doc: docs/audits/conformance-cortex-coworker.md
 snapshot: docs/audits/conformance-cortex-coworker.json

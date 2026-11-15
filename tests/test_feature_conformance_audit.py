@@ -443,6 +443,20 @@ def test_the_shipped_config_census_and_snapshot_agree():
     assert {f["key"] for f in snapshot["features"]} == keys
 
 
+def test_the_shipped_audit_is_enforced_with_no_open_gap():
+    """icx-cnf-07 closed the last two gaps, so a new gap fails from now on: the
+    census is empty, its ceiling is zero, and enforcement is ``fail``."""
+    cfg = fa.load_config(REPO)
+    snapshot = fa.load_snapshot(REPO)
+    assert cfg["enforcement"] == "fail"
+    assert int(cfg["census_max"]) == 0
+    assert fa.read_census(REPO / cfg["census"]) == []
+    summary = snapshot["summary"]
+    assert summary["gaps_total"] == 0
+    assert summary["features_conforming"] == summary["features"]
+    assert snapshot["enforcement"] == "fail"
+
+
 def test_the_mcp_tool_is_declared_read_only_and_serves_the_snapshot():
     registry = importlib.import_module("tools.mcp.tool_registry")
     handlers = importlib.import_module("tools.mcp.gap_handlers")
