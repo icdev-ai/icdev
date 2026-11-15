@@ -4754,6 +4754,7 @@ python tools/maintenance/remediation_engine.py --project-id "proj-123" --auto   
 
 # Application Modernization (7Rs Migration)
 python tools/modernization/legacy_analyzer.py --project-id "proj-123" --app-id "app-1" --source-path /path/to/legacy   # Analyze legacy app
+python tools/modernization/static_features.py --app-id "app-1" --out features.json                                     # Features reported statically from entry points (never observed)
 python tools/modernization/architecture_extractor.py --app-id "app-1" --json                                           # Extract architecture
 python tools/modernization/doc_generator.py --app-id "app-1" --output-dir /path/to/docs                               # Generate docs
 python tools/modernization/seven_r_assessor.py --project-id "proj-123" --app-id "app-1" --json                         # 7R assessment
