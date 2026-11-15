@@ -217,6 +217,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # acted on it, so a re-evaluation appends instead. Mutable triage state,
         # if it is ever wanted, belongs in a separate table keyed on finding_id.
         "agent_findings",
+        # Governance twin observations (icx-cnf-03, migration 20261114163435). An
+        # observation is the evidence a twin read and the digest of the verdict it
+        # gave; replay re-judges it later. An edited row would replay to whatever
+        # it was edited into, so a new reading appends a new row.
+        "twin_governance_observations",
         # Cortex canvas governance/facade audit (ctx-canvas-01)
         "cortex_audit",
         # Constitutional AI per-rule critique trail (agx-verify-02, migration 292, NIST AU)

@@ -8913,6 +8913,21 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    # -- governance twins (icx-cnf-03 — Cortex, ACE, Co-Workers, the audit) -----
+    "twin_governance": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_twin_governance",
+        "description": "Read the governance twins (Cortex TRUST gates, cortex_audit health, unadjudicated findings, backend liveness; ACE stuck/failed runs, checkpoints waiting on a person, aborts, NOVA trust drift; the Co-Workers roster sources; the conformance audit). Returns each twin's latest recorded observation re-judged from its evidence, with every finding's thread_id. Give observation_id to replay one (does the recorded evidence still give the recorded verdict?) or thread_id to follow a finding to its record and provenance. Read-only: never observes, records or changes anything.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "canvas": {"type": "string", "description": "Only this twin: cortex, ace, cwk or twin_observatory"},
+                "observation_id": {"type": "string", "description": "Replay this recorded observation"},
+                "thread_id": {"type": "string", "description": "Resolve this finding's thread (e.g. cortex_audit:cgov-...)"},
+            },
+        },
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -9588,6 +9603,8 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # -- declared decisions (icx-cnf-02) -------------------------------------
     # Reads the templates and the ledger; never takes or proposes a step.
     "workflow_decision_steps":                  True,
+    # Replays and reads recorded observations; never observes or records.
+    "twin_governance":                          True,
 })
 
 

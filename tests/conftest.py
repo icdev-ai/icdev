@@ -4857,6 +4857,26 @@ CREATE TRIGGER IF NOT EXISTS wf_decision_steps_no_update BEFORE UPDATE ON wf_dec
 CREATE TRIGGER IF NOT EXISTS wf_decision_steps_no_delete BEFORE DELETE ON wf_decision_steps BEGIN SELECT RAISE(ABORT, 'wf_decision_steps is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS cortex_finding_adjudications_no_update BEFORE UPDATE ON cortex_finding_adjudications BEGIN SELECT RAISE(ABORT, 'cortex_finding_adjudications is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS cortex_finding_adjudications_no_delete BEFORE DELETE ON cortex_finding_adjudications BEGIN SELECT RAISE(ABORT, 'cortex_finding_adjudications is append-only'); END;
+
+-- icx-cnf-03: governance twin observations (migration 20261114163435). Same DDL
+-- as tools/twin_core/governance.SCHEMA; append-only (triggers on first write).
+CREATE TABLE IF NOT EXISTS twin_governance_observations (
+    id TEXT PRIMARY KEY,
+    canvas TEXT NOT NULL,
+    target_id TEXT NOT NULL DEFAULT 'fleet',
+    verdict TEXT NOT NULL CHECK (verdict IN ('pass', 'warn', 'fail', 'unknown')),
+    coverage_score REAL,
+    violation_count INTEGER NOT NULL DEFAULT 0,
+    counts_json TEXT NOT NULL DEFAULT '{}',
+    evidence_json TEXT NOT NULL,
+    evidence_digest TEXT NOT NULL,
+    verdict_digest TEXT NOT NULL,
+    judge_version TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_twin_gov_obs_canvas
+    ON twin_governance_observations(canvas, observed_at);
 """
 
 
