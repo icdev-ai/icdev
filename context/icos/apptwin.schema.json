@@ -481,6 +481,20 @@
           "title": "Basis",
           "type": "string"
         },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
         "evidence": {
           "items": {
             "type": "string"
@@ -491,6 +505,22 @@
         "id": {
           "title": "Id",
           "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "enum": [
+                "static",
+                "observed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provenance"
         },
         "signatures": {
           "$ref": "#/$defs/Signatures"
@@ -1874,6 +1904,6 @@
   ],
   "title": "AppTwin",
   "type": "object",
-  "x-icos-contract": "1.169.0",
+  "x-icos-contract": "1.180.0",
   "x-license": "Apache-2.0"
 }

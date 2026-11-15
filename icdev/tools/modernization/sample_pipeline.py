@@ -10,6 +10,7 @@ Every step is the existing tool, run as a subprocess with the scratch database i
 
      1. project_create             a scratch project
      2. legacy_analyzer            --register, then --analyze
+        static_features            the entry points grouped into features (features, provenance static)
      3. architecture_extractor     --extract db-schema          (the bundle's data)
      4. seven_r_assessor           --json                       (seven_r)
      5. db_migration_planner       --type all --target postgresql (artefacts only)
@@ -21,7 +22,8 @@ Every step is the existing tool, run as a subprocess with the scratch database i
     11. apptwin_export             every section a step produced
 
 The source is UNTRUSTED DATA: it is read, never built or run, and a step that would need the application running
-(observed inventory) is reported, not attempted. A section no step produced stays null in the bundle and is listed
+(observed inventory) is reported, not attempted: features are reported statically, from the entry points the
+analyser read, labelled ``static`` (never ``observed``). A section no step produced stays null in the bundle and is listed
 in ``gaps.json`` with why -- nothing is filled in by hand. The scratch database is created here (``init_icdev_db``)
 and must not be the operational one.
 """
@@ -123,8 +125,11 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
 
     rc, so, se = r.tool("register", "tools/modernization/legacy_analyzer.py", "--register", "--project-id", project,
                         "--name", name, "--source-path", str(source), "--json")
-    with sqlite3.connect(scratch_db) as c:
+    c = sqlite3.connect(scratch_db)   # the scratch file itself, never through storage: sqlite3's own ? placeholders
+    try:
         row = c.execute("SELECT id FROM legacy_applications WHERE name = ?", (name,)).fetchone()
+    finally:
+        c.close()
     if rc != 0 or row is None:
         raise PipelineError(f"legacy_analyzer --register: {_why(se, so)}")
     app = row[0]
@@ -132,20 +137,36 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
                         "--app-id", app, "--json")
     if rc != 0:
         raise PipelineError(f"legacy_analyzer --analyze: {_why(se, so)}")
-    with sqlite3.connect(scratch_db) as c:
+    c = sqlite3.connect(scratch_db)
+    try:
         c.row_factory = sqlite3.Row
         a = dict(c.execute("SELECT * FROM legacy_applications WHERE id = ?", (app,)).fetchone())
         counts = {t: c.execute(f"SELECT COUNT(*) FROM {t} WHERE legacy_app_id = ?", (app,)).fetchone()[0]
                   for t in ("legacy_components", "legacy_apis", "legacy_dependencies")}
+    finally:
+        c.close()
     lang, fw = a["primary_language"], (a["framework"] or "").strip().lower()
     r.note("analyze", True, app_id=app, language=lang, language_version=a["language_version"], framework=a["framework"],
            **counts)
 
+    feats_path = out / "features.static.json"
+    rc, so, se = r.tool("features", "tools/modernization/static_features.py", "--app-id", app, "--out", str(feats_path))
+    feats = json.loads(feats_path.read_text()) if rc == 0 and feats_path.is_file() else None
+    n_feats = len((feats or {}).get("features") or [])
+    r.note("features", n_feats > 0, "features", None if n_feats else
+           (f"no HTTP entry point found statically ({_why(se, so)})" if rc else
+            "no HTTP entry point (API, controller, servlet or route) found statically"),
+           provenance="static", features=n_feats, entry_points=(feats or {}).get("entry_points", 0),
+           detected_by=(feats or {}).get("detected_by", {}))
+
     rc, so, se = r.tool("db-schema", "tools/modernization/architecture_extractor.py", "--app-id", app, "--extract",
                         "db-schema", "--source-path", str(source))
-    with sqlite3.connect(scratch_db) as c:
+    c = sqlite3.connect(scratch_db)
+    try:
         tables = c.execute("SELECT COUNT(DISTINCT table_name) FROM legacy_db_schemas WHERE legacy_app_id = ?",
                            (app,)).fetchone()[0]
+    finally:
+        c.close()
     r.note("db-schema", rc == 0 and tables > 0, "data", None if tables else
            (f"no ORM model or SQL DDL the extractor reads ({_why(se, so)})" if rc else "no ORM model or SQL DDL the extractor reads"),
            tables=tables)
@@ -222,6 +243,8 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
 
     bundle_path = out / f"{name}.apptwin.json"
     args = ["tools/modernization/apptwin_export.py", "--app-id", app, "--out", str(bundle_path)]
+    if n_feats:
+        args += ["--static-features", str(feats_path)]
     if seven:
         args += ["--seven-r", str(out / "seven_r.json")]
     if aiify:
@@ -236,7 +259,6 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
     bundle = json.loads(bundle_path.read_text())
     produced = {k for k, v in bundle.items() if v not in (None, [], {})}
     unproduced = {
-        "features": "observed inventory needs the application running; the source is never run here",
         "consumers": "the exporter never carries consumers",
         "refactor": "no CAM refactor job ran: the migrators above ran directly, and their outputs are artefacts here",
         "integrity": "no SIPA assessment was run",
