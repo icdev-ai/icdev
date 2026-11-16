@@ -80,8 +80,37 @@ def _java_app(root: Path) -> Path:
     return root
 
 
+def _icos_export(base: Path, app: str, strategy: str) -> tuple[Path, Path]:
+    """A decisions export accepting ``strategy`` for ``app``, signed by a test key, and the JWKS pinning that key."""
+    import base64
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+
+    from tools.modernization import icos_decisions as icd
+
+    key = ec.generate_private_key(ec.SECP384R1())
+    doc = {"schema": icd.SCHEMA, "issuer": "icos-test", "chain": {"verifies": True},
+           "strategies": [{"application": app, "strategy": strategy, "at": 1, "item": "i-1", "accepted_by": "mo",
+                           "decision": "d-1"}]}
+    protected = icd._b64u(json.dumps({"alg": icd.ALG, "typ": icd.TYP, "kid": "k1"}).encode())
+    r, sig = decode_dss_signature(key.sign(f"{protected}.{icd._b64u(icd.jcs(doc).encode())}".encode(),
+                                           ec.ECDSA(hashes.SHA384())))
+    export = base / "decisions.json"
+    export.write_text(json.dumps({"document": doc, "signature": {
+        "protected": protected, "signature": icd._b64u(r.to_bytes(48, "big") + sig.to_bytes(48, "big"))}}))
+    nums = key.public_key().public_numbers()
+    b = lambda n: base64.urlsafe_b64encode(n.to_bytes(48, "big")).rstrip(b"=").decode()  # noqa: E731
+    jwks = base / "icos_jwks.json"
+    jwks.write_text(json.dumps({"keys": [{"kty": "EC", "crv": "P-384", "kid": "k1", "x": b(nums.x), "y": b(nums.y)}]}))
+    return export, jwks
+
+
 @pytest.fixture(scope="module")
 def run(tmp_path_factory):
+    """The first run (it plans nothing: no ICDEV[OS] may-plan yet), then --resume once ICDEV[OS] accepted the 7R
+    recommendation (icx-mdz-02), against the same scratch database."""
     base = tmp_path_factory.mktemp("modsamples")
     src = _java_app(base / "src")
     out = base / "out"
@@ -91,8 +120,33 @@ def run(tmp_path_factory):
                         "--target-ai", "trade anomaly detection"],
                        cwd=ROOT, capture_output=True, text=True, timeout=900, check=False)
     assert p.returncode == 0, p.stdout[-2000:] + p.stderr[-2000:]
+    first = json.loads((out / "gaps.json").read_text())
+    first_bundle = json.loads((out / "acme-trade.apptwin.json").read_text())
+    seven = json.loads((out / "seven_r.json").read_text())
+    export, jwks = _icos_export(base, first["app_id"], seven["recommended_strategy"])
+    p = subprocess.run([sys.executable, str(ROOT / "tools/modernization/sample_pipeline.py"), "--resume",
+                        "--scratch-db", str(base / "db/icdev.db"), "--out", str(out),
+                        "--icos-decisions", str(export), "--icos-jwks", str(jwks)],
+                       cwd=ROOT, capture_output=True, text=True, timeout=900, check=False)
+    assert p.returncode == 0, p.stdout[-2000:] + p.stderr[-2000:]
     return {"base": base, "out": out, "report": json.loads((out / "gaps.json").read_text()),
-            "bundle": json.loads((out / "acme-trade.apptwin.json").read_text())}
+            "bundle": json.loads((out / "acme-trade.apptwin.json").read_text()),
+            "first": first, "first_bundle": first_bundle, "seven": seven}
+
+
+def test_the_first_run_plans_nothing_without_icdev_os_may_plan(run):
+    """icx-mdz-02: no signed may-plan yet, so no CAM refactor job ran and no plan was written; the gaps say why."""
+    first = run["first"]
+    for section in ("refactor", "migration"):
+        assert "no ICDEV[OS] may-plan (missing)" in first["gaps"][section], first["gaps"].get(section)
+    assert run["first_bundle"]["refactor"] is None and run["first_bundle"]["migration"] is None
+    assert first["may_plan"]["given"] is False
+    with sqlite3.connect(run["base"] / "db/icdev.db") as c:
+        refused = c.execute("SELECT actor FROM audit_trail WHERE action LIKE 'mdz.may_plan.refused:%'").fetchall()
+        assert {r[0] for r in refused} == {"icdev-it/cam_refactor_engine", "icdev-it/monolith_decomposer"}
+        assert c.execute("SELECT COUNT(*) FROM migration_plans").fetchone()[0] == 1, "one plan: the resumed run's"
+    assert run["report"]["may_plan"] == {"given": True, "resumed": True}
+    assert run["seven"]["confidence"] >= 0.5 and run["seven"]["recommendation"]["status"] == "recommended"
 
 
 def test_the_pipeline_exports_a_valid_bundle_from_a_scratch_database(run):

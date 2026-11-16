@@ -1,7 +1,12 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """7R Migration Strategy Recommendation Engine for ICDEV™ DoD Modernization.
+
+This is THE 7R engine (icx-mdz-02): ``migration_intelligence/strategy_generator.py`` and
+``migration_canvas/coa_engine.py`` consume its assessment (``strategy_for_app``) and never score 7R themselves.
+Every criterion is the catalog's, measured by name or unmeasured (None); an unmeasured criterion is left out of the
+score and lowers the strategy's reported confidence; a strategy with nothing measured is not assessable; and only a
+strategy whose confidence reaches the catalog's ``min_confidence_to_recommend`` is recommended.
 
 Evaluates legacy applications against the 7 Rs of cloud migration:
   Rehost, Replatform, Refactor, Rearchitect, Repurchase, Retire, Retain
@@ -342,322 +347,209 @@ def _get_app_profile(app_id, db_path=None):
 
 
 # ============================================================================
-# Fitness check functions — one per strategy
+# Fitness check functions -- one per strategy, keyed BY NAME by the catalog's own criteria (icx-mdz-02)
 # ============================================================================
+#
+# Every check returns exactly the criteria its strategy declares in seven_rs_catalog.json, by name. A criterion this
+# tool can measure from the application's profile is a float in [0.0, 1.0]; one it cannot (team skills, licences,
+# costs, sign-offs, an extraction that never ran) is None -- UNMEASURED. ``_strategy_evidence`` leaves an unmeasured
+# criterion out of the score and says so; it never stands in a neutral 0.5. A check whose names differ from the
+# catalog's is refused there (CriteriaMismatch), so nothing is ever paired by list position again.
+
+#: Analysis states in which the analyser's component, dependency and metric figures were measured.
+ANALYSED_STATUSES = {"analyzed", "planning", "migrating", "completed"}
+
+#: Markers of host coupling in a dependency (its type or the import it records): local files, processes, native code.
+HOST_COUPLING_MARKERS = (
+    "os-specific", "hardware", "native", "driver", "kernel", "file-io", "local-storage", "nfs", "smb", "cifs",
+    "shared-drive", "java.io.file", "java.nio.file", "jni", "com.sun.jna", "ctypes", "subprocess", "os.system",
+    "system.io", "microsoft.win32", "runtime.getruntime", "processbuilder",
+)
+
+
+def _analysed(profile):
+    """True when the analyser ran over the source, so its figures (components, dependencies, maintainability,
+    technical debt, test components) are measurements; a registered-only application has none of them."""
+    status = str(profile.get("analysis_status") or "").lower()
+    return status in ANALYSED_STATUSES and int(profile.get("component_count") or 0) > 0
+
+
+def _band(value, good, fair, *, higher_is_better=True):
+    """1.0 at or past ``good``, 0.5 at or past ``fair``, else 0.0 (a measured partial, never a default)."""
+    if higher_is_better:
+        return 1.0 if value >= good else 0.5 if value >= fair else 0.0
+    return 1.0 if value <= good else 0.5 if value <= fair else 0.0
+
+
+def _db_types(profile):
+    """The database engines the schema extraction found, or None when no schema was extracted (no tables is not the
+    same as no database: the extractor may not have run)."""
+    if not int(profile.get("db_schema_count") or 0):
+        return None
+    types = {t for t in (profile.get("db_types") or []) if t and t != "unknown"}
+    return types or None
+
+
+def _managed_db_fit(profile):
+    """How directly the extracted database engine maps to a managed service: standard 1.0, a commercial engine with a
+    known migration path 0.5, an exotic engine 0.0; an engine none of the lists knows, or no schema, is unmeasured."""
+    types = _db_types(profile)
+    if types is None:
+        return None
+    if types <= STANDARD_DB_TYPES:
+        return 1.0
+    if types & EXOTIC_DB_TYPES:
+        return 0.0
+    if types <= STANDARD_DB_TYPES | MIGRATABLE_DB_TYPES:
+        return 0.5
+    return None
+
+
+def _table_count(profile):
+    tables = {s.get("table_name") for s in profile.get("db_schemas") or [] if s.get("table_name")}
+    return len(tables) if tables else None
+
+
+def _eol(profile):
+    """True / False when the framework or language level is known, None when neither is (an EOL check over an
+    unknown stack would be a guess)."""
+    framework = (profile.get("framework") or "").lower().strip().replace(" ", "-").replace("_", "-")
+    lang = profile.get("primary_language", "")
+    lang_ver = profile.get("language_version") or ""
+    lang_ver_major = lang_ver.split(".")[0] if lang_ver else ""
+    known_framework = bool(framework) and framework != "unknown"
+    if not known_framework and not lang_ver:
+        return None
+    if framework in EOL_FRAMEWORKS or (lang, lang_ver_major) in EOL_LANGUAGES:
+        return True
+    if known_framework:
+        fw_ver = profile.get("framework_version") or ""
+        fw_ver_major = fw_ver.split(".")[0] if fw_ver else ""
+        if f"{framework}{fw_ver_major}" in EOL_FRAMEWORKS:
+            return True
+    return False
 
 
 def _check_rehost_fitness(profile):
-    """Evaluate rehost (lift-and-shift) fitness.
+    """Rehost (lift and shift), keyed by the catalog's rehost criteria.
 
     Criteria:
-        containerizable      — minimal OS/file-system coupling
-        external_deps_minimal — few external dependencies
-        config_externalizable — config separate from code
-        stateless            — no heavy local state / file writes
-        security_clean       — good maintainability, low complexity
-
-    Returns:
-        Dict mapping criterion name to float score in [0.0, 1.0].
+        infrastructure_compatibility -- dependencies coupled to the host (local files, processes, native code:
+                                        HOST_COUPLING_MARKERS): none 1.0, up to 3 0.5, more 0.0; measured when analysed
+        dependency_portability       -- the extracted database engine's managed-service fit (``_managed_db_fit``)
+        data_migration_complexity    -- extracted tables: up to 10 1.0, up to 50 0.5, more 0.0 (volume and CUI are not
+                                        known here, so this is the schema's size only)
+        licensing_transferability, operational_readiness -- licence terms and the team's cloud operations: None
     """
-    scores = {}
-
-    # containerizable: heuristic based on dependency types
-    os_dep_keywords = {"os-specific", "hardware", "native", "driver", "kernel", "system"}
-    file_dep_keywords = {"file-io", "local-storage", "nfs", "smb", "cifs", "shared-drive"}
-
-    os_count = 0
-    file_count = 0
-    for d in profile.get("dependencies", []):
-        dtype = (d.get("dependency_type") or "").lower()
-        if any(k in dtype for k in os_dep_keywords):
-            os_count += 1
-        if any(k in dtype for k in file_dep_keywords):
-            file_count += 1
-
-    heavy_count = os_count + file_count
-    if heavy_count == 0:
-        scores["containerizable"] = 1.0
-    elif heavy_count <= 3:
-        scores["containerizable"] = 0.5
-    else:
-        scores["containerizable"] = 0.0
-
-    # external_deps_minimal
-    ext_count = profile.get("external_dep_count", 0)
-    if ext_count < 5:
-        scores["external_deps_minimal"] = 1.0
-    elif ext_count <= 15:
-        scores["external_deps_minimal"] = 0.5
-    else:
-        scores["external_deps_minimal"] = 0.0
-
-    # config_externalizable: heuristic — if file_count > 0 and complexity is
-    # low, config is likely separable.  We use a proxy: maintainability > 50
-    # and low coupling suggest well-structured config.
-    maint = profile.get("maintainability_index", 0)
-    coupling = profile.get("avg_coupling", 0)
-    if maint > 50 and coupling < 0.5:
-        scores["config_externalizable"] = 1.0
-    elif maint > 30 or coupling < 0.7:
-        scores["config_externalizable"] = 0.5
-    else:
-        scores["config_externalizable"] = 0.0
-
-    # stateless: check for local-file write type dependencies
-    write_keywords = {"file-write", "local-write", "local-storage", "tmp-storage", "session-file"}
-    write_count = 0
-    for d in profile.get("dependencies", []):
-        dtype = (d.get("dependency_type") or "").lower()
-        if any(k in dtype for k in write_keywords):
-            write_count += 1
-    if write_count == 0:
-        scores["stateless"] = 1.0
-    elif write_count <= 2:
-        scores["stateless"] = 0.5
-    else:
-        scores["stateless"] = 0.0
-
-    # security_clean: maintainability > 60 AND avg complexity < 15
-    avg_cx = profile.get("avg_complexity", 0)
-    if maint > 60 and avg_cx < 15:
-        scores["security_clean"] = 1.0
-    elif maint > 40 and avg_cx < 25:
-        scores["security_clean"] = 0.5
-    else:
-        scores["security_clean"] = 0.0
-
-    return scores
+    coupled = None
+    if _analysed(profile):
+        coupled = sum(1 for d in profile.get("dependencies") or []
+                      if any(m in f"{d.get('dependency_type') or ''} {d.get('evidence') or ''}".lower()
+                             for m in HOST_COUPLING_MARKERS))
+    tables = _table_count(profile)
+    return {
+        "infrastructure_compatibility": None if coupled is None else _band(coupled, 0, 3, higher_is_better=False),
+        "dependency_portability": _managed_db_fit(profile),
+        "licensing_transferability": None,
+        "data_migration_complexity": None if tables is None else _band(tables, 10, 50, higher_is_better=False),
+        "operational_readiness": None,
+    }
 
 
 def _check_replatform_fitness(profile):
-    """Evaluate replatform (lift-tinker-shift) fitness.
+    """Replatform (lift, tinker and shift), keyed by the catalog's replatform criteria.
 
     Criteria:
-        managed_db_candidate          — database can move to managed service
-        container_ready_with_tweaks   — mostly containerizable
-        config_separable              — config extractable to env vars
-        cloud_services_available      — standard service replacements exist
-        minor_code_changes_only       — less than 10% code needs changes
-
-    Returns:
-        Dict mapping criterion name to float score in [0.0, 1.0].
+        managed_service_availability -- the extracted database engine's managed-service fit (``_managed_db_fit``)
+        modification_scope           -- technical-debt hours per 100 lines and the maintainability index: under 5 and
+                                        over 50 1.0, under 15 and over 30 0.5, else 0.0; measured when analysed
+        operational_improvement, cost_optimization, security_posture_change -- run costs, the operating model and the
+                                        control baseline are not known here: None
     """
-    scores = {}
-
-    # managed_db_candidate
-    db_types = set(profile.get("db_types", []))
-    if not db_types or db_types <= STANDARD_DB_TYPES:
-        scores["managed_db_candidate"] = 1.0
-    elif db_types & MIGRATABLE_DB_TYPES:
-        scores["managed_db_candidate"] = 0.5
-    elif db_types & EXOTIC_DB_TYPES:
-        scores["managed_db_candidate"] = 0.0
-    else:
-        # Unknown DB type — conservative score
-        scores["managed_db_candidate"] = 0.5
-
-    # container_ready_with_tweaks: reuse containerizable from rehost, but
-    # accept slightly worse scores.
-    rehost_fit = _check_rehost_fitness(profile)
-    container_score = rehost_fit.get("containerizable", 0.0)
-    if container_score >= 0.5:
-        scores["container_ready_with_tweaks"] = 1.0
-    elif container_score > 0.0:
-        scores["container_ready_with_tweaks"] = 0.5
-    else:
-        scores["container_ready_with_tweaks"] = 0.0
-
-    # config_separable
-    maint = profile.get("maintainability_index", 0)
-    coupling = profile.get("avg_coupling", 0)
-    if maint > 40 and coupling < 0.6:
-        scores["config_separable"] = 1.0
-    elif maint > 25 or coupling < 0.8:
-        scores["config_separable"] = 0.5
-    else:
-        scores["config_separable"] = 0.0
-
-    # cloud_services_available: standard app types have good cloud equivalents
-    app_type = profile.get("app_type", "unknown")
-    standard_app_types = {"web", "api", "microservice", "batch", "worker", "queue-consumer", "rest-api"}
-    custom_app_types = {"desktop", "embedded", "hardware-interface", "mainframe"}
-    if app_type in standard_app_types:
-        scores["cloud_services_available"] = 1.0
-    elif app_type in custom_app_types:
-        scores["cloud_services_available"] = 0.0
-    else:
-        scores["cloud_services_available"] = 0.5
-
-    # minor_code_changes_only: low tech debt + good maintainability means
-    # changes should be small
-    loc_total = profile.get("loc_total", 1)
-    tech_debt = profile.get("tech_debt_hours", 0)
-    # Rough heuristic: tech_debt_hours / (loc_total/100) gives a debt density
-    debt_density = tech_debt / max(loc_total / 100.0, 1.0)
-    if debt_density < 5 and maint > 50:
-        scores["minor_code_changes_only"] = 1.0
-    elif debt_density < 15 and maint > 30:
-        scores["minor_code_changes_only"] = 0.5
-    else:
-        scores["minor_code_changes_only"] = 0.0
-
-    return scores
+    scope = None
+    if _analysed(profile):
+        maint = profile.get("maintainability_index", 0)
+        density = profile.get("tech_debt_hours", 0) / max(profile.get("loc_total", 1) / 100.0, 1.0)
+        scope = 1.0 if density < 5 and maint > 50 else 0.5 if density < 15 and maint > 30 else 0.0
+    return {
+        "managed_service_availability": _managed_db_fit(profile),
+        "modification_scope": scope,
+        "operational_improvement": None,
+        "cost_optimization": None,
+        "security_posture_change": None,
+    }
 
 
 def _check_refactor_fitness(profile):
-    """Evaluate refactor (code-level modernization) fitness.
+    """Refactor (code-level modernisation), keyed by the catalog's refactor criteria.
 
     Criteria:
-        version_upgrade_path_exists      — known upgrade path for language
-        framework_migration_path_exists  — known migration for framework
-        test_coverage_adequate           — sufficient test components
-        codebase_well_structured         — maintainability index
-        dependencies_manageable          — component count not overwhelming
-
-    Returns:
-        Dict mapping criterion name to float score in [0.0, 1.0].
+        code_modularity          -- the maintainability index (which folds in coupling and complexity): over 50 1.0,
+                                    25 or more 0.5, else 0.0; measured when analysed
+        test_coverage            -- the share of test components: 20% or more 1.0, any 0.5, none 0.0; when analysed
+        technical_debt_reduction -- a known upgrade path for the language level or the framework 1.0; a level or a
+                                    framework known with no known path 0.3; neither known: None
+        cloud_service_adoption, team_capability, compliance_alignment -- not measurable from the source here: None
     """
-    scores = {}
-
-    # version_upgrade_path_exists
+    analysed = _analysed(profile)
     lang = profile.get("primary_language", "")
     lang_ver = profile.get("language_version", "")
-    # Normalize: take just the major version for matching
-    lang_ver_major = lang_ver.split(".")[0] if lang_ver else ""
-    key = (lang, lang_ver_major)
-    if key in KNOWN_UPGRADE_PATHS:
-        scores["version_upgrade_path_exists"] = 1.0
-    elif lang_ver:
-        # Version specified but no known path — partial credit
-        scores["version_upgrade_path_exists"] = 0.3
+    framework = profile.get("framework", "").lower().strip().replace(" ", "-").replace("_", "-")
+    known_framework = bool(framework) and framework != "unknown"
+    if (lang, lang_ver.split(".")[0] if lang_ver else "") in KNOWN_UPGRADE_PATHS or (
+            framework in KNOWN_FRAMEWORK_MIGRATIONS):
+        debt = 1.0
+    elif lang_ver or known_framework:
+        debt = 0.3
     else:
-        scores["version_upgrade_path_exists"] = 0.0
-
-    # framework_migration_path_exists
-    framework = profile.get("framework", "").lower().strip()
-    framework_normalized = framework.replace(" ", "-").replace("_", "-")
-    if framework_normalized in KNOWN_FRAMEWORK_MIGRATIONS:
-        scores["framework_migration_path_exists"] = 1.0
-    elif framework and framework != "unknown":
-        scores["framework_migration_path_exists"] = 0.3
-    else:
-        scores["framework_migration_path_exists"] = 0.0
-
-    # test_coverage_adequate: >20% test components is good, some is partial
+        debt = None
     test_ratio = profile.get("test_component_ratio", 0.0)
-    if test_ratio >= 0.20:
-        scores["test_coverage_adequate"] = 1.0
-    elif test_ratio > 0.0:
-        scores["test_coverage_adequate"] = 0.5
-    else:
-        scores["test_coverage_adequate"] = 0.0
-
-    # codebase_well_structured: maintainability index
     maint = profile.get("maintainability_index", 0)
-    if maint > 50:
-        scores["codebase_well_structured"] = 1.0
-    elif maint >= 25:
-        scores["codebase_well_structured"] = 0.5
-    else:
-        scores["codebase_well_structured"] = 0.0
-
-    # dependencies_manageable: component count
-    comp_count = profile.get("component_count", 0)
-    if comp_count < 50:
-        scores["dependencies_manageable"] = 1.0
-    elif comp_count <= 200:
-        scores["dependencies_manageable"] = 0.5
-    else:
-        scores["dependencies_manageable"] = 0.0
-
-    return scores
+    return {
+        "code_modularity": (1.0 if maint > 50 else 0.5 if maint >= 25 else 0.0) if analysed else None,
+        "cloud_service_adoption": None,
+        "test_coverage": (1.0 if test_ratio >= 0.20 else 0.5 if test_ratio > 0.0 else 0.0) if analysed else None,
+        "team_capability": None,
+        "technical_debt_reduction": debt,
+        "compliance_alignment": None,
+    }
 
 
 def _check_rearchitect_fitness(profile):
-    """Evaluate rearchitect (rebuild cloud-native) fitness.
+    """Rearchitect (rebuild cloud-native), keyed by the catalog's rearchitect criteria.
 
-    Criteria:
-        bounded_contexts_identifiable — distinct packages with low coupling
-        api_boundaries_clear          — well-defined API endpoints
-        data_stores_separable         — database schemas cluster
-        team_capacity_sufficient      — default 0.5 (needs manual input)
-        business_value_high           — default 0.5 (needs manual input)
-
-    Returns:
-        Dict mapping criterion name to float score in [0.0, 1.0].
+    Every rearchitect criterion -- the architectural gap to the target, mission criticality, scalability needs, the
+    team's readiness, the capacity for a new ATO and the five-year return -- needs a target architecture, mission
+    data or people this tool does not have, so each is None and rearchitect is NOT ASSESSABLE here. (The old check
+    scored bounded contexts, API and data-store counts under other names, paired with these criteria by position, and
+    two inputs it could not measure as 0.5.) Decomposition feasibility is monolith_decomposer's, not a 7R score.
     """
-    scores = {}
-
-    # bounded_contexts_identifiable: >3 namespaces with avg_coupling < 0.5
-    namespaces = profile.get("distinct_namespaces", 0)
-    avg_coupling = profile.get("avg_coupling", 1.0)
-    if namespaces > 3 and avg_coupling < 0.5:
-        scores["bounded_contexts_identifiable"] = 1.0
-    elif namespaces > 2 and avg_coupling < 0.7:
-        scores["bounded_contexts_identifiable"] = 0.5
-    else:
-        scores["bounded_contexts_identifiable"] = 0.0
-
-    # api_boundaries_clear: >5 API endpoints suggest clear grouping
-    api_count = profile.get("api_count", 0)
-    if api_count >= 5:
-        scores["api_boundaries_clear"] = 1.0
-    elif api_count >= 2:
-        scores["api_boundaries_clear"] = 0.5
-    else:
-        scores["api_boundaries_clear"] = 0.0
-
-    # data_stores_separable: multiple DB schemas suggest separable data
-    db_count = profile.get("db_schema_count", 0)
-    if db_count >= 3:
-        scores["data_stores_separable"] = 1.0
-    elif db_count >= 2:
-        scores["data_stores_separable"] = 0.5
-    else:
-        scores["data_stores_separable"] = 0.0
-
-    # team_capacity_sufficient: requires manual assessment, default 0.5
-    scores["team_capacity_sufficient"] = 0.5
-
-    # business_value_high: requires manual assessment, default 0.5
-    scores["business_value_high"] = 0.5
-
-    return scores
+    return {
+        "architectural_gap": None,
+        "mission_criticality": None,
+        "scalability_requirements": None,
+        "team_readiness": None,
+        "ato_reassessment_capacity": None,
+        "long_term_roi": None,
+    }
 
 
 def _check_repurchase_fitness(profile):
-    """Evaluate repurchase (buy COTS/GOTS replacement) fitness.
+    """Repurchase (buy a COTS/GOTS replacement), keyed by the catalog's repurchase criteria.
 
     Criteria:
-        commodity_functionality     — is it a common business function (default)
-        cots_alternative_available  — needs manual assessment (default)
-        low_customization           — LOC indicates customization level
-        data_migration_feasible     — default, needs manual assessment
-
-    Returns:
-        Dict mapping criterion name to float score in [0.0, 1.0].
+        data_migration_feasibility -- the extracted database engine's managed-service fit (``_managed_db_fit``)
+        product_fit, fedramp_authorization, total_cost_of_ownership, vendor_viability -- need a candidate product and
+                                      its authorisation, costs and vendor: None (the old check scored three of these
+                                      as 0.5 with no product in view)
     """
-    scores = {}
-
-    # commodity_functionality: default — needs manual assessment
-    scores["commodity_functionality"] = 0.5
-
-    # cots_alternative_available: default — needs manual assessment
-    scores["cots_alternative_available"] = 0.5
-
-    # low_customization: based on LOC
-    loc = profile.get("loc_code", 0) or profile.get("loc_total", 0)
-    if loc < 5000:
-        scores["low_customization"] = 1.0
-    elif loc <= 20000:
-        scores["low_customization"] = 0.5
-    else:
-        scores["low_customization"] = 0.0
-
-    # data_migration_feasible: default — needs manual assessment
-    scores["data_migration_feasible"] = 0.5
-
-    return scores
+    return {
+        "product_fit": None,
+        "fedramp_authorization": None,
+        "data_migration_feasibility": _managed_db_fit(profile),
+        "total_cost_of_ownership": None,
+        "vendor_viability": None,
+    }
 
 
 def _check_retire_fitness(profile, redundancy=None):
@@ -670,7 +562,8 @@ def _check_retire_fitness(profile, redundancy=None):
     Criteria:
         functional_redundancy -- the share of this application's features another application also provides,
                                  MEASURED elsewhere (``redundancy``: e.g. ICDEV[OS]'s cross-app overlap); else None
-        risk_reduction        -- removing it removes end-of-life dependencies (framework/language at EOL): 1.0/0.0
+        risk_reduction        -- removing it removes end-of-life dependencies (framework/language at EOL): 1.0/0.0;
+                                 None when neither the framework nor the language level is known (icx-mdz-02)
         dependency_analysis, data_disposition, cost_savings, stakeholder_alignment -- need a dependency map, a
                                  records plan, cost data and stakeholder sign-off this tool does not have: None
 
@@ -681,18 +574,7 @@ def _check_retire_fitness(profile, redundancy=None):
     Returns:
         Dict mapping criterion name to a float in [0.0, 1.0], or None when unmeasured.
     """
-    framework = (profile.get("framework") or "").lower().strip().replace(" ", "-").replace("_", "-")
-    lang = profile.get("primary_language", "")
-    lang_ver = profile.get("language_version") or ""
-    lang_ver_major = lang_ver.split(".")[0] if lang_ver else ""
-
-    is_eol = framework in EOL_FRAMEWORKS or (lang, lang_ver_major) in EOL_LANGUAGES
-    # Also check framework + major version combos
-    if framework and not is_eol:
-        fw_ver = profile.get("framework_version") or ""
-        fw_ver_major = fw_ver.split(".")[0] if fw_ver else ""
-        is_eol = f"{framework}{fw_ver_major}" in EOL_FRAMEWORKS
-
+    is_eol = _eol(profile)
     share = None
     if isinstance(redundancy, dict) and redundancy.get("share") is not None:
         share = max(0.0, min(1.0, float(redundancy["share"])))
@@ -700,7 +582,7 @@ def _check_retire_fitness(profile, redundancy=None):
         "dependency_analysis": None,
         "data_disposition": None,
         "cost_savings": None,
-        "risk_reduction": 1.0 if is_eol else 0.0,
+        "risk_reduction": None if is_eol is None else (1.0 if is_eol else 0.0),
         "stakeholder_alignment": None,
         "functional_redundancy": share,
     }
@@ -722,62 +604,33 @@ def load_redundancy(path):
 
 
 def _check_retain_fitness(profile):
-    """Evaluate retain (keep in place) fitness.
+    """Retain (keep in place), keyed by the catalog's retain criteria.
 
     Criteria:
-        stable_operation  — low complexity and good maintainability
-        no_ato_blockers   — maintainability > 40 and complexity < 20
-        low_risk          — tech debt hours < 100
-        recent_framework  — framework is not EOL
-
-    Returns:
-        Dict mapping criterion name to float score in [0.0, 1.0].
+        current_environment_viability -- the framework and language level are not end-of-life 1.0, are 0.0; neither
+                                         known: None
+        migration_blocker_validity, cost_justification, reassessment_plan, risk_acceptance -- documented blockers, a
+                                         cost analysis, a reassessment plan and the AO's risk acceptance: None
     """
-    scores = {}
+    is_eol = _eol(profile)
+    return {
+        "migration_blocker_validity": None,
+        "current_environment_viability": None if is_eol is None else (0.0 if is_eol else 1.0),
+        "cost_justification": None,
+        "reassessment_plan": None,
+        "risk_acceptance": None,
+    }
 
-    maint = profile.get("maintainability_index", 0)
-    avg_cx = profile.get("avg_complexity", 0)
-    tech_debt = profile.get("tech_debt_hours", 0)
 
-    # stable_operation: low complexity and good maintainability
-    if avg_cx < 10 and maint > 60:
-        scores["stable_operation"] = 1.0
-    elif avg_cx < 20 and maint > 40:
-        scores["stable_operation"] = 0.5
-    else:
-        scores["stable_operation"] = 0.0
-
-    # no_ato_blockers: maintainability > 40 and complexity < 20
-    if maint > 40 and avg_cx < 20:
-        scores["no_ato_blockers"] = 1.0
-    elif maint > 25 and avg_cx < 30:
-        scores["no_ato_blockers"] = 0.5
-    else:
-        scores["no_ato_blockers"] = 0.0
-
-    # low_risk: tech_debt_hours < 100
-    if tech_debt < 100:
-        scores["low_risk"] = 1.0
-    elif tech_debt < 500:
-        scores["low_risk"] = 0.5
-    else:
-        scores["low_risk"] = 0.0
-
-    # recent_framework: framework is NOT EOL
-    framework = profile.get("framework", "").lower().strip().replace(" ", "-").replace("_", "-")
-    lang = profile.get("primary_language", "")
-    lang_ver = profile.get("language_version", "")
-    lang_ver_major = lang_ver.split(".")[0] if lang_ver else ""
-
-    is_eol = False
-    if framework in EOL_FRAMEWORKS:
-        is_eol = True
-    if (lang, lang_ver_major) in EOL_LANGUAGES:
-        is_eol = True
-
-    scores["recent_framework"] = 0.0 if is_eol else 1.0
-
-    return scores
+FITNESS_CHECKS = {
+    "rehost": _check_rehost_fitness,
+    "replatform": _check_replatform_fitness,
+    "refactor": _check_refactor_fitness,
+    "rearchitect": _check_rearchitect_fitness,
+    "repurchase": _check_repurchase_fitness,
+    "retire": _check_retire_fitness,
+    "retain": _check_retain_fitness,
+}
 
 
 # ============================================================================
@@ -785,97 +638,112 @@ def _check_retain_fitness(profile):
 # ============================================================================
 
 
+class CriteriaMismatch(ValueError):
+    """A check's criterion names are not exactly its strategy's catalog criteria (or a custom weight names one the
+    catalog does not declare). Refused: a criterion is scored by its name, never paired by list position."""
+
+
+def min_confidence(catalog=None):
+    """The confidence a strategy needs before it may be recommended (the catalog's ``assessment`` block)."""
+    cat = catalog if catalog is not None else load_seven_rs_catalog()
+    return float(((cat.get("assessment") or {}).get("min_confidence_to_recommend")) or 0.5)
+
+
+def _strategy_evidence(strategy_id, check_results, catalog_criteria, weights=None):
+    """Score one strategy from its checks, BY NAME, and say how much of it rests on measurement (icx-mdz-02).
+
+    * the check's criteria must be exactly the catalog's (``CriteriaMismatch`` otherwise: there is no positional
+      fallback, and a criterion the catalog does not declare is never scored);
+    * ``score`` is the weighted mean of the MEASURED criteria only, in [0.0, 1.0]; an unmeasured (None) criterion is
+      left out, never scored 0.5;
+    * ``confidence`` is the share of the strategy's criterion weight that was measured, in [0.0, 1.0];
+    * with no measured criterion, ``score`` is None and ``assessable`` False: not assessable, not a score.
+
+    Custom ``weights`` (``{strategy: {criterion: weight}}``) override the catalog's, and must name its criteria.
+    """
+    declared, measured_names = set(catalog_criteria or {}), set(check_results or {})
+    if declared != measured_names:
+        raise CriteriaMismatch(
+            f"{strategy_id}: the catalog declares {sorted(declared - measured_names)} which the check does not "
+            f"return, and the check returns {sorted(measured_names - declared)} which the catalog does not declare")
+    effective = {name: float((info or {}).get("weight", 0.0)) for name, info in (catalog_criteria or {}).items()}
+    overrides = (weights or {}).get(strategy_id) or {}
+    unknown = sorted(set(overrides) - declared)
+    if unknown:
+        raise CriteriaMismatch(f"{strategy_id}: custom weights name {unknown}, which the catalog does not declare")
+    effective.update({name: float(w) for name, w in overrides.items()})
+
+    total = sum(effective.values())
+    measured = {n: float(s) for n, s in check_results.items() if s is not None}
+    measured_weight = sum(effective[n] for n in measured)
+    score = None
+    if measured and measured_weight > 0:
+        score = max(0.0, min(1.0, sum(s * effective[n] for n, s in measured.items()) / measured_weight))
+    confidence = (measured_weight / total) if total > 0 else 0.0
+    return {
+        "strategy": strategy_id,
+        "score": None if score is None else round(score, 4),
+        "confidence": round(max(0.0, min(1.0, confidence)), 4),
+        "assessable": score is not None,
+        "measured": sorted(measured),
+        "unmeasured": sorted(n for n, s in check_results.items() if s is None),
+        "weights": {n: round(w, 4) for n, w in sorted(effective.items())},
+    }
+
+
 def _score_strategy(strategy_id, check_results, catalog_criteria, weights=None):
-    """Compute weighted score for a single strategy.
-
-    For each criterion in the catalog, multiply the check_result by the
-    criterion's weight.  Sum all weighted scores.  Apply the strategy's
-    effort_multiplier as a penalty (higher effort = lower attractiveness).
-
-    The raw weighted sum is in [0.0, 1.0] because criterion weights sum to
-    ~1.0 and check results are in [0.0, 1.0].  The effort penalty adjusts
-    the final score to favour lower-effort strategies when fitness is equal.
-
-    Args:
-        strategy_id:      The strategy identifier (e.g. "rehost").
-        check_results:    Dict of {criterion_name: score} from _check_*_fitness.
-        catalog_criteria: Dict of {criterion_name: {weight, description}} from
-                          the catalog's scoring_criteria for this strategy.
-        weights:          Optional dict of custom criterion weights to override
-                          catalog defaults.
-
-    Returns:
-        Float score in [0.0, 1.0] (normalized).
-    """
-    if not catalog_criteria:
-        return 0.0
-
-    # Build effective weights: start with catalog, override with custom
-    effective_weights = {}
-    for crit_name, crit_info in catalog_criteria.items():
-        effective_weights[crit_name] = crit_info.get("weight", 0.0)
-
-    if weights and strategy_id in weights:
-        for crit_name, w in weights[strategy_id].items():
-            if crit_name in effective_weights:
-                effective_weights[crit_name] = w
-
-    # Calculate weighted sum.  For catalog criteria that have no matching
-    # check_result key, we map by positional order (catalog criterion → check
-    # result) to bridge the gap between catalog criterion names and the
-    # check function criterion names.
-    catalog_crit_names = list(catalog_criteria.keys())
-    check_crit_names = list(check_results.keys())
-
-    weighted_sum = 0.0
-    total_weight = 0.0
-
-    for i, cat_crit in enumerate(catalog_crit_names):
-        weight = effective_weights.get(cat_crit, 0.0)
-        # Direct name match first
-        if cat_crit in check_results:
-            score = check_results[cat_crit]
-            if score is None:                  # UNMEASURED (icx-rtr-01): left out of the score, never 0.5
-                continue
-        elif i < len(check_crit_names):
-            # Positional fallback: map i-th catalog criterion to i-th check result
-            score = check_results[check_crit_names[i]]
-        else:
-            # No matching check result — assume neutral score
-            score = 0.5
-        weighted_sum += score * weight
-        total_weight += weight
-
-    # Normalize to [0.0, 1.0] if weights don't sum to 1.0
-    if total_weight > 0:
-        raw_score = weighted_sum / total_weight
-    else:
-        raw_score = 0.0
-
-    # Clamp to [0.0, 1.0]
-    return max(0.0, min(1.0, raw_score))
+    """The strategy's score from its MEASURED criteria by name (``_strategy_evidence``), or None when not assessable."""
+    return _strategy_evidence(strategy_id, check_results, catalog_criteria, weights=weights)["score"]
 
 
-def _rank_strategies(scores):
-    """Sort strategies by score descending and assign ranks.
+def _rank_strategies(evidence, min_conf, order=None):
+    """Rank strategies on their evidence (icx-mdz-02).
+
+    Strategies whose confidence reaches ``min_conf`` come first, by score (then confidence, then catalog order); then
+    the assessable ones below it, by score; then the not-assessable ones, which have no score. Only the first group
+    may be recommended (``eligible``).
 
     Args:
-        scores: Dict of {strategy_id: score_float}.
+        evidence: ``{strategy_id: _strategy_evidence(...)}``.
+        min_conf: the confidence a strategy needs to be recommended.
+        order:    the catalog's strategy order, for ties.
 
     Returns:
-        List of dicts: [{rank, strategy_id, score}, ...] ordered by score desc.
+        ``[{rank, strategy_id, score, confidence, assessable, eligible}, ...]``.
     """
-    sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    pos = {s: i for i, s in enumerate(order or list(evidence))}
+
+    def key(item):
+        sid, ev = item
+        eligible = ev["assessable"] and ev["confidence"] >= min_conf
+        group = 0 if eligible else 1 if ev["assessable"] else 2
+        return (group, -(ev["score"] or 0.0), -ev["confidence"], pos.get(sid, len(pos)))
+
     ranked = []
-    for rank_idx, (strategy_id, score) in enumerate(sorted_items, start=1):
-        ranked.append(
-            {
-                "rank": rank_idx,
-                "strategy_id": strategy_id,
-                "score": round(score, 4),
-            }
-        )
+    for rank_idx, (sid, ev) in enumerate(sorted(evidence.items(), key=key), start=1):
+        ranked.append({"rank": rank_idx, "strategy_id": sid, "score": ev["score"], "confidence": ev["confidence"],
+                       "assessable": ev["assessable"],
+                       "eligible": bool(ev["assessable"] and ev["confidence"] >= min_conf)})
     return ranked
+
+
+def _recommendation(ranking, evidence, min_conf):
+    """The recommended strategy and why, or why there is none: never a strategy below the minimum confidence."""
+    top = next((r for r in ranking if r["eligible"]), None)
+    if top is not None:
+        sid = top["strategy_id"]
+        ev = evidence[sid]
+        return {"status": "recommended", "strategy": sid, "score": ev["score"], "confidence": ev["confidence"],
+                "min_confidence": min_conf, "unmeasured": ev["unmeasured"],
+                "reason": f"{sid} scores {ev['score']:.2f} on {len(ev['measured'])} measured criteria "
+                          f"(confidence {ev['confidence']:.2f})"}
+    assessable = [r["strategy_id"] for r in ranking if r["assessable"]]
+    return {"status": "insufficient_evidence", "strategy": None, "score": None, "confidence": None,
+            "min_confidence": min_conf, "unmeasured": [],
+            "reason": (f"no strategy reaches confidence {min_conf:.2f}: "
+                       + (f"{', '.join(assessable)} rest on too few measured criteria" if assessable
+                          else "no criterion of any strategy was measured")
+                       + "; record what is missing (licences, team, costs, sign-offs) or decide on other evidence")}
 
 
 # ============================================================================
@@ -1178,7 +1046,7 @@ def _apply_ui_complexity_adjustment(strategy_scores, ui_complexity):
 
     adjusted = dict(strategy_scores)
     for strategy_id, adj in adjustments.items():
-        if strategy_id in adjusted:
+        if adjusted.get(strategy_id) is not None:   # a not-assessable strategy gets no score from a nudge (icx-mdz-02)
             adjusted[strategy_id] = max(0.0, min(1.0, adjusted[strategy_id] + adj))
 
     return adjusted
@@ -1212,63 +1080,44 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
     """
     catalog = load_seven_rs_catalog()
     profile = _get_app_profile(app_id, db_path=db_path)
+    min_conf = min_confidence(catalog)
 
-    # Run all fitness checks
-    fitness_results = {
-        "rehost": _check_rehost_fitness(profile),
-        "replatform": _check_replatform_fitness(profile),
-        "refactor": _check_refactor_fitness(profile),
-        "rearchitect": _check_rearchitect_fitness(profile),
-        "repurchase": _check_repurchase_fitness(profile),
-        "retire": _check_retire_fitness(profile, redundancy=redundancy),
-        "retain": _check_retain_fitness(profile),
-    }
+    # Run all fitness checks: each keyed by its strategy's catalog criteria, None where unmeasured (icx-mdz-02)
+    fitness_results = {sid: (check(profile, redundancy=redundancy) if sid == "retire" else check(profile))
+                       for sid, check in FITNESS_CHECKS.items()}
 
-    # Build a lookup: strategy_id → scoring_criteria from catalog
-    catalog_criteria_map = {}
-    for strat in catalog.get("strategies", []):
-        catalog_criteria_map[strat["id"]] = strat.get("scoring_criteria", {})
+    # Build a lookup: strategy_id -> scoring_criteria from catalog
+    catalog_criteria_map = {strat["id"]: strat.get("scoring_criteria", {}) for strat in catalog.get("strategies", [])}
+    order = [strat["id"] for strat in catalog.get("strategies", [])]
 
-    # Score each strategy
-    strategy_scores = {}
-    for strategy_id, check_results in fitness_results.items():
-        cat_criteria = catalog_criteria_map.get(strategy_id, {})
-        strategy_scores[strategy_id] = _score_strategy(strategy_id, check_results, cat_criteria, weights=custom_weights)
+    # Score each strategy BY NAME: a mismatch is refused, an unmeasured criterion lowers confidence, never scores 0.5
+    strategy_evidence = {sid: _strategy_evidence(sid, checks, catalog_criteria_map.get(sid, {}), weights=custom_weights)
+                         for sid, checks in fitness_results.items()}
 
-    # Optional: Apply UI complexity adjustment (D85 — backward compatible)
+    # Optional: Apply UI complexity adjustment (D85 -- backward compatible), to assessable strategies only
     ui_complexity = _get_ui_complexity(app_id, project_id, db_path=db_path)
     if ui_complexity is not None:
-        strategy_scores = _apply_ui_complexity_adjustment(strategy_scores, ui_complexity)
+        adjusted = _apply_ui_complexity_adjustment({k: v["score"] for k, v in strategy_evidence.items()},
+                                                   ui_complexity)
+        for sid, score in adjusted.items():
+            if score is not None:
+                strategy_evidence[sid]["score"] = round(score, 4)
+    strategy_scores = {k: v["score"] for k, v in strategy_evidence.items()}
 
-    # Rank strategies
-    ranking = _rank_strategies(strategy_scores)
-    recommended = ranking[0]["strategy_id"] if ranking else "retain"
+    # Rank on evidence; recommend only a strategy whose confidence reaches the catalog's minimum
+    ranking = _rank_strategies(strategy_evidence, min_conf, order=order)
+    recommendation = _recommendation(ranking, strategy_evidence, min_conf)
+    recommended = recommendation["strategy"]
 
-    # ATO impact for recommended strategy
-    ato_impact = _assess_ato_impact(profile, recommended)
+    # ATO impact, cost, timeline, risk and debt reduction describe the recommended strategy; with none, none
+    ato_impact = _assess_ato_impact(profile, recommended) if recommended else None
+    cost_hours = _estimate_cost(profile, recommended, catalog) if recommended else None
+    timeline_weeks = _estimate_timeline(profile, recommended, catalog) if recommended else None
+    risk_score = _compute_risk_score(profile, recommended, catalog) if recommended else None
+    tech_debt_reduction = _estimate_tech_debt_reduction(profile, recommended) if recommended else None
 
-    # Cost and timeline for recommended strategy
-    cost_hours = _estimate_cost(profile, recommended, catalog)
-    timeline_weeks = _estimate_timeline(profile, recommended, catalog)
-
-    # Risk score for recommended strategy
-    risk_score = _compute_risk_score(profile, recommended, catalog)
-
-    # Tech debt reduction for recommended strategy
-    tech_debt_reduction = _estimate_tech_debt_reduction(profile, recommended)
-
-    # Compile the scoring weights used
-    scoring_weights = {}
-    for strat in catalog.get("strategies", []):
-        weights_for_strat = {}
-        for crit_name, crit_info in strat.get("scoring_criteria", {}).items():
-            weights_for_strat[crit_name] = crit_info.get("weight", 0.0)
-        scoring_weights[strat["id"]] = weights_for_strat
-
-    if custom_weights:
-        for strat_id, overrides in custom_weights.items():
-            if strat_id in scoring_weights:
-                scoring_weights[strat_id].update(overrides)
+    # The weights each strategy was scored with (custom overrides were checked against the catalog's names)
+    scoring_weights = {sid: ev["weights"] for sid, ev in strategy_evidence.items()}
 
     # Compile evidence
     evidence = {
@@ -1277,11 +1126,17 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
         # icx-rtr-01: what each strategy's score could NOT rest on, by name (left out of the score, never 0.5)
         "unmeasured": {k: sorted(ck for ck, cv in v.items() if cv is None) for k, v in fitness_results.items()
                        if any(cv is None for cv in v.values())},
+        # icx-mdz-02: per strategy, its score from measured criteria, its confidence and whether it is assessable
+        "strategies": {k: {f: v[f] for f in ("score", "confidence", "assessable", "measured", "unmeasured")}
+                       for k, v in strategy_evidence.items()},
+        "recommendation": recommendation,
+        "method": "icx-mdz-02: criteria by name; unmeasured left out of the score and out of the confidence",
         "redundancy": redundancy,
-        "strategy_scores": {k: round(v, 4) for k, v in strategy_scores.items()},
+        "strategy_scores": strategy_scores,
         "ranking": ranking,
         "profile_summary": {
             "name": profile.get("name", "unknown"),
+            "analysis_status": profile.get("analysis_status"),
             "primary_language": profile.get("primary_language"),
             "language_version": profile.get("language_version"),
             "framework": profile.get("framework"),
@@ -1311,13 +1166,14 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
         "legacy_app_id": app_id,
         "component_id": None,  # app-level assessment
         "assessment_scope": "application",
-        "rehost_score": round(strategy_scores.get("rehost", 0.0), 4),
-        "replatform_score": round(strategy_scores.get("replatform", 0.0), 4),
-        "refactor_score": round(strategy_scores.get("refactor", 0.0), 4),
-        "rearchitect_score": round(strategy_scores.get("rearchitect", 0.0), 4),
-        "repurchase_score": round(strategy_scores.get("repurchase", 0.0), 4),
-        "retire_score": round(strategy_scores.get("retire", 0.0), 4),
-        "retain_score": round(strategy_scores.get("retain", 0.0), 4),
+        # NULL for a strategy that is not assessable: no score, never 0.0 (icx-mdz-02)
+        "rehost_score": strategy_scores.get("rehost"),
+        "replatform_score": strategy_scores.get("replatform"),
+        "refactor_score": strategy_scores.get("refactor"),
+        "rearchitect_score": strategy_scores.get("rearchitect"),
+        "repurchase_score": strategy_scores.get("repurchase"),
+        "retire_score": strategy_scores.get("retire"),
+        "retain_score": strategy_scores.get("retain"),
         "recommended_strategy": recommended,
         "cost_estimate_hours": cost_hours,
         "risk_score": risk_score,
@@ -1329,6 +1185,9 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
         "assessed_at": now,
         "project_id": project_id,
         "ranking": ranking,
+        "recommendation": recommendation,
+        "confidence": recommendation["confidence"],
+        "strategies": evidence["strategies"],
     }
 
     # Persist to database
@@ -1381,6 +1240,74 @@ def _persist_assessment(assessment, db_path=None):
         conn.commit()
     finally:
         conn.close()
+
+
+# ============================================================================
+# Reading an assessment back (the one shape every consumer uses, icx-mdz-02)
+# ============================================================================
+
+STRATEGY_IDS = ("rehost", "replatform", "refactor", "rearchitect", "repurchase", "retire", "retain")
+
+
+def summarise(row):
+    """The evidence an assessment row carries, in the shape the page, the MCP tool, the twin and the other 7R
+    consumers read: the recommendation with its confidence, and per strategy its score, confidence, whether it is
+    assessable and what was not measured.
+
+    A row assessed before icx-mdz-02 has no per-strategy confidence (its criteria were paired by position);
+    ``method`` is then ``"positional (before icx-mdz-02)"`` and every confidence is None -- re-assess it.
+    """
+    row = dict(row or {})
+    ev = row.get("evidence")
+    if isinstance(ev, str):
+        try:
+            ev = json.loads(ev or "{}")
+        except ValueError:
+            ev = {}
+    ev = ev if isinstance(ev, dict) else {}
+    strategies = ev.get("strategies")
+    rec = ev.get("recommendation") if isinstance(ev.get("recommendation"), dict) else None
+    if not isinstance(strategies, dict):
+        strategies = {sid: {"score": row.get(f"{sid}_score"), "confidence": None, "assessable": None,
+                            "measured": None, "unmeasured": None} for sid in STRATEGY_IDS}
+        rec = {"status": "unknown", "strategy": row.get("recommended_strategy"), "confidence": None,
+               "reason": "assessed before icx-mdz-02 (criteria paired by position): re-assess this application"}
+        method = "positional (before icx-mdz-02)"
+    else:
+        method = ev.get("method") or "by name"
+    return {
+        "assessment_id": row.get("id"),
+        "legacy_app_id": row.get("legacy_app_id"),
+        "assessed_at": str(row.get("assessed_at") or ""),
+        "recommended_strategy": row.get("recommended_strategy"),
+        "confidence": (rec or {}).get("confidence"),
+        "min_confidence": (rec or {}).get("min_confidence"),
+        "recommendation": rec,
+        "strategies": strategies,
+        "not_assessable": sorted(s for s, v in strategies.items() if v.get("assessable") is False),
+        "method": method,
+    }
+
+
+def strategy_for_app(app_id, db_path=None, conn=None):
+    """The latest application-level 7R assessment of ``app_id``, summarised (``summarise``); None when it was never
+    assessed. Reads only: it never runs an assessment. This is what the other 7R generators consume."""
+    own = conn is None
+    conn = conn or _get_db(db_path)
+    try:
+        row = conn.execute(
+            "SELECT id, legacy_app_id, recommended_strategy, rehost_score, replatform_score, refactor_score, "
+            "rearchitect_score, repurchase_score, retire_score, retain_score, evidence, assessed_at "
+            "FROM migration_assessments WHERE legacy_app_id = %s AND assessment_scope = 'application' "
+            "ORDER BY assessed_at DESC LIMIT 1", (app_id,)).fetchone()
+    finally:
+        if own:
+            conn.close()
+    if row is None:
+        return None
+    cols = ("id", "legacy_app_id", "recommended_strategy", "rehost_score", "replatform_score", "refactor_score",
+            "rearchitect_score", "repurchase_score", "retire_score", "retain_score", "evidence", "assessed_at")
+    return summarise(dict(zip(cols, tuple(row))))
 
 
 # ============================================================================
@@ -1493,6 +1420,7 @@ def generate_decision_matrix(app_id, db_path=None):
                 "name": cat_info.get("name", sid.title()),
                 "id": sid,
                 "score": score,
+                "confidence": entry.get("confidence"),
                 "risk_level": risk_level,
                 "risk_score": risk_s,
                 "cost_hours": cost_h,
@@ -1527,17 +1455,21 @@ def generate_decision_matrix(app_id, db_path=None):
     lines.append("-" * 100)
 
     # Table header
-    header = f"{'Rank':<6}{'Strategy':<15}{'Score':<9}{'Risk':<10}{'Cost (hrs)':<12}{'Timeline':<12}{'ATO Impact':<14}{'Debt Reduction':<15}"
+    header = f"{'Rank':<6}{'Strategy':<15}{'Score':<9}{'Conf.':<7}{'Risk':<10}{'Cost (hrs)':<12}{'Timeline':<12}{'ATO Impact':<14}{'Debt Reduction':<15}"
     lines.append(header)
     lines.append("-" * 100)
 
     # Table rows
+    recommended = row_dict.get("recommended_strategy")
     for sd in strategy_details:
-        marker = " <<" if sd["rank"] == 1 else ""
+        marker = " <<" if sd["id"] == recommended else ""
+        score_txt = "n/a" if sd["score"] is None else f"{sd['score']:.4f}"   # not assessable: no score (icx-mdz-02)
+        conf_txt = "?" if sd["confidence"] is None else f"{sd['confidence']:.2f}"
         row_str = (
             f"{sd['rank']:<6}"
             f"{sd['name']:<15}"
-            f"{sd['score']:<9.4f}"
+            f"{score_txt:<9}"
+            f"{conf_txt:<7}"
             f"{sd['risk_level']:<10}"
             f"{sd['cost_hours']:<12,}"
             f"{sd['timeline_weeks']:<10} wk  "
@@ -1551,7 +1483,7 @@ def generate_decision_matrix(app_id, db_path=None):
     lines.append("")
 
     # Recommendation section
-    recommended = row_dict.get("recommended_strategy", "unknown")
+    rec_why = (evidence.get("recommendation") or {}).get("reason")
     rec_details = None
     for sd in strategy_details:
         if sd["id"] == recommended:
@@ -1559,7 +1491,9 @@ def generate_decision_matrix(app_id, db_path=None):
             break
 
     lines.append("RECOMMENDATION")
-    lines.append(f"  Strategy:        {rec_details['name'] if rec_details else recommended.title()}")
+    lines.append(f"  Strategy:        {rec_details['name'] if rec_details else (recommended or 'none')}")
+    if rec_why:
+        lines.append(f"  Basis:           {rec_why}")
     lines.append(f"  Score:           {rec_details['score']:.4f}" if rec_details else "  Score:           N/A")
     lines.append(
         f"  Risk:            {rec_details['risk_level'] if rec_details else 'N/A'} ({rec_details['risk_score']:.2f})"
@@ -1581,17 +1515,21 @@ def generate_decision_matrix(app_id, db_path=None):
     if rec_details:
         # Build a short rationale from the fitness scores
         fit = fitness_results.get(recommended, {})
-        high_fit = [k for k, v in fit.items() if v >= 0.8]
-        low_fit = [k for k, v in fit.items() if v <= 0.2]
+        high_fit = [k for k, v in fit.items() if v is not None and v >= 0.8]
+        low_fit = [k for k, v in fit.items() if v is not None and v <= 0.2]
+        unmeasured = [k for k, v in fit.items() if v is None]
 
         if high_fit:
             lines.append(f"  Strengths:   {', '.join(high_fit)}")
         if low_fit:
             lines.append(f"  Weaknesses:  {', '.join(low_fit)}")
+        if unmeasured:
+            lines.append(f"  Unmeasured:  {', '.join(unmeasured)} (left out of the score)")
 
-        # Compare top two
-        if len(strategy_details) >= 2:
-            second = strategy_details[1]
+        # Compare with the next assessable strategy
+        others = [sd for sd in strategy_details if sd["id"] != recommended and sd["score"] is not None]
+        if others:
+            second = others[0]
             delta = rec_details["score"] - second["score"]
             lines.append(f"  Margin:      {recommended} leads {second['id']} by {delta:.4f} ({delta * 100:.1f}%)")
             if delta < 0.05:
@@ -1611,9 +1549,10 @@ def generate_decision_matrix(app_id, db_path=None):
         fit = fitness_results.get(sid, {})
         if not fit:
             continue
-        score = strategy_scores.get(sid, 0.0)
-        criteria_strs = [f"{k}={v:.1f}" for k, v in fit.items()]
-        lines.append(f"  {sid:<14} (score: {score:.4f}): {', '.join(criteria_strs)}")
+        score = strategy_scores.get(sid)
+        criteria_strs = [f"{k}={'unmeasured' if v is None else format(v, '.1f')}" for k, v in fit.items()]
+        score_txt = "not assessable" if score is None else f"score: {score:.4f}"
+        lines.append(f"  {sid:<14} ({score_txt}): {', '.join(criteria_strs)}")
     lines.append("-" * 100)
 
     lines.append("")
@@ -1729,18 +1668,23 @@ def main():
         print("=" * 60)
         print(f"7R Assessment Complete — {assessment['legacy_app_id']}")
         print(f"  Assessment ID:       {assessment['id']}")
-        print(f"  Recommended Strategy: {assessment['recommended_strategy'].upper()}")
-        print(f"  Score:               {assessment.get(assessment['recommended_strategy'] + '_score', 'N/A')}")
-        print(f"  Risk Score:          {assessment['risk_score']}")
-        print(f"  Cost Estimate:       {assessment['cost_estimate_hours']:,} hours")
-        print(f"  Timeline:            {assessment['timeline_weeks']} weeks")
-        print(f"  ATO Impact:          {assessment['ato_impact']}")
-        print(f"  Tech Debt Reduction: {assessment['tech_debt_reduction']:.0f}%")
+        rec = assessment["recommended_strategy"]
+        print(f"  Recommended Strategy: {(rec or 'none').upper()}")
+        print(f"  Basis:               {assessment['recommendation']['reason']}")
+        if rec:
+            print(f"  Score:               {assessment.get(rec + '_score', 'N/A')}")
+            print(f"  Confidence:          {assessment['confidence']}")
+            print(f"  Risk Score:          {assessment['risk_score']}")
+            print(f"  Cost Estimate:       {assessment['cost_estimate_hours']:,} hours")
+            print(f"  Timeline:            {assessment['timeline_weeks']} weeks")
+            print(f"  ATO Impact:          {assessment['ato_impact']}")
+            print(f"  Tech Debt Reduction: {assessment['tech_debt_reduction']:.0f}%")
         print()
         print("Strategy Rankings:")
         for entry in assessment["ranking"]:
-            marker = " << RECOMMENDED" if entry["rank"] == 1 else ""
-            print(f"  #{entry['rank']}  {entry['strategy_id']:<14} {entry['score']:.4f}{marker}")
+            marker = " << RECOMMENDED" if entry["strategy_id"] == rec else ""
+            score = "not assessable" if entry["score"] is None else f"{entry['score']:.4f}"
+            print(f"  #{entry['rank']}  {entry['strategy_id']:<14} {score:<15} confidence {entry['confidence']:.2f}{marker}")
         print()
         print("Run with --matrix for full decision matrix.")
         print("Run with --json for machine-readable output.")

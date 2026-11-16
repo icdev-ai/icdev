@@ -650,9 +650,12 @@ _THREAD_TABLES = {
     "aiify_decision": ("aiify", "aiify_hitl_decisions", "id",
                        ("id", "source_type", "source_id", "phase_id", "decision", "reason",
                         "actor", "decided_at")),
+    # icx-mdz-02: a plan refused for want of ICDEV[OS]'s may-plan (tools/modernization/plan_gate.py).
+    "audit_trail": ("core", "audit_trail", "id",
+                    ("id", "event_type", "actor", "action", "details", "created_at", "hash")),
 }
 #: Thread kinds whose ref is an integer row id.
-_INT_REFS = ("ace_audit", "ace_event", "aiify_decision")
+_INT_REFS = ("ace_audit", "ace_event", "aiify_decision", "audit_trail")
 
 
 def _thread_conn(kind: str):

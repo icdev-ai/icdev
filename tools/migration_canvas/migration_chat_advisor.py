@@ -102,6 +102,8 @@ def handle_coa(tech_arg: str, session_id: str = "") -> dict:
     coas = get_coas(tech, cloud=cloud)
 
     md = f"## Courses of Action: **{tech.title()}** → {cloud.upper()}\n\n"
+    # icx-mdz-02: a technology alone recommends nothing; an application's 7R assessment (/migration) does.
+    md += "> Options for the technology. None is recommended here: an application's 7R assessment on /migration recommends one.\n\n"
     md += format_coa_markdown(coas)
     md += "\n\n---\n*Use `/refactor <component>` to dispatch code transformation jobs, or click action buttons above.*"
 

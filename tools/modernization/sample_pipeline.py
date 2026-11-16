@@ -5,6 +5,12 @@ ICDEV[OS] app twin bundle with a gap report (ICDEV[OS] Phase 254, docs/programme
 
     python tools/modernization/sample_pipeline.py --source DIR --name daytrader7 --scratch-db /tmp/x/icdev.db \\
         --out /tmp/x/daytrader7 [--strategy rehost] [--at 2026-11-12T00:00:00Z]
+    python tools/modernization/sample_pipeline.py --resume --scratch-db /tmp/x/icdev.db --out /tmp/x/daytrader7 \\
+        --icos-decisions decisions.json --icos-jwks icos_jwks.json
+
+A migration is planned only on ICDEV[OS]'s signed may-plan (icx-mdz-02): the CAM refactor jobs (5) and the plan (8)
+are refused without it, and the gap report says so. ICDEV[OS] decides after it has twinned the bundle this run
+exports, so ``--resume`` plans the same application (the same scratch database) once its decisions export exists.
 
 Every step is the existing tool, run as a subprocess with the scratch database in its environment:
 
@@ -100,8 +106,103 @@ def _why(stderr: str, stdout: str) -> str:
     return (lines[-1] if lines else "no output")[:300]
 
 
+def _refused(rc: int, so: str) -> str | None:
+    """The reason a planner refused for want of ICDEV[OS]'s may-plan (exit 3, icx-mdz-02), else None."""
+    if rc != 3:
+        return None
+    d = _last_json(so) or {}
+    return f"refused, no ICDEV[OS] may-plan ({d.get('status') or 'refused'}): {d.get('reason') or 'no reason given'}"
+
+
+def _refactor(r: Run, app: str, chosen: str | None, a: dict, gate: list[str]) -> list:
+    """Step 5: the migrators as CAM jobs -- only on ICDEV[OS]'s may-plan (refactor_jobs refuses without it)."""
+    ref_path = r.out / "refactor.json"
+    rc, so, se = r.tool("refactor", "tools/modernization/refactor_jobs.py", "--app-id", app, "--out", str(ref_path),
+                        *(["--strategy", chosen] if chosen else []), *gate)
+    refused = _refused(rc, so)
+    ref = json.loads(ref_path.read_text()) if rc == 0 and ref_path.is_file() else None
+    jobs = (ref or {}).get("jobs") or []
+    r.note("refactor", bool(jobs), "refactor", None if jobs else refused or
+           (_why(se, so) if rc else f"no CAM rule applies to {a['primary_language']} {a['language_version'] or ''} / "
+                                    f"{a['framework'] or 'no framework'}, and no schema was extracted"),
+           jobs=[{"kind": j["refactor_type"], "status": j["status"], "files": len(j.get("artifacts") or []),
+                  **({"error": _why(j["error_message"], "")} if j.get("error_message") else {})} for j in jobs])
+    if ref is not None and not any(j["refactor_type"] == "framework_migration" for j in jobs):
+        r.note("framework", False, None, f"no framework migrator for {a['framework'] or 'an undetected framework'}")
+    return jobs
+
+
+def _plan_and_waves(r: Run, app: str, project: str, chosen: str | None, strategy_from: str, gate: list[str]):
+    """Steps 8 and 9: the migration plan -- only on ICDEV[OS]'s may-plan -- and its waves."""
+    if chosen:
+        rc, so, se = r.tool("plan", "tools/modernization/monolith_decomposer.py", "--app-id", app, "--create-plan",
+                            "--project-id", project, "--strategy", chosen, "--target-arch", "modular_monolith",
+                            "--json", *gate)
+        r.note("plan", rc == 0, "migration", None if rc == 0 else _refused(rc, so) or _why(se, so), strategy=chosen,
+               strategy_from=strategy_from)
+    else:
+        r.note("plan", False, "migration", "no strategy: neither --strategy nor a 7R recommendation")
+    waves_path = r.out / "waves.json"
+    rc, so, se = r.tool("waves", "tools/modernization/app_wave_planner.py", "--app-id", app, "--out", str(waves_path))
+    waves = json.loads(waves_path.read_text()) if rc == 0 and waves_path.is_file() else None
+    r.note("waves", bool((waves or {}).get("waves")), "migration.waves", None if waves else _why(se, so),
+           waves=len((waves or {}).get("waves") or []), basis=(waves or {}).get("basis"))
+    return waves
+
+
+def _export(r: Run, *, name: str, app: str, project: str, source_name: str, inputs: dict, at: str | None,
+            may_plan: dict) -> dict:
+    """Step 10: the bundle from every section a step produced, and the gap report."""
+    out = r.out
+    bundle_path = out / f"{name}.apptwin.json"
+    args = ["tools/modernization/apptwin_export.py", "--app-id", app, "--out", str(bundle_path)]
+    for flag, key in (("--static-features", "static_features"), ("--seven-r", "seven_r"), ("--aiify", "aiify"),
+                      ("--refactor", "refactor"), ("--waves", "waves"), ("--cloud-native", "cloud_native")):
+        if inputs.get(key):
+            args += [flag, str(out / inputs[key])]
+    for p in inputs.get("processes") or []:
+        args += ["--process", str(out / p)]
+    if at:
+        args += ["--at", at]
+    rc, so, se = r.tool("export", *args)
+    if rc != 0 or not bundle_path.is_file():
+        raise PipelineError(f"apptwin_export: {_why(se, so)}")
+    bundle = json.loads(bundle_path.read_text())
+    produced = {k for k, v in bundle.items() if v not in (None, [], {})}
+    unproduced = {
+        "consumers": "the exporter never carries consumers",
+        "integrity": "no SIPA assessment was run",
+        "ivv": "no IV&V assessment was run", "sbd": "no Secure by Design assessment was run",
+        "rtm": "no requirements traceability was run", "coherence": "no coherence check was run",
+        "readiness": "no readiness assessment was run"}
+    for s in r.steps:
+        if s.get("section") and not s["ok"]:
+            unproduced[s["section"]] = s.get("reason") or "the step produced nothing"
+    gaps = {k: unproduced.get(k, "no step produced it") for k in sorted(set(bundle) - produced - {"schema"})}
+    if (bundle.get("migration") or {}) and not (bundle["migration"].get("waves")):
+        gaps["migration.waves"] = next((s.get("reason") for s in reversed(r.steps) if s["step"] == "waves" and not s["ok"]),
+                                       None) or "no wave was planned, so ICDEV[OS]'s migration-plan gate will block"
+    report = {"application": name, "source": source_name, "app_id": app, "project_id": project,
+              "bundle": bundle_path.name, "bundle_sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
+              "produced": sorted(produced - {"schema", "producer", "produced_at"}), "gaps": gaps, "steps": r.steps,
+              "inputs": inputs, "may_plan": may_plan,
+              "at": at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    (out / "gaps.json").write_text(json.dumps(report, indent=2) + "\n")
+    return report
+
+
+def _gate(icos_decisions: Path | None, icos_jwks: Path | None) -> tuple[list[str], dict]:
+    """The planners' may-plan options, and what the report says about them (never where the files are)."""
+    if icos_decisions and icos_jwks:
+        return (["--icos-decisions", str(Path(icos_decisions).resolve()), "--icos-jwks", str(Path(icos_jwks).resolve())],
+                {"given": True})
+    return [], {"given": False, "reason": "no signed ICDEV[OS] decisions export given: the plan and the CAM refactor "
+                                          "jobs wait for its may-plan (rerun with --resume once ICDEV[OS] decides)"}
+
+
 def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: str | None = None,
-             at: str | None = None, no_model: bool = False, targets: dict | None = None) -> dict:
+             at: str | None = None, no_model: bool = False, targets: dict | None = None,
+             icos_decisions: Path | None = None, icos_jwks: Path | None = None) -> dict:
     source, out = source.resolve(), out.resolve()
     if not source.is_dir():
         raise PipelineError(f"no source directory {source}")
@@ -111,6 +212,7 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
     out.mkdir(parents=True, exist_ok=True)
     scratch_db.parent.mkdir(parents=True, exist_ok=True)
     r = Run(scratch_db, out)
+    gate, may_plan = _gate(icos_decisions, icos_jwks)
     rc, so, se = r.tool("init-db", "tools/db/init_icdev_db.py", "--db-path", str(scratch_db))
     if rc != 0:
         raise PipelineError(f"init_icdev_db: {_why(se, so)}")
@@ -145,9 +247,8 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
                   for t in ("legacy_components", "legacy_apis", "legacy_dependencies")}
     finally:
         c.close()
-    lang = a["primary_language"]
-    r.note("analyze", True, app_id=app, language=lang, language_version=a["language_version"], framework=a["framework"],
-           **counts)
+    r.note("analyze", True, app_id=app, language=a["primary_language"], language_version=a["language_version"],
+           framework=a["framework"], **counts)
 
     feats_path = out / "features.static.json"
     rc, so, se = r.tool("features", "tools/modernization/static_features.py", "--app-id", app, "--out", str(feats_path))
@@ -176,21 +277,11 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
     if seven:
         (out / "seven_r.json").write_text(json.dumps(seven, indent=2))
     r.note("seven-r", bool(seven), "seven_r", None if seven else _why(se, so),
-           recommended=(seven or {}).get("recommended_strategy"))
+           recommended=(seven or {}).get("recommended_strategy"), confidence=(seven or {}).get("confidence"),
+           recommendation=((seven or {}).get("recommendation") or {}).get("reason"))
 
     chosen = strategy or (seven or {}).get("recommended_strategy")
-    ref_path = out / "refactor.json"
-    rc, so, se = r.tool("refactor", "tools/modernization/refactor_jobs.py", "--app-id", app, "--out", str(ref_path),
-                        *(["--strategy", chosen] if chosen else []))
-    ref = json.loads(ref_path.read_text()) if rc == 0 and ref_path.is_file() else None
-    jobs = (ref or {}).get("jobs") or []
-    r.note("refactor", bool(jobs), "refactor", None if jobs else
-           (_why(se, so) if rc else f"no CAM rule applies to {lang} {a['language_version'] or ''} / "
-                                    f"{a['framework'] or 'no framework'}, and no schema was extracted"),
-           jobs=[{"kind": j["refactor_type"], "status": j["status"], "files": len(j.get("artifacts") or []),
-                  **({"error": _why(j["error_message"], "")} if j.get("error_message") else {})} for j in jobs])
-    if not any(j["refactor_type"] == "framework_migration" for j in jobs):
-        r.note("framework", False, None, f"no framework migrator for {a['framework'] or 'an undetected framework'}")
+    jobs = _refactor(r, app, chosen, a, gate)
 
     cn_path = out / "cloud_native.json"
     cn_args = [x for t in (targets or {}).get("cloud") or [] for x in ("--target-cloud", t)] + \
@@ -227,71 +318,56 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
         d = _last_json(so) if rc == 0 else None
         if d:
             (out / "process.json").write_text(json.dumps(d, indent=2))
-            procs.append(out / "process.json")
+            procs.append("process.json")
         r.note("processify", bool(d), "processes", None if d else _why(se, so))
 
-    if chosen:
-        rc, so, se = r.tool("plan", "tools/modernization/monolith_decomposer.py", "--app-id", app, "--create-plan",
-                            "--project-id", project, "--strategy", chosen, "--target-arch", "modular_monolith", "--json")
-        r.note("plan", rc == 0, "migration", None if rc == 0 else _why(se, so), strategy=chosen,
-               strategy_from="--strategy" if strategy else "the 7R recommendation")
-    else:
-        r.note("plan", False, "migration", "no strategy: neither --strategy nor a 7R recommendation")
-    waves_path = out / "waves.json"
-    rc, so, se = r.tool("waves", "tools/modernization/app_wave_planner.py", "--app-id", app, "--out", str(waves_path))
-    waves = json.loads(waves_path.read_text()) if rc == 0 and waves_path.is_file() else None
-    r.note("waves", bool((waves or {}).get("waves")), "migration.waves", None if waves else _why(se, so),
-           waves=len((waves or {}).get("waves") or []), basis=(waves or {}).get("basis"))
+    waves = _plan_and_waves(r, app, project, chosen, "--strategy" if strategy else "the 7R recommendation", gate)
 
-    bundle_path = out / f"{name}.apptwin.json"
-    args = ["tools/modernization/apptwin_export.py", "--app-id", app, "--out", str(bundle_path)]
-    if n_feats:
-        args += ["--static-features", str(feats_path)]
-    if seven:
-        args += ["--seven-r", str(out / "seven_r.json")]
-    if aiify:
-        args += ["--aiify", str(out / "aiify.json")]
-    if jobs:
-        args += ["--refactor", str(ref_path)]
-    if (waves or {}).get("waves"):
-        args += ["--waves", str(waves_path)]
-    if cn_ok:
-        args += ["--cloud-native", str(cn_path)]
-    for p in procs:
-        args += ["--process", str(p)]
-    if at:
-        args += ["--at", at]
-    rc, so, se = r.tool("export", *args)
-    if rc != 0 or not bundle_path.is_file():
-        raise PipelineError(f"apptwin_export: {_why(se, so)}")
-    bundle = json.loads(bundle_path.read_text())
-    produced = {k for k, v in bundle.items() if v not in (None, [], {})}
-    unproduced = {
-        "consumers": "the exporter never carries consumers",
-        "integrity": "no SIPA assessment was run",
-        "ivv": "no IV&V assessment was run", "sbd": "no Secure by Design assessment was run",
-        "rtm": "no requirements traceability was run", "coherence": "no coherence check was run",
-        "readiness": "no readiness assessment was run"}
-    for s in r.steps:
-        if s.get("section") and not s["ok"]:
-            unproduced[s["section"]] = s.get("reason") or "the step produced nothing"
-    gaps = {k: unproduced.get(k, "no step produced it") for k in sorted(set(bundle) - produced - {"schema"})}
-    if (bundle.get("migration") or {}) and not (bundle["migration"].get("waves")):
-        gaps["migration.waves"] = next((s.get("reason") for s in r.steps if s["step"] == "waves" and not s["ok"]),
-                                       None) or "no wave was planned, so ICDEV[OS]'s migration-plan gate will block"
-    report = {"application": name, "source": source.name, "app_id": app, "project_id": project,
-              "bundle": bundle_path.name, "bundle_sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
-              "produced": sorted(produced - {"schema", "producer", "produced_at"}), "gaps": gaps, "steps": r.steps,
-              "at": at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    (out / "gaps.json").write_text(json.dumps(report, indent=2) + "\n")
-    return report
+    inputs = {"static_features": feats_path.name if n_feats else None, "seven_r": "seven_r.json" if seven else None,
+              "aiify": "aiify.json" if aiify else None, "refactor": "refactor.json" if jobs else None,
+              "waves": "waves.json" if (waves or {}).get("waves") else None,
+              "cloud_native": cn_path.name if cn_ok else None, "processes": procs,
+              "language": a["primary_language"], "language_version": a["language_version"],
+              "framework": a["framework"]}
+    return _export(r, name=name, app=app, project=project, source_name=source.name, inputs=inputs, at=at,
+                   may_plan=may_plan)
+
+
+def resume(out: Path, scratch_db: Path, *, icos_decisions: Path, icos_jwks: Path, strategy: str | None = None,
+           at: str | None = None) -> dict:
+    """Plan the application a first run assessed, now that ICDEV[OS] has decided (icx-mdz-02).
+
+    The first run cannot plan: a migration is planned only on ICDEV[OS]'s signed may-plan, which ICDEV[OS] gives after
+    it has twinned the bundle that run exported. Given that export and the pinned JWKS, this reruns the CAM refactor
+    jobs, the plan and its waves against the SAME scratch database (``gaps.json`` names the application), and
+    re-exports the bundle. A refusal is reported again, with its reason; nothing is filled in by hand.
+    """
+    out = out.resolve()
+    prior = json.loads((out / "gaps.json").read_text())
+    live = (BASE / "data" / "icdev.db").resolve()
+    if scratch_db.resolve() == live or not scratch_db.is_file():
+        raise PipelineError(f"{scratch_db}: resume needs the first run's scratch database, never the operational one")
+    r = Run(scratch_db, out)
+    r.steps = [s for s in prior.get("steps") or [] if s.get("step") not in ("refactor", "framework", "plan", "waves")]
+    gate, may_plan = _gate(icos_decisions, icos_jwks)
+    app, project, inputs = prior["app_id"], prior["project_id"], dict(prior.get("inputs") or {})
+    seven = json.loads((out / inputs["seven_r"]).read_text()) if inputs.get("seven_r") else {}
+    chosen = strategy or seven.get("recommended_strategy")
+    a = {"primary_language": inputs.get("language"), "language_version": inputs.get("language_version"),
+         "framework": inputs.get("framework")}
+    jobs = _refactor(r, app, chosen, a, gate)
+    waves = _plan_and_waves(r, app, project, chosen, "--strategy" if strategy else "the 7R recommendation", gate)
+    inputs.update(refactor="refactor.json" if jobs else None,
+                  waves="waves.json" if (waves or {}).get("waves") else None)
+    return _export(r, name=prior["application"], app=app, project=project, source_name=prior.get("source") or "",
+                   inputs=inputs, at=at or prior.get("at"), may_plan={**may_plan, "resumed": True})
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--source", required=True, help="the application's source directory (read only)")
-    ap.add_argument("--name", required=True, help="the application's id in the bundle")
-    ap.add_argument("--scratch-db", required=True, help="a NEW sqlite file for this run")
+    ap.add_argument("--source", help="the application's source directory (read only)")
+    ap.add_argument("--name", help="the application's id in the bundle")
+    ap.add_argument("--scratch-db", required=True, help="a NEW sqlite file for this run (with --resume: the first run's)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--strategy", help="the 7R strategy to plan for (default: the 7R recommendation)")
     ap.add_argument("--at", help="produced_at (ISO 8601) for a reproducible bundle")
@@ -300,10 +376,26 @@ def main(argv: list[str] | None = None) -> int:
                     help="one item of the plan's cloud-native target (ICDEV[OS] apps.yaml target.cloud); repeatable")
     ap.add_argument("--target-ai", action="append", default=[],
                     help="one item of the plan's AI target (ICDEV[OS] apps.yaml target.ai); repeatable")
+    ap.add_argument("--icos-decisions", help="ICDEV[OS]'s signed decisions export: the plan and the CAM refactor jobs "
+                                             "run only on its may-plan (icx-mdz-02)")
+    ap.add_argument("--icos-jwks", help="the ICDEV[OS] JWKS you PINNED")
+    ap.add_argument("--resume", action="store_true",
+                    help="plan the application a first run in --out assessed, once ICDEV[OS] decided "
+                         "(needs --icos-decisions and --icos-jwks)")
     a = ap.parse_args(argv)
     try:
-        rep = pipeline(Path(a.source), a.name, Path(a.scratch_db), Path(a.out), strategy=a.strategy, at=a.at,
-                       no_model=a.no_model, targets={"cloud": a.target_cloud, "ai": a.target_ai})
+        if a.resume:
+            if not (a.icos_decisions and a.icos_jwks):
+                ap.error("--resume needs --icos-decisions and --icos-jwks")
+            rep = resume(Path(a.out), Path(a.scratch_db), icos_decisions=Path(a.icos_decisions),
+                         icos_jwks=Path(a.icos_jwks), strategy=a.strategy, at=a.at)
+        else:
+            if not (a.source and a.name):
+                ap.error("--source and --name are required (or --resume)")
+            rep = pipeline(Path(a.source), a.name, Path(a.scratch_db), Path(a.out), strategy=a.strategy, at=a.at,
+                           no_model=a.no_model, targets={"cloud": a.target_cloud, "ai": a.target_ai},
+                           icos_decisions=Path(a.icos_decisions) if a.icos_decisions else None,
+                           icos_jwks=Path(a.icos_jwks) if a.icos_jwks else None)
     except (PipelineError, subprocess.TimeoutExpired) as e:
         print(json.dumps({"status": "error", "error": str(e)}))
         return 1

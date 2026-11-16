@@ -9,8 +9,14 @@ Data sources (no hardcoding):
   context/migration/service_mappings.yaml  — cloud targets + AI opps per tech
   context/migration/refactor_rules.yaml    — code transformation jobs per tech
 
+It does not choose a 7R strategy (icx-mdz-02). A technology's mapping names the path TYPICAL for it
+(``typical_for_technology``), which is not a recommendation. A COA is ``recommended`` only when the caller passes the
+application's 7R assessment from THE 7R engine (``tools/modernization/seven_r_assessor.py``, ``strategy_for_app``):
+its recommended strategy, with its confidence. Without one, no COA is recommended.
+
 Public API:
-    get_coas(tech, cloud='aws') -> list[dict]
+    get_coas(tech, cloud='aws', assessment=None) -> list[dict]
+    get_coas_for_app(app_id, tech, cloud='aws') -> list[dict]
     get_deprecation_status(tech) -> dict
     explain_strategy(strategy_7r) -> dict
     get_canvas_links(project) -> dict
@@ -122,6 +128,13 @@ _7R_STRATEGIES: dict[str, dict] = {
         "pros": ["Maximum cloud-native benefits", "Best scalability", "Cost-optimized at scale", "AI/ML integration opportunities"],
         "cons": ["Highest effort and cost", "Longest timeline", "Requires deep expertise", "Business disruption risk"],
     },
+    "refactor": {
+        "label": "Refactor (Re-code)",
+        "description": "Upgrade the language level and frameworks in place, keeping the architecture.",
+        "effort": "medium", "risk": "medium", "timeline_weeks": 10,
+        "pros": ["Removes end-of-life dependencies", "Keeps the domain logic", "Incremental change", "Regression-testable"],
+        "cons": ["Code changes need regression tests", "Architecture limits remain", "Partial cloud-native", "Skills needed"],
+    },
     "repurchase": {
         "label": "Repurchase (Replace)",
         "description": "Replace the existing system with a SaaS solution.",
@@ -221,7 +234,8 @@ def get_deprecation_status(tech: str) -> dict:
             "tech": tech,
             "status": "active",
             "severity": "info",
-            "reason": f"{label} is actively maintained. Strategy: {_7R_STRATEGIES.get(strategy, {}).get('label', strategy)}.",
+            "reason": f"{label} is actively maintained. Typical path for it: {_7R_STRATEGIES.get(strategy, {}).get('label', strategy)}"
+                  " (a technology's usual path, not an application's 7R assessment).",
             "successor": mapping.get("aws_service", ""),
             "migration_path": "code_scaffold",
         }
@@ -236,14 +250,50 @@ def get_deprecation_status(tech: str) -> dict:
     }
 
 
-def get_coas(tech: str, cloud: str = "aws", include_retain_retire: bool = True) -> list[dict]:
+def get_coas(tech: str, cloud: str = "aws", include_retain_retire: bool = True,
+             assessment: dict | None = None) -> list[dict]:
     """Generate Courses of Action for a source technology.
 
     Returns list of COA dicts, each with:
       title, strategy, strategy_label, target_service, pros[], cons[],
       effort, effort_days, risk, risk_label, tools[], ai_opportunities[],
-      canvas_hints{}, recommended (bool)
+      canvas_hints{}, recommended (bool), typical_for_technology (bool)
+
+    ``assessment`` is the application's 7R assessment (``seven_r_assessor.strategy_for_app``). Only it makes a COA
+    ``recommended``: its recommended strategy, first, with ``recommended_by``, ``assessment_id`` and ``confidence``
+    (icx-mdz-02). Without one -- or when it recommends nothing for lack of evidence -- no COA is recommended.
     """
+    return _apply_assessment(_coas(tech, cloud, include_retain_retire), assessment, tech, cloud)
+
+
+def get_coas_for_app(app_id: str, tech: str, cloud: str = "aws", include_retain_retire: bool = True) -> list[dict]:
+    """``get_coas`` for one legacy application: its recommended COA is the 7R engine's latest assessment of it."""
+    from tools.modernization.seven_r_assessor import strategy_for_app
+    return get_coas(tech, cloud=cloud, include_retain_retire=include_retain_retire, assessment=strategy_for_app(app_id))
+
+
+def _apply_assessment(coas: list[dict], assessment: dict | None, tech: str, cloud: str) -> list[dict]:
+    """Mark the COA the 7R assessment recommends (adding it when the technology's options lack it); nothing else."""
+    for c in coas:
+        c["recommended"], c["recommended_reason"], c["recommended_by"] = False, None, None
+    rec = (assessment or {}).get("recommended_strategy")
+    if not rec:
+        return coas
+    match = next((c for c in coas if c["strategy"] == rec), None)
+    if match is None:
+        match = _generic_coa(tech, cloud, rec)
+        coas.append(match)
+    conf = assessment.get("confidence")
+    match.update(recommended=True, recommended_by="seven_r_assessor", assessment_id=assessment.get("assessment_id"),
+                 confidence=conf,
+                 recommended_reason=(f"The 7R assessment of {assessment.get('legacy_app_id') or 'this application'} "
+                                     f"recommends {_7R_STRATEGIES.get(rec, {}).get('label', rec)}"
+                                     + (f" (confidence {conf:.2f})" if isinstance(conf, (int, float)) else "") + "."))
+    return [match] + [c for c in coas if c is not match]
+
+
+def _coas(tech: str, cloud: str, include_retain_retire: bool) -> list[dict]:
+    """The technology's options, none of them recommended (the 7R assessment decides that)."""
     key, mapping = _find_mapping(tech)
 
     if not mapping:
@@ -271,7 +321,7 @@ def get_coas(tech: str, cloud: str = "aws", include_retain_retire: bool = True) 
 
     coas: list[dict] = []
 
-    # Primary strategy COA (recommended)
+    # The technology's typical path (not a recommendation: the 7R assessment makes that)
     primary_7r = _7R_STRATEGIES.get(primary_strategy, _7R_STRATEGIES["replatform"])
     effort_days = _estimate_effort_days(category, primary_strategy, ai_opps)
     coas.append({
@@ -293,8 +343,10 @@ def get_coas(tech: str, cloud: str = "aws", include_retain_retire: bool = True) 
         "ai_opportunities": ai_opps,
         "refactor_jobs": refactor_jobs,
         "canvas_hints": _canvas_hints(category),
-        "recommended": True,
-        "recommended_reason": _recommended_reason(primary_strategy, category),
+        "recommended": False,
+        "recommended_reason": None,
+        "typical_for_technology": True,
+        "typical_reason": _recommended_reason(primary_strategy, category),
     })
 
     # Alternative: Rehost (if primary is not rehost)
@@ -358,10 +410,12 @@ def get_coas(tech: str, cloud: str = "aws", include_retain_retire: bool = True) 
     return coas
 
 
-def get_all_coas_for_stack(components: list[dict], cloud: str = "aws") -> dict:
+def get_all_coas_for_stack(components: list[dict], cloud: str = "aws", assessment: dict | None = None) -> dict:
     """Generate COAs for a full application stack.
 
     components: list of {name, tech, strategy_7r?, ...} dicts from mc_app_inventory
+    assessment: the application's 7R assessment (``seven_r_assessor.strategy_for_app``); without it nothing is
+                recommended and the effort total is None (icx-mdz-02)
 
     Returns {tech: [coa...], summary: {...}}
     """
@@ -370,22 +424,18 @@ def get_all_coas_for_stack(components: list[dict], cloud: str = "aws") -> dict:
         tech = comp.get("app_type") or comp.get("name", "")
         if not tech:
             continue
-        result[tech] = get_coas(tech, cloud=cloud, include_retain_retire=False)
+        result[tech] = get_coas(tech, cloud=cloud, include_retain_retire=False, assessment=assessment)
 
-    total_effort = sum(
-        coas[0]["effort_days"] if coas else 0
-        for coas in result.values()
-    )
-    recommended_strategies = {
-        tech: (coas[0]["strategy"] if coas else "retain")
-        for tech, coas in result.items()
-    }
+    chosen = {tech: next((c for c in coas if c.get("recommended")), None) for tech, coas in result.items()}
+    total_effort = (sum(c["effort_days"] for c in chosen.values() if c) if any(chosen.values()) else None)
+    recommended_strategies = {tech: (c["strategy"] if c else None) for tech, c in chosen.items()}
 
     result["_summary"] = {
         "total_components": len(components),
         "total_effort_days": total_effort,
-        "estimated_weeks": round(total_effort / 5, 1),
+        "estimated_weeks": round(total_effort / 5, 1) if total_effort is not None else None,
         "recommended_strategies": recommended_strategies,
+        "recommended_by": "seven_r_assessor" if assessment and assessment.get("recommended_strategy") else None,
         "ai_opps_total": sum(
             len(coas[0].get("ai_opportunities", [])) if coas else 0
             for coas in result.values()
@@ -603,32 +653,35 @@ def _get_refactor_jobs_for_tech(tech_key: str, strategy: str) -> list[dict]:
     return jobs[:4]
 
 
+def _generic_coa(tech: str, cloud: str, strategy: str) -> dict:
+    """One COA for ``strategy`` with no service specifics."""
+    s = _7R_STRATEGIES.get(strategy) or _7R_STRATEGIES["replatform"]
+    target = {"aws": "AWS managed service", "azure": "Azure managed service", "gcp": "GCP managed service"}.get(cloud, "Cloud service")
+    return {
+        "id": f"coa-{_normalize_tech(tech)}-{strategy}",
+        "title": f"{s['label']} {tech}",
+        "strategy": strategy,
+        "strategy_label": s["label"],
+        "target_service": target,
+        "target_service_id": "",
+        "category": "unknown",
+        "pros": s["pros"],
+        "cons": s["cons"],
+        "effort": s["effort"],
+        "effort_days": s["timeline_weeks"] * 5,
+        "timeline_weeks": s["timeline_weeks"],
+        "risk": s["risk"],
+        "risk_label": _risk_label(s["risk"]),
+        "tools": [],
+        "ai_opportunities": [],
+        "refactor_jobs": [],
+        "canvas_hints": {},
+        "recommended": False,
+        "recommended_reason": None,
+    }
+
+
 def _generic_coas(tech: str, cloud: str, include_retain_retire: bool) -> list[dict]:
-    """Fallback COAs when tech is not in service_mappings."""
-    coas = []
-    for strategy in ("replatform", "rearchitect"):
-        s = _7R_STRATEGIES[strategy]
-        target = {"aws": "AWS managed service", "azure": "Azure managed service", "gcp": "GCP managed service"}.get(cloud, "Cloud service")
-        coas.append({
-            "id": f"coa-{_normalize_tech(tech)}-{strategy}",
-            "title": f"{s['label']} {tech}",
-            "strategy": strategy,
-            "strategy_label": s["label"],
-            "target_service": target,
-            "target_service_id": "",
-            "category": "unknown",
-            "pros": s["pros"],
-            "cons": s["cons"],
-            "effort": s["effort"],
-            "effort_days": s["timeline_weeks"] * 5,
-            "timeline_weeks": s["timeline_weeks"],
-            "risk": s["risk"],
-            "risk_label": _risk_label(s["risk"]),
-            "tools": [],
-            "ai_opportunities": [],
-            "refactor_jobs": [],
-            "canvas_hints": {},
-            "recommended": strategy == "replatform",
-            "recommended_reason": "Replatform is typically the best starting point for unknown workloads." if strategy == "replatform" else None,
-        })
-    return coas
+    """Fallback COAs when tech is not in service_mappings: options only, none recommended (icx-mdz-02; the old
+    fallback recommended replatform for every unknown workload)."""
+    return [_generic_coa(tech, cloud, strategy) for strategy in ("replatform", "rearchitect")]

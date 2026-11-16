@@ -9,6 +9,10 @@ drafts, and the vendored bundle contract, so that is what it reads:
 * **7R** -- an application's latest assessment with no strategy recorded after ``strategy_record_warn_days``; a
   migration plan whose strategy is not the one a person recorded for the application, or that exists with none
   recorded. A recorded strategy is a proposal to ICDEV[OS], so a plan that contradicts it was not planned on it.
+  (icx-mdz-02) A latest assessment that recommends nothing -- no strategy reached the catalogue's minimum confidence --
+  or whose recommendation rests on less than ``seven_r_confidence_warn`` (or that predates criteria keyed by name);
+  and a plan attempted without ICDEV[OS]'s may-plan (``plan_gate`` refused it and audited the refusal), until a plan
+  for that application exists after it.
 * **AI-Ify** -- a promotion decision in ``aiify_hitl_decisions`` with no decided ``decl-wft-mdz-aiify-promote`` step
   for it: a decision taken outside the declared workflow (Send to Kanban reads that table).
 * **Process-Ify** -- an observed draft still waiting for a person after ``draft_review_warn_days``.
@@ -17,7 +21,7 @@ drafts, and the vendored bundle contract, so that is what it reads:
 * **Exporter** -- the vendored ``icos-apptwin/v1`` contract still hashes to the digest the exporter pins.
 
 A source that cannot be read is an unverified check, never a pass. Threads: ``mdz_assessment:<id>``,
-``migration_plan:<id>``, ``aiify_decision:<id>``, ``studio_workflow:<id>``, ``mc_refactor_job:<id>``,
+``migration_plan:<id>``, ``audit_trail:<id>``, ``aiify_decision:<id>``, ``studio_workflow:<id>``, ``mc_refactor_job:<id>``,
 ``config:<path>@<sha256>``.
 """
 from __future__ import annotations
@@ -77,22 +81,31 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
         ev: dict = {"canvas": self.canvas_key, "target_id": "fleet", "observed_at": now_iso(),
                     "policy": policy, "assessments": None, "plans": None, "strategy_records": None,
                     "aiify_decisions": None, "aiify_steps": None, "drafts": None, "jobs": None,
-                    "job_reviews": None, "schema": None, "errors": {}}
+                    "job_reviews": None, "schema": None, "refusals": None, "errors": {}}
         conn = None
         try:
             conn = get_canvas_connection()
             if not table_exists(conn, "migration_assessments"):
                 ev["errors"]["assessments"] = "migration_assessments does not exist"
             else:
-                cols = ("id", "legacy_app_id", "recommended_strategy", "assessed_at")
+                from tools.modernization.seven_r_assessor import summarise
+
+                cols = ("id", "legacy_app_id", "recommended_strategy", "assessed_at", "evidence")
                 rows = rows_as_dicts(conn.execute(
-                    "SELECT id, legacy_app_id, recommended_strategy, assessed_at FROM migration_assessments "
+                    "SELECT id, legacy_app_id, recommended_strategy, assessed_at, evidence FROM migration_assessments "
                     "WHERE assessment_scope = 'application' ORDER BY assessed_at DESC LIMIT %s", (limit,)), cols)
                 latest: dict[str, dict] = {}
                 for r in rows:             # newest first: the first per application is its latest
-                    latest.setdefault(str(r["legacy_app_id"]), {
-                        "id": str(r["id"]), "app": str(r["legacy_app_id"]),
-                        "recommended": str(r["recommended_strategy"] or ""), "at": ts_text(r["assessed_at"])})
+                    app = str(r["legacy_app_id"])
+                    if app in latest:
+                        continue
+                    seen = summarise(r)    # icx-mdz-02: the confidence the recommendation rests on
+                    latest[app] = {
+                        "id": str(r["id"]), "app": app,
+                        "recommended": str(r["recommended_strategy"] or ""), "at": ts_text(r["assessed_at"]),
+                        "confidence": seen["confidence"], "min_confidence": seen["min_confidence"],
+                        "not_assessable": seen["not_assessable"], "method": seen["method"],
+                        "reason": (seen.get("recommendation") or {}).get("reason")}
                 ev["assessments"] = sorted(latest.values(), key=lambda r: r["app"])
             if not table_exists(conn, "migration_plans"):
                 ev["errors"]["plans"] = "migration_plans does not exist"
@@ -109,6 +122,15 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
             ev["errors"].setdefault("assessments", str(exc))
         finally:
             close_quietly(conn)
+
+        try:
+            from tools.modernization import plan_gate
+
+            ev["refusals"] = sorted(({k: r[k] for k in ("id", "application", "tool", "status", "reason",
+                                                         "strategy_asked")} | {"at": ts_text(r["at"])}
+                                     for r in plan_gate.refusals(limit=limit)), key=lambda r: r["id"])
+        except Exception as exc:  # noqa: BLE001 — unreadable is unverified
+            ev["errors"]["refusals"] = str(exc)
 
         try:
             ev["strategy_records"] = _decided(decisions.TEMPLATE_7R)
@@ -208,6 +230,33 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
                         thread_id=f"mdz_assessment:{a['id']}",
                         detail=f"assessed {a['at']} ({age / 24:.0f} days ago)",
                         recommendation="Record the strategy ICDEV proposes, or decline to, on /migration."))
+        if evidence.get("assessments") is not None and "assessments" not in errors:
+            warn = float(policy.get("seven_r_confidence_warn", 0.7))
+            for a in evidence["assessments"]:
+                na = ", ".join(a.get("not_assessable") or []) or "none"
+                if a.get("method", "").startswith("positional"):
+                    findings.append(finding(
+                        "mdz.seven_r.low_confidence", "medium",
+                        f"{a['app']}: 7R recommends {a['recommended'] or '?'} on criteria paired by position",
+                        thread_id=f"mdz_assessment:{a['id']}",
+                        detail=f"assessed {a['at']}, before criteria were keyed by name; no confidence recorded",
+                        recommendation="Re-assess the application on /migration."))
+                elif not a["recommended"]:
+                    findings.append(finding(
+                        "mdz.seven_r.not_assessable", "medium",
+                        f"{a['app']}: 7R recommends nothing: no strategy reaches confidence "
+                        f"{a.get('min_confidence') if a.get('min_confidence') is not None else '?'}",
+                        thread_id=f"mdz_assessment:{a['id']}",
+                        detail=f"{a.get('reason') or 'insufficient evidence'}; not assessable: {na}",
+                        recommendation="Measure what is missing (or decide on other evidence) before recording a "
+                                       "strategy on /migration."))
+                elif a.get("confidence") is not None and float(a["confidence"]) < warn:
+                    findings.append(finding(
+                        "mdz.seven_r.low_confidence", "medium",
+                        f"{a['app']}: 7R recommends {a['recommended']} at confidence {float(a['confidence']):.2f}",
+                        thread_id=f"mdz_assessment:{a['id']}",
+                        detail=f"below {warn:.2f}: most of its criteria were not measured; not assessable: {na}",
+                        recommendation="Treat the recommendation as thin: check what was not measured on /migration."))
         by_app = {}
         for a in evidence.get("assessments") or []:
             rec = records.get(a["id"])
@@ -229,6 +278,26 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
                         thread_id=f"migration_plan:{p['id']}",
                         detail=f"recorded by step {rec['step_id']}",
                         recommendation="Re-plan on the recorded strategy, or record a new one with its reason."))
+
+        if readable("refusals", "Plans refused without ICDEV[OS] may-plan (audit trail)", evidence.get("refusals")) \
+                and evidence.get("plans") is not None:
+            newest: dict[str, dict] = {}
+            for r in evidence["refusals"]:           # ordered by id: the last one per application is its newest
+                newest[r["application"]] = r
+            planned_at: dict[str, str] = {}
+            for p in evidence["plans"]:
+                if p["at"] > planned_at.get(p["app"], ""):
+                    planned_at[p["app"]] = p["at"]
+            for app, r in sorted(newest.items()):
+                if planned_at.get(app, "") > r["at"]:
+                    continue                          # planned since, on a may-plan that allowed it
+                findings.append(finding(
+                    "mdz.seven_r.plan_refused", "high",
+                    f"{app}: a migration plan was attempted without ICDEV[OS]'s may-plan ({r['status']})",
+                    thread_id=f"audit_trail:{r['id']}",
+                    detail=f"{r['tool']} at {r['at']}: {r['reason']}",
+                    recommendation="Plan only after ICDEV[OS]'s mission owner accepts a strategy (signed "
+                                   "migration-assessment) and its decisions export says may-plan."))
 
         if readable("aiify", "AI-Ify promotion decisions", evidence.get("aiify_decisions")) and ledger_ok:
             stepped = {r["subject"] for r in evidence.get("aiify_steps") or []}
@@ -281,6 +350,9 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
 
         summary = {
             "applications_assessed": len(evidence.get("assessments") or []),
+            "applications_without_recommendation": sum(1 for a in evidence.get("assessments") or []
+                                                       if not a["recommended"]),
+            "plans_refused": len(evidence.get("refusals") or []),
             "strategies_recorded": len(records),
             "plans": len(evidence.get("plans") or []),
             "aiify_decisions": len(evidence.get("aiify_decisions") or []),

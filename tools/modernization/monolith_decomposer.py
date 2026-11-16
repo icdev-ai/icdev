@@ -29,6 +29,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from tools.db.storage import get_connection
+from tools.modernization.plan_gate import PlanRefused
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1141,8 +1142,15 @@ def create_migration_plan(
     target_arch="microservices",
     approach="strangler_fig",
     db_path=None,
+    icos_decisions=None,
+    icos_jwks=None,
 ):
-    """Create a migration plan with tasks in the ICDEV™ database.
+    """Create a migration plan with tasks in the ICDEV™ database -- only on ICDEV[OS]'s signed may-plan.
+
+    Before anything is written, ``plan_gate.require`` verifies ICDEV[OS]'s signed decisions export
+    (``icos_decisions``, else ``ICDEV_ICOS_DECISIONS``) against the pinned JWKS (``icos_jwks``, else
+    ``ICDEV_ICOS_JWKS``) and asks may-plan for this application and strategy (icx-mdz-02). Missing, untrusted or
+    "no" raises ``plan_gate.PlanRefused``: no plan row and no task is written, and the refusal is audited.
 
     Generates appropriate tasks based on strategy:
         rehost      — containerize, deploy
@@ -1160,6 +1168,11 @@ def create_migration_plan(
         raise ValueError(f"Invalid approach '{approach}'. Must be one of: {VALID_APPROACHES}")
     if target_arch and target_arch not in VALID_ARCHITECTURES:
         raise ValueError(f"Invalid architecture '{target_arch}'. Must be one of: {VALID_ARCHITECTURES}")
+
+    # icx-mdz-02: ICDEV[OS]'s signed may-plan, fail closed, before the first write (raises PlanRefused)
+    from tools.modernization import plan_gate
+    may_plan = plan_gate.require(app_id, strategy, tool="icdev-it/monolith_decomposer", project_id=project_id,
+                                 export=icos_decisions, jwks=icos_jwks)
 
     conn = _get_db(db_path)
     try:
@@ -1338,6 +1351,8 @@ def create_migration_plan(
         "created_at": now,
         "updated_at": now,
         "tasks": tasks,
+        "may_plan": {k: may_plan.get(k) for k in ("status", "role", "strategy", "baseline", "item", "decisions",
+                                                  "issuer", "audit_id") if may_plan.get(k) is not None},
     }
     return plan_result
 
@@ -1494,6 +1509,15 @@ def main():
         "--db-path",
         help="Override database path (default: data/icdev.db)",
     )
+    parser.add_argument(
+        "--icos-decisions",
+        help="ICDEV[OS]'s signed decisions export (GET /api/v1/portfolio/decisions/export); "
+             "--create-plan is refused without its may-plan (default: $ICDEV_ICOS_DECISIONS)",
+    )
+    parser.add_argument(
+        "--icos-jwks",
+        help="the ICDEV[OS] JWKS you PINNED (default: $ICDEV_ICOS_JWKS)",
+    )
 
     args = parser.parse_args()
     db_path = args.db_path
@@ -1587,9 +1611,16 @@ def main():
                 target_arch=args.target_arch,
                 approach=args.approach,
                 db_path=db_path,
+                icos_decisions=args.icos_decisions,
+                icos_jwks=args.icos_jwks,
             )
             print(_format_output(result, args.output_json))
 
+    except PlanRefused as exc:
+        # icx-mdz-02: no plan was written; say why, machine-readably, and exit 3 (refused, not an error)
+        print(json.dumps({**exc.answer, "outcome": "refused"}, default=str))   # status: missing|untrusted|refused
+        print(f"[REFUSED] {exc}", file=sys.stderr)
+        sys.exit(3)
     except FileNotFoundError as exc:
         print(f"[ERROR] {exc}", file=sys.stderr)
         sys.exit(1)

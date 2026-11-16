@@ -17,7 +17,13 @@ by its SHA-256 and labels the job ``unreviewed``; a person reviews a job's outpu
 (``/migration-canvas/modernisation``, the declared step ``decl-wft-mdz-cam-refactor-approve``, icx-mdz-01). The output
 is what ``apptwin_export.py --refactor`` carries. ``report`` reads the jobs back without running any.
 
-    python tools/modernization/refactor_jobs.py --app-id <legacy app id> [--strategy rehost] [--out refactor.json]
+Running the migrators is planning the migration, so ``run`` asks ICDEV[OS]'s signed may-plan first
+(``plan_gate.require``, icx-mdz-02): with no export, an untrusted one, or a "no", it raises ``PlanRefused`` before the
+CAM project, its inventory row or any job is written, and the refusal is audited. The strategy recorded on the
+inventory row is the one ICDEV[OS] accepted when ``--strategy`` is not given.
+
+    python tools/modernization/refactor_jobs.py --app-id <legacy app id> [--strategy rehost] [--out refactor.json] \
+        [--icos-decisions decisions.json --icos-jwks icos_jwks.json]   # else $ICDEV_ICOS_DECISIONS / $ICDEV_ICOS_JWKS
 """
 from __future__ import annotations
 
@@ -105,10 +111,23 @@ def report(app_id: str) -> dict:
             "jobs": [{k: j.get(k) for k in _FIELDS} for j in jobs]}
 
 
-def run(app_id: str, *, strategy: str | None = None) -> dict:
+def run(app_id: str, *, strategy: str | None = None, icos_decisions=None, icos_jwks=None) -> dict:
+    """Queue and run the application's migrators as CAM jobs -- only on ICDEV[OS]'s may-plan (raises PlanRefused)."""
     from tools.migration_canvas import cam_refactor_engine as cam
+    from tools.modernization import plan_gate
     app, tables = _legacy(app_id)
+    may_plan = plan_gate.require(app_id, strategy, tool=TOOL, export=icos_decisions, jwks=icos_jwks)
+    strategy = strategy or may_plan.get("strategy")
     pid = project(app, strategy)
+    if strategy in STRATEGIES:                 # the row cloud_native_jobs made first carries no strategy yet
+        from tools.migration_canvas.db.init_db import get_connection
+        conn = get_connection()
+        try:
+            conn.execute("UPDATE mc_app_inventory SET migration_strategy = %s WHERE id = %s AND migration_strategy IS NULL",
+                         (strategy, app["id"]))
+            conn.commit()
+        finally:
+            conn.close()
     queued = cam.dispatch(pid)
     if tables and not any(j["refactor_type"] == "db_ddl_generation" for j in cam.get_jobs(pid)):
         queued.append(cam.queue(pid, app["id"], {
@@ -118,6 +137,8 @@ def run(app_id: str, *, strategy: str | None = None) -> dict:
         cam.run_job(j["id"])
     jobs = sorted(cam.get_jobs(pid), key=lambda j: (j["refactor_type"], j["created_at"], j["id"]))
     return {"tool": TOOL, "app_id": app_id, "project_id": pid, "schema_tables": tables,
+            "may_plan": {k: may_plan.get(k) for k in ("status", "role", "strategy", "baseline", "item", "decisions",
+                                                      "issuer", "audit_id") if may_plan.get(k) is not None},
             "jobs": [{k: j.get(k) for k in ("id", "component_name", "refactor_type", "status", "result_summary",
                                             "error_message", "output_path", "artifacts")} for j in jobs]}
 
@@ -127,9 +148,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--app-id", required=True, help="the legacy application's id (legacy_applications.id)")
     ap.add_argument("--strategy", help="the 7R strategy recorded on the CAM inventory row")
     ap.add_argument("--out", type=Path, help="write the jobs here (default: stdout)")
+    ap.add_argument("--icos-decisions", help="ICDEV[OS]'s signed decisions export; nothing runs without its may-plan "
+                                             "(default: $ICDEV_ICOS_DECISIONS)")
+    ap.add_argument("--icos-jwks", help="the ICDEV[OS] JWKS you PINNED (default: $ICDEV_ICOS_JWKS)")
     a = ap.parse_args(argv)
+    from tools.modernization.plan_gate import PlanRefused
     try:
-        rep = run(a.app_id, strategy=a.strategy)
+        rep = run(a.app_id, strategy=a.strategy, icos_decisions=a.icos_decisions, icos_jwks=a.icos_jwks)
+    except PlanRefused as exc:
+        # icx-mdz-02: no CAM project, row or job was written; exit 3 (refused, not an error)
+        print(json.dumps({**exc.answer, "outcome": "refused"}, default=str))   # status: missing|untrusted|refused
+        print(f"[REFUSED] {exc}", file=sys.stderr)
+        return 3
     except ValueError as exc:
         print(json.dumps({"status": "error", "error": str(exc)}))
         return 1

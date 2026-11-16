@@ -118,3 +118,6 @@ tests/test_ace_event_dispatch_ambient.py
 # icx-mdz-01: the modernisation ledger read (decisions.decided), observed drafts listing
 # and the modernisation twin's collection on the ambient PG; ids scoped to this file.
 tests/test_icx_mdz_01_ambient.py
+# icx-mdz-02: a may-plan refusal written to the hash-chained audit trail, read back by
+# plan_gate.refusals and the modernisation twin (thread audit_trail:<id>) on the ambient PG.
+tests/test_icx_mdz_02_ambient.py

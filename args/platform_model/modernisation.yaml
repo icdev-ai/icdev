@@ -1,5 +1,6 @@
 # CUI // SP-CTI
-# ICDEV platform model: application modernisation (icx-mdz-01) -- the 7R assessment,
+# ICDEV platform model: application modernisation (icx-mdz-01; icx-mdz-02: 7R on
+# evidence, one 7R engine, may-plan enforced) -- the 7R assessment,
 # AI-Ify, Process-Ify, an application's waves and CAM refactor jobs, cloud-native
 # targets, and the ICDEV[OS] apptwin exporter and decision import.
 #
@@ -17,6 +18,10 @@ elements:
     features: [mdz.seven_r]
     code:
       - tools/modernization/seven_r_assessor.py::run_seven_r_assessment
+      - tools/modernization/seven_r_assessor.py::_strategy_evidence
+      - tools/modernization/seven_r_assessor.py::_rank_strategies
+      - tools/modernization/seven_r_assessor.py::strategy_for_app
+      - context/modernization/seven_rs_catalog.json
       - tools/dashboard/api/migration.py::trigger_assessment
       - tools/dashboard/api/migration.py::record_strategy
       - tools/modernization/decisions.py::strategy_record
@@ -79,6 +84,29 @@ elements:
       - tools/modernization/icos_decisions.py::may_plan
       - tools/migration_canvas/modernisation.py::bundle_preview
       - tools/migration_canvas/modernisation.py::icos_check
+
+  - id: mdz.seven_r_consumers
+    type: sysml_element
+    kind: block
+    name: The other 7R generators consume the assessor's result instead of scoring again
+    features: [mdz.seven_r]
+    code:
+      - tools/migration_intelligence/strategy_generator.py::seven_r_for_opportunity
+      - tools/migration_intelligence/strategy_generator.py::generate_strategies_for_opportunity
+      - tools/migration_canvas/coa_engine.py::get_coas
+      - tools/migration_canvas/coa_engine.py::get_coas_for_app
+
+  - id: mdz.plan_gate
+    type: sysml_element
+    kind: block
+    name: A migration is planned only on ICDEV[OS]'s signed may-plan, fail closed
+    features: [mdz.seven_r, mdz.waves_cam, mdz.exporter]
+    code:
+      - tools/modernization/plan_gate.py::require
+      - tools/modernization/plan_gate.py::refusals
+      - tools/modernization/monolith_decomposer.py::create_migration_plan
+      - tools/modernization/refactor_jobs.py::run
+      - tools/modernization/sample_pipeline.py::resume
 
   - id: mdz.twin
     type: sysml_element
@@ -228,3 +256,101 @@ requirements:
       - tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays
       - tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only
       - tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id
+
+  - id: PM-MDZ-08
+    title: Every 7R criterion is the catalogue's, by name; a mismatch is refused
+    text: >-
+      Each fitness check returns exactly its strategy's catalogue criteria, by
+      name. A check or catalogue criterion renamed on one side, or a custom
+      weight naming a criterion the catalogue does not declare, is refused
+      (CriteriaMismatch) and no assessment is written. Nothing is paired by
+      list position.
+    type: functional
+    priority: high
+    features: [mdz.seven_r]
+    elements: [mdz.seven_r]
+    controls: [SA-11, SI-10]
+    tests:
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_every_check_returns_exactly_its_catalogue_criteria_by_name
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_a_renamed_criterion_is_refused_never_paired_by_position
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_custom_weights_must_name_the_catalogues_criteria
+
+  - id: PM-MDZ-09
+    title: An unmeasured criterion lowers confidence and never scores 0.5
+    text: >-
+      A criterion the assessor cannot measure is None: it is left out of the
+      score and lowers the strategy's confidence (the share of its criterion
+      weight measured). A strategy with nothing measured is not assessable
+      and has no score. Only a strategy whose confidence reaches the
+      catalogue's min_confidence_to_recommend is recommended; when none does,
+      nothing is, and the assessment says why.
+    type: functional
+    priority: high
+    features: [mdz.seven_r]
+    elements: [mdz.seven_r]
+    controls: [SA-11, CA-2]
+    tests:
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_an_unmeasured_input_lowers_confidence_and_never_counts_half
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_a_strategy_with_nothing_measured_is_not_assessable
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_only_a_strategy_at_the_minimum_confidence_is_recommended
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_bundle_ranks_only_assessable_strategies
+      - tests/test_icx_retire_fitness.py::test_unmeasured_is_left_out_never_half
+
+  - id: PM-MDZ-10
+    title: One 7R engine; the other generators consume its result
+    text: >-
+      The migration-intelligence strategy generator and the COA engine never
+      score 7R. Their recommended option is the assessor's latest
+      recommendation for the application, with its confidence; with no
+      assessment, or one that recommends nothing, they recommend nothing.
+      The same application gets the same strategy from all three.
+    type: functional
+    priority: high
+    features: [mdz.seven_r]
+    elements: [mdz.seven_r, mdz.seven_r_consumers]
+    controls: [SA-8]
+    tests:
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_three_generators_give_the_same_strategy_for_the_same_app
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_no_assessment_or_no_evidence_means_no_generator_recommends
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_coa_chat_says_a_technology_alone_recommends_nothing
+
+  - id: PM-MDZ-11
+    title: No plan without ICDEV[OS]'s signed may-plan, and the refusal is audited and shown
+    text: >-
+      monolith_decomposer --create-plan and refactor_jobs verify ICDEV[OS]'s
+      signed decisions export against the pinned JWKS and ask may-plan for
+      the application and strategy before anything is written. Missing,
+      untrusted or refused writes no plan, task, CAM project or job, exits
+      3 with the reason, and is recorded in the append-only audit trail;
+      /migration lists the refusals, and the MCP plan tool says refused.
+    type: functional
+    priority: high
+    features: [mdz.seven_r, mdz.waves_cam, mdz.exporter]
+    elements: [mdz.plan_gate, if.mdz.console]
+    controls: [AC-3, CM-3, AU-2]
+    tests:
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_may_plan_refused_or_missing_writes_no_plan
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_planner_cli_and_the_mcp_tool_say_refused
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_refactor_jobs_write_nothing_without_may_plan
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_7r_page_shows_confidence_unmeasured_and_the_refusal
+      - tests/test_icx_modsamples_pipeline.py::test_the_first_run_plans_nothing_without_icdev_os_may_plan
+
+  - id: PM-MDZ-12
+    title: The twin finds thin 7R evidence and plans attempted without may-plan, with threads
+    text: >-
+      The modernisation twin finds a latest assessment that recommends
+      nothing or rests on confidence below seven_r_confidence_warn (or
+      predates criteria keyed by name), and a plan refused for want of
+      may-plan until the application is planned after it. Each finding has a
+      thread (mdz_assessment, audit_trail) that resolves, the observation
+      replays, and the MCP read tool carries confidence and unmeasured
+      criteria.
+    type: non_functional
+    priority: high
+    features: [mdz.seven_r]
+    elements: [mdz.twin, if.mdz.mcp]
+    controls: [CA-7, AU-6]
+    tests:
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_twin_finds_thin_evidence_and_plans_attempted_without_may_plan
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_twin_observes_a_refusal_resolves_its_thread_and_replays
+      - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_mcp_read_tool_carries_confidence_unmeasured_and_refusals

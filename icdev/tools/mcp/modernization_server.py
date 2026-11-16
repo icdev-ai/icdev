@@ -168,6 +168,10 @@ def handle_create_migration_plan(args: dict) -> dict:
             target_arch=args.get("target_architecture", "microservices"),
             approach=args.get("migration_approach", "strangler_fig"),
         )
+    except PermissionError as e:
+        # icx-mdz-02: refused without ICDEV[OS]'s signed may-plan (the operator's ICDEV_ICOS_DECISIONS and
+        # ICDEV_ICOS_JWKS; an agent supplies neither). Nothing was written.
+        return {**(getattr(e, "answer", None) or {"reason": str(e)}), "outcome": "refused"}
     except Exception as e:
         return {"error": str(e), "traceback": traceback.format_exc()}
 
@@ -409,7 +413,9 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="create_migration_plan",
-        description="Create a migration plan with decomposition tasks, timeline, and effort estimates",
+        description=("Create a migration plan with decomposition tasks, timeline, and effort estimates -- refused, "
+                     "with nothing written, unless ICDEV[OS]'s signed may-plan allows it for this application and "
+                     "strategy (the operator's ICDEV_ICOS_DECISIONS export, verified against ICDEV_ICOS_JWKS)"),
         input_schema={
             "type": "object",
             "properties": {

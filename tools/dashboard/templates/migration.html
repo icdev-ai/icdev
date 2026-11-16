@@ -64,6 +64,7 @@
                         <th style="padding:0.6rem 0.75rem;text-align:right;cursor:pointer;" onclick="sortAssessments('risk_score')">Risk Score &#x25B4;&#x25BE;</th>
                         <th style="padding:0.6rem 0.75rem;text-align:right;cursor:pointer;" onclick="sortAssessments('cost_estimate_hours')">Cost Est. (hrs) &#x25B4;&#x25BE;</th>
                         <th style="padding:0.6rem 0.75rem;text-align:right;cursor:pointer;" onclick="sortAssessments('timeline_weeks')">Timeline (wks) &#x25B4;&#x25BE;</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Evidence (confidence)</th>
                         <th style="padding:0.6rem 0.75rem;text-align:left;">Recorded proposal</th>
                     </tr>
                 </thead>
@@ -71,6 +72,28 @@
             </table>
         </div>
         <div id="assessments-empty" style="display:none;padding:2rem;text-align:center;color:#999;">No assessments found.</div>
+        <p class="text-muted" id="seven-r-evidence-help" style="font-size:0.85rem;">Each criterion is the catalogue's own, measured by name or <b>unmeasured</b>. An unmeasured criterion is left out of the score and lowers the strategy's <b>confidence</b> (the share of its criterion weight that was measured); a strategy with nothing measured is <b>not assessable</b>. Only a strategy whose confidence reaches the catalogue's minimum is recommended; when none does, nothing is.</p>
+    </div>
+
+    <!-- Plans refused for want of ICDEV[OS]'s signed may-plan (icx-mdz-02) -->
+    <div style="margin:1.5rem 0;" id="plan-refusals-panel">
+        <h2 style="font-size:1.15rem;">Plans refused: no ICDEV[OS] may-plan</h2>
+        <p class="text-muted" style="font-size:0.85rem;">A migration plan or CAM refactor run is written only when ICDEV[OS]'s signed decisions say <code>may-plan</code> for the application and strategy. Each refusal below wrote nothing, and is kept in the audit trail.</p>
+        <div style="overflow-x:auto;">
+            <table id="plan-refusals-table" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                <thead>
+                    <tr style="background:#f5f5f5;border-bottom:2px solid #ddd;">
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Application</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Tool</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Strategy asked</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Why refused</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">When</th>
+                    </tr>
+                </thead>
+                <tbody id="plan-refusals-body"></tbody>
+            </table>
+        </div>
+        <div id="plan-refusals-empty" style="display:none;padding:1rem;text-align:center;color:#999;">No plan has been refused.</div>
     </div>
 
     <!-- Migration Plans Table -->
@@ -224,6 +247,7 @@ async function loadAssessments() {
         assessmentsData = d.data || d.assessments || d || [];
         if (!Array.isArray(assessmentsData)) assessmentsData = [];
         renderAssessments();
+        renderRefusals(d.plan_refusals, d.plan_refusals_error);
     } catch (e) {
         console.warn('Assessments load error:', e);
         document.getElementById('assessments-empty').style.display = 'block';
@@ -250,7 +274,7 @@ function renderAssessments() {
         return `<tr style="border-bottom:1px solid #eee;">
             <td style="padding:0.5rem 0.75rem;">${esc(a.legacy_app_id || a.app_id || '—')}</td>
             <td style="padding:0.5rem 0.75rem;">
-                <span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.8rem;font-weight:600;color:#fff;background:${sColor};text-transform:capitalize;">${esc(strategy || '—')}</span>
+                <span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.8rem;font-weight:600;color:#fff;background:${sColor};text-transform:capitalize;">${esc(strategy || 'none recommended')}</span>
             </td>
             <td style="padding:0.5rem 0.75rem;">
                 <span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.8rem;font-weight:600;color:#fff;background:${aColor};text-transform:uppercase;">${esc(ato)}</span>
@@ -258,9 +282,59 @@ function renderAssessments() {
             <td style="padding:0.5rem 0.75rem;text-align:right;">${a.risk_score != null ? Number(a.risk_score).toFixed(1) : '—'}</td>
             <td style="padding:0.5rem 0.75rem;text-align:right;">${a.cost_estimate_hours != null ? Number(a.cost_estimate_hours).toLocaleString() : '—'}</td>
             <td style="padding:0.5rem 0.75rem;text-align:right;">${a.timeline_weeks != null ? a.timeline_weeks : '—'}</td>
+            <td style="padding:0.5rem 0.75rem;" class="seven-r-evidence">${renderEvidence(a)}</td>
             <td style="padding:0.5rem 0.75rem;" class="strategy-record" data-assessment-id="${esc(a.id)}">${renderRecord(a)}</td>
         </tr>`;
     }).join('');
+}
+
+/* -- What the recommendation rests on (icx-mdz-02): confidence, unmeasured criteria, not-assessable strategies -- */
+function fmtConf(c) { return (c == null) ? '?' : Number(c).toFixed(2); }
+
+function renderEvidence(a) {
+    const e = a.seven_r || {};
+    const rec = e.recommendation || {};
+    const head = a.recommended_strategy
+        ? `<b>${esc(a.recommended_strategy)}</b> at confidence <b>${fmtConf(e.confidence)}</b> (minimum ${fmtConf(e.min_confidence)})`
+        : `<b style="color:#d32f2f;">none recommended</b>`;
+    const why = rec.reason ? `<div style="font-size:0.75rem;color:#666;">${esc(rec.reason)}</div>` : '';
+    const na = (e.not_assessable || []).length
+        ? `<div style="font-size:0.75rem;color:#b71c1c;">not assessable: ${(e.not_assessable || []).map(esc).join(', ')}</div>` : '';
+    const rows = Object.entries(e.strategies || {}).map(([sid, v]) => {
+        const score = v.assessable === false ? 'not assessable' : (v.score == null ? '—' : Number(v.score).toFixed(2));
+        const un = (v.unmeasured || []).length ? (v.unmeasured || []).map(esc).join(', ') : '—';
+        return `<tr><td style="padding:0.1rem 0.4rem;">${esc(sid)}</td><td style="padding:0.1rem 0.4rem;">${score}</td>
+                <td style="padding:0.1rem 0.4rem;">${fmtConf(v.confidence)}</td><td style="padding:0.1rem 0.4rem;">${un}</td></tr>`;
+    }).join('');
+    const table = rows ? `<details class="seven-r-detail"><summary style="font-size:0.75rem;cursor:pointer;">per strategy</summary>
+        <table style="font-size:0.75rem;border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:0.1rem 0.4rem;">Strategy</th>
+        <th style="text-align:left;padding:0.1rem 0.4rem;">Score</th><th style="text-align:left;padding:0.1rem 0.4rem;">Confidence</th>
+        <th style="text-align:left;padding:0.1rem 0.4rem;">Unmeasured</th></tr></thead><tbody>${rows}</tbody></table></details>` : '';
+    const legacy = e.method && e.method.indexOf('positional') === 0
+        ? `<div style="font-size:0.75rem;color:#b71c1c;">assessed before criteria were keyed by name: re-assess</div>` : '';
+    return `<div>${head}</div>${why}${na}${legacy}${table}`;
+}
+
+/* -- Plans refused for want of ICDEV[OS]'s may-plan (icx-mdz-02) -- */
+function renderRefusals(rows, error) {
+    const tbody = document.getElementById('plan-refusals-body');
+    const empty = document.getElementById('plan-refusals-empty');
+    if (error) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        empty.style.color = '#d32f2f';
+        empty.textContent = error;
+        return;
+    }
+    rows = Array.isArray(rows) ? rows : [];
+    empty.style.display = rows.length ? 'none' : 'block';
+    tbody.innerHTML = rows.map(r => `<tr style="border-bottom:1px solid #eee;" class="plan-refusal">
+        <td style="padding:0.5rem 0.75rem;">${esc(r.application)}</td>
+        <td style="padding:0.5rem 0.75rem;">${esc(r.tool)}</td>
+        <td style="padding:0.5rem 0.75rem;">${esc(r.strategy_asked || '—')}</td>
+        <td style="padding:0.5rem 0.75rem;"><b>${esc(r.status || 'refused')}</b>: ${esc(r.reason)}</td>
+        <td style="padding:0.5rem 0.75rem;">${esc(r.at)} <span style="color:#999;font-size:0.75rem;">(audit ${esc(r.id)})</span></td>
+    </tr>`).join('');
 }
 
 /* -- The strategy a person records (icx-mdz-01): a declared step, a proposal to ICDEV[OS] -- */
@@ -444,7 +518,9 @@ async function runAssessment() {
         });
         const d = await resp.json();
         if (resp.ok && d.status !== 'error') {
-            statusEl.textContent = 'Assessment complete: ' + (d.recommended_strategy || '?') + ' recommended. Refreshing data...';
+            statusEl.textContent = d.recommended_strategy
+                ? 'Assessment complete: ' + d.recommended_strategy + ' recommended at confidence ' + fmtConf(d.confidence) + '. Refreshing data...'
+                : 'Assessment complete: no strategy recommended (' + ((d.recommendation || {}).reason || 'insufficient evidence') + '). Refreshing data...';
             statusEl.style.color = '#4caf50';
             await Promise.all([loadStats(), loadAssessments(), loadPlans()]);
         } else {
