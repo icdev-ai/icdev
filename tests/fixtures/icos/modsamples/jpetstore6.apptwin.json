@@ -1,6 +1,6 @@
 {
   "aiify": {
-    "assessed_at": "2026-11-15T00:00:00Z",
+    "assessed_at": "2026-11-16T00:00:00Z",
     "decisions": [],
     "opportunities": [
       {
@@ -519,7 +519,7 @@
     }
   ],
   "application": {
-    "id": "lapp-51f585a7a5bf",
+    "id": "lapp-da3c1b03cd7a",
     "languages": [
       "java"
     ],
@@ -614,49 +614,49 @@
     "artefact_digest": "fc1ac8f54ed7b5480ac386e9985fd26eeab01bd484c4de672c88388e672436ea",
     "artefacts": [
       {
-        "job": "28d40689-0776-4a90-90d0-bbb85685a45a",
+        "job": "88fdb3f4-4ab6-4229-9e44-a792549fec54",
         "kind": "config_mapping",
         "path": "config_externalisation/config-findings.json",
         "review": "unreviewed",
         "sha256": "6008fdef65a0a1759f241b9d0dc4454dd01870375291a2869db1975ba31a8c7c"
       },
       {
-        "job": "28d40689-0776-4a90-90d0-bbb85685a45a",
+        "job": "88fdb3f4-4ab6-4229-9e44-a792549fec54",
         "kind": "config_mapping",
         "path": "config_externalisation/config.env.example",
         "review": "unreviewed",
         "sha256": "1749e7dd395345580c031c3f8085d961cc83ac33e46d4592577375244929b163"
       },
       {
-        "job": "28d40689-0776-4a90-90d0-bbb85685a45a",
+        "job": "88fdb3f4-4ab6-4229-9e44-a792549fec54",
         "kind": "config_mapping",
         "path": "config_externalisation/env.mapping.json",
         "review": "unreviewed",
         "sha256": "32d6b6991c961f465ac0a1460750863816e6b841898a07a236b77f6f770a3279"
       },
       {
-        "job": "4d66fad0-8983-44ca-a91f-334ed9a923ed",
+        "job": "1d0fe72e-3c17-4086-a245-6dff8fe8b3fd",
         "kind": "container_definition",
         "path": "container_definition/Containerfile",
         "review": "unreviewed",
         "sha256": "d7c6293f97a3b0a165ec080b0e40a95b8b67864e7da4af36f9ef86dd84c9f079"
       },
       {
-        "job": "4d66fad0-8983-44ca-a91f-334ed9a923ed",
+        "job": "1d0fe72e-3c17-4086-a245-6dff8fe8b3fd",
         "kind": "deployment_manifest",
         "path": "container_definition/deployment.yaml",
         "review": "unreviewed",
         "sha256": "37ee5082e566654dbd8d726a29768b4093b0cd0487990831e039f04943838348"
       },
       {
-        "job": "a4d2da76-dbe6-41a5-8817-30128ab1324f",
+        "job": "a0b4eb63-719c-499e-a7d0-fd2b26e906a2",
         "kind": "twelve_factor_report",
         "path": "twelve_factor_report/twelve-factor.json",
         "review": "unreviewed",
         "sha256": "9d862f375ac887e9eff560fabb96c2bc257bb77505ad9eccf11291f95f75a8fd"
       }
     ],
-    "assessed_at": "2026-11-15T00:00:00Z",
+    "assessed_at": "2026-11-16T00:00:00Z",
     "config": [],
     "env": [],
     "events": [],
@@ -1628,9 +1628,117 @@
       "target": "org.mybatis.jpetstore.service.CatalogService"
     }
   ],
+  "derived_waves": {
+    "assessed_at": "2026-11-16T00:00:00Z",
+    "basis": "80 dependencies between 48 components of the application",
+    "tool": "icdev-it/app_wave_planner",
+    "waves": [
+      {
+        "backout": "Route these 18 components back to the legacy jpetstore6 through the strangler facade; the legacy code stays deployed and authoritative until this wave closes. Back out waves 2, 3, 4 first: they depend on this one.",
+        "components": [
+          "MavenWrapperDownloader",
+          "org.mybatis.jpetstore.ScreenTransitionIT",
+          "org.mybatis.jpetstore.domain.Account",
+          "org.mybatis.jpetstore.domain.Cart",
+          "org.mybatis.jpetstore.domain.CartItem",
+          "org.mybatis.jpetstore.domain.CartTest",
+          "org.mybatis.jpetstore.domain.Category",
+          "org.mybatis.jpetstore.domain.Item",
+          "org.mybatis.jpetstore.domain.LineItem",
+          "org.mybatis.jpetstore.domain.Order",
+          "org.mybatis.jpetstore.domain.OrderTest",
+          "org.mybatis.jpetstore.domain.Product",
+          "org.mybatis.jpetstore.domain.Sequence",
+          "org.mybatis.jpetstore.mapper.MapperTestContext",
+          "org.mybatis.jpetstore.web.configuration.StaxFactoryInitializationListener",
+          "org.mybatis.jpetstore.web.configuration.StaxFactoryInitializationListenerTest",
+          "org.mybatis.jpetstore.web.controllers.RootController",
+          "org.mybatis.jpetstore.web.controllers.RootControllerTest"
+        ],
+        "id": "w1",
+        "order": 1,
+        "status": "planned",
+        "title": "Wave 1: 18 components that depend on nothing else in it"
+      },
+      {
+        "backout": "Route these 14 components back to the legacy jpetstore6 through the strangler facade; the legacy code stays deployed and authoritative until this wave closes. Back out wave 3 first: they depend on this one.",
+        "components": [
+          "org.mybatis.jpetstore.mapper.AccountMapper",
+          "org.mybatis.jpetstore.mapper.AccountMapperTest",
+          "org.mybatis.jpetstore.mapper.CategoryMapper",
+          "org.mybatis.jpetstore.mapper.CategoryMapperTest",
+          "org.mybatis.jpetstore.mapper.ItemMapper",
+          "org.mybatis.jpetstore.mapper.ItemMapperTest",
+          "org.mybatis.jpetstore.mapper.LineItemMapper",
+          "org.mybatis.jpetstore.mapper.LineItemMapperTest",
+          "org.mybatis.jpetstore.mapper.OrderMapper",
+          "org.mybatis.jpetstore.mapper.OrderMapperTest",
+          "org.mybatis.jpetstore.mapper.ProductMapper",
+          "org.mybatis.jpetstore.mapper.ProductMapperTest",
+          "org.mybatis.jpetstore.mapper.SequenceMapper",
+          "org.mybatis.jpetstore.mapper.SequenceMapperTest"
+        ],
+        "id": "w2",
+        "order": 2,
+        "status": "planned",
+        "title": "Wave 2: 14 components that depend only on waves 1-1"
+      },
+      {
+        "backout": "Route these 6 components back to the legacy jpetstore6 through the strangler facade; the legacy code stays deployed and authoritative until this wave closes. Back out wave 4 first: they depend on this one.",
+        "components": [
+          "org.mybatis.jpetstore.service.AccountService",
+          "org.mybatis.jpetstore.service.AccountServiceTest",
+          "org.mybatis.jpetstore.service.CatalogService",
+          "org.mybatis.jpetstore.service.CatalogServiceTest",
+          "org.mybatis.jpetstore.service.OrderService",
+          "org.mybatis.jpetstore.service.OrderServiceTest"
+        ],
+        "id": "w3",
+        "order": 3,
+        "status": "planned",
+        "title": "Wave 3: 6 components that depend only on waves 1-2"
+      },
+      {
+        "backout": "Route these 10 components back to the legacy jpetstore6 through the strangler facade; the legacy code stays deployed and authoritative until this wave closes.",
+        "components": [
+          "org.mybatis.jpetstore.web.controllers.AccountController",
+          "org.mybatis.jpetstore.web.controllers.AccountControllerTest",
+          "org.mybatis.jpetstore.web.controllers.AccountSession",
+          "org.mybatis.jpetstore.web.controllers.CartController",
+          "org.mybatis.jpetstore.web.controllers.CartControllerTest",
+          "org.mybatis.jpetstore.web.controllers.CatalogController",
+          "org.mybatis.jpetstore.web.controllers.CatalogControllerTest",
+          "org.mybatis.jpetstore.web.controllers.OrderController",
+          "org.mybatis.jpetstore.web.controllers.OrderControllerTest",
+          "org.mybatis.jpetstore.web.controllers.to"
+        ],
+        "id": "w4",
+        "order": 4,
+        "status": "planned",
+        "title": "Wave 4: 10 components that depend only on waves 1-3"
+      }
+    ]
+  },
   "features": [
     {
       "basis": "source",
+      "capability_hints": [
+        {
+          "capability": "account",
+          "from": [
+            "apis",
+            "calls",
+            "handlers",
+            "name"
+          ],
+          "terms": [
+            "account",
+            "signoff",
+            "signon"
+          ],
+          "title": "Customer account"
+        }
+      ],
       "confidence": 0.9,
       "evidence": [
         "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:70",
@@ -1667,6 +1775,43 @@
     },
     {
       "basis": "source",
+      "capability_hints": [
+        {
+          "capability": "cart",
+          "from": [
+            "apis",
+            "calls",
+            "handlers",
+            "name"
+          ],
+          "terms": [
+            "cart"
+          ],
+          "title": "Shopping cart"
+        },
+        {
+          "capability": "catalogue",
+          "from": [
+            "apis",
+            "handlers"
+          ],
+          "terms": [
+            "item"
+          ],
+          "title": "Product catalogue"
+        },
+        {
+          "capability": "order",
+          "from": [
+            "apis",
+            "handlers"
+          ],
+          "terms": [
+            "checkout"
+          ],
+          "title": "Order management"
+        }
+      ],
       "confidence": 0.9,
       "evidence": [
         "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:77",
@@ -1697,6 +1842,23 @@
     },
     {
       "basis": "source",
+      "capability_hints": [
+        {
+          "capability": "catalogue",
+          "from": [
+            "apis",
+            "handlers",
+            "name"
+          ],
+          "terms": [
+            "catalogue",
+            "category",
+            "item",
+            "product"
+          ],
+          "title": "Product catalogue"
+        }
+      ],
       "confidence": 0.9,
       "evidence": [
         "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:51",
@@ -1727,6 +1889,31 @@
     },
     {
       "basis": "source",
+      "capability_hints": [
+        {
+          "capability": "cart",
+          "from": [
+            "calls"
+          ],
+          "terms": [
+            "cart"
+          ],
+          "title": "Shopping cart"
+        },
+        {
+          "capability": "order",
+          "from": [
+            "apis",
+            "calls",
+            "handlers",
+            "name"
+          ],
+          "terms": [
+            "order"
+          ],
+          "title": "Order management"
+        }
+      ],
       "confidence": 0.9,
       "evidence": [
         "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:75",
@@ -1774,118 +1961,342 @@
   "processes": [
     {
       "basis": "source",
+      "derived_from": "handler methods",
+      "feature": "account",
       "id": "account-actions",
+      "order": "the actions this controller offers, in the order its source declares them: not an observed sequence; a person reviews it before ICDEV[OS] counts its steps",
+      "review": {
+        "error": "no such table: wf_decision_steps",
+        "state": "unreviewed"
+      },
+      "signature": {
+        "digest": "b2260e267dc1f028cf31df60ef5f040072bbd9d89989a738edf1b93882bf1762",
+        "rules_digest": "f7dfbe346aff1ede412929f7165a5e59212fdea2c484219a1404d44c06668516",
+        "steps": [
+          "authenticate:account",
+          "authenticate:account",
+          "sign_out:account",
+          "create:account",
+          "create:account",
+          "update:account",
+          "update:account"
+        ]
+      },
+      "source": "static",
       "steps": [
         {
+          "apis": [
+            "GET /account"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:70",
           "id": "s01",
-          "title": "Signon form"
+          "object": "account",
+          "signature": "authenticate:account",
+          "title": "Signon form",
+          "verb": "authenticate"
         },
         {
+          "apis": [
+            "POST /account/signon"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:89",
           "id": "s02",
-          "title": "Signon"
+          "object": "account",
+          "signature": "authenticate:account",
+          "title": "Signon",
+          "verb": "authenticate"
         },
         {
+          "apis": [
+            "GET /account/signoff"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:111",
           "id": "s03",
-          "title": "Signoff"
+          "object": "account",
+          "signature": "sign_out:account",
+          "title": "Signoff",
+          "verb": "sign_out"
         },
         {
+          "apis": [
+            "GET /account/new"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:125",
           "id": "s04",
-          "title": "New account form"
+          "object": "account",
+          "signature": "create:account",
+          "title": "New account form",
+          "verb": "create"
         },
         {
+          "apis": [
+            "POST /account/new"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:141",
           "id": "s05",
-          "title": "New account"
+          "object": "account",
+          "signature": "create:account",
+          "title": "New account",
+          "verb": "create"
         },
         {
+          "apis": [
+            "GET /account/edit"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:157",
           "id": "s06",
-          "title": "Edit account form"
+          "object": "account",
+          "signature": "update:account",
+          "title": "Edit account form",
+          "verb": "update"
         },
         {
+          "apis": [
+            "POST /account/edit"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:178",
           "id": "s07",
-          "title": "Edit account"
+          "object": "account",
+          "signature": "update:account",
+          "title": "Edit account",
+          "verb": "update"
         }
       ],
       "title": "Account: 7 actions of AccountController"
     },
     {
       "basis": "source",
+      "derived_from": "handler methods",
+      "feature": "cart",
       "id": "cart-actions",
+      "order": "the actions this controller offers, in the order its source declares them: not an observed sequence; a person reviews it before ICDEV[OS] counts its steps",
+      "review": {
+        "error": "no such table: wf_decision_steps",
+        "state": "unreviewed"
+      },
+      "signature": {
+        "digest": "4c70da8a25c8d7bec69758a2047e0df1895f21cc3d8c36ebbd3a76a0a3e338a0",
+        "rules_digest": "f7dfbe346aff1ede412929f7165a5e59212fdea2c484219a1404d44c06668516",
+        "steps": [
+          "view:cart",
+          "create:cart+item",
+          "delete:cart+item",
+          "update:cart+quantity",
+          "submit:cart"
+        ]
+      },
+      "source": "static",
       "steps": [
         {
+          "apis": [
+            "GET /cart"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:77",
           "id": "s01",
-          "title": "View cart"
+          "object": "cart",
+          "signature": "view:cart",
+          "title": "View cart",
+          "verb": "view"
         },
         {
+          "apis": [
+            "GET /cart/addItem"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:95",
           "id": "s02",
-          "title": "Add item to cart"
+          "object": "cart+item",
+          "signature": "create:cart+item",
+          "title": "Add item to cart",
+          "verb": "create"
         },
         {
+          "apis": [
+            "GET /cart/removeItem"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:126",
           "id": "s03",
-          "title": "Remove item from cart"
+          "object": "cart+item",
+          "signature": "delete:cart+item",
+          "title": "Remove item from cart",
+          "verb": "delete"
         },
         {
+          "apis": [
+            "POST /cart/update"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:155",
           "id": "s04",
-          "title": "Update cart quantities"
+          "object": "cart+quantity",
+          "signature": "update:cart+quantity",
+          "title": "Update cart quantities",
+          "verb": "update"
         },
         {
+          "apis": [
+            "GET /cart/checkout"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:186",
           "id": "s05",
-          "title": "Check out"
+          "object": "cart",
+          "signature": "submit:cart",
+          "title": "Check out",
+          "verb": "submit"
         }
       ],
       "title": "Cart: 5 actions of CartController"
     },
     {
       "basis": "source",
+      "derived_from": "handler methods",
+      "feature": "catalog",
       "id": "catalog-actions",
+      "order": "the actions this controller offers, in the order its source declares them: not an observed sequence; a person reviews it before ICDEV[OS] counts its steps",
+      "review": {
+        "error": "no such table: wf_decision_steps",
+        "state": "unreviewed"
+      },
+      "signature": {
+        "digest": "0f5fa207d7edf6416a80d87885e6a0aadfee272a80fc8119bb725bcfc8fbc83f",
+        "rules_digest": "f7dfbe346aff1ede412929f7165a5e59212fdea2c484219a1404d44c06668516",
+        "steps": [
+          "view:main",
+          "view:category",
+          "view:product",
+          "view:item",
+          "search:product"
+        ]
+      },
+      "source": "static",
       "steps": [
         {
+          "apis": [
+            "GET /catalog"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:51",
           "id": "s01",
-          "title": "View main"
+          "object": "main",
+          "signature": "view:main",
+          "title": "View main",
+          "verb": "view"
         },
         {
+          "apis": [
+            "GET /catalog/viewCategory"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:66",
           "id": "s02",
-          "title": "View category"
+          "object": "category",
+          "signature": "view:category",
+          "title": "View category",
+          "verb": "view"
         },
         {
+          "apis": [
+            "GET /catalog/viewProduct"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:87",
           "id": "s03",
-          "title": "View product"
+          "object": "product",
+          "signature": "view:product",
+          "title": "View product",
+          "verb": "view"
         },
         {
+          "apis": [
+            "GET /catalog/viewItem"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:108",
           "id": "s04",
-          "title": "View item"
+          "object": "item",
+          "signature": "view:item",
+          "title": "View item",
+          "verb": "view"
         },
         {
+          "apis": [
+            "GET /catalog/searchProducts"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:127",
           "id": "s05",
-          "title": "Search products"
+          "object": "product",
+          "signature": "search:product",
+          "title": "Search products",
+          "verb": "search"
         }
       ],
       "title": "Catalog: 5 actions of CatalogController"
     },
     {
       "basis": "source",
+      "derived_from": "handler methods",
+      "feature": "order",
       "id": "order-actions",
+      "order": "the actions this controller offers, in the order its source declares them: not an observed sequence; a person reviews it before ICDEV[OS] counts its steps",
+      "review": {
+        "error": "no such table: wf_decision_steps",
+        "state": "unreviewed"
+      },
+      "signature": {
+        "digest": "0585d0dcf61dc155c7596f11e4ee0df6618f26ea122496bac1b80c55def8d97c",
+        "rules_digest": "f7dfbe346aff1ede412929f7165a5e59212fdea2c484219a1404d44c06668516",
+        "steps": [
+          "list:order",
+          "create:order",
+          "create:order",
+          "view:order"
+        ]
+      },
+      "source": "static",
       "steps": [
         {
+          "apis": [
+            "GET /order/list"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:75",
           "id": "s01",
-          "title": "List orders"
+          "object": "order",
+          "signature": "list:order",
+          "title": "List orders",
+          "verb": "list"
         },
         {
+          "apis": [
+            "GET /order/new"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:99",
           "id": "s02",
-          "title": "New order form"
+          "object": "order",
+          "signature": "create:order",
+          "title": "New order form",
+          "verb": "create"
         },
         {
+          "apis": [
+            "POST /order/new"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:138",
           "id": "s03",
-          "title": "New order"
+          "object": "order",
+          "signature": "create:order",
+          "title": "New order",
+          "verb": "create"
         },
         {
+          "apis": [
+            "GET /order/view"
+          ],
+          "evidence": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:222",
           "id": "s04",
-          "title": "View order"
+          "object": "order",
+          "signature": "view:order",
+          "title": "View order",
+          "verb": "view"
         }
       ],
       "title": "Order: 4 actions of OrderController"
     }
   ],
-  "produced_at": "2026-11-15T00:00:00Z",
+  "produced_at": "2026-11-16T00:00:00Z",
   "producer": {
     "tool": "icdev-it/apptwin_export",
     "version": "unpackaged"
@@ -1895,9 +2306,108 @@
   "rtm": null,
   "sbd": null,
   "schema": "icos-apptwin/v1",
+  "sections": {
+    "aiify": {
+      "state": "present"
+    },
+    "apis": {
+      "count": 22,
+      "state": "present"
+    },
+    "cloud_native": {
+      "state": "present"
+    },
+    "cloud_native.config": {
+      "count": 3,
+      "findings": 0,
+      "state": "present"
+    },
+    "cloud_native.containerisation": {
+      "count": 2,
+      "state": "present"
+    },
+    "cloud_native.events": {
+      "reason": "no event_contract job: CAM's cloud_native rules queue one only for an EJB application's message-driven beans (framework Spring)",
+      "state": "missing"
+    },
+    "cloud_native.twelve_factor": {
+      "count": 1,
+      "factors": 12,
+      "state": "present"
+    },
+    "coherence": {
+      "reason": "no coherence check was run",
+      "state": "missing"
+    },
+    "components": {
+      "count": 48,
+      "state": "present"
+    },
+    "consumers": {
+      "reason": "the exporter never carries consumers",
+      "state": "missing"
+    },
+    "data": {
+      "count": 13,
+      "state": "present"
+    },
+    "dependencies": {
+      "count": 80,
+      "state": "present"
+    },
+    "features": {
+      "count": 5,
+      "state": "present"
+    },
+    "integrity": {
+      "reason": "no SIPA assessment was run",
+      "state": "missing"
+    },
+    "ivv": {
+      "reason": "no IV&V assessment was run",
+      "state": "missing"
+    },
+    "migration": {
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "state": "missing"
+    },
+    "migration.waves": {
+      "derived": 4,
+      "reason": "derived before any plan (carried in derived_waves, never approved): no migration plan carries them, so ICDEV[OS]'s migration-plan gate will block",
+      "state": "missing"
+    },
+    "processes": {
+      "count": 4,
+      "state": "present"
+    },
+    "readiness": {
+      "reason": "no readiness assessment was run",
+      "state": "missing"
+    },
+    "refactor": {
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "state": "missing"
+    },
+    "refactor.jobs": {
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "state": "missing"
+    },
+    "rtm": {
+      "reason": "no requirements traceability was run",
+      "state": "missing"
+    },
+    "sbd": {
+      "reason": "no Secure by Design assessment was run",
+      "state": "missing"
+    },
+    "seven_r": {
+      "state": "present"
+    }
+  },
   "seven_r": {
-    "assessed_at": "2026-11-16T05:14:08.106361+00:00",
+    "assessed_at": "2026-11-16T14:59:57.823423+00:00",
     "ato_impact": "low",
+    "confidence": 0.5,
     "cost_estimate_hours": 978.0,
     "evidence": [
       "recommendation: replatform scores 1.00 on 2 measured criteria (confidence 0.50)",
@@ -1911,28 +2421,73 @@
     ],
     "ranked": [
       {
+        "assessable": true,
+        "confidence": 0.5,
         "score": 1.0,
-        "strategy": "replatform"
+        "strategy": "replatform",
+        "unmeasured": [
+          "cost_optimization",
+          "operational_improvement",
+          "security_posture_change"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.7,
         "score": 0.6786,
-        "strategy": "rehost"
+        "strategy": "rehost",
+        "unmeasured": [
+          "licensing_transferability",
+          "operational_readiness"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.55,
         "score": 0.6364,
-        "strategy": "refactor"
+        "strategy": "refactor",
+        "unmeasured": [
+          "cloud_service_adoption",
+          "compliance_alignment",
+          "team_capability"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.25,
         "score": 1.0,
-        "strategy": "retain"
+        "strategy": "retain",
+        "unmeasured": [
+          "cost_justification",
+          "migration_blocker_validity",
+          "reassessment_plan",
+          "risk_acceptance"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.2,
         "score": 1.0,
-        "strategy": "repurchase"
+        "strategy": "repurchase",
+        "unmeasured": [
+          "fedramp_authorization",
+          "product_fit",
+          "total_cost_of_ownership",
+          "vendor_viability"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.12,
         "score": 0.0,
-        "strategy": "retire"
+        "strategy": "retire",
+        "unmeasured": [
+          "cost_savings",
+          "data_disposition",
+          "dependency_analysis",
+          "functional_redundancy",
+          "stakeholder_alignment"
+        ]
       }
     ],
     "recommended": "replatform",

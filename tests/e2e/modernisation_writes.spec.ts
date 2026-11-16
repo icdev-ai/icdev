@@ -1,6 +1,7 @@
 // CUI // SP-CTI
 // E2E: every modernisation write the feature-conformance audit credits to a page is SENT
-// BY THAT PAGE, as a person would send it (icx-mdz-01; icx-mdz-03: the process review).
+// BY THAT PAGE, as a person would send it (icx-mdz-01; icx-mdz-03: the process review; icx-mdz-04: the
+// bundle's contract, security domain, 7R confidence and derived waves, shown).
 //
 // The audit (tools/conformance/feature_audit.py) now judges six modernisation features:
 // the 7R assessment, AI-Ify, Process-Ify, an application's waves and CAM jobs,
@@ -163,6 +164,13 @@ test.describe('Every credited modernisation write is sent by its page (icx-mdz-0
     await page.goto(`/migration-canvas/modernisation?app=${encodeURIComponent(s.app_id)}`);
     await expect(page.locator('#mdz-waves-body table')).toBeVisible({ timeout: T });
     await expect(page.locator('#mdz-bundle-body')).toContainText('icos-apptwin/v1', { timeout: T });
+    // icx-mdz-04: contract 1.189.0, the security domain (none declared for a synthetic app, and why), the 7R's
+    // confidence and unmeasured criteria, and the waves derived before any plan (the seeded plan was refused)
+    await expect(page.locator('#mdz-bundle-body')).toContainText('contract 1.189.0', { timeout: T });
+    await expect(page.locator('#mdz-security-domain')).toContainText('No security domain', { timeout: T });
+    await expect(page.locator('#mdz-security-domain')).toContainText('never guessed');
+    await expect(page.locator('#mdz-bundle-7r')).toContainText(/7R strategy|No 7R assessment/, { timeout: T });
+    await expect(page.locator('#mdz-derived-waves')).toContainText('derived before any plan', { timeout: T });
     const job = s.cloud_native.jobs.find(j => j.status === 'completed');
     expect(job, 'a completed cloud-native job was seeded').toBeTruthy();
     const row = page.locator(`#mdz-cloud-body tr[data-job-id="${job!.id}"]`);

@@ -124,3 +124,6 @@ tests/test_icx_mdz_02_ambient.py
 # icx-mdz-03: a person's process review written to wf_decision_steps and read back at its
 # signature digest (bundle_features.review_states), and the twin's bundle preview, on the ambient PG.
 tests/test_icx_mdz_03_ambient.py
+# icx-mdz-04: a planned wave's estimate summed from migration_tasks (estimated_hours real) over
+# legacy_components, and the bundle preview's latest migration_assessments row, on the ambient PG.
+tests/test_icx_mdz_04_ambient.py

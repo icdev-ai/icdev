@@ -15,7 +15,7 @@ Covers:
   * the Modernisation page shows them and calls its routes by endpoint id; the modernisation twin flags a bundle with
     no features, unreviewed processes and missing parts, with threads, and replays; the MCP read tool is read-only;
   * the regenerated bundles of the three real applications validate, carry features and processes, and
-    JPetStore 6 and the Cycle Store share a capability hint.
+    JPetStore 6 and the Cycle Store share a capability hint (icx-mdz-04: read from the bundle, the side file retired).
 
 Run: pytest tests/test_icx_mdz_03_bundle_features.py -v
 """
@@ -488,7 +488,9 @@ def test_the_regenerated_real_bundles_validate_and_carry_features_and_processes(
     for name in REAL:
         b = json.loads((BUNDLES / f"{name}.apptwin.json").read_text(encoding="utf-8"))
         gaps = json.loads((BUNDLES / f"{name}.gaps.json").read_text(encoding="utf-8"))
-        ext = json.loads((BUNDLES / f"{name}.features.json").read_text(encoding="utf-8"))
+        # icx-mdz-04: the features.json side file is retired; the bundle carries the extract inline
+        ext = {"counts": {"features": len(b["features"]), "processes": len(b["processes"])},
+               "rules": {"digest": b["processes"][0]["signature"]["rules_digest"]}}
         assert ax.validate(b) == [], name
         assert b["features"] and b["processes"], name
         assert {f["provenance"] for f in b["features"]} == {"static"}, f"{name}: the source is never run"
@@ -501,6 +503,7 @@ def test_the_regenerated_real_bundles_validate_and_carry_features_and_processes(
         assert sections["features"]["count"] == len(b["features"]) == ext["counts"]["features"]
         assert sections["processes"]["count"] == len(b["processes"]) == ext["counts"]["processes"]
         assert ext["rules"]["digest"] == next(s for s in gaps["steps"] if s["step"] == "extract")["rules_digest"]
-    hints = {n: {h["capability"] for f in json.loads((BUNDLES / f"{n}.features.json").read_text())["features"]
-                 for h in f["capability_hints"]} for n in REAL}
+        assert {p["signature"]["rules_digest"] for p in b["processes"]} == {ext["rules"]["digest"]}, name
+    hints = {n: {h["capability"] for f in json.loads((BUNDLES / f"{n}.apptwin.json").read_text())["features"]
+                 for h in f.get("capability_hints") or []} for n in REAL}
     assert "catalogue" in hints["jpetstore6"] & hints["cycle-store"]

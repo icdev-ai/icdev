@@ -1,4 +1,4 @@
-<!-- CUI // SP-CTI — Modernisation: an application's waves, CAM jobs, cloud-native output, features and processes, and ICDEV[OS] bundle (icx-mdz-01, icx-mdz-03) -->
+<!-- CUI // SP-CTI — Modernisation: an application's waves, CAM jobs, cloud-native output, features and processes, and ICDEV[OS] bundle (icx-mdz-01, icx-mdz-03, icx-mdz-04) -->
 {% extends "base.html" %}
 {% block title %}Modernisation — ICDEV{% endblock %}
 {% block content %}
@@ -68,8 +68,11 @@
 
   <div class="mdz-card" id="mdz-bundle">
     <h2>ICDEV[OS] bundle</h2>
-    <p class="mdz-help">What <code>apptwin_export.py</code> would assemble from this database, validated against the vendored contract. A null section is read by ICDEV[OS] as unverified.</p>
+    <p class="mdz-help">What <code>apptwin_export.py</code> would assemble from this database, validated against the vendored contract (and the rules ICDEV[OS]'s importer adds to it). A null section is read by ICDEV[OS] as unverified. The 7R's confidence is the share of each strategy's criterion weight that was measured; an unmeasured criterion is left out of its score, never guessed. Waves derived before a plan are shown in ICDEV[OS] and never approved. The security domain comes only from <code>args/modernisation_environments.yaml</code>, as the deployment declares it.</p>
     <div id="mdz-bundle-body" class="mdz-muted">Pick an application.</div>
+    <div id="mdz-bundle-env" class="mdz-muted"></div>
+    <div id="mdz-bundle-7r" class="mdz-muted"></div>
+    <div id="mdz-bundle-derived" class="mdz-muted"></div>
   </div>
 
   <div class="mdz-card" id="mdz-icos">
@@ -231,13 +234,46 @@
     });
   }
 
+  function num(v) { return v == null ? '—' : esc(Number(v).toFixed(2)); }
+
+  /* icx-mdz-04: the security domain (or why none), the 7R's confidence and unmeasured criteria, the derived waves */
+  function bundleExtras(d) {
+    var env = document.getElementById('mdz-bundle-env');
+    var er = d.environment_report || {};
+    env.innerHTML = d.security_domain
+      ? 'Security domain <b id="mdz-security-domain">' + esc(d.security_domain) + '</b>' +
+        Object.keys(d.environment || {}).filter(function (k) { return k !== 'security_domain'; }).map(function (k) {
+          return ', ' + esc(k.replace('_', ' ')) + ' ' + esc(d.environment[k]);
+        }).join('') + ' <span class="mdz-muted">(declared: ' + esc(er.source) + ')</span>'
+      : '<span class="mdz-err" id="mdz-security-domain">No security domain: ' + esc(er.reason || er.error || 'none declared') + '</span>';
+    var sr = d.seven_r;
+    document.getElementById('mdz-bundle-7r').innerHTML = !sr ? 'No 7R assessment to carry.' :
+      '<table><tr><th>7R strategy</th><th>Score</th><th>Confidence</th><th>Unmeasured</th></tr>' +
+      sr.ranked.map(function (x) {
+        return '<tr><td>' + esc(x.strategy) + (x.strategy === sr.recommended ? ' <span class="mdz-tag ok">recommended at ' + num(sr.confidence) + '</span>' : '') +
+          '</td><td>' + num(x.score) + '</td><td class="mdz-7r-confidence">' + num(x.confidence) + '</td><td class="mdz-7r-unmeasured">' +
+          esc((x.unmeasured || []).join(', ') || 'none') + '</td></tr>';
+      }).join('') + '</table>';
+    var dw = d.derived_waves;
+    document.getElementById('mdz-bundle-derived').innerHTML = dw
+      ? '<div id="mdz-derived-waves">' + esc(dw.waves.length) + ' wave(s) derived before any plan (' + esc(dw.basis) + '): ' +
+        dw.waves.map(function (w) { return esc(w.id) + ' ' + esc(w.components) + ' component(s)' + (w.estimated_hours == null ? '' : ', ' + num(w.estimated_hours) + ' h'); }).join('; ') +
+        ' <span class="mdz-muted">' + esc(dw.means) + '</span></div>'
+      : (d.planned_waves || []).length ? '<div>Planned waves: ' + d.planned_waves.map(function (w) {
+          return esc(w.id) + ' ' + (w.estimated_hours == null ? 'no estimate' : num(w.estimated_hours) + ' h');
+        }).join('; ') + '</div>' : '';
+  }
+
   function loadBundle(id) {
     var box = document.getElementById('mdz-bundle-body');
     box.textContent = 'Loading…';
     getJson(icdevFetch('migration_canvas.api_modernisation_bundle', {app_id: id})).then(function (res) {
       var d = res.j;
-      if (!res.ok || !d.valid) { box.innerHTML = '<span class="mdz-err">' + esc(d.error) + '</span>'; return; }
-      box.innerHTML = '<div>' + esc(d.schema) + ', inventory digest <code>' + esc(String(d.inventory_digest).slice(0, 16)) + '</code>, ' + esc(d.waves) + ' wave(s)</div>' +
+      if (!res.ok || !d.sections) { box.innerHTML = '<span class="mdz-err">' + esc(d.error) + '</span>'; return; }
+      bundleExtras(d);
+      var bad = (d.schema_errors || []).length ? '<div class="mdz-err" id="mdz-bundle-contract">Fails the pinned contract ' + esc(d.contract) + ': ' +
+        d.schema_errors.slice(0, 5).map(esc).join('; ') + '</div>' : '';
+      box.innerHTML = bad + '<div>' + esc(d.schema) + ' (contract ' + esc(d.contract) + '), inventory digest <code>' + esc(String(d.inventory_digest).slice(0, 16)) + '</code>, ' + esc(d.waves) + ' wave(s)</div>' +
         '<div>' + Object.keys(d.sections).map(function (k) {
           return '<span class="mdz-tag ' + (d.sections[k] ? 'ok' : '') + '" title="' + (d.sections[k] ? 'filled' : 'null: unverified') + '">' + esc(k) + '</span>';
         }).join(' ') + '</div>' + (Object.keys(d.missing || {}).length ? '<div class="mdz-muted" id="mdz-bundle-missing">Missing: ' +

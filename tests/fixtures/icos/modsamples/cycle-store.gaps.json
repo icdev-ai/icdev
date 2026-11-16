@@ -1,10 +1,10 @@
 {
   "application": "cycle-store",
   "source": "cycle-store@378fe3a666cc",
-  "app_id": "lapp-9acc6e3fc69b",
-  "project_id": "324e504e-9be2-4b87-9e8c-5fff80ac3085",
+  "app_id": "lapp-3472ac096e2c",
+  "project_id": "6b215c5c-338e-4b27-9d4b-a8771c393274",
   "bundle": "cycle-store.apptwin.json",
-  "bundle_sha256": "ce3bda120f06cc71a2c9121fb2b4f86a7c97a82c70cd555bfc232f8d3b7d4063",
+  "bundle_sha256": "0e728dd16b0ecbc726acba46b2989463752943d522b31dfbcd35ffb0abca3d2a",
   "produced": [
     "aiify",
     "apis",
@@ -12,8 +12,10 @@
     "cloud_native",
     "components",
     "data",
+    "derived_waves",
     "features",
     "processes",
+    "sections",
     "seven_r"
   ],
   "gaps": {
@@ -32,12 +34,12 @@
     {
       "step": "project",
       "ok": true,
-      "project_id": "324e504e-9be2-4b87-9e8c-5fff80ac3085"
+      "project_id": "6b215c5c-338e-4b27-9d4b-a8771c393274"
     },
     {
       "step": "analyze",
       "ok": true,
-      "app_id": "lapp-9acc6e3fc69b",
+      "app_id": "lapp-3472ac096e2c",
       "language": "csharp",
       "language_version": "framework-4",
       "framework": "ASP.NET MVC",
@@ -84,7 +86,12 @@
       "section": "seven_r",
       "recommended": "replatform",
       "confidence": 0.5,
-      "recommendation": "replatform scores 0.75 on 2 measured criteria (confidence 0.50)"
+      "recommendation": "replatform scores 0.75 on 2 measured criteria (confidence 0.50)",
+      "redundancy": {
+        "share": null,
+        "state": "missing",
+        "why": "no signed ICDEV[OS] decisions export and pinned JWKS given: redundancy is unmeasured"
+      }
     },
     {
       "step": "refactor",
@@ -219,7 +226,7 @@
     },
     "migration.waves": {
       "derived": 1,
-      "reason": "no migration plan carries them, so ICDEV[OS]'s migration-plan gate will block",
+      "reason": "derived before any plan (carried in derived_waves, never approved): no migration plan carries them, so ICDEV[OS]'s migration-plan gate will block",
       "state": "missing"
     },
     "processes": {
@@ -267,5 +274,11 @@
     "given": false,
     "reason": "no signed ICDEV[OS] decisions export given: the plan and the CAM refactor jobs wait for its may-plan (rerun with --resume once ICDEV[OS] decides)"
   },
-  "at": "2026-11-15T00:00:00Z"
+  "environment": {
+    "declared": false,
+    "file": "args/modernisation_environments.yaml",
+    "reason": "no environment is declared for cycle-store in args/modernisation_environments.yaml: its security domain, impact level, ATO boundary and hosting are unreported (never guessed from the source)"
+  },
+  "contract": "1.189.0",
+  "at": "2026-11-16T00:00:00Z"
 }

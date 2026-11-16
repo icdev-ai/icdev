@@ -1,10 +1,10 @@
 {
   "application": "jpetstore6",
   "source": "jpetstore6@c3dbf6f56f6b",
-  "app_id": "lapp-51f585a7a5bf",
-  "project_id": "438a5b6a-9ed7-4ee9-9308-7f65560b4c60",
+  "app_id": "lapp-da3c1b03cd7a",
+  "project_id": "cc097889-4102-4306-a0d1-7bc31a92a739",
   "bundle": "jpetstore6.apptwin.json",
-  "bundle_sha256": "96b4f906a6cfa93528a4bc0d7c2db406a4c0256d97177d81f1c10bcbcf937ef3",
+  "bundle_sha256": "0a4b89457af196676a92d3e56cd86f610abd093f827ca19def6f4d4bcfb34459",
   "produced": [
     "aiify",
     "apis",
@@ -13,8 +13,10 @@
     "components",
     "data",
     "dependencies",
+    "derived_waves",
     "features",
     "processes",
+    "sections",
     "seven_r"
   ],
   "gaps": {
@@ -32,12 +34,12 @@
     {
       "step": "project",
       "ok": true,
-      "project_id": "438a5b6a-9ed7-4ee9-9308-7f65560b4c60"
+      "project_id": "cc097889-4102-4306-a0d1-7bc31a92a739"
     },
     {
       "step": "analyze",
       "ok": true,
-      "app_id": "lapp-51f585a7a5bf",
+      "app_id": "lapp-da3c1b03cd7a",
       "language": "java",
       "language_version": "11",
       "framework": "Spring",
@@ -84,7 +86,12 @@
       "section": "seven_r",
       "recommended": "replatform",
       "confidence": 0.5,
-      "recommendation": "replatform scores 1.00 on 2 measured criteria (confidence 0.50)"
+      "recommendation": "replatform scores 1.00 on 2 measured criteria (confidence 0.50)",
+      "redundancy": {
+        "share": null,
+        "state": "missing",
+        "why": "no signed ICDEV[OS] decisions export and pinned JWKS given: redundancy is unmeasured"
+      }
     },
     {
       "step": "refactor",
@@ -219,7 +226,7 @@
     },
     "migration.waves": {
       "derived": 4,
-      "reason": "no migration plan carries them, so ICDEV[OS]'s migration-plan gate will block",
+      "reason": "derived before any plan (carried in derived_waves, never approved): no migration plan carries them, so ICDEV[OS]'s migration-plan gate will block",
       "state": "missing"
     },
     "processes": {
@@ -267,5 +274,11 @@
     "given": false,
     "reason": "no signed ICDEV[OS] decisions export given: the plan and the CAM refactor jobs wait for its may-plan (rerun with --resume once ICDEV[OS] decides)"
   },
-  "at": "2026-11-15T00:00:00Z"
+  "environment": {
+    "declared": false,
+    "file": "args/modernisation_environments.yaml",
+    "reason": "no environment is declared for jpetstore6 in args/modernisation_environments.yaml: its security domain, impact level, ATO boundary and hosting are unreported (never guessed from the source)"
+  },
+  "contract": "1.189.0",
+  "at": "2026-11-16T00:00:00Z"
 }

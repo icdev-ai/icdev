@@ -1,7 +1,8 @@
 # CUI // SP-CTI
 # ICDEV platform model: application modernisation (icx-mdz-01; icx-mdz-02: 7R on
 # evidence, one 7R engine, may-plan enforced; icx-mdz-03: features and processes
-# without a model, every bundle part present or missing) -- the 7R assessment,
+# without a model, every bundle part present or missing; icx-mdz-04: the bundle
+# carries what ICDEV[OS] contract 1.189.0 accepts, inline) -- the 7R assessment,
 # AI-Ify, Process-Ify, an application's waves and CAM refactor jobs, cloud-native
 # targets, and the ICDEV[OS] apptwin exporter and decision import.
 #
@@ -107,6 +108,26 @@ elements:
       - tools/migration_canvas/modernisation.py::register_modernisation_routes
       - args/modernisation_signatures.yaml
       - args/workflow_hitl_templates/mdz-process-review.yaml
+
+  - id: mdz.bundle_contract
+    type: sysml_element
+    kind: block
+    name: The bundle against ICDEV[OS] contract 1.189.0, inline; retire on ICDEV[OS]'s signed redundancy; a declared environment
+    features: [mdz.exporter, mdz.seven_r]
+    code:
+      - tools/modernization/apptwin_export.py::validate
+      - tools/modernization/apptwin_export.py::agreement
+      - tools/modernization/apptwin_export.py::derived_waves
+      - tools/modernization/apptwin_export.py::wave_estimates
+      - tools/modernization/apptwin_export.py::seven_r_from_assessment
+      - tools/modernization/apptwin_export.py::declared_environments
+      - tools/modernization/apptwin_export.py::environment
+      - tools/modernization/icos_decisions.py::redundancy
+      - tools/modernization/plan_gate.py::redundancy
+      - tools/modernization/seven_r_assessor.py::icos_redundancy
+      - tools/modernization/seven_r_assessor.py::_check_retire_fitness
+      - context/icos/apptwin.schema.json
+      - args/modernisation_environments.yaml
 
   - id: mdz.seven_r_consumers
     type: sysml_element
@@ -462,3 +483,83 @@ requirements:
       - tests/test_icx_mdz_03_bundle_features.py::test_the_twin_flags_no_features_unreviewed_processes_and_missing_parts
       - tests/test_icx_mdz_03_bundle_features.py::test_the_twin_observes_a_bundle_resolves_its_thread_and_replays
       - tests/test_icx_mdz_03_bundle_features.py::test_the_mcp_features_tool_is_read_only
+
+  - id: PM-MDZ-17
+    title: The bundle carries what ICDEV[OS] 1.189.0 accepts, inline, and is held to that contract
+    text: >-
+      The vendored icos-apptwin/v1 schema is ICDEV[OS]'s 1.189.0, pinned by
+      SHA-256. A feature read from source and seen running is provenance
+      both (basis source), with its capability hints; a process carries its
+      source, feature, order, derivation, step signature and review, and
+      each step its verb, object, signature, evidence and APIs; sections is
+      the bundle's own map. Every bundle the exporter writes is validated
+      against the pinned schema and the importer's agreement rules (sections
+      agreeing with what is carried, provenance against basis, signatures
+      digesting their steps, reviews at their digest), and refused when it
+      fails. The features.json side file is retired.
+    type: interface
+    priority: high
+    features: [mdz.exporter]
+    elements: [mdz.bundle_contract, mdz.exporter, mdz.bundle_features]
+    controls: [SI-7, SI-10, CM-8]
+    tests:
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_vendored_contract_is_icos_1_189_0_pinned_by_digest
+      - tests/test_icx_mdz_04_bundle_fields.py::test_a_feature_seen_both_ways_is_both_with_its_hints_inline
+      - tests/test_icx_mdz_04_bundle_fields.py::test_processes_carry_source_signature_review_and_step_fields
+      - tests/test_icx_mdz_04_bundle_fields.py::test_a_reviewed_process_is_exported_reviewed_at_its_digest
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_sections_map_is_inline_and_agrees_with_what_is_carried
+      - tests/test_icx_mdz_04_bundle_fields.py::test_icos_agreement_rules_refuse_what_the_importer_would
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_real_bundles_meet_the_pinned_contract_inline_with_no_side_file
+
+  - id: PM-MDZ-18
+    title: 7R and waves carry what they rest on; retire reads only ICDEV[OS]'s signed, measured redundancy
+    text: >-
+      Each ranked strategy carries its confidence, unmeasured criteria and
+      whether it is assessable, and the recommendation its confidence.
+      Retire's functional_redundancy is ICDEV[OS]'s measured redundancy,
+      read only from its signed decisions export verified against the pinned
+      JWKS; a missing, untrusted, unmeasured or unreported one leaves the
+      criterion unmeasured, never a score, and no unsigned file is read.
+      Waves derived before any plan are derived_waves, never approved; a
+      planned wave carries the sum of its tasks' estimates, absent (never 0)
+      where unknown, and no date is made up.
+    type: functional
+    priority: high
+    features: [mdz.seven_r, mdz.exporter]
+    elements: [mdz.bundle_contract, mdz.seven_r, mdz.plan_gate]
+    controls: [SA-11, CA-2]
+    tests:
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_7r_carries_confidence_unmeasured_and_assessable_as_fields
+      - tests/test_icx_mdz_04_bundle_fields.py::test_waves_before_a_plan_are_derived_and_carry_no_estimate
+      - tests/test_icx_mdz_04_bundle_fields.py::test_a_planned_wave_carries_the_sum_of_its_tasks_estimates_and_none_is_never_zero
+      - tests/test_icx_retire_fitness.py::test_retire_reads_icos_measured_redundancy_only_from_the_signed_export
+      - tests/test_icx_retire_fitness.py::test_the_assessment_reads_the_configured_export_and_records_what_it_read
+      - tests/test_icx_retire_fitness.py::test_the_mcp_tool_passes_the_signed_redundancy_through
+      - tests/test_icx_modsamples_pipeline.py::test_the_bundle_carries_the_1_189_fields_and_the_resumed_7r_reads_the_signed_redundancy
+      - tests/test_icx_mdz_04_ambient.py::test_a_planned_waves_estimate_is_read_from_its_tasks
+
+  - id: PM-MDZ-19
+    title: An application's security domain is declared with its source, never guessed; the twin and page say when it is not
+    text: >-
+      application.environment comes only from the declared environments
+      file (args/modernisation_environments.yaml), each entry naming the
+      deployment record it rests on; an entry without a source, with a field
+      the contract has not, or an impact level off the ladder is refused. An
+      undeclared application carries none and the run's report says why. The
+      Modernisation page shows the 7R's confidence and unmeasured criteria,
+      the security domain or why none, and the derived waves; the twin flags
+      a bundle that fails the pinned contract or reports no security
+      domain, threaded to the application, and replays; the MCP bundle tool
+      carries the new fields.
+    type: non_functional
+    priority: high
+    features: [mdz.exporter]
+    elements: [mdz.bundle_contract, mdz.twin, if.mdz.console, if.mdz.mcp]
+    controls: [CM-8, CA-7, AU-10]
+    tests:
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_environment_comes_only_from_the_declared_file_with_its_source
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_page_shows_confidence_unmeasured_security_domain_and_derived_waves
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_bundle_preview_and_mcp_tool_carry_the_new_fields
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_twin_flags_a_bundle_failing_the_contract_or_without_a_security_domain
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_twin_observes_no_security_domain_with_a_thread_and_replays
+      - tests/test_icx_mdz_04_ambient.py::test_the_bundle_preview_carries_the_7r_confidence_and_the_unreported_domain

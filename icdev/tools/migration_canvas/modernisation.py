@@ -16,7 +16,11 @@ migration canvas, and the routes it calls:
     GET  /migration-canvas/api/modernisation/apps/<app_id>/cloud-native  cloud_native_jobs.report and the section the
                                                                          exporter would carry
     GET  /migration-canvas/api/modernisation/apps/<app_id>/bundle        the bundle the exporter would write, which
-                                                                         sections are null (unverified) and why
+                                                                         sections are null (unverified) and why;
+                                                                         (icx-mdz-04) its errors against the pinned
+                                                                         1.189.0 contract, the 7R's confidence and
+                                                                         unmeasured criteria, the derived waves and
+                                                                         the declared security domain, or why none
     GET  /migration-canvas/api/modernisation/apps/<app_id>/features      (icx-mdz-03) the features and processes
                                                                          derived without a model, with their evidence,
                                                                          capability hints and step signatures
@@ -149,16 +153,40 @@ def features(app_id: str) -> dict:
         conn.close()
 
 
+def _latest_assessment(app_id: str, conn) -> dict | None:
+    """The application's latest application-level 7R assessment row, or None (none, or no assessments table)."""
+    try:
+        row = conn.execute("SELECT * FROM migration_assessments WHERE legacy_app_id = %s AND assessment_scope = "
+                           "'application' ORDER BY assessed_at DESC LIMIT 1", (app_id,)).fetchone()
+    except Exception as exc:  # noqa: BLE001 — no assessments table: nothing assessed here
+        logger.debug("modernisation: assessments unreadable: %s", exc)
+        conn.rollback()
+        return None
+    return dict(row) if row else None
+
+
 def bundle_preview(app_id: str) -> dict:
     """The ``icos-apptwin/v1`` bundle the exporter would assemble from what this database holds (inventory, the latest
-    plan with the derived waves, CAM's refactor and cloud-native jobs). Writes nothing. A section with no input stays
-    null, which ICDEV[OS] reads as UNVERIFIED."""
+    7R assessment, the latest plan with the derived waves, CAM's refactor and cloud-native jobs, the declared
+    environment). Writes nothing. A section with no input stays null, which ICDEV[OS] reads as UNVERIFIED.
+
+    icx-mdz-04: validated against the pinned contract (1.189.0) and ICDEV[OS]'s agreement rules, and every error is
+    returned (``schema_errors``), never hidden behind a refusal; the 7R's confidence and unmeasured criteria per
+    strategy, the waves derived before a plan (and each planned wave's estimate), and the application's security
+    domain -- or why it has none -- are said."""
     from tools.modernization import app_wave_planner, apptwin_export, bundle_features, cloud_native_jobs
     from tools.modernization import refactor_jobs as rj
 
     conn = _core()
     try:
+        name = (conn.execute("SELECT name FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
+                or {"name": None})["name"]
         waves = app_wave_planner.report(app_id, conn)
+        seven = _latest_assessment(app_id, conn)
+        try:
+            env, env_report = apptwin_export.environment(app_id, name)
+        except apptwin_export.BundleError as exc:   # a declaration that is refused is said, never used
+            env, env_report = None, {"declared": False, "error": str(exc), "reason": str(exc)}
         refactor = rj.report(app_id)
         cn = cloud_native_jobs.report(app_id)
         extract, extract_error = None, None               # icx-mdz-03: features and processes, no model
@@ -171,24 +199,46 @@ def bundle_preview(app_id: str) -> dict:
             conn.rollback()
         try:
             bundle = apptwin_export.build(app_id, conn, waves=waves, refactor=refactor["jobs"] or None,
-                                          cloud_native=cn if cn["jobs"] else None, extract=extract)
+                                          cloud_native=cn if cn["jobs"] else None, extract=extract, seven_r=seven,
+                                          environment=env, check=False, reasons={
+                                              k: f"the features and processes could not be derived: {extract_error}"
+                                              for k in ("features", "processes")} if extract_error else None)
         except apptwin_export.BundleError as exc:
             return {"app_id": app_id, "valid": False, "error": str(exc), "sections": None}
     finally:
         conn.close()
-    states = apptwin_export.section_states(bundle, waves=waves, reasons={
-        k: f"the features and processes could not be derived: {extract_error}" for k in ("features", "processes")
-    } if extract_error else None)
-    sections = {k: v is not None for k, v in sorted(bundle.items())
-                if k not in ("schema", "producer", "produced_at", "application")}
-    return {"app_id": app_id, "valid": True, "schema": bundle["schema"],
-            "schema_sha256": apptwin_export.SCHEMA_SHA256,
+    schema_errors = apptwin_export.validate(bundle)
+    states = bundle["sections"]
+    sections = {k: bundle.get(k) is not None for k in apptwin_export.SECTIONS}
+    sr = bundle.get("seven_r") or {}
+    plan_waves = ((bundle.get("migration") or {}).get("waves")) or []
+    dw = bundle.get("derived_waves")
+    return {"app_id": app_id, "valid": not schema_errors, "schema": bundle["schema"],
+            "contract": apptwin_export.CONTRACT_VERSION, "schema_sha256": apptwin_export.SCHEMA_SHA256,
+            **({"error": "the bundle does not meet the pinned icos-apptwin/v1 contract: " + "; ".join(schema_errors[:5]),
+                "schema_errors": schema_errors} if schema_errors else {"schema_errors": []}),
             "inventory_digest": apptwin_export.inventory_digest(bundle),
             "sections": sections,
+            "section_states": states,
             "unverified": sorted(k for k, filled in sections.items() if not filled),
             "counts": {k: len(bundle[k]) for k in ("components", "apis", "data", "dependencies", "features", "processes")
                        if isinstance(bundle.get(k), list)},
-            "waves": len(((bundle.get("migration") or {}).get("waves")) or []),
+            "waves": len(plan_waves),
+            "planned_waves": [{k: w.get(k) for k in ("id", "title", "order", "estimated_hours", "starts", "ends")}
+                              | {"components": len(w.get("components") or [])} for w in plan_waves],
+            "derived_waves": None if dw is None else {
+                "basis": dw["basis"], "tool": dw["tool"],
+                "waves": [{"id": w["id"], "title": w["title"], "order": w["order"],
+                           "components": len(w.get("components") or []), "estimated_hours": w.get("estimated_hours")}
+                          for w in dw["waves"]],
+                "means": "derived before any plan: shown in ICDEV[OS], never approved (its gate reads migration.waves)"},
+            "seven_r": None if not sr else {
+                "recommended": sr.get("recommended"), "confidence": sr.get("confidence"),
+                "ranked": [{k: x.get(k) for k in ("strategy", "score", "confidence", "assessable")}
+                           | {"unmeasured": x.get("unmeasured") or []} for x in sr.get("ranked") or []]},
+            "environment": (bundle["application"].get("environment") or None),
+            "environment_report": env_report,
+            "security_domain": (bundle["application"].get("environment") or {}).get("security_domain"),
             "missing": {k: v.get("reason") for k, v in states.items() if v["state"] == "missing"},
             "processes_unreviewed": sum(1 for p in (extract or {}).get("processes") or []
                                         if (p.get("review") or {}).get("state") != "reviewed"),

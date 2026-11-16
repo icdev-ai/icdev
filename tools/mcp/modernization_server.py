@@ -136,10 +136,10 @@ def handle_assess_seven_r(args: dict) -> dict:
         if weights_path and Path(weights_path).exists():
             with open(weights_path) as f:
                 custom_weights = json.load(f)
-        redundancy = None
-        if args.get("redundancy_path"):                      # icx-rtr-01: retire's measured functional_redundancy
-            load = _import_tool("tools.modernization.seven_r_assessor", "load_redundancy")
-            redundancy = load(args["redundancy_path"]).get(app_id) if load else None
+        # icx-mdz-04: retire's functional_redundancy is ICDEV[OS]'s MEASURED redundancy, read only from its signed
+        # decisions export verified against the pinned JWKS (unsigned, missing or unmeasured: unmeasured, never scored)
+        read = _import_tool("tools.modernization.seven_r_assessor", "icos_redundancy")
+        redundancy = read(app_id, export=args.get("icos_decisions"), jwks=args.get("icos_jwks")) if read else None
         return assess(project_id, app_id, custom_weights=custom_weights, redundancy=redundancy)
     except Exception as e:
         return {"error": str(e), "traceback": traceback.format_exc()}
@@ -404,7 +404,8 @@ def create_server() -> MCPServer:
                 "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "app_id": {"type": "string", "description": "Legacy application ID"},
                 "weights_path": {"type": "string", "description": "Optional path to custom scoring weights JSON"},
-                "redundancy_path": {"type": "string", "description": "Optional measured-redundancy JSON (retire's functional_redundancy)"},
+                "icos_decisions": {"type": "string", "description": "Optional path to ICDEV[OS]'s signed decisions export: retire's functional_redundancy is its measured redundancy"},
+                "icos_jwks": {"type": "string", "description": "Optional path to the ICDEV[OS] JWKS you pinned (verifies the export)"},
             },
             "required": ["project_id", "app_id"],
         },
