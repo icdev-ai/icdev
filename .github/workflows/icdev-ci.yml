@@ -1003,6 +1003,10 @@ jobs:
       # topic, so the Co-Worker page offers "Turn auto on" for the e2e gate to see sent.
       # RoleLoader honours this only for a directory under tests/; no shipped role opts in.
       ICDEV_ACE_E2E_ROLES_DIR: ${{ github.workspace }}/tests/e2e/fixtures/ace_roles
+      # icx-cnf-08: this job has no model. Say so, so every AI-assist path takes its
+      # deterministic fallback at once instead of waiting on providers that are not there
+      # (the ACE profile page's preview never answered within the test's 30 s).
+      ICDEV_NO_LLM: "true"
       # icx-cnf-08: the audited features live on these canvases. Without them no Cortex,
       # document-intelligence or conformance page exists in e2e, so no page could be seen
       # sending the writes the feature-conformance audit credits to them.
