@@ -24,7 +24,8 @@ import pytest
 from tools.twin_core import governance as gov
 from tools.twin_core.registry import TwinRegistry, known_canvas_keys
 
-GOVERNANCE_KEYS = {"cortex", "ace", "cwk", "twin_observatory"}
+# icx-mdz-01 added "mdc", the modernisation twin (tools/twin_core/adapters/modernisation.py).
+GOVERNANCE_KEYS = {"cortex", "ace", "cwk", "twin_observatory", "mdc"}
 
 
 def _ago(**kw) -> str:

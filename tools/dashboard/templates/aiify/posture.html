@@ -46,7 +46,7 @@
 
   <div class="ap-actions">
     <button class="btn primary" id="snap-btn">Capture Snapshot</button>
-    <a class="btn" href="/ai-ify/">&#8592; Back to AI-ify</a>
+    <a class="btn" href="{{ url_for('aiify.index') }}">&#8592; Back to AI-ify</a>
     <a class="btn" href="/boundary/compliance-hub">Compliance Hub</a>
     <span class="muted" id="snap-msg"></span>
   </div>
@@ -54,6 +54,8 @@
   <div id="ap-loading" class="muted">Loading posture…</div>
   <div id="ap-content" style="display:none;"></div>
 
+  {% set iqe_api_route = url_for('aiify.api_iqe_query') %}
+  {% set iqe_canvas = "aiify_posture" %}
   {% include "includes/iqe_query_widget.html" ignore missing %}
 </div>
 <script>
@@ -141,7 +143,7 @@
   }
 
   function load(){
-    fetch('/ai-ify/api/posture-summary').then(function(r){return r.json();}).then(render).catch(function(e){
+    icdevFetch('aiify.api_posture_summary').then(function(r){return r.json();}).then(render).catch(function(e){
       document.getElementById('ap-loading').textContent = 'Failed to load posture: '+e;
     });
   }
@@ -149,7 +151,7 @@
   document.getElementById('snap-btn').addEventListener('click', function(){
     var msg = document.getElementById('snap-msg');
     msg.textContent = 'Capturing…';
-    fetch('/ai-ify/api/posture/snapshot', {method:'POST'}).then(function(r){return r.json();}).then(function(j){
+    icdevFetch('aiify.api_posture_snapshot', {}, {method:'POST'}).then(function(r){return r.json();}).then(function(j){
       msg.textContent = 'Snapshot saved (grade '+(j.posture&&j.posture.grade||'?')+').';
       load();
     }).catch(function(e){ msg.textContent = 'Snapshot failed: '+e; });

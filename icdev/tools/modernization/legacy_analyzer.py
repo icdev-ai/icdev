@@ -50,7 +50,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_backend, get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -122,13 +122,16 @@ def _get_db():
     The database file must already exist (created by tools/db/init_icdev_db.py).
     Uses row_factory = sqlite3.Row for dict-like access.
     """
-    if not DB_PATH.exists():
+    sqlite = get_backend() == "sqlite"
+    # The file and the PRAGMAs are SQLite's; on PostgreSQL there is neither (icx-mdz-01).
+    if sqlite and not DB_PATH.exists():
         raise FileNotFoundError(
             f"ICDEV™ database not found at {DB_PATH}. Run 'python tools/db/init_icdev_db.py' first."
         )
     conn = get_connection()
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
+    if sqlite:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 

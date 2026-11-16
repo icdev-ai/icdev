@@ -9017,6 +9017,49 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    # -- modernisation (icx-mdz-01 — 7R, AI-Ify, Process-Ify, waves/CAM, cloud-native, exporter) --
+    "modernisation_seven_r": {
+        "category": "modernization",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_modernisation_seven_r",
+        "description": "Read the 7R assessments (each application's scores and the strategy the assessor recommends) and the strategy a person RECORDED for each, with who, when and why. A recorded strategy is a proposal to ICDEV[OS]: its mission owner accepts one through the signed migration-assessment workflow, and a migration may be planned only when icos_decisions.py may-plan allows it. Read-only: assesses, records and plans nothing.",
+        "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "Only this legacy application"}, "limit": {"type": "integer", "default": 50, "description": "Max assessments (1-200)"}}},
+    },
+    "aiify_promotions": {
+        "category": "modernization",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_aiify_promotions",
+        "description": "Read AI-Ify: the latest scans, the opportunities and roadmap of one scan, and every promotion decision (accept/reject of a PRD phase or an engine signal) with the declared workflow step a person took for it (decl-wft-mdz-aiify-promote). Read-only: scans, decides and sends nothing to Kanban.",
+        "input_schema": {"type": "object", "properties": {"scan_id": {"type": "integer", "description": "Scan to read (default: the latest)"}}},
+    },
+    "processify_observed_drafts": {
+        "category": "modernization",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_processify_observed_drafts",
+        "description": "List Process-Ify observed drafts (what REA saw a program do, as steps) with their review state and reviewer. A draft joins a process chain only after a person approves it (decl-wft-mdz-processify-observed-approve). Read-only: captures, approves and rejects nothing.",
+        "input_schema": {"type": "object", "properties": {"state": {"type": "string", "enum": ["", "pending_hitl", "approved", "rejected"], "description": "Only drafts in this review state"}}},
+    },
+    "modernisation_waves_jobs": {
+        "category": "modernization",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_modernisation_waves_jobs",
+        "description": "Read one legacy application's waves (app_wave_planner: strangler order over its own dependencies, each with its backout) and its CAM refactor jobs, each with its generated files by SHA-256 and the review a person took (decl-wft-mdz-cam-refactor-approve), or unreviewed. Read-only: plans, runs and approves nothing.",
+        "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
+    },
+    "modernisation_cloud_native": {
+        "category": "modernization",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_modernisation_cloud_native",
+        "description": "Read one legacy application's cloud-native jobs (container, configuration, twelve-factor, event contract) and the cloud_native section the ICDEV[OS] exporter would carry: the twelve factors (an unmeasured factor is unverified, never a pass), config by location, events and targets. Null when no twelve-factor report ran. Read-only: runs no job.",
+        "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
+    },
+    "modernisation_bundle": {
+        "category": "modernization",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_modernisation_bundle",
+        "description": "Preview the icos-apptwin/v1 bundle apptwin_export.py would assemble for one legacy application from what this database holds: whether it meets the vendored contract, its inventory digest, and which sections are null (ICDEV[OS] reads null as unverified). Read-only: writes no bundle.",
+        "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
+    },
     # -- governance twins (icx-cnf-03 — Cortex, ACE, Co-Workers, the audit) -----
     "twin_governance": {
         "category": "conformance",
@@ -9728,6 +9771,15 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "workflow_decision_steps":                  True,
     # Replays and reads recorded observations; never observes or records.
     "twin_governance":                          True,
+    # -- modernisation (icx-mdz-01) ------------------------------------------
+    # Each reads what the modernisation tools recorded and the decision ledger;
+    # none assesses, runs a job, takes a step, writes a bundle or plans.
+    "modernisation_seven_r":                    True,
+    "aiify_promotions":                         True,
+    "processify_observed_drafts":               True,
+    "modernisation_waves_jobs":                 True,
+    "modernisation_cloud_native":               True,
+    "modernisation_bundle":                     True,
 })
 
 

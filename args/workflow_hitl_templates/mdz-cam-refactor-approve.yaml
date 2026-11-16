@@ -1,0 +1,25 @@
+# CUI // SP-CTI
+id: decl-wft-mdz-cam-refactor-approve
+name: "CAM: approve or reject a refactor job's generated output"
+description: >-
+  A CAM refactor (or cloud-native) job writes GENERATED code, unreviewed. A
+  person reviews one completed job's artefacts and approves or rejects them,
+  with a reason, from the Modernisation page. Approving says the output may be
+  used as a starting point; it applies, merges and deploys nothing.
+decides: [migration_canvas.api_refactor_job_approve]
+effect: >-
+  The decided step in wf_decision_steps is the review (subject: the job id;
+  payload: project, job type, the SHA-256 of each artefact reviewed). The job
+  row is not changed.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: cam_refactor_engine ran the job and listed its artefacts.
+  - name: review
+    step_type: manual
+    role: code_reviewer
+    holders: [admin, pm, developer, migration_engineer, reviewer]
+    decisions: {approve: affirm, reject: deny}
+    reason_required: [approve, reject]

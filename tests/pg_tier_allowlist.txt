@@ -115,3 +115,6 @@ tests/pg_tier/test_declared_decisions_pg.py
 # the new ace_event_results columns (ADD COLUMN on the snapshot's table) and the
 # PL/pgSQL append-only trigger on ace_dispatch_grants (migration 20261115114944).
 tests/test_ace_event_dispatch_ambient.py
+# icx-mdz-01: the modernisation ledger read (decisions.decided), observed drafts listing
+# and the modernisation twin's collection on the ambient PG; ids scoped to this file.
+tests/test_icx_mdz_01_ambient.py

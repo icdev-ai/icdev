@@ -36,9 +36,9 @@ import pytest
 # ─────────────────────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def app(tmp_path, monkeypatch):
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "icdev.db"))
+def app(tmp_path, monkeypatch, wf_db):
+    # wf_db: the platform DB with the wf_ tables, where a decision route records the
+    # person's declared step (icx-mdz-01); it sets ICDEV_STORAGE_BACKEND/ICDEV_DB_PATH.
     monkeypatch.setenv("AIIFY_STORAGE_BACKEND", "sqlite")
     monkeypatch.setenv("AIIFY_DB_PATH", str(tmp_path / "aiify_canvas.db"))
 

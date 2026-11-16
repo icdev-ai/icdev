@@ -448,7 +448,8 @@
             },
             {
               "by_id": [
-                "tools/dashboard/templates/coworker/index.html"
+                "tools/dashboard/templates/coworker/index.html",
+                "tools/dashboard/templates/workflow_canvas/processify.html"
               ],
               "endpoint": "ace_api.api_launch",
               "methods": [
@@ -2115,6 +2116,717 @@
       "component": "cwk",
       "key": "cwk.canvas",
       "label": "Co-Workers canvas"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "aiify_promotions read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-MDZ-02 -> mdz.aiify, if.mdz.console -> tests/test_icx_mdz_01_modernisation.py::test_an_aiify_promotion_is_the_persons_step_before_anything_is_written, tests/test_icx_mdz_01_modernisation.py::test_an_aiify_promotion_that_cannot_be_recorded_changes_nothing, tests/test_icx_mdz_01_modernisation.py::test_send_to_kanban_still_fails_closed_when_decisions_cannot_be_read, tests/test_icx_mdz_01_modernisation.py::test_deleting_aiify_scans_is_a_persons_step",
+            "PM-MDZ-07 -> mdz.twin, if.mdz.mcp -> tests/test_icx_mdz_01_modernisation.py::test_the_twin_finds_each_gap_with_its_thread, tests/test_icx_mdz_01_modernisation.py::test_an_unreadable_source_is_unverified_never_a_pass, tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays, tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only, tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "aiify.api_delete_all_scans called from tools/dashboard/templates/aiify/page.html",
+            "aiify.api_delete_scan called from tools/dashboard/templates/aiify/page.html",
+            "aiify.api_generate_prd called from tools/dashboard/templates/aiify/page.html",
+            "aiify.api_hitl_decision called from tools/dashboard/templates/aiify/page.html",
+            "aiify.api_iqe_query called from tools/dashboard/templates/aiify/page.html",
+            "aiify.api_posture_snapshot called from tools/dashboard/templates/aiify/posture.html",
+            "aiify.api_prd_dry_run called from tools/dashboard/templates/aiify/page.html",
+            "aiify.api_scan called from tools/dashboard/templates/aiify/page.html",
+            "aiify.api_send_to_kanban called from tools/dashboard/templates/aiify/page.html",
+            "nav links /ai-ify",
+            "nav links /ai-ify/posture",
+            "page /ai-ify/ renders aiify/page.html",
+            "page /ai-ify/posture renders aiify/posture.html",
+            "registry entry 'aiify'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/posture.html"
+              ],
+              "endpoint": "aiify.index",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.api_generate_prd",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/generate-prd",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.api_hitl_decision",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/hitl-decision",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.api_intelligence_feed",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/intelligence-feed",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html",
+                "tools/dashboard/templates/aiify/posture.html"
+              ],
+              "endpoint": "aiify.api_iqe_query",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/iqe-query",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/posture.html"
+              ],
+              "endpoint": "aiify.api_posture_summary",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/posture-summary",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/posture.html"
+              ],
+              "endpoint": "aiify.api_posture_snapshot",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/posture/snapshot",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.api_prd_dry_run",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/prd-dry-run",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.api_scan",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/scan",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.api_delete_scan",
+              "methods": [
+                "DELETE"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/scan/<int:scan_id>",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.api_get_scan",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/scan/<int:scan_id>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.api_delete_all_scans",
+              "methods": [
+                "DELETE"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/scan/all",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.api_send_to_kanban",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/api/send-to-kanban",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/aiify/page.html"
+              ],
+              "endpoint": "aiify.posture_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/ai-ify/posture",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/modernisation.py::ModernisationGovernanceTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "aiify.api_delete_all_scans (name carries 'delete') -> template decl-wft-mdz-aiify-scan-delete (args/workflow_hitl_templates/mdz-aiify-scan-delete.yaml)",
+            "aiify.api_delete_scan (name carries 'delete') -> template decl-wft-mdz-aiify-scan-delete (args/workflow_hitl_templates/mdz-aiify-scan-delete.yaml)",
+            "aiify.api_hitl_decision (name carries 'hitl') -> template decl-wft-mdz-aiify-promote (args/workflow_hitl_templates/mdz-aiify-promote.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "aiify",
+      "key": "mdz.aiify",
+      "label": "Modernisation: AI-Ify opportunities, PRDs and their promotion"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "modernisation_cloud_native read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-MDZ-05 -> mdz.cloud_native, if.mdz.console -> tests/test_icx_mdz_01_modernisation.py::test_cloud_native_reads_the_jobs_and_the_section_without_running_any",
+            "PM-MDZ-07 -> mdz.twin, if.mdz.mcp -> tests/test_icx_mdz_01_modernisation.py::test_the_twin_finds_each_gap_with_its_thread, tests/test_icx_mdz_01_modernisation.py::test_an_unreadable_source_is_unverified_never_a_pass, tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays, tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only, tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "nav links /migration-canvas/modernisation",
+            "page /migration-canvas/modernisation renders migration_canvas/modernisation.html",
+            "registry entry 'mdc'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_modernisation_cloud_native",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/apps/<app_id>/cloud-native",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/modernisation.py::ModernisationGovernanceTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "0 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "mdc",
+      "key": "mdz.cloud_native",
+      "label": "Modernisation: cloud-native targets (container, config, twelve factors, events)"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "modernisation_bundle read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-MDZ-06 -> mdz.exporter, if.mdz.console -> tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_page_reads_apps_waves_and_the_bundle, tests/test_icx_mdz_01_modernisation.py::test_a_decisions_export_is_trusted_only_against_the_pinned_jwks",
+            "PM-MDZ-07 -> mdz.twin, if.mdz.mcp -> tests/test_icx_mdz_01_modernisation.py::test_the_twin_finds_each_gap_with_its_thread, tests/test_icx_mdz_01_modernisation.py::test_an_unreadable_source_is_unverified_never_a_pass, tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays, tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only, tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "migration_canvas.api_modernisation_icos_check called from tools/dashboard/templates/migration_canvas/modernisation.html",
+            "nav links /migration-canvas/modernisation",
+            "page /migration-canvas/modernisation renders migration_canvas/modernisation.html",
+            "registry entry 'mdc'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_modernisation_bundle",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/apps/<app_id>/bundle",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_modernisation_icos_check",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/icos-decisions/check",
+              "write": true
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/modernisation.py::ModernisationGovernanceTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "1 mutating route(s), none a decision a person takes"
+          ],
+          "gaps": [],
+          "status": "n/a"
+        }
+      },
+      "component": "mdc",
+      "key": "mdz.exporter",
+      "label": "Modernisation: the ICDEV[OS] apptwin exporter and decision import"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "processify_observed_drafts read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-MDZ-03 -> mdz.processify, if.mdz.console -> tests/test_icx_mdz_01_modernisation.py::test_reviewing_an_observed_draft_is_a_persons_step_and_names_them, tests/test_observed_processify.py::test_route_drafts_then_chain_link_waits_for_review",
+            "PM-MDZ-07 -> mdz.twin, if.mdz.mcp -> tests/test_icx_mdz_01_modernisation.py::test_the_twin_finds_each_gap_with_its_thread, tests/test_icx_mdz_01_modernisation.py::test_an_unreadable_source_is_unverified_never_a_pass, tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays, tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only, tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "nav links /workflow-canvas/processify",
+            "page /workflow-canvas/processify renders workflow_canvas/processify.html",
+            "registry entry 'wfc'",
+            "workflow_canvas.api_cleanup_processify_tasks called from tools/dashboard/templates/workflow_canvas/processify.html",
+            "workflow_canvas.api_observed_review called from tools/dashboard/templates/workflow_canvas/processify.html",
+            "workflow_canvas.api_processify_workflow called from tools/dashboard/templates/workflow_canvas/processify.html",
+            "workflow_canvas.api_save_processify_workflow called from tools/dashboard/templates/workflow_canvas/processify.html"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/workflow_canvas/processify.html"
+              ],
+              "endpoint": "workflow_canvas.api_observed_review",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/workflow-canvas/api/workflows/<workflow_id>/observed-review",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/workflow_canvas/processify.html"
+              ],
+              "endpoint": "workflow_canvas.api_cleanup_processify_tasks",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/workflow-canvas/api/workflows/cleanup-processify",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/workflow_canvas/processify.html"
+              ],
+              "endpoint": "workflow_canvas.api_observed_drafts",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/workflow-canvas/api/workflows/observed-drafts",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/workflow_canvas/processify.html"
+              ],
+              "endpoint": "workflow_canvas.api_processify_workflow",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/workflow-canvas/api/workflows/processify",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/workflow_canvas/processify.html"
+              ],
+              "endpoint": "workflow_canvas.api_save_processify_workflow",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/workflow-canvas/api/workflows/save-processify",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "workflow_canvas.processify",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/workflow-canvas/processify",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/modernisation.py::ModernisationGovernanceTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "workflow_canvas.api_observed_review (declared (tools/workflow_canvas/blueprint.py: \"HITL decision on an observed draft\")) -> template decl-wft-mdz-processify-observed-approve (args/workflow_hitl_templates/mdz-processify-observed-approve.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "wfc",
+      "key": "mdz.processify",
+      "label": "Modernisation: Process-Ify (document or observed process to workflow)"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "assess_seven_r mutating, approval tier 'unknown' (default_tier) halts",
+            "modernisation_seven_r read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-MDZ-01 -> mdz.seven_r, if.mdz.console -> tests/test_icx_mdz_01_modernisation.py::test_the_assess_route_runs_the_assessor_for_one_application, tests/test_icx_mdz_01_modernisation.py::test_recording_a_7r_strategy_is_a_persons_step_and_only_a_proposal",
+            "PM-MDZ-07 -> mdz.twin, if.mdz.mcp -> tests/test_icx_mdz_01_modernisation.py::test_the_twin_finds_each_gap_with_its_thread, tests/test_icx_mdz_01_modernisation.py::test_an_unreadable_source_is_unverified_never_a_pass, tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays, tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only, tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "migration_api_legacy.record_strategy called from tools/dashboard/templates/migration.html",
+            "migration_api_legacy.trigger_assessment called from tools/dashboard/templates/migration.html",
+            "nav links /migration",
+            "page /migration renders migration.html",
+            "registry entry 'mdc'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration.html"
+              ],
+              "endpoint": "migration_api_legacy.trigger_assessment",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/migration/assess",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration.html"
+              ],
+              "endpoint": "migration_api_legacy.list_assessments",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/migration/assessments",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration.html"
+              ],
+              "endpoint": "migration_api_legacy.record_strategy",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/migration/assessments/<assessment_id>/strategy",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration.html"
+              ],
+              "endpoint": "migration_api_legacy.list_plans",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/migration/plans",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration.html"
+              ],
+              "endpoint": "migration_api_legacy.migration_stats",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/migration/stats",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/migration",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/modernisation.py::ModernisationGovernanceTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "migration_api_legacy.record_strategy (declared (tools/dashboard/api/migration.py: \"A person records the 7R strategy ICDEV proposes for an assessed application\")) -> template decl-wft-mdz-7r-strategy (args/workflow_hitl_templates/mdz-7r-strategy.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "mdc",
+      "key": "mdz.seven_r",
+      "label": "Modernisation: 7R assessment and the strategy ICDEV proposes"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "modernisation_waves_jobs read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-MDZ-04 -> mdz.waves_cam, if.mdz.console -> tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_page_reads_apps_waves_and_the_bundle, tests/test_icx_mdz_01_modernisation.py::test_approving_a_cam_jobs_output_binds_its_files_and_is_taken_once",
+            "PM-MDZ-07 -> mdz.twin, if.mdz.mcp -> tests/test_icx_mdz_01_modernisation.py::test_the_twin_finds_each_gap_with_its_thread, tests/test_icx_mdz_01_modernisation.py::test_an_unreadable_source_is_unverified_never_a_pass, tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays, tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only, tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "migration_canvas.api_refactor_job_approve called from tools/dashboard/templates/migration_canvas/modernisation.html",
+            "nav links /migration-canvas/modernisation",
+            "page /migration-canvas/modernisation renders migration_canvas/modernisation.html",
+            "registry entry 'mdc'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_modernisation_apps",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/apps",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_modernisation_refactor_jobs",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/apps/<app_id>/refactor-jobs",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_modernisation_waves",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/apps/<app_id>/waves",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_refactor_job_approve",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/refactor-jobs/<job_id>/approve",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration.html"
+              ],
+              "endpoint": "migration_canvas.modernisation_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/modernisation",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/modernisation.py::ModernisationGovernanceTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "migration_canvas.api_refactor_job_approve (name carries 'approve') -> template decl-wft-mdz-cam-refactor-approve (args/workflow_hitl_templates/mdz-cam-refactor-approve.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "mdc",
+      "key": "mdz.waves_cam",
+      "label": "Modernisation: an application's waves and CAM refactor jobs"
     }
   ],
   "route_ids": {
@@ -2126,6 +2838,8 @@
       "tools/dashboard/templates/ace/sessions.html",
       "tools/dashboard/templates/ace/trends.html",
       "tools/dashboard/templates/ace/trust.html",
+      "tools/dashboard/templates/aiify/page.html",
+      "tools/dashboard/templates/aiify/posture.html",
       "tools/dashboard/templates/cortex/_rest_runner.html",
       "tools/dashboard/templates/cortex/airgap.html",
       "tools/dashboard/templates/cortex/govern.html",
@@ -2145,9 +2859,13 @@
       "tools/dashboard/templates/coworkers/index.html",
       "tools/dashboard/templates/document_intelligence/explorer.html",
       "tools/dashboard/templates/includes/_chat_action_card.html",
+      "tools/dashboard/templates/includes/classification_macros.html",
       "tools/dashboard/templates/includes/iqe_query_widget.html",
+      "tools/dashboard/templates/migration.html",
+      "tools/dashboard/templates/migration_canvas/modernisation.html",
       "tools/dashboard/templates/twin_observatory/conformance.html",
-      "tools/dashboard/templates/twin_observatory/index.html"
+      "tools/dashboard/templates/twin_observatory/index.html",
+      "tools/dashboard/templates/workflow_canvas/processify.html"
     ],
     "hand_written": [],
     "routes_gen": {
@@ -2165,8 +2883,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 17,
-    "features_conforming": 17,
+    "features": 23,
+    "features_conforming": 23,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -2286,6 +3004,48 @@
         "gui": 0,
         "twin": 0,
         "workflow": 0
+      },
+      "mdz.aiify": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "mdz.cloud_native": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "mdz.exporter": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "mdz.processify": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "mdz.seven_r": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "mdz.waves_cam": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
       }
     },
     "gaps_by_rule": {
@@ -2296,11 +3056,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 101,
-    "routes_by_id": 78,
-    "routes_observed": 61,
-    "writes_by_id": 35,
-    "writes_observed": 35
+    "routes": 135,
+    "routes_by_id": 111,
+    "routes_observed": 95,
+    "writes_by_id": 52,
+    "writes_observed": 52
   },
   "tool": "feature_audit",
   "version": 1

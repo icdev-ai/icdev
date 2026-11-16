@@ -4603,6 +4603,175 @@ def handle_coworkers_roster(args: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# modernisation (icx-mdz-01) — reads only; every decision is a person's step
+# ---------------------------------------------------------------------------
+
+
+def _app_id(args: dict) -> str:
+    return str(args.get("app_id") or "").strip()
+
+
+def handle_modernisation_seven_r(args: dict) -> dict:
+    """MCP: 7R assessments and the strategy a person recorded for each (a proposal to ICDEV[OS])."""
+    try:
+        from tools.db.storage import get_canvas_connection
+        from tools.modernization import decisions
+
+        limit = max(1, min(int(args.get("limit") or 50), 200))
+        app_id = _app_id(args)
+        conn = get_canvas_connection()
+        try:
+            sql = ("SELECT id, legacy_app_id, recommended_strategy, rehost_score, replatform_score, "
+                   "refactor_score, rearchitect_score, repurchase_score, retire_score, retain_score, "
+                   "ato_impact, risk_score, assessed_at FROM migration_assessments")
+            params: tuple = ()
+            if app_id:
+                sql += " WHERE legacy_app_id = %s"
+                params = (app_id,)
+            rows = conn.execute(sql + " ORDER BY assessed_at DESC LIMIT %s", (*params, limit)).fetchall()
+        finally:
+            conn.close()
+        cols = ("id", "legacy_app_id", "recommended_strategy", "rehost", "replatform", "refactor",
+                "rearchitect", "repurchase", "retire", "retain", "ato_impact", "risk_score", "assessed_at")
+        out = []
+        for r in rows:
+            row = dict(zip(cols, tuple(r)))
+            out.append({"id": row["id"], "legacy_app_id": row["legacy_app_id"],
+                        "recommended_strategy": row["recommended_strategy"],
+                        "scores": {k: row[k] for k in decisions.STRATEGIES},
+                        "ato_impact": row["ato_impact"], "risk_score": row["risk_score"],
+                        "assessed_at": str(row["assessed_at"] or "")})
+        recs = decisions.decided(decisions.TEMPLATE_7R, [a["id"] for a in out])
+        for a in out:
+            a["strategy_record"] = decisions.strategy_record(recs.get(a["id"]))
+        return {"classification": CORTEX_CLASSIFICATION, "assessments": out, "count": len(out),
+                "record_means": decisions.SEVEN_R_BINDING, "record_at": "/migration (Record strategy)"}
+    except Exception as exc:  # noqa: BLE001 — a read reports its fault, never raises
+        logger.warning("handle_modernisation_seven_r: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_aiify_promotions(args: dict) -> dict:
+    """MCP: AI-Ify scans, one scan's opportunities and roadmap, and every promotion decision with its step."""
+    try:
+        import json as _json
+
+        from tools.aiify.db.init_db import get_connection as aiify_connection
+        from tools.modernization import decisions
+
+        conn = aiify_connection()
+        try:
+            scans = [dict(r) for r in conn.execute(
+                "SELECT scan_id, input_type, input_ref, total_files, total_loc, status, created_at "
+                "FROM aiify_scans ORDER BY created_at DESC LIMIT 20").fetchall()]
+            scan_id = args.get("scan_id") or (scans[0]["scan_id"] if scans else None)
+            opps, roadmap = [], None
+            if scan_id is not None:
+                opps = [dict(r) for r in conn.execute(
+                    "SELECT o.opportunity_id, o.module_path, o.function_name, o.pattern_type, o.ai_paradigm, "
+                    "s.composite_score, s.verdict, s.ai_readiness FROM aiify_opportunities o "
+                    "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id WHERE o.scan_id = %s "
+                    "ORDER BY s.composite_score DESC", (int(scan_id),)).fetchall()]
+                rm = conn.execute("SELECT roadmap_id, title, phases, total_effort_days FROM aiify_roadmaps "
+                                  "WHERE scan_id = %s ORDER BY created_at DESC LIMIT 1", (int(scan_id),)).fetchone()
+                if rm:
+                    roadmap = dict(rm)
+                    try:
+                        phases = _json.loads(roadmap.get("phases") or "[]")
+                    except (TypeError, ValueError):
+                        phases = roadmap.get("phases") or []
+                    roadmap["phases"] = [{"phase_id": p.get("phase_id"), "label": p.get("label"),
+                                          "opportunities": len(p.get("opportunities") or [])}
+                                         for p in phases if isinstance(p, dict)]
+            rows = [dict(r) for r in conn.execute(
+                "SELECT id, source_type, source_id, phase_id, decision, reason, actor, decided_at "
+                "FROM aiify_hitl_decisions ORDER BY id DESC LIMIT 200").fetchall()]
+        finally:
+            conn.close()
+        steps = decisions.decided(decisions.TEMPLATE_AIIFY_PROMOTE)
+        for d in rows:
+            step = steps.get(f"{d['source_type']}:{d['source_id']}")
+            d["decided_at"] = str(d.get("decided_at") or "")
+            d["decision_step"] = ({"step_id": step["step_id"], "by": step["actor"], "at": step["created_at"]}
+                                  if step else None)
+        return {"classification": CORTEX_CLASSIFICATION, "scans": [{**s, "created_at": str(s["created_at"] or "")}
+                                                                    for s in scans],
+                "scan_id": scan_id, "opportunities": opps, "roadmap": roadmap, "decisions": rows,
+                "decide_at": "/ai-ify (Review & Approve; decl-wft-mdz-aiify-promote)"}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_aiify_promotions: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_processify_observed_drafts(args: dict) -> dict:
+    """MCP: Process-Ify observed drafts and their review state."""
+    try:
+        from tools.workflow_canvas.observed_processify import list_drafts
+
+        drafts = list_drafts(state=str(args.get("state") or "").strip() or None)
+        return {"classification": CORTEX_CLASSIFICATION, "drafts": drafts, "count": len(drafts),
+                "decide_at": "/workflow-canvas/processify (decl-wft-mdz-processify-observed-approve)"}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_processify_observed_drafts: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_modernisation_waves_jobs(args: dict) -> dict:
+    """MCP: one application's waves and CAM refactor jobs with their reviews."""
+    app_id = _app_id(args)
+    if not app_id:
+        return {"error": "app_id is required"}
+    try:
+        from tools.db.storage import get_connection
+        from tools.migration_canvas.modernisation import refactor_jobs
+        from tools.modernization import app_wave_planner
+
+        conn = get_connection()
+        try:
+            waves = app_wave_planner.report(app_id, conn)
+        finally:
+            conn.close()
+        return {"classification": CORTEX_CLASSIFICATION, "app_id": app_id, "waves": waves,
+                "refactor": refactor_jobs(app_id),
+                "decide_at": "/migration-canvas/modernisation (decl-wft-mdz-cam-refactor-approve)"}
+    except ValueError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_modernisation_waves_jobs: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_modernisation_cloud_native(args: dict) -> dict:
+    """MCP: one application's cloud-native jobs and the cloud_native section the exporter would carry."""
+    app_id = _app_id(args)
+    if not app_id:
+        return {"error": "app_id is required"}
+    try:
+        from tools.migration_canvas.modernisation import cloud_native
+
+        return {"classification": CORTEX_CLASSIFICATION, **cloud_native(app_id)}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_modernisation_cloud_native: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_modernisation_bundle(args: dict) -> dict:
+    """MCP: the icos-apptwin/v1 bundle the exporter would assemble, previewed; nothing is written."""
+    app_id = _app_id(args)
+    if not app_id:
+        return {"error": "app_id is required"}
+    try:
+        from tools.migration_canvas.modernisation import bundle_preview
+
+        return {"classification": CORTEX_CLASSIFICATION, **bundle_preview(app_id)}
+    except ValueError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_modernisation_bundle: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
 # platform model (icx-cnf-04)
 # ---------------------------------------------------------------------------
 

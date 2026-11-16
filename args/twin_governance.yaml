@@ -40,3 +40,15 @@ ace:
   grant_expiry_warn_days: 3
   # Newest rows read per table.
   scan_limit: 500
+
+# icx-mdz-01: application modernisation (7R, AI-Ify, Process-Ify, waves/CAM,
+# cloud-native, the ICDEV[OS] exporter), canvas key mdc.
+modernisation:
+  # An application's latest 7R assessment with no strategy recorded, by age.
+  strategy_record_warn_days: 14
+  # A completed CAM job whose generated output nobody reviewed, by age.
+  job_review_warn_days: 7
+  # An observed Process-Ify draft still waiting for a person, by age.
+  draft_review_warn_days: 7
+  # Newest rows read per table.
+  scan_limit: 500

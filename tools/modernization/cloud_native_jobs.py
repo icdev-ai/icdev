@@ -10,7 +10,8 @@ The application's CAM project is the one ``refactor_jobs.py`` made (the same ids
     event_contract          asyncapi.yaml and event-contract.json (EJB applications: their message-driven beans)
 
 Each job reads the source (``tools/modernization/cloud_native.py``), never builds or runs it, and writes generated,
-unreviewed files under ``CAM_ARTIFACTS_DIR``. The output is what ``apptwin_export.py --cloud-native`` carries; the
+unreviewed files under ``CAM_ARTIFACTS_DIR``; ``report`` reads them back without running any, for the Modernisation
+page (icx-mdz-01). The output is what ``apptwin_export.py --cloud-native`` carries; the
 targets given here (ICDEV[OS] examples/modernisation/apps.yaml) are carried with it, for the exporter to map each one
 to what proposes it.
 
@@ -32,6 +33,27 @@ TOOL = "icdev-it/cloud_native"
 RULE_SET = "cloud_native"
 
 
+def _shape(app_id: str, pid: str | None, jobs: list[dict], targets: dict | None) -> dict:
+    from tools.modernization.refactor_jobs import CLOUD_NATIVE_SCAFFOLDS, _scaffold
+    jobs = sorted((j for j in jobs if _scaffold(j) in CLOUD_NATIVE_SCAFFOLDS),
+                  key=lambda j: (_scaffold(j), j["created_at"], j["id"]))
+    return {"tool": TOOL, "app_id": app_id, "project_id": pid,
+            "targets": {"cloud": list((targets or {}).get("cloud") or []), "ai": list((targets or {}).get("ai") or [])},
+            "jobs": [{"id": j["id"], "scaffold": _scaffold(j),
+                      **{k: j.get(k) for k in ("component_name", "refactor_type", "status", "result_summary",
+                                               "error_message", "output_path", "artifacts", "completed_at")}}
+                     for j in jobs]}
+
+
+def report(app_id: str) -> dict:
+    """The application's cloud-native jobs as they stand, without queueing or running any (icx-mdz-01)."""
+    from tools.migration_canvas import cam_refactor_engine as cam
+    from tools.modernization import refactor_jobs
+    rep = refactor_jobs.report(app_id)
+    pid = rep["project_id"]
+    return _shape(app_id, pid, cam.get_jobs(pid) if pid else [], None)
+
+
 def run(app_id: str, *, targets: dict | None = None) -> dict:
     from tools.migration_canvas import cam_refactor_engine as cam
     from tools.modernization import refactor_jobs
@@ -39,15 +61,7 @@ def run(app_id: str, *, targets: dict | None = None) -> dict:
     pid = refactor_jobs.project(app, None)
     for j in cam.dispatch(pid, rule_set=RULE_SET):
         cam.run_job(j["id"])
-    jobs = [j for j in cam.get_jobs(pid) if (json.loads(j.get("params_json") or "{}").get("scaffold_type") or "")
-            in ("container_definition", "config_externalisation", "twelve_factor_report", "event_contract")]
-    jobs = sorted(jobs, key=lambda j: (json.loads(j["params_json"])["scaffold_type"], j["created_at"], j["id"]))
-    return {"tool": TOOL, "app_id": app_id, "project_id": pid,
-            "targets": {"cloud": list((targets or {}).get("cloud") or []), "ai": list((targets or {}).get("ai") or [])},
-            "jobs": [{"id": j["id"], "scaffold": json.loads(j["params_json"])["scaffold_type"],
-                      **{k: j.get(k) for k in ("component_name", "refactor_type", "status", "result_summary",
-                                               "error_message", "output_path", "artifacts", "completed_at")}}
-                     for j in jobs]}
+    return _shape(app_id, pid, cam.get_jobs(pid), targets)
 
 
 def main(argv: list[str] | None = None) -> int:

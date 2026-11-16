@@ -384,6 +384,107 @@ features:
       - coworkers.status
     mcp_tools: [coworkers_roster]
 
+  # ── Application modernisation (icx-mdz-01) ────────────────────────────────
+  # The 7R assessment, AI-Ify, Process-Ify, app waves and CAM refactor jobs,
+  # cloud-native targets, and the ICDEV[OS] exporter and decision import. No
+  # blueprint is listed under `components:`: the migration API, the migration
+  # canvas and the workflow canvas serve other features too, so each feature
+  # names the routes it owns. Owned here and not elsewhere: AI-Ify's Innovation
+  # trigger (aiify.api_run_innovation) is the Innovation engine's, and Process-
+  # Ify's chain, regeneration and role routes are the workflow canvas's.
+  - key: mdz.seven_r
+    component: mdc
+    label: "Modernisation: 7R assessment and the strategy ICDEV proposes"
+    endpoints:
+      - migration_page
+      - migration_api_legacy.migration_stats
+      - migration_api_legacy.list_assessments
+      - migration_api_legacy.list_plans
+      - migration_api_legacy.trigger_assessment
+      - migration_api_legacy.record_strategy
+    mcp_tools: [modernisation_seven_r, assess_seven_r]
+    # A person records the strategy ICDEV proposes (decl-wft-mdz-7r-strategy).
+    # The signed decision is ICDEV[OS]'s; icos_decisions.py may-plan reads it.
+    declared_decisions:
+      - id: mdz.seven_r.record
+        endpoint: migration_api_legacy.record_strategy
+        evidence:
+          file: tools/dashboard/api/migration.py
+          text: "A person records the 7R strategy ICDEV proposes for an assessed application"
+
+  - key: mdz.aiify
+    component: aiify
+    label: "Modernisation: AI-Ify opportunities, PRDs and their promotion"
+    endpoints:
+      - aiify.index
+      - aiify.api_scan
+      - aiify.api_get_scan
+      - aiify.api_intelligence_feed
+      - aiify.api_hitl_decision
+      - aiify.api_generate_prd
+      - aiify.api_prd_dry_run
+      - aiify.api_send_to_kanban
+      - aiify.api_delete_scan
+      - aiify.api_delete_all_scans
+      - aiify.api_iqe_query
+      - aiify.posture_page
+      - aiify.api_posture_summary
+      - aiify.api_posture_snapshot
+    mcp_tools: [aiify_promotions]
+
+  - key: mdz.processify
+    component: wfc
+    label: "Modernisation: Process-Ify (document or observed process to workflow)"
+    endpoints:
+      - workflow_canvas.processify
+      - workflow_canvas.api_processify_workflow
+      - workflow_canvas.api_save_processify_workflow
+      - workflow_canvas.api_cleanup_processify_tasks
+      - workflow_canvas.api_observed_drafts
+      - workflow_canvas.api_observed_review
+    mcp_tools: [processify_observed_drafts]
+    declared_decisions:
+      - id: mdz.processify.observed_review
+        endpoint: workflow_canvas.api_observed_review
+        evidence:
+          file: tools/workflow_canvas/blueprint.py
+          text: "HITL decision on an observed draft"
+
+  - key: mdz.waves_cam
+    component: mdc
+    label: "Modernisation: an application's waves and CAM refactor jobs"
+    endpoints:
+      - migration_canvas.modernisation_page
+      - migration_canvas.api_modernisation_apps
+      - migration_canvas.api_modernisation_waves
+      - migration_canvas.api_modernisation_refactor_jobs
+      - migration_canvas.api_refactor_job_approve
+    mcp_tools: [modernisation_waves_jobs]
+
+  - key: mdz.cloud_native
+    component: mdc
+    label: "Modernisation: cloud-native targets (container, config, twelve factors, events)"
+    endpoints: [migration_canvas.api_modernisation_cloud_native]
+    mcp_tools: [modernisation_cloud_native]
+    served_by:
+      - endpoint: migration_canvas.modernisation_page
+        evidence:
+          file: tools/dashboard/templates/migration_canvas/modernisation.html
+          text: '<div class="mdz-card" id="mdz-cloud">'
+
+  - key: mdz.exporter
+    component: mdc
+    label: "Modernisation: the ICDEV[OS] apptwin exporter and decision import"
+    endpoints:
+      - migration_canvas.api_modernisation_bundle
+      - migration_canvas.api_modernisation_icos_check
+    mcp_tools: [modernisation_bundle]
+    served_by:
+      - endpoint: migration_canvas.modernisation_page
+        evidence:
+          file: tools/dashboard/templates/migration_canvas/modernisation.html
+          text: '<div class="mdz-card" id="mdz-bundle">'
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory

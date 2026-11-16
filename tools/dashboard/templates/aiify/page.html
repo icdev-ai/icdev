@@ -117,7 +117,7 @@
 
 <div class="aiify-wrap">
   <h1>AI-ify <span style="font-size:13px;color:#64748b;">— Codebase AI Opportunity Assessment</span>
-    <a href="/ai-ify/posture" style="float:right;font-size:12px;color:#a5b4fc;text-decoration:none;border:1px solid #334155;border-radius:8px;padding:5px 12px;">Compliance Posture &#8594;</a></h1>
+    <a href="{{ url_for('aiify.posture_page') }}" style="float:right;font-size:12px;color:#a5b4fc;text-decoration:none;border:1px solid #334155;border-radius:8px;padding:5px 12px;">Compliance Posture &#8594;</a></h1>
   <div class="aiify-sub">Assess any application (any language) and get a defensible verdict on what to make AI-native — and what to leave alone.</div>
 
   <div class="stepper" id="stepper">
@@ -159,6 +159,22 @@
     </div>
     {% endif %}
     <div class="row"><span></span><button class="btn primary" onclick="go(2)">Next →</button></div>
+    {% if scans %}
+    <div class="fld" id="scanHistory" style="margin-top:18px;">
+      <label>Previous scans</label>
+      <div class="hint">Deleting a scan removes its opportunities, scores and roadmaps and cannot be undone. It is a declared workflow step (decl-wft-mdz-aiify-scan-delete).</div>
+      {% for sc in scans %}
+      <div class="scan-row" data-scan-id="{{ sc.scan_id }}" style="display:flex;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #1e293b;font-size:12px;">
+        <span style="color:#e2e8f0;">#{{ sc.scan_id }}</span>
+        <span style="color:#94a3b8;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ sc.input_ref }}">{{ sc.input_ref }}</span>
+        <span style="color:#64748b;">{{ sc.status }}</span>
+        <button type="button" class="btn" onclick="openScan({{ sc.scan_id }})">Open</button>
+        <button type="button" class="btn off" data-delete-scan="{{ sc.scan_id }}" onclick="deleteScan({{ sc.scan_id }})">Delete</button>
+      </div>
+      {% endfor %}
+      <div class="row"><span class="hint" id="deleteMsg"></span><button type="button" class="btn off" id="deleteAllScans" onclick="deleteAllScans()">Delete all scans</button></div>
+    </div>
+    {% endif %}
   </div>
 
   <div class="panel" id="p2">
@@ -235,7 +251,8 @@
     <div class="prd-hitl-bar" id="prdHitlBar" style="display:none;margin:12px 0;padding:10px 14px;background:#0b1120;border:1px solid #1e293b;border-radius:8px;">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
         <span id="prdHitlBadge" class="sig-state" style="font-size:12px;">HITL Pending</span>
-        <span style="color:#64748b;font-size:12px;">PRD approval blocks Kanban dispatch.</span>
+        <span style="color:#64748b;font-size:12px;">PRD approval blocks Kanban dispatch. Your decision is a declared workflow step (decl-wft-mdz-aiify-promote); a reject needs a reason.</span>
+        <span id="prdHitlMsg" style="color:#94a3b8;font-size:12px;"></span>
         <div style="margin-left:auto;display:flex;gap:6px;">
           <button class="btn on" onclick="prdHitlDecision('accept',this)">✓ Accept PRD</button>
           <button class="btn off" onclick="prdHitlDecision('reject',this)">✗ Reject PRD</button>
@@ -251,6 +268,7 @@
     <div class="hint" id="kanbanMsg" style="text-align:right;"></div>
   </div>
 
+  {% set iqe_api_route = url_for('aiify.api_iqe_query') %}
   {% include "includes/iqe_query_widget.html" ignore missing %}
 </div>
 
@@ -260,7 +278,6 @@
   if(window.mermaid){ try{ mermaid.initialize({startOnLoad:false, theme:'dark'}); }catch(e){} }
   var state={type:'local_path', scanId:null, roadmapId:null, phaseId:'P1'};
   window.state=state;
-  var BASE='/ai-ify';
 
   window.pickRecent=function(src){
     document.getElementById('inputRef').value=src.input_ref;
@@ -308,7 +325,7 @@
     document.getElementById('scanIdle').style.display='none';
     document.getElementById('scanBusy').style.display='block';
     document.getElementById('scanErr').textContent='';
-    fetch(BASE+'/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},
+    icdevFetch('aiify.api_scan',{},{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({input_type:apiType(),input_ref:ref,il_level:document.getElementById('ilLevel').value})})
     .then(r=>r.json().then(j=>({ok:r.ok,j:j})))
     .then(function(res){
@@ -334,7 +351,7 @@
 
   function loadResults(id){
     var list=document.getElementById('oppList'); list.innerHTML='<span class="spin"></span> loading…';
-    fetch(BASE+'/api/scan/'+id).then(r=>r.json()).then(function(d){
+    icdevFetch('aiify.api_get_scan',{scan_id:id}).then(r=>r.json()).then(function(d){
       var s=d.scan||{}, opps=d.opportunities||[];
       var roadmap=d.roadmap||{};
       state.roadmapId=roadmap.roadmap_id||null;
@@ -396,7 +413,7 @@
     var box=document.getElementById('intelFeed');
     if(!box || box.dataset.loaded==='1') return;
     box.innerHTML='<span class="spin"></span> loading intelligence feed…';
-    fetch(BASE+'/api/intelligence-feed').then(r=>r.json()).then(function(d){
+    icdevFetch('aiify.api_intelligence_feed').then(r=>r.json()).then(function(d){
       box.dataset.loaded='1';
       var cats=[
         {key:'innovation',label:'Innovation Signals',color:'#c4b5fd'},
@@ -438,9 +455,12 @@
   window.hitlDecision=function(sourceType,sourceId,decision,btn){
     var card=document.getElementById('sig-'+sourceType+'-'+sourceId);
     if(!card) return;
-    fetch(BASE+'/api/hitl-decision',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({source_type:sourceType,source_id:String(sourceId),decision:decision})})
+    var reason=_decisionReason(decision);
+    if(reason===null) return;
+    icdevFetch('aiify.api_hitl_decision',{},{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({source_type:sourceType,source_id:String(sourceId),decision:decision,reason:reason})})
     .then(r=>r.json()).then(function(d){
+      if(d.workflow_refused||d.error){alert('Not recorded: '+(d.error||'refused'));return;}
       if(d.status==='ok'){
         card.dataset.st=decision;
         card.classList.remove('accepted','rejected');
@@ -452,11 +472,30 @@
     }).catch(function(e){alert('HITL update failed: '+e);});
   };
 
+  /* A decision is a person's step of the declared template decl-wft-mdz-aiify-promote
+     (icx-mdz-01): rejecting needs a reason; the server refuses a role that does not hold it. */
+  function _decisionReason(decision){
+    if(decision!=='reject') return '';
+    var r=window.prompt('Why reject? (recorded with your decision)','');
+    if(r===null) return null;
+    r=(r||'').trim();
+    if(!r){alert('A reason is required to reject.');return null;}
+    return r;
+  }
+
   window.prdHitlDecision=function(decision,btn){
     var phaseId=state.phaseId||'all';
-    fetch(BASE+'/api/hitl-decision',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({source_type:'prd',source_id:phaseId,decision:decision})})
+    if(!state.roadmapId){alert('No roadmap for this scan.');return;}
+    var reason=_decisionReason(decision);
+    if(reason===null) return;
+    /* A PRD phase is keyed <roadmap_id>:<phase_id>: the key Send to Kanban and the PRD read. */
+    icdevFetch('aiify.api_hitl_decision',{},{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({source_type:'prd',source_id:state.roadmapId+':'+phaseId,phase_id:phaseId,
+                           decision:decision,reason:reason})})
     .then(r=>r.json()).then(function(d){
+      var msg=document.getElementById('prdHitlMsg');
+      if(d.workflow_refused||d.error){ if(msg) msg.textContent='Not recorded: '+(d.error||'refused'); return; }
+      if(msg) msg.textContent=d.decision_step?('Recorded by '+d.decision_step.decided_by+' (step '+d.decision_step.step_id+')'):'';
       if(d.status==='ok'){
         state.prdHitlDecision = (decision==='clear'?null:decision);
         _updatePrdHitlBadge(decision==='clear'?null:decision);
@@ -485,7 +524,7 @@
     }
     resetDiagram();
     box.innerHTML='<span class="spin"></span>'; diaContent.innerHTML='<span class="spin"></span> building…';
-    fetch(BASE+'/api/generate-prd',{method:'POST',headers:{'Content-Type':'application/json'},
+    icdevFetch('aiify.api_generate_prd',{},{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({roadmap_id:rid,phase_id:state.phaseId})})
     .then(r=>r.json()).then(function(d){
       var md=d.prd||d.error||'(no PRD returned)';
@@ -507,7 +546,7 @@
     var box=document.getElementById('dryRunBox');
     if(!rid){box.innerHTML='<div class="err">No roadmap available.</div>';box.style.display='block';return;}
     box.innerHTML='<span class="spin"></span> analysing PRD…'; box.style.display='block';
-    fetch(BASE+'/api/prd-dry-run',{method:'POST',headers:{'Content-Type':'application/json'},
+    icdevFetch('aiify.api_prd_dry_run',{},{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({roadmap_id:rid,phase_id:state.phaseId})})
     .then(r=>r.json()).then(function(d){
       if(d.error){box.innerHTML='<div class="err">'+d.error+'</div>';return;}
@@ -543,6 +582,33 @@
     }).catch(e=>{box.innerHTML='<div class="err">Dry-run failed: '+e+'</div>';});
   };
 
+  window.openScan=function(id){ state.scanId=id; loadResults(id); go(4); };
+
+  function _deleted(r){
+    return r.json().then(function(d){
+      var msg=document.getElementById('deleteMsg');
+      if(!r.ok||d.workflow_refused||d.error){ if(msg) msg.textContent='Not deleted: '+(d.error||r.status); return false; }
+      if(msg) msg.textContent='Deleted (step '+((d.decision_step||{}).step_id||'')+')';
+      return true;
+    });
+  }
+  window.deleteScan=function(id){
+    if(!window.confirm('Delete scan #'+id+' and its opportunities, scores and roadmaps? This cannot be undone.')) return;
+    var reason=window.prompt('Reason (optional, recorded with the step)','')||'';
+    icdevFetch('aiify.api_delete_scan',{scan_id:id},{method:'DELETE',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({reason:reason})}).then(_deleted).then(function(ok){
+        if(ok){ var row=document.querySelector('[data-scan-id="'+id+'"]'); if(row) row.remove(); }
+      }).catch(function(e){alert('Delete failed: '+e);});
+  };
+  window.deleteAllScans=function(){
+    if(!window.confirm('Delete EVERY AI-Ify scan and the AI-Ify audit log? This cannot be undone.')) return;
+    var reason=window.prompt('Reason (optional, recorded with the step)','')||'';
+    icdevFetch('aiify.api_delete_all_scans',{},{method:'DELETE',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({reason:reason})}).then(_deleted).then(function(ok){
+        if(ok){ document.querySelectorAll('.scan-row').forEach(function(r){ r.remove(); }); }
+      }).catch(function(e){alert('Delete failed: '+e);});
+  };
+
   window.sendKanban=function(){
     var rid=state.roadmapId;
     if(!rid){document.getElementById('kanbanMsg').textContent='No roadmap available.';return;}
@@ -551,7 +617,7 @@
       return;
     }
     var msg=document.getElementById('kanbanMsg'); msg.textContent='sending…';
-    fetch(BASE+'/api/send-to-kanban',{method:'POST',headers:{'Content-Type':'application/json'},
+    icdevFetch('aiify.api_send_to_kanban',{},{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({roadmap_id:rid,phase_id:'all'})})
     .then(r=>r.json()).then(d=>{msg.textContent=d.error?('Error: '+d.error):('Sent ✓ '+(d.created||d.kanban_promoted||'')+' task(s)');})
     .catch(e=>{msg.textContent='Error: '+e;});

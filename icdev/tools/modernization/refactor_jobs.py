@@ -13,7 +13,9 @@ the bundle's ``refactor`` section stayed null. This module runs the same migrato
 4. every job runs; its artefacts are written under ``CAM_ARTIFACTS_DIR`` and listed at every depth.
 
 The source is read, never built or run. What the jobs write is GENERATED code, unreviewed: the exporter binds each file
-by its SHA-256 and labels the job ``unreviewed``. The output is what ``apptwin_export.py --refactor`` carries.
+by its SHA-256 and labels the job ``unreviewed``; a person reviews a job's output on the Modernisation page
+(``/migration-canvas/modernisation``, the declared step ``decl-wft-mdz-cam-refactor-approve``, icx-mdz-01). The output
+is what ``apptwin_export.py --refactor`` carries. ``report`` reads the jobs back without running any.
 
     python tools/modernization/refactor_jobs.py --app-id <legacy app id> [--strategy rehost] [--out refactor.json]
 """
@@ -69,6 +71,38 @@ def project(app: dict, strategy: str | None) -> str:
     finally:
         conn.close()
     return pid
+
+
+CLOUD_NATIVE_SCAFFOLDS = ("container_definition", "config_externalisation", "twelve_factor_report", "event_contract")
+_FIELDS = ("id", "component_name", "refactor_type", "status", "result_summary", "error_message", "output_path",
+           "artifacts")
+
+
+def _scaffold(job: dict) -> str:
+    try:
+        return str((json.loads(job.get("params_json") or "{}") or {}).get("scaffold_type") or "")
+    except ValueError:
+        return ""
+
+
+def report(app_id: str) -> dict:
+    """The application's CAM refactor jobs as they stand, without queueing or running any (icx-mdz-01).
+
+    The same shape ``run`` returns; the cloud-native jobs are ``cloud_native_jobs.report``'s. An application with no
+    CAM project yet has ``project_id`` None and no jobs: nothing was run, which is not the same as nothing to do.
+    """
+    from tools.migration_canvas import cam_refactor_engine as cam
+    from tools.migration_canvas.db.init_db import get_connection
+    pid = f"mcp-{app_id}"
+    conn = get_connection()
+    try:
+        known = conn.execute("SELECT id FROM mc_projects WHERE id = %s", (pid,)).fetchone() is not None
+    finally:
+        conn.close()
+    jobs = [j for j in cam.get_jobs(pid) if _scaffold(j) not in CLOUD_NATIVE_SCAFFOLDS] if known else []
+    jobs = sorted(jobs, key=lambda j: (j["refactor_type"], j["created_at"], j["id"]))
+    return {"tool": TOOL, "app_id": app_id, "project_id": pid if known else None,
+            "jobs": [{k: j.get(k) for k in _FIELDS} for j in jobs]}
 
 
 def run(app_id: str, *, strategy: str | None = None) -> dict:

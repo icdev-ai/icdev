@@ -1,0 +1,236 @@
+<!-- CUI // SP-CTI — Modernisation: an application's waves, CAM jobs, cloud-native output and ICDEV[OS] bundle (icx-mdz-01) -->
+{% extends "base.html" %}
+{% block title %}Modernisation — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .mdz-wrap { padding: 20px 30px; max-width: 1200px; }
+  .mdz-wrap h1 { font-size: 22px; margin: 0 0 4px; }
+  .mdz-help { color: #7a8cb0; font-size: 13px; margin: 0 0 14px; line-height: 1.5; }
+  .mdz-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .mdz-card h2 { font-size: 15px; margin: 0 0 6px; color: #eaeaea; }
+  .mdz-card table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .mdz-card th, .mdz-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #1e3a6e; vertical-align: top; }
+  .mdz-card th { color: #7a8cb0; font-weight: 600; }
+  .mdz-muted { color: #7a8cb0; font-size: 12px; }
+  .mdz-err { color: #f39c12; font-size: 12px; }
+  .mdz-tag { display: inline-block; padding: 1px 6px; font-size: 10px; border-radius: 3px; background: #0f3460; color: #9fb3d9; }
+  .mdz-tag.ok { background: #1a5e2d; color: #7ee2a0; }
+  .mdz-tag.no { background: #5e1a1a; color: #f5a3a3; }
+  .mdz-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid #27ae60; background: #1a5e2d; color: #fff; cursor: pointer; font-size: 12px; }
+  .mdz-btn.reject { border-color: #c0392b; background: #5e1a1a; }
+  .mdz-wrap select, .mdz-wrap input, .mdz-wrap textarea { background: #0a1628; color: #eaeaea; border: 1px solid #1e3a6e; border-radius: 5px; padding: 5px 8px; font-size: 12px; }
+</style>
+
+<div class="mdz-wrap">
+  <div class="mdz-muted"><a href="{{ url_for('migration_canvas.mc_index') }}">Migration Canvas</a> / Modernisation</div>
+  <h1>Modernisation</h1>
+  <p class="mdz-help" id="mdz-help">
+    One legacy application, as ICDEV[IT] analysed it: the waves its own dependencies give, the CAM refactor and
+    cloud-native jobs that ran over its source, and the <code>icos-apptwin/v1</code> bundle ICDEV[OS] would twin.
+    Everything here is read from what the tools recorded; nothing is run or planned from this page. Generated code is
+    <b>unreviewed</b> until a person approves a job's output (a declared workflow step with a reason). The strategy and the
+    portfolio decisions are ICDEV[OS]'s: record the strategy ICDEV proposes on <a href="{{ url_for('migration_page') }}">7R Assessment</a>,
+    and check a signed ICDEV[OS] export below before planning anything.
+  </p>
+
+  <div class="mdz-card">
+    <label for="mdz-app" class="mdz-muted">Application</label>
+    <select id="mdz-app"><option value="">Loading…</option></select>
+    <span class="mdz-muted" id="mdz-app-meta"></span>
+  </div>
+
+  <div class="mdz-card" id="mdz-waves">
+    <h2>Waves</h2>
+    <p class="mdz-help">Derived by <code>app_wave_planner</code> in strangler order: leaves first, a dependency cycle moved together, each wave depending only on earlier ones. Planned, never scheduled; each wave carries its backout.</p>
+    <div id="mdz-waves-body" class="mdz-muted">Pick an application.</div>
+  </div>
+
+  <div class="mdz-card" id="mdz-jobs">
+    <h2>CAM refactor jobs</h2>
+    <p class="mdz-help">Each job ran a migrator through CAM and wrote generated files. Approve or reject a completed job's output, with a reason: your step of <code>decl-wft-mdz-cam-refactor-approve</code>, bound to the SHA-256 of each file. Approving applies nothing.</p>
+    <div id="mdz-jobs-body" class="mdz-muted">Pick an application.</div>
+    <div id="mdz-jobs-msg" class="mdz-muted"></div>
+  </div>
+
+  <div class="mdz-card" id="mdz-cloud">
+    <h2>Cloud-native</h2>
+    <p class="mdz-help">The container, configuration, twelve-factor and event-contract jobs, read from their files. A factor the report could not measure is <b>unverified</b>, never a pass. No twelve-factor report: the section is null.</p>
+    <div id="mdz-cloud-body" class="mdz-muted">Pick an application.</div>
+  </div>
+
+  <div class="mdz-card" id="mdz-bundle">
+    <h2>ICDEV[OS] bundle</h2>
+    <p class="mdz-help">What <code>apptwin_export.py</code> would assemble from this database, validated against the vendored contract. A null section is read by ICDEV[OS] as unverified.</p>
+    <div id="mdz-bundle-body" class="mdz-muted">Pick an application.</div>
+  </div>
+
+  <div class="mdz-card" id="mdz-icos">
+    <h2>ICDEV[OS] decisions</h2>
+    <p class="mdz-help">Paste the signed portfolio-decisions export ICDEV[OS] returned (<code>icos-portfolio-decisions/v1</code>). It is verified against the JWKS you pinned
+      {% if jwks_pinned %}(pinned){% else %}(<b>none pinned</b>: set <code>ICDEV_ICOS_JWKS</code>; until then every export is untrusted){% endif %},
+      never a key that came with it. Then may-plan and may-retire are answered for this application. Nothing is written.</p>
+    <textarea id="mdz-icos-export" rows="4" style="width:100%;" placeholder='{"document": {...}, "signature": {...}}'></textarea>
+    <div style="margin-top:6px;">
+      <input id="mdz-icos-strategy" placeholder="strategy (optional)" />
+      <button type="button" class="mdz-btn" id="mdz-icos-check">Check</button>
+    </div>
+    <div id="mdz-icos-body" class="mdz-muted"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) {
+      return r.json().then(function (j) { return {ok: r.ok, j: j}; });
+    });
+  }
+  var appSel = document.getElementById('mdz-app');
+
+  function loadApps() {
+    getJson(icdevFetch('migration_canvas.api_modernisation_apps')).then(function (res) {
+      if (!res.ok || !res.j.apps) { appSel.innerHTML = '<option value="">' + esc(res.j.error || 'unreadable') + '</option>'; return; }
+      var apps = res.j.apps;
+      if (!apps.length) { appSel.innerHTML = '<option value="">No legacy applications registered (legacy_analyzer.py)</option>'; return; }
+      appSel.innerHTML = apps.map(function (a) {
+        return '<option value="' + esc(a.id) + '">' + esc(a.name) + ' (' + esc(a.primary_language || '?') + ', ' +
+          esc(a.components) + ' components' + (a.assessment ? ', 7R recommends ' + esc(a.assessment.recommended_strategy) : '') + ')</option>';
+      }).join('');
+      var want = new URLSearchParams(window.location.search).get('app');
+      if (want) appSel.value = want;
+      showApp();
+    });
+  }
+
+  function showApp() {
+    var id = appSel.value;
+    if (!id) return;
+    document.getElementById('mdz-app-meta').textContent = 'id ' + id;
+    loadWaves(id); loadJobs(id); loadCloud(id); loadBundle(id);
+  }
+  appSel.addEventListener('change', showApp);
+
+  function loadWaves(id) {
+    var box = document.getElementById('mdz-waves-body');
+    box.textContent = 'Loading…';
+    getJson(icdevFetch('migration_canvas.api_modernisation_waves', {app_id: id})).then(function (res) {
+      if (!res.ok) { box.innerHTML = '<span class="mdz-err">' + esc(res.j.error) + '</span>'; return; }
+      var w = res.j.waves || [];
+      box.innerHTML = '<div class="mdz-muted">' + esc(res.j.basis) + '</div>' + (w.length ? '<table><tr><th>Wave</th><th>Components</th><th>Depends on</th><th>Backout</th></tr>' +
+        w.map(function (x) {
+          return '<tr><td>' + esc(x.name) + '</td><td>' + esc((x.components || []).join(', ')) + '</td><td>' +
+            esc((x.depends_on || []).join(', ') || '—') + '</td><td>' + esc(x.backout) + '</td></tr>';
+        }).join('') + '</table>' : '<div class="mdz-muted">No components recorded for this application.</div>');
+    });
+  }
+
+  function reviewCell(j) {
+    if (j.review) {
+      return '<span class="mdz-tag ' + (j.review.approved ? 'ok' : 'no') + '">' + esc(j.review.decision) + '</span> by ' +
+        esc(j.review.by) + ': ' + esc(j.review.reason);
+    }
+    if (j.status !== 'completed') return '<span class="mdz-muted">' + esc(j.status) + ': nothing to review</span>';
+    return '<span class="mdz-tag">unreviewed</span> <input class="mdz-reason" data-job="' + esc(j.id) + '" placeholder="reason (required)" /> ' +
+      '<button type="button" class="mdz-btn" data-approve-job="' + esc(j.id) + '">Approve</button> ' +
+      '<button type="button" class="mdz-btn reject" data-reject-job="' + esc(j.id) + '">Reject</button>';
+  }
+  function jobsTable(jobs, kindKey) {
+    return '<table><tr><th>' + (kindKey === 'scaffold' ? 'Scaffold' : 'Type') + '</th><th>Component</th><th>Status</th><th>Files (SHA-256)</th><th>Review</th></tr>' +
+      jobs.map(function (j) {
+        return '<tr data-job-id="' + esc(j.id) + '"><td>' + esc(j[kindKey] || j.refactor_type) + '</td><td>' + esc(j.component_name) + '</td><td>' + esc(j.status) +
+          (j.error_message ? '<div class="mdz-err">' + esc(j.error_message) + '</div>' : '') + '</td><td>' +
+          (j.artefacts || []).map(function (a) { return esc(a.name) + ' <span class="mdz-muted">' + (a.present ? esc(a.sha256.slice(0, 12)) : 'missing') + '</span>'; }).join('<br>') +
+          '</td><td>' + reviewCell(j) + '</td></tr>';
+      }).join('') + '</table>';
+  }
+
+  function loadJobs(id) {
+    var box = document.getElementById('mdz-jobs-body');
+    box.textContent = 'Loading…';
+    getJson(icdevFetch('migration_canvas.api_modernisation_refactor_jobs', {app_id: id})).then(function (res) {
+      if (!res.ok) { box.innerHTML = '<span class="mdz-err">' + esc(res.j.error) + '</span>'; return; }
+      var jobs = res.j.jobs || [];
+      box.innerHTML = res.j.project_id ? (jobs.length ? jobsTable(jobs, 'refactor_type') : '<div class="mdz-muted">No refactor jobs in project ' + esc(res.j.project_id) + '.</div>')
+        : '<div class="mdz-muted">No CAM project yet: run <code>python tools/modernization/refactor_jobs.py --app-id ' + esc(id) + '</code>.</div>';
+    });
+  }
+
+  function loadCloud(id) {
+    var box = document.getElementById('mdz-cloud-body');
+    box.textContent = 'Loading…';
+    getJson(icdevFetch('migration_canvas.api_modernisation_cloud_native', {app_id: id})).then(function (res) {
+      if (!res.ok) { box.innerHTML = '<span class="mdz-err">' + esc(res.j.error) + '</span>'; return; }
+      var d = res.j, jobs = d.jobs || [];
+      var html = jobs.length ? jobsTable(jobs, 'scaffold') : '<div class="mdz-muted">No cloud-native jobs: run <code>python tools/modernization/cloud_native_jobs.py --app-id ' + esc(id) + '</code>.</div>';
+      if (d.section_error) html += '<div class="mdz-err">' + esc(d.section_error) + '</div>';
+      if (d.section) {
+        html += '<h2 style="margin-top:10px;">Twelve factors</h2><table><tr><th>Factor</th><th>Status</th><th>Evidence</th></tr>' +
+          (d.factors || []).map(function (f) {
+            return '<tr><td>' + esc(f.title || f.id) + '</td><td>' + esc(f.status) + '</td><td>' + esc(typeof f.evidence === 'string' ? f.evidence : JSON.stringify(f.evidence || '')) + '</td></tr>';
+          }).join('') + '</table>';
+      } else if (!d.section_error) {
+        html += '<div class="mdz-muted">No twelve-factor report: the cloud_native section is null (unverified).</div>';
+      }
+      box.innerHTML = html;
+    });
+  }
+
+  function loadBundle(id) {
+    var box = document.getElementById('mdz-bundle-body');
+    box.textContent = 'Loading…';
+    getJson(icdevFetch('migration_canvas.api_modernisation_bundle', {app_id: id})).then(function (res) {
+      var d = res.j;
+      if (!res.ok || !d.valid) { box.innerHTML = '<span class="mdz-err">' + esc(d.error) + '</span>'; return; }
+      box.innerHTML = '<div>' + esc(d.schema) + ', inventory digest <code>' + esc(String(d.inventory_digest).slice(0, 16)) + '</code>, ' + esc(d.waves) + ' wave(s)</div>' +
+        '<div>' + Object.keys(d.sections).map(function (k) {
+          return '<span class="mdz-tag ' + (d.sections[k] ? 'ok' : '') + '" title="' + (d.sections[k] ? 'filled' : 'null: unverified') + '">' + esc(k) + '</span>';
+        }).join(' ') + '</div><div class="mdz-muted">Write it: <code>' + esc(d.write_with) + '</code></div>';
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var id = t.getAttribute && (t.getAttribute('data-approve-job') || t.getAttribute('data-reject-job'));
+    if (!id) return;
+    var decision = t.hasAttribute('data-approve-job') ? 'approve' : 'reject';
+    var row = t.closest('tr');
+    var reason = (row.querySelector('.mdz-reason') || {}).value || '';
+    var msg = document.getElementById('mdz-jobs-msg');
+    if (!reason.trim()) { msg.textContent = 'A reason is required.'; return; }
+    icdevFetch('migration_canvas.api_refactor_job_approve', {job_id: id}, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({decision: decision, reason: reason.trim()})
+    }).then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); }).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not recorded: ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Recorded ' + res.j.review.decision + ' by ' + res.j.review.by + ' (step ' + res.j.decision_step.step_id + ').';
+      loadJobs(appSel.value); loadCloud(appSel.value);
+    });
+  });
+
+  document.getElementById('mdz-icos-check').addEventListener('click', function () {
+    var box = document.getElementById('mdz-icos-body');
+    var raw = document.getElementById('mdz-icos-export').value.trim();
+    var exportDoc = raw;
+    try { exportDoc = raw ? JSON.parse(raw) : null; } catch (e) { /* the server says it is not JSON */ }
+    icdevFetch('migration_canvas.api_modernisation_icos_check', {}, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({app: appSel.value, strategy: document.getElementById('mdz-icos-strategy').value.trim(), export: exportDoc})
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.status !== 'ok') { box.innerHTML = '<span class="mdz-tag no">' + esc(d.status || 'error') + '</span> ' + esc(d.error); return; }
+      box.innerHTML = 'Signed by ' + esc(d.issuer) + '. may-plan: <span class="mdz-tag ' + (d.may_plan.allowed ? 'ok' : 'no') + '">' +
+        (d.may_plan.allowed ? 'yes' : 'no') + '</span> ' + esc(d.may_plan.reason || d.may_plan.role || '') +
+        '; may-retire: <span class="mdz-tag ' + (d.may_retire.allowed ? 'ok' : 'no') + '">' + (d.may_retire.allowed ? 'yes' : 'no') + '</span> ' +
+        esc(d.may_retire.reason || '');
+    });
+  });
+
+  loadApps();
+})();
+</script>
+{% endblock %}

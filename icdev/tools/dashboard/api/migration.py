@@ -2,6 +2,7 @@
 # CUI // SP-CTI
 """Dashboard API: Migration Tracker (7R Assessment, Plans, Tasks, Artifacts, Progress)."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -13,7 +14,9 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection, table_exists  # noqa: E402
 
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+# The rule tools/db/storage.py and seven_r_assessor follow: ICDEV_DB_PATH first. A fixed path here read a different
+# SQLite file from the one the assessor wrote (icx-mdz-01); on PostgreSQL the path is not used.
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH") or BASE_DIR / "data" / "icdev.db")
 
 migration_api = Blueprint("migration_api", __name__, url_prefix="/api/migration")
 
@@ -161,12 +164,25 @@ def list_assessments():
                 }
             )
 
+        # icx-mdz-01: the strategy a person recorded for each assessment, read from the ledger.
+        # None means nobody recorded one; a ledger that cannot be read says so, never "none".
+        records_error = None
+        try:
+            from tools.modernization import decisions
+
+            recs = decisions.decided(decisions.TEMPLATE_7R, [a["id"] for a in assessments])
+        except Exception as exc:  # noqa: BLE001
+            recs, records_error = {}, f"the decision ledger cannot be read: {exc}"
+        for a in assessments:
+            a["strategy_record"] = decisions.strategy_record(recs.get(a["id"])) if not records_error else None
+
         return jsonify(
             {
                 "assessments": assessments,
                 "total": total,
                 "page": page,
                 "per_page": per_page,
+                "records_error": records_error,
             }
         )
     except Exception as exc:
@@ -459,19 +475,73 @@ def plan_progress(plan_id):
 # ---------------------------------------------------------------------------
 @migration_api.route("/assess", methods=["POST"])
 def trigger_assessment():
-    """Trigger a migration assessment for a project."""
-    data = request.get_json(force=True, silent=True) or {}
-    project_id = data.get("project_id") or request.args.get("project_id", "")
+    """Run the 7R assessment for one legacy application (``seven_r_assessor``).
 
-    if not project_id:
-        return jsonify({"error": "project_id required"}), 400
+    Body: ``{project_id, app_id}``. The assessor scores the seven strategies, recommends one and stores the
+    assessment; it decides nothing. A person records the strategy ICDEV proposes with ``record_strategy`` below.
+    (This route used to import a ``modernizer`` module that does not exist, so it answered 501 for every call.)
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    project_id = str(data.get("project_id") or request.args.get("project_id", "")).strip()
+    app_id = str(data.get("app_id") or request.args.get("app_id", "")).strip()
+    if not project_id or not app_id:
+        return jsonify({"error": "project_id and app_id (the legacy application's id) are required"}), 400
 
     try:
-        from tools.modernization.modernizer import assess_application
+        from tools.modernization.seven_r_assessor import run_seven_r_assessment
 
-        result = assess_application(project_id=project_id)
-        return jsonify(result)
-    except ImportError as exc:
-        return jsonify({"error": f"Modernizer module not available: {exc}"}), 501
-    except Exception as exc:
+        result = run_seven_r_assessment(project_id, app_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 500
+    keep = ("id", "legacy_app_id", "project_id", "recommended_strategy", "ranking", "risk_score",
+            "cost_estimate_hours", "timeline_weeks", "ato_impact", "assessed_at")
+    return jsonify({k: result.get(k) for k in keep})
+
+
+# ---------------------------------------------------------------------------
+# POST /api/migration/assessments/<assessment_id>/strategy  (icx-mdz-01)
+# ---------------------------------------------------------------------------
+@migration_api.route("/assessments/<assessment_id>/strategy", methods=["POST"])
+def record_strategy(assessment_id):
+    """A person records the 7R strategy ICDEV proposes for an assessed application, or declines to.
+
+    Body: ``{decision: record|decline, strategy, reason}``. The step is the person's, through the declared template
+    ``decl-wft-mdz-7r-strategy`` (a held role, a reason always), and the decided step is the record. It is a proposal
+    to ICDEV[OS]: there the mission owner accepts a strategy through the signed migration-assessment workflow, and a
+    migration may be planned only when ``icos_decisions.py may-plan`` allows it. Nothing is planned or approved here.
+    """
+    from tools.modernization import decisions
+    from tools.workflow_hitl import declared
+
+    data = request.get_json(force=True, silent=True) or {}
+    decision = str(data.get("decision") or "").strip().lower()
+    strategy = str(data.get("strategy") or "").strip().lower()
+    reason = str(data.get("reason") or "").strip()
+    if decision == "record" and strategy not in decisions.STRATEGIES:
+        return jsonify({"error": f"strategy must be one of {', '.join(decisions.STRATEGIES)}"}), 400
+    conn = None
+    try:
+        conn = _get_db()
+        row = conn.execute(
+            "SELECT id, legacy_app_id, recommended_strategy FROM migration_assessments WHERE id = %s",
+            (assessment_id,),
+        ).fetchone() if _table_exists(conn, "migration_assessments") else None
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn:
+            conn.close()
+    if row is None:
+        return jsonify({"error": f"no assessment {assessment_id}"}), 404
+    payload = {"assessment_id": row[0], "legacy_app_id": row[1], "recommended_strategy": row[2],
+               "strategy": strategy if decision == "record" else None}
+    try:
+        step = declared.take_step(decisions.TEMPLATE_7R, surface=request.endpoint, decision=decision,
+                                  subject=str(row[0]), reason=reason, payload=payload)
+    except declared.StepRefused as exc:
+        return jsonify(exc.to_dict()), exc.status
+    return jsonify({"assessment_id": row[0], "legacy_app_id": row[1], "decision_step": step,
+                    "strategy_record": {**payload, "decision": decision, "binding": False,
+                                        "means": decisions.SEVEN_R_BINDING}})

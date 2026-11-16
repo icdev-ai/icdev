@@ -635,9 +635,24 @@ _THREAD_TABLES = {
     "ace_grant": ("ace", "ace_dispatch_grants", "grant_id",
                   ("grant_id", "event", "role_id", "topic", "expires_at", "max_per_day",
                    "reason", "actor", "step_id", "created_at")),
+    # icx-mdz-01: application modernisation (tools/twin_core/adapters/modernisation.py).
+    "mdz_assessment": ("core", "migration_assessments", "id",
+                       ("id", "legacy_app_id", "recommended_strategy", "assessment_scope",
+                        "assessed_at")),
+    "migration_plan": ("core", "migration_plans", "id",
+                       ("id", "legacy_app_id", "plan_name", "strategy", "status", "created_at")),
+    "studio_workflow": ("core", "studio_workflows", "workflow_id",
+                        ("workflow_id", "name", "category", "created_by", "created_at",
+                         "updated_at")),
+    "mc_refactor_job": ("mc", "mc_refactor_jobs", "id",
+                        ("id", "project_id", "component_name", "refactor_type", "status",
+                         "output_path", "completed_at")),
+    "aiify_decision": ("aiify", "aiify_hitl_decisions", "id",
+                       ("id", "source_type", "source_id", "phase_id", "decision", "reason",
+                        "actor", "decided_at")),
 }
 #: Thread kinds whose ref is an integer row id.
-_INT_REFS = ("ace_audit", "ace_event")
+_INT_REFS = ("ace_audit", "ace_event", "aiify_decision")
 
 
 def _thread_conn(kind: str):
@@ -645,6 +660,16 @@ def _thread_conn(kind: str):
 
     if kind == "ace":
         return get_canvas_connection("ICDEV_ACE_DB_URL")
+    if kind == "core":  # platform tables with no tenant columns (icx-mdz-01)
+        return get_canvas_connection()
+    if kind == "mc":
+        from tools.migration_canvas.db.init_db import get_connection as mc_connection
+
+        return mc_connection()
+    if kind == "aiify":
+        from tools.aiify.db.init_db import get_connection as aiify_connection
+
+        return aiify_connection()
     return get_connection()
 
 
