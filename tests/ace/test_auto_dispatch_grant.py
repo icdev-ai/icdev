@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import importlib
-import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
