@@ -560,8 +560,9 @@ def _check_retire_fitness(profile, redundancy=None):
     and their names matched no catalog criterion, so they were scored POSITIONALLY as other criteria).
 
     Criteria:
-        functional_redundancy -- the share of this application's features another application also provides,
-                                 MEASURED elsewhere (``redundancy``: e.g. ICDEV[OS]'s cross-app overlap); else None
+        functional_redundancy -- the share of this application's features another application also provides, as
+                                 ICDEV[OS] MEASURED it and exported it signed (``redundancy``: ``plan_gate.redundancy``,
+                                 icx-mdz-04); unmeasured, unreported, missing or untrusted there: None
         risk_reduction        -- removing it removes end-of-life dependencies (framework/language at EOL): 1.0/0.0;
                                  None when neither the framework nor the language level is known (icx-mdz-02)
         dependency_analysis, data_disposition, cost_savings, stakeholder_alignment -- need a dependency map, a
@@ -569,7 +570,8 @@ def _check_retire_fitness(profile, redundancy=None):
 
     Args:
         profile:    the application profile (legacy_* tables).
-        redundancy: optional ``{"share": float in [0, 1], "source": str}``.
+        redundancy: optional ``{"share": float in [0, 1] | None, "state": str, "source": str}``
+                    (``plan_gate.redundancy``); a None share is unmeasured, never a default.
 
     Returns:
         Dict mapping criterion name to a float in [0.0, 1.0], or None when unmeasured.
@@ -588,19 +590,13 @@ def _check_retire_fitness(profile, redundancy=None):
     }
 
 
-def load_redundancy(path):
-    """A measured-redundancy file: ``{"applications": {app_id: {"share": 0.62, "source": "..."}}}`` (or the bare
-    mapping, or ``app_id: share``). Returns ``{app_id: {"share", "source"}}``."""
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
-    apps = raw.get("applications", raw) if isinstance(raw, dict) else {}
-    out = {}
-    for app_id, v in apps.items():
-        if isinstance(v, (int, float)):
-            out[app_id] = {"share": float(v), "source": raw.get("source") if isinstance(raw, dict) else None}
-        elif isinstance(v, dict) and v.get("share") is not None:
-            out[app_id] = {"share": float(v["share"]), "source": v.get("source") or raw.get("source")}
-    return out
+def icos_redundancy(app_id, export=None, jwks=None):
+    """Retire's ``functional_redundancy`` input: ``app_id``'s redundancy as ICDEV[OS] measured it, from its SIGNED
+    decisions export verified against the pinned JWKS (icx-mdz-04; ``plan_gate.redundancy``). An unsigned file is no
+    source: a share anyone could write would decide retire. Missing, untrusted, unmeasured or unreported: share None."""
+    from tools.modernization import plan_gate
+
+    return plan_gate.redundancy(app_id, export=export, jwks=jwks)
 
 
 def _check_retain_fitness(profile):
@@ -1072,7 +1068,8 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
         app_id:         The legacy application ID to assess.
         custom_weights: Optional dict of custom weights per strategy.
         db_path:        Optional database path override.
-        redundancy:     Optional measured redundancy for this app, ``{"share", "source"}`` (``load_redundancy``).
+        redundancy:     Optional measured redundancy for this app, ``{"share", "state", "source"}``
+                        (``icos_redundancy``: ICDEV[OS]'s signed export); a None share is unmeasured.
 
     Returns:
         Dict containing the full assessment: scores, ranking, recommendation,
@@ -1081,6 +1078,11 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
     catalog = load_seven_rs_catalog()
     profile = _get_app_profile(app_id, db_path=db_path)
     min_conf = min_confidence(catalog)
+
+    # icx-mdz-04: with none given, retire reads ICDEV[OS]'s measured redundancy from the export the operator configured
+    # (ICDEV_ICOS_DECISIONS / ICDEV_ICOS_JWKS); none configured, untrusted or unmeasured: share None, never a default
+    if redundancy is None:
+        redundancy = icos_redundancy(app_id)
 
     # Run all fitness checks: each keyed by its strategy's catalog criteria, None where unmeasured (icx-mdz-02)
     fitness_results = {sid: (check(profile, redundancy=redundancy) if sid == "retire" else check(profile))
@@ -1612,9 +1614,11 @@ def main():
         help="Print the decision matrix table",
     )
     parser.add_argument(
-        "--redundancy",
-        help="A measured-redundancy JSON (e.g. ICDEV[OS] cross-application overlap): retire's functional_redundancy",
+        "--icos-decisions",
+        help="ICDEV[OS]'s signed decisions export: retire's functional_redundancy is its MEASURED redundancy for this "
+             "application (else ICDEV_ICOS_DECISIONS; none or unmeasured: the criterion is unmeasured)",
     )
+    parser.add_argument("--icos-jwks", help="the ICDEV[OS] JWKS you PINNED (else ICDEV_ICOS_JWKS)")
 
     args = parser.parse_args()
 
@@ -1630,7 +1634,7 @@ def main():
 
     # Run the assessment
     try:
-        redundancy = load_redundancy(args.redundancy).get(args.app_id) if args.redundancy else None
+        redundancy = icos_redundancy(args.app_id, export=args.icos_decisions, jwks=args.icos_jwks)
         assessment = run_seven_r_assessment(
             project_id=args.project_id,
             app_id=args.app_id,

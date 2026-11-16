@@ -79,6 +79,26 @@ def check(app_id: str, strategy: Optional[str] = None, *, export: Any = None, jw
     return {**base, **ans, "status": "allowed" if ans["allowed"] else "refused", "issuer": doc.get("issuer")}
 
 
+def redundancy(app_id: str, *, export: Any = None, jwks: Any = None) -> dict:
+    """7R retire's ``functional_redundancy`` input (icx-mdz-04, gap G2): ``app_id``'s measured redundancy from
+    ICDEV[OS]'s signed decisions export (the same export and pinned JWKS as may-plan, or their environment variables).
+    Never raises; never writes. ``share`` is None unless the export verifies AND ICDEV[OS] measured it: a missing or
+    untrusted export, an unmeasured or unreported row all leave the criterion unmeasured (``state`` says which), and
+    an unmeasured criterion lowers 7R's confidence -- it is never scored."""
+    from tools.modernization import icos_decisions
+
+    export = export if export not in (None, "") else (os.environ.get(DECISIONS_ENV, "").strip() or None)
+    jwks = jwks if jwks not in (None, "") else (os.environ.get(JWKS_ENV, "").strip() or None)
+    if export is None or jwks is None:
+        return {"share": None, "state": "missing",
+                "why": "no signed ICDEV[OS] decisions export and pinned JWKS given: redundancy is unmeasured"}
+    try:
+        doc = icos_decisions.verify(_load(export), icos_decisions.pinned(_load(jwks)))
+    except (icos_decisions.Untrusted, OSError, ValueError, TypeError, KeyError) as exc:
+        return {"share": None, "state": "untrusted", "why": f"the decisions export is not trusted: {exc}"}
+    return icos_decisions.redundancy(doc, app_id)
+
+
 def require(app_id: str, strategy: Optional[str] = None, *, tool: str, project_id: Optional[str] = None,
             export: Any = None, jwks: Any = None) -> dict:
     """``check``, recorded in the audit trail; raises ``PlanRefused`` unless ICDEV[OS]'s may-plan allows the plan.

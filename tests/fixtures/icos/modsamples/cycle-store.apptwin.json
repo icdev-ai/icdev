@@ -1,6 +1,6 @@
 {
   "aiify": {
-    "assessed_at": "2026-11-15T00:00:00Z",
+    "assessed_at": "2026-11-16T00:00:00Z",
     "decisions": [],
     "opportunities": [],
     "overall_verdict": "not_suitable",
@@ -99,7 +99,7 @@
     }
   ],
   "application": {
-    "id": "lapp-9acc6e3fc69b",
+    "id": "lapp-3472ac096e2c",
     "languages": [
       "csharp"
     ],
@@ -110,49 +110,49 @@
     "artefact_digest": "745c85d017c69bac48f178c229cce48b57d62ae54b557eb76a883903ea336d2c",
     "artefacts": [
       {
-        "job": "5bdfa8f4-0494-4dcb-9cf9-18790ad15ce5",
+        "job": "8c54c640-5017-438e-9363-18ba8f3c4606",
         "kind": "config_mapping",
         "path": "config_externalisation/config-findings.json",
         "review": "unreviewed",
         "sha256": "62426511c6ffde72323d4b3b68a6635156978ddbc342fa6308c4b8fa978a6c0e"
       },
       {
-        "job": "5bdfa8f4-0494-4dcb-9cf9-18790ad15ce5",
+        "job": "8c54c640-5017-438e-9363-18ba8f3c4606",
         "kind": "config_mapping",
         "path": "config_externalisation/config.env.example",
         "review": "unreviewed",
         "sha256": "18df17b9d4e159343b796f440b0d95f4249c0fc0ed54febce5ce4d973f7e898a"
       },
       {
-        "job": "5bdfa8f4-0494-4dcb-9cf9-18790ad15ce5",
+        "job": "8c54c640-5017-438e-9363-18ba8f3c4606",
         "kind": "config_mapping",
         "path": "config_externalisation/env.mapping.json",
         "review": "unreviewed",
         "sha256": "f8e3aca76d06bd291f6ee70855fa9698f57a00da8072f4719e34cc04cb948a1d"
       },
       {
-        "job": "a9c201c5-7700-4a38-bcbc-3c7338c20ca3",
+        "job": "072df27b-0706-4e79-9c45-eabb38c9ffef",
         "kind": "container_definition",
         "path": "container_definition/Containerfile",
         "review": "unreviewed",
         "sha256": "c75d52dad189e1a9b13edbe91296f1958281c5dc3b396e83b87b07178b9ba757"
       },
       {
-        "job": "a9c201c5-7700-4a38-bcbc-3c7338c20ca3",
+        "job": "072df27b-0706-4e79-9c45-eabb38c9ffef",
         "kind": "deployment_manifest",
         "path": "container_definition/deployment.yaml",
         "review": "unreviewed",
         "sha256": "d2eb9f2a5de53ce4e49a5d7a02637bd5b65d329692d219c3b54def59178783b7"
       },
       {
-        "job": "769d39e9-2fa9-4211-b86c-fb2cc8a1e1d4",
+        "job": "e09b30d7-d658-4f24-9386-05de1df2d58f",
         "kind": "twelve_factor_report",
         "path": "twelve_factor_report/twelve-factor.json",
         "review": "unreviewed",
         "sha256": "672f2eb1094595cce5ddf4d13552a2ab214792f70c3a3c03084d4d74d93b9407"
       }
     ],
-    "assessed_at": "2026-11-15T00:00:00Z",
+    "assessed_at": "2026-11-16T00:00:00Z",
     "config": [
       {
         "env": "CONNECTION_STRING",
@@ -516,9 +516,56 @@
     }
   ],
   "dependencies": [],
+  "derived_waves": {
+    "assessed_at": "2026-11-16T00:00:00Z",
+    "basis": "no dependency between the application's 17 components was resolved, so they move as one wave",
+    "tool": "icdev-it/app_wave_planner",
+    "waves": [
+      {
+        "backout": "Route these 17 components back to the legacy cycle-store through the strangler facade; the legacy code stays deployed and authoritative until this wave closes.",
+        "components": [
+          "AdventureWorks.Business.CYCLE_STOREEntities",
+          "AdventureWorks.Business.CategoryManager",
+          "AdventureWorks.Business.Common",
+          "AdventureWorks.Business.Product",
+          "AdventureWorks.Business.ProductCategory",
+          "AdventureWorks.Business.ProductSubcategory",
+          "AdventureWorks.Controllers.ErrorController",
+          "AdventureWorks.Controllers.HomeController",
+          "AdventureWorks.Controllers.SiteLayoutController",
+          "AdventureWorks.FilterConfig",
+          "AdventureWorks.Models.SiteLayoutModel",
+          "AdventureWorks.MvcApplication",
+          "AdventureWorks.RouteConfig",
+          "AdventureWorks.WebApiConfig",
+          "EpicAdventureWorks.ProductManager",
+          "UrlExtensions",
+          "and"
+        ],
+        "id": "w1",
+        "order": 1,
+        "status": "planned",
+        "title": "Wave 1: 17 components that depend on nothing else in it"
+      }
+    ]
+  },
   "features": [
     {
       "basis": "source",
+      "capability_hints": [
+        {
+          "capability": "error_handling",
+          "from": [
+            "apis",
+            "handlers",
+            "name"
+          ],
+          "terms": [
+            "error"
+          ],
+          "title": "Error handling"
+        }
+      ],
       "confidence": 0.6,
       "evidence": [
         "AdventureWorksMVC/Controllers/ErrorController.cs:10",
@@ -555,6 +602,33 @@
     },
     {
       "basis": "source",
+      "capability_hints": [
+        {
+          "capability": "catalogue",
+          "from": [
+            "calls"
+          ],
+          "terms": [
+            "category"
+          ],
+          "title": "Product catalogue"
+        },
+        {
+          "capability": "site_layout",
+          "from": [
+            "apis",
+            "calls",
+            "handlers",
+            "name"
+          ],
+          "terms": [
+            "footer",
+            "header",
+            "layout"
+          ],
+          "title": "Site layout"
+        }
+      ],
       "confidence": 0.6,
       "evidence": [
         "AdventureWorksMVC/Controllers/SiteLayoutController.cs:20",
@@ -584,40 +658,108 @@
   "processes": [
     {
       "basis": "source",
+      "derived_from": "handler methods",
+      "feature": "error",
       "id": "error-actions",
+      "order": "the actions this controller offers, in the order its source declares them: not an observed sequence; a person reviews it before ICDEV[OS] counts its steps",
+      "review": {
+        "error": "no such table: wf_decision_steps",
+        "state": "unreviewed"
+      },
+      "signature": {
+        "digest": "1b078392ae426c03912e648338d7bb444c377c32aed0787f9be5935cc8c0f23f",
+        "rules_digest": "f7dfbe346aff1ede412929f7165a5e59212fdea2c484219a1404d44c06668516",
+        "steps": [
+          "view:error",
+          "view:error+generic"
+        ]
+      },
+      "source": "static",
       "steps": [
         {
+          "apis": [
+            "ALL /Error/Default"
+          ],
+          "evidence": "AdventureWorksMVC/Controllers/ErrorController.cs:10",
           "id": "s01",
-          "title": "Default"
+          "object": "error",
+          "signature": "view:error",
+          "title": "Default",
+          "verb": "view"
         },
         {
+          "apis": [
+            "ALL /Error/GenericError"
+          ],
+          "evidence": "AdventureWorksMVC/Controllers/ErrorController.cs:16",
           "id": "s02",
-          "title": "Generic error"
+          "object": "error+generic",
+          "signature": "view:error+generic",
+          "title": "Generic error",
+          "verb": "view"
         }
       ],
       "title": "Error: 2 actions of ErrorController"
     },
     {
       "basis": "source",
+      "derived_from": "handler methods",
+      "feature": "site-layout",
       "id": "site-layout-actions",
+      "order": "the actions this controller offers, in the order its source declares them: not an observed sequence; a person reviews it before ICDEV[OS] counts its steps",
+      "review": {
+        "error": "no such table: wf_decision_steps",
+        "state": "unreviewed"
+      },
+      "signature": {
+        "digest": "4459dfc795a4c3a63ff707b57e96c7064228b718ac59b545f96712f6d37693f6",
+        "rules_digest": "f7dfbe346aff1ede412929f7165a5e59212fdea2c484219a1404d44c06668516",
+        "steps": [
+          "view:header+layout",
+          "view:footer+layout",
+          "view:content+layout"
+        ]
+      },
+      "source": "static",
       "steps": [
         {
+          "apis": [
+            "ALL /SiteLayout/HeaderLayout"
+          ],
+          "evidence": "AdventureWorksMVC/Controllers/SiteLayoutController.cs:20",
           "id": "s01",
-          "title": "Header layout"
+          "object": "header+layout",
+          "signature": "view:header+layout",
+          "title": "Header layout",
+          "verb": "view"
         },
         {
+          "apis": [
+            "ALL /SiteLayout/FooterLayout"
+          ],
+          "evidence": "AdventureWorksMVC/Controllers/SiteLayoutController.cs:26",
           "id": "s02",
-          "title": "Footer layout"
+          "object": "footer+layout",
+          "signature": "view:footer+layout",
+          "title": "Footer layout",
+          "verb": "view"
         },
         {
+          "apis": [
+            "ALL /SiteLayout/ContentLayout"
+          ],
+          "evidence": "AdventureWorksMVC/Controllers/SiteLayoutController.cs:33",
           "id": "s03",
-          "title": "Content layout"
+          "object": "content+layout",
+          "signature": "view:content+layout",
+          "title": "Content layout",
+          "verb": "view"
         }
       ],
       "title": "Site layout: 3 actions of SiteLayoutController"
     }
   ],
-  "produced_at": "2026-11-15T00:00:00Z",
+  "produced_at": "2026-11-16T00:00:00Z",
   "producer": {
     "tool": "icdev-it/apptwin_export",
     "version": "unpackaged"
@@ -627,9 +769,108 @@
   "rtm": null,
   "sbd": null,
   "schema": "icos-apptwin/v1",
+  "sections": {
+    "aiify": {
+      "state": "present"
+    },
+    "apis": {
+      "count": 6,
+      "state": "present"
+    },
+    "cloud_native": {
+      "state": "present"
+    },
+    "cloud_native.config": {
+      "count": 3,
+      "findings": 5,
+      "state": "present"
+    },
+    "cloud_native.containerisation": {
+      "count": 2,
+      "state": "present"
+    },
+    "cloud_native.events": {
+      "reason": "no event_contract job: CAM's cloud_native rules queue one only for an EJB application's message-driven beans (framework ASP.NET MVC)",
+      "state": "missing"
+    },
+    "cloud_native.twelve_factor": {
+      "count": 1,
+      "factors": 12,
+      "state": "present"
+    },
+    "coherence": {
+      "reason": "no coherence check was run",
+      "state": "missing"
+    },
+    "components": {
+      "count": 17,
+      "state": "present"
+    },
+    "consumers": {
+      "reason": "the exporter never carries consumers",
+      "state": "missing"
+    },
+    "data": {
+      "count": 4,
+      "state": "present"
+    },
+    "dependencies": {
+      "reason": "no step produced it",
+      "state": "missing"
+    },
+    "features": {
+      "count": 3,
+      "state": "present"
+    },
+    "integrity": {
+      "reason": "no SIPA assessment was run",
+      "state": "missing"
+    },
+    "ivv": {
+      "reason": "no IV&V assessment was run",
+      "state": "missing"
+    },
+    "migration": {
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "state": "missing"
+    },
+    "migration.waves": {
+      "derived": 1,
+      "reason": "derived before any plan (carried in derived_waves, never approved): no migration plan carries them, so ICDEV[OS]'s migration-plan gate will block",
+      "state": "missing"
+    },
+    "processes": {
+      "count": 2,
+      "state": "present"
+    },
+    "readiness": {
+      "reason": "no readiness assessment was run",
+      "state": "missing"
+    },
+    "refactor": {
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "state": "missing"
+    },
+    "refactor.jobs": {
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "state": "missing"
+    },
+    "rtm": {
+      "reason": "no requirements traceability was run",
+      "state": "missing"
+    },
+    "sbd": {
+      "reason": "no Secure by Design assessment was run",
+      "state": "missing"
+    },
+    "seven_r": {
+      "state": "present"
+    }
+  },
   "seven_r": {
-    "assessed_at": "2026-11-16T05:14:01.826630+00:00",
+    "assessed_at": "2026-11-16T14:59:57.805291+00:00",
     "ato_impact": "low",
+    "confidence": 0.5,
     "cost_estimate_hours": 123.0,
     "evidence": [
       "recommendation: replatform scores 0.75 on 2 measured criteria (confidence 0.50)",
@@ -643,28 +884,73 @@
     ],
     "ranked": [
       {
+        "assessable": true,
+        "confidence": 0.5,
         "score": 0.75,
-        "strategy": "replatform"
+        "strategy": "replatform",
+        "unmeasured": [
+          "cost_optimization",
+          "operational_improvement",
+          "security_posture_change"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.55,
         "score": 0.6364,
-        "strategy": "refactor"
+        "strategy": "refactor",
+        "unmeasured": [
+          "cloud_service_adoption",
+          "compliance_alignment",
+          "team_capability"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.7,
         "score": 0.6071,
-        "strategy": "rehost"
+        "strategy": "rehost",
+        "unmeasured": [
+          "licensing_transferability",
+          "operational_readiness"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.25,
         "score": 1.0,
-        "strategy": "retain"
+        "strategy": "retain",
+        "unmeasured": [
+          "cost_justification",
+          "migration_blocker_validity",
+          "reassessment_plan",
+          "risk_acceptance"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.2,
         "score": 0.5,
-        "strategy": "repurchase"
+        "strategy": "repurchase",
+        "unmeasured": [
+          "fedramp_authorization",
+          "product_fit",
+          "total_cost_of_ownership",
+          "vendor_viability"
+        ]
       },
       {
+        "assessable": true,
+        "confidence": 0.12,
         "score": 0.0,
-        "strategy": "retire"
+        "strategy": "retire",
+        "unmeasured": [
+          "cost_savings",
+          "data_disposition",
+          "dependency_analysis",
+          "functional_redundancy",
+          "stakeholder_alignment"
+        ]
       }
     ],
     "recommended": "replatform",

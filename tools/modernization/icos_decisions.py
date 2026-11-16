@@ -21,11 +21,17 @@ Then it answers, deterministically:
                 (goals/modernization_workflow.md Step 5) -- with ``--strategy``, only the strategy accepted. Anything
                 else: no.
     may-retire  a recorded cutover names the application as departing: it may be switched off. Anything else: no.
+    redundancy  (icx-mdz-04; ICDEV[OS] osx-mdz-02) the application's MEASURED redundancy -- the share of its features a
+                counterpart carries in a duplicate or partial overlap -- which 7R's retire fitness reads as
+                ``functional_redundancy`` (gap G2). ``value`` null in the export is unmeasured, with ICDEV[OS]'s why; no
+                row is unreported. Neither is ever a score.
 
     python tools/modernization/icos_decisions.py --export decisions.json --jwks icos_jwks.json may-plan --app <id>
     python tools/modernization/icos_decisions.py --export decisions.json --jwks icos_jwks.json may-retire --app <id>
+    python tools/modernization/icos_decisions.py --export decisions.json --jwks icos_jwks.json redundancy --app <id>
 
-JSON out; exit 0 allowed, 1 not allowed, 2 the export cannot be trusted.
+JSON out; exit 0 allowed (redundancy: measured), 1 not allowed (unmeasured or unreported), 2 the export cannot be
+trusted.
 """
 from __future__ import annotations
 
@@ -198,13 +204,33 @@ def may_retire(doc: dict, app: str) -> dict:
             "reason": "no ICDEV[OS] cutover is recorded for this application: it may not be retired"}
 
 
+def redundancy(doc: dict, app: str) -> dict:
+    """``app``'s measured redundancy in a VERIFIED export (``redundancy`` rows, ICDEV[OS] ``duplicates.redundancy``):
+    ``share`` is its ``value`` when ICDEV[OS] measured it, else None -- unmeasured (with ICDEV[OS]'s why) or unreported
+    (no row). A share is never defaulted, and one outside [0, 1] is refused (an export saying it is not a measurement)."""
+    src = f"ICDEV[OS] decisions export ({doc.get('issuer') or 'unknown issuer'})"
+    rows = [r for r in doc.get("redundancy") or [] if isinstance(r, dict) and r.get("application") == app]
+    if not rows:
+        return {"share": None, "state": "unreported", "source": src,
+                "why": "the export carries no measured redundancy for this application"}
+    r = rows[-1]
+    base = {"source": f"{src}: {r.get('method') or 'overlap'}", "criterion": r.get("criterion"),
+            "features": r.get("features"), "redundant": r.get("redundant") or [], "unmeasured": r.get("unmeasured") or []}
+    v = r.get("value")
+    if v is None or r.get("state") not in (None, "measured"):
+        return {**base, "share": None, "state": "unmeasured", "why": r.get("why") or "ICDEV[OS] did not measure it"}
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0.0 <= float(v) <= 1.0:
+        return {**base, "share": None, "state": "unmeasured", "why": f"the export's value {v!r} is not a share in [0, 1]"}
+    return {**base, "share": float(v), "state": "measured"}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Verify ICDEV[OS]'s signed portfolio decisions; may-plan / may-retire")
     ap.add_argument("--export", type=Path, required=True, help="the signed export (GET /api/v1/portfolio/decisions/export)")
     ap.add_argument("--jwks", type=Path, required=True, help="the ICDEV[OS] JWKS you PINNED (its /oauth/jwks, fetched once)")
     ap.add_argument("--json", action="store_true", help="JSON out (the default)")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("may-plan", "may-retire"):
+    for name in ("may-plan", "may-retire", "redundancy"):
         sp = sub.add_parser(name)
         sp.add_argument("--app", required=True, help="the application's id in its icos-apptwin bundle")
         if name == "may-plan":
@@ -215,6 +241,10 @@ def main(argv: list[str] | None = None) -> int:
     except (Untrusted, OSError, ValueError) as exc:
         print(json.dumps({"status": "untrusted", "error": str(exc)}))
         return 2
+    if a.cmd == "redundancy":
+        out = {"application": a.app, **redundancy(doc, a.app)}
+        print(json.dumps({"status": "ok", "issuer": doc.get("issuer"), **out}, sort_keys=True))
+        return 0 if out["state"] == "measured" else 1
     out = may_plan(doc, a.app, a.strategy) if a.cmd == "may-plan" else may_retire(doc, a.app)
     print(json.dumps({"status": "ok", "issuer": doc.get("issuer"), **out}, sort_keys=True))
     return 0 if out["allowed"] else 1

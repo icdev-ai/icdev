@@ -1,0 +1,29 @@
+# CUI // SP-CTI
+# Each legacy application's environment, AS ITS DEPLOYMENT DECLARES IT (icx-mdz-04).
+#
+# tools/modernization/apptwin_export.py carries an entry into the icos-apptwin/v1
+# bundle's application.environment (ICDEV[OS] contract 1.189.0). ICDEV[OS] classes
+# a confirmed overlap between two applications by their security domains: one it
+# cannot read is "unverified (a security domain is unreported)", never passed.
+#
+# Nothing here is guessed from source code: a security domain is where the
+# application RUNS (the network or enclave, as the deployment names it), which no
+# file in its source can say. Declare an entry only from a deployment record, and
+# name it in `source` (an SSP section, a CMDB record, an ATO letter). An entry
+# without a source, with a field the contract does not have, or with an impact
+# level other than il2/il4/il5/il6 is refused by the exporter.
+#
+# Key: the application's name as legacy_analyzer registered it (or its legacy id).
+#
+#   applications:
+#     payroll:
+#       security_domain: nipr          # the network or enclave it runs on
+#       impact_level: il4              # il2 | il4 | il5 | il6
+#       ato_boundary: hr-enclave-ato   # the authorization boundary it is inside
+#       hosting: on-prem-dc-2          # where it is hosted
+#       source: "SSP HR-2024 section 9.1 (system environment)"
+#
+# The three open-source samples (DayTrader 7, the Cycle Store, JPetStore 6) are not
+# deployed anywhere, so none is declared and their bundles report none.
+version: 1
+applications: {}

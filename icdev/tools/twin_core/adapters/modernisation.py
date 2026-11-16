@@ -23,6 +23,9 @@ drafts, and the vendored bundle contract, so that is what it reads:
   model): one that would carry no features; extracted processes no person has reviewed at their step-signature digest
   (``decl-wft-mdz-process-review``; stale counts as unreviewed); and the parts ICDEV[OS] plans on that it would not
   carry (``bundle_required``: waves, refactor jobs, cloud-native parts), each with the exporter's reason.
+  (icx-mdz-04) A bundle that fails the pinned contract (1.189.0) or ICDEV[OS]'s agreement rules -- ICDEV[OS] would
+  refuse it whole -- and one whose application has no declared security domain (``args/modernisation_environments.yaml``),
+  so ICDEV[OS] can only class its overlaps unverified.
 
 A source that cannot be read is an unverified check, never a pass. Threads: ``mdz_assessment:<id>``,
 ``migration_plan:<id>``, ``audit_trail:<id>``, ``aiify_decision:<id>``, ``studio_workflow:<id>``, ``mc_refactor_job:<id>``,
@@ -83,8 +86,13 @@ def _bundles(limit: int) -> list[dict]:
         except Exception as exc:  # noqa: BLE001 — one application unreadable is said, never skipped
             out.append({"app": app, "name": str(a["name"]), "error": str(exc)})
             continue
+        schema_errors = list(pre.get("schema_errors") or [])
         out.append({"app": app, "name": str(a["name"]), "valid": bool(pre.get("valid")),
-                    "error": None if pre.get("valid") else pre.get("error"),
+                    "error": None if pre.get("valid") or schema_errors else pre.get("error"),
+                    # icx-mdz-04: what the pinned contract refuses, and the security domain (None: undeclared)
+                    "schema_errors": schema_errors[:20],
+                    "security_domain": pre.get("security_domain"),
+                    "environment_reason": (pre.get("environment_report") or {}).get("reason"),
                     "features": len(rep.get("features") or []),
                     "processes": sorted(({"id": p["id"], "state": (p.get("review") or {}).get("state") or "unreviewed",
                                           "digest": p["signature"]["digest"]} for p in rep.get("processes") or []),
@@ -398,6 +406,22 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
                         thread_id=thread, detail=str(b["error"])[:300],
                         recommendation="Fix what the exporter refuses; ICDEV[OS] gets nothing for this application."))
                     continue
+                if b.get("schema_errors"):
+                    findings.append(finding(
+                        "mdz.exporter.schema_invalid", "high",
+                        f"{b['name']}: the bundle fails the pinned icos-apptwin/v1 contract "
+                        f"({len(b['schema_errors'])} error(s))", thread_id=thread,
+                        detail="; ".join(b["schema_errors"][:5])[:600],
+                        recommendation="ICDEV[OS] refuses the whole bundle: fix what the exporter emits, never the "
+                                       "pinned schema."))
+                if "security_domain" in b and not b["security_domain"]:
+                    findings.append(finding(
+                        "mdz.exporter.no_security_domain", "medium",
+                        f"{b['name']}: the bundle reports no security domain", thread_id=thread,
+                        detail=str(b.get("environment_reason") or "no environment is declared for it")[:300],
+                        recommendation="Declare the application's environment from its deployment record, with the "
+                                       "source, in args/modernisation_environments.yaml; ICDEV[OS] classes its "
+                                       "overlaps unverified until then."))
                 if not b["features"]:
                     findings.append(finding(
                         "mdz.exporter.no_features", "high", f"{b['name']}: the bundle would carry no features",
@@ -427,6 +451,9 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
             "bundles_previewed": len(evidence.get("bundles") or []),
             "bundles_without_features": sum(1 for b in evidence.get("bundles") or []
                                             if not b.get("error") and not b.get("features")),
+            "bundles_failing_contract": sum(1 for b in evidence.get("bundles") or [] if b.get("schema_errors")),
+            "bundles_without_security_domain": sum(1 for b in evidence.get("bundles") or []
+                                                   if "security_domain" in b and not b["security_domain"]),
             "applications_assessed": len(evidence.get("assessments") or []),
             "applications_without_recommendation": sum(1 for a in evidence.get("assessments") or []
                                                        if not a["recommended"]),

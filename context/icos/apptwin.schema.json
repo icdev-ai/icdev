@@ -305,6 +305,43 @@
       "title": "Artefact",
       "type": "object"
     },
+    "CapabilityHint": {
+      "additionalProperties": false,
+      "description": "A capability of the producer's reviewed rule set whose terms the feature's words reach (osx-mdz-01): the words\nmatched and where they came from (its name, APIs, handlers, routes ...). A HINT for a person, never a mapping: only a\nconfirmed capability-mapping item draws ``realizes``.",
+      "properties": {
+        "capability": {
+          "minLength": 1,
+          "title": "Capability",
+          "type": "string"
+        },
+        "from": {
+          "items": {
+            "type": "string"
+          },
+          "title": "From",
+          "type": "array"
+        },
+        "terms": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Terms",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability",
+        "title",
+        "terms"
+      ],
+      "title": "CapabilityHint",
+      "type": "object"
+    },
     "Check": {
       "additionalProperties": false,
       "properties": {
@@ -706,6 +743,42 @@
       "title": "Dependency",
       "type": "object"
     },
+    "DerivedWaves": {
+      "additionalProperties": false,
+      "description": "Waves the wave planner derived from the application's own dependencies BEFORE any migration plan exists\n(osx-mdz-01): ICDEV[IT] plans only on ICOS's signed may-plan, so until then the waves have no plan to carry them.\nShown, never approved: the migration-plan gate reads ``migration.waves`` only.",
+      "properties": {
+        "assessed_at": {
+          "format": "date-time",
+          "title": "Assessed At",
+          "type": "string"
+        },
+        "basis": {
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "waves": {
+          "items": {
+            "$ref": "#/$defs/Wave"
+          },
+          "minItems": 1,
+          "title": "Waves",
+          "type": "array"
+        }
+      },
+      "required": [
+        "assessed_at",
+        "tool",
+        "basis",
+        "waves"
+      ],
+      "title": "DerivedWaves",
+      "type": "object"
+    },
     "EnvVar": {
       "additionalProperties": false,
       "description": "One environment variable of the generated mapping: its name, whether it is a secret (from the secret store, never\na config map), and every location it replaces.",
@@ -950,6 +1023,13 @@
           "title": "Basis",
           "type": "string"
         },
+        "capability_hints": {
+          "items": {
+            "$ref": "#/$defs/CapabilityHint"
+          },
+          "title": "Capability Hints",
+          "type": "array"
+        },
         "confidence": {
           "anyOf": [
             {
@@ -980,7 +1060,8 @@
             {
               "enum": [
                 "static",
-                "observed"
+                "observed",
+                "both"
               ],
               "type": "string"
             },
@@ -1491,9 +1572,83 @@
           "title": "Basis",
           "type": "string"
         },
+        "derived_from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Derived From"
+        },
+        "feature": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Feature"
+        },
         "id": {
           "title": "Id",
           "type": "string"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Order"
+        },
+        "review": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessReview"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "signature": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessSignature"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "enum": [
+                "static",
+                "observed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
         },
         "steps": {
           "items": {
@@ -1506,6 +1661,18 @@
         "title": {
           "title": "Title",
           "type": "string"
+        },
+        "truncated": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Truncated"
         }
       },
       "required": [
@@ -1515,6 +1682,155 @@
         "steps"
       ],
       "title": "Process",
+      "type": "object"
+    },
+    "ProcessReview": {
+      "additionalProperties": false,
+      "description": "ICDEV[IT]'s own review of the process, carried as it recorded it (osx-mdz-01). ``reviewed`` or ``rejected`` only at\nthe signature digest a person saw; at another digest it is ``stale``. ICOS's own ``process-review`` is what its gates\ncount (Phase 267): this is shown beside it, and never counts in its place.",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "By"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "signature_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Signature Digest"
+        },
+        "state": {
+          "enum": [
+            "reviewed",
+            "rejected",
+            "stale",
+            "unreviewed"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Id"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "ProcessReview",
+      "type": "object"
+    },
+    "ProcessSignature": {
+      "additionalProperties": false,
+      "description": "A process's step signature: its steps normalised, in order, their digest and the digest of the rule set that\nnormalised them. Two processes compare only under the same ``rules_digest``.",
+      "properties": {
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "rules_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Rules Digest",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Steps",
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps",
+        "digest",
+        "rules_digest"
+      ],
+      "title": "ProcessSignature",
       "type": "object"
     },
     "Producer": {
@@ -1850,6 +2166,102 @@
       "title": "Sbd",
       "type": "object"
     },
+    "SectionState": {
+      "additionalProperties": false,
+      "description": "What the producer says it carries for a section or a part (osx-mdz-01): ``present`` (with a count where it is a\nlist) or ``missing`` with its own reason. ``derived``: waves the planner derived but no plan carries.",
+      "properties": {
+        "channels": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channels"
+        },
+        "count": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Count"
+        },
+        "derived": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Derived"
+        },
+        "factors": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Factors"
+        },
+        "findings": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Findings"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "state": {
+          "enum": [
+            "present",
+            "missing"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "SectionState",
+      "type": "object"
+    },
     "SevenR": {
       "additionalProperties": false,
       "properties": {
@@ -1869,6 +2281,20 @@
           ],
           "default": null,
           "title": "Ato Impact"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
         },
         "cost_estimate_hours": {
           "anyOf": [
@@ -2115,9 +2541,40 @@
     "Step": {
       "additionalProperties": false,
       "properties": {
+        "apis": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Apis",
+          "type": "array"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence"
+        },
         "id": {
           "title": "Id",
           "type": "string"
+        },
+        "object": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Object"
         },
         "role": {
           "anyOf": [
@@ -2131,9 +2588,33 @@
           "default": null,
           "title": "Role"
         },
+        "signature": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Signature"
+        },
         "title": {
           "title": "Title",
           "type": "string"
+        },
+        "verb": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verb"
         }
       },
       "required": [
@@ -2184,6 +2665,32 @@
     "Strategy": {
       "additionalProperties": false,
       "properties": {
+        "assessable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Assessable"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        },
         "score": {
           "title": "Score",
           "type": "number"
@@ -2200,6 +2707,13 @@
           ],
           "title": "Strategy",
           "type": "string"
+        },
+        "unmeasured": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unmeasured",
+          "type": "array"
         }
       },
       "required": [
@@ -2296,6 +2810,19 @@
           ],
           "default": null,
           "title": "Ends"
+        },
+        "estimated_hours": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Estimated Hours"
         },
         "id": {
           "title": "Id",
@@ -2458,6 +2985,17 @@
       "default": null,
       "title": "Dependencies"
     },
+    "derived_waves": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DerivedWaves"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "features": {
       "anyOf": [
         {
@@ -2578,6 +3116,21 @@
       "title": "Schema",
       "type": "string"
     },
+    "sections": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/SectionState"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sections"
+    },
     "seven_r": {
       "anyOf": [
         {
@@ -2598,6 +3151,6 @@
   ],
   "title": "AppTwin",
   "type": "object",
-  "x-icos-contract": "1.182.0",
+  "x-icos-contract": "1.189.0",
   "x-license": "Apache-2.0"
 }

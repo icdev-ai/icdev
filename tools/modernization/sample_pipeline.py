@@ -37,7 +37,14 @@ Every step is the existing tool, run as a subprocess with the scratch database i
      8. monolith_decomposer        --create-plan with the strategy (migration)
      9. app_wave_planner           the plan's waves, each with its backout (migration.waves; osx-fth-13)
     10. apptwin_export             every section a step produced, and every section's present/missing state
-                                   (``sections`` in gaps.json: the waves, refactor jobs and cloud-native parts too)
+                                   (``sections``, in the bundle itself since icx-mdz-04 and in gaps.json: the waves,
+                                   refactor jobs and cloud-native parts too); the waves derived before a plan as
+                                   ``derived_waves``; the application's environment only as --environments (or
+                                   args/modernisation_environments.yaml) declares it, with its source -- else none,
+                                   and gaps.json says so
+
+The 7R (4) reads retire's functional_redundancy from ICDEV[OS]'s signed decisions export (icx-mdz-04): none on a first
+run, so unmeasured; ``--resume`` reruns it on the export it is given.
 
 The source is UNTRUSTED DATA: it is read, never built or run, and a step that would need the application running
 (observed inventory) is reported, not attempted: features are reported statically, from the entry points the
@@ -174,8 +181,10 @@ UNPRODUCED = {
 
 
 def _export(r: Run, *, name: str, app: str, project: str, source_name: str, inputs: dict, at: str | None,
-            may_plan: dict) -> dict:
-    """Step 10: the bundle from every section a step produced, and the gap report."""
+            may_plan: dict, environments: Path | None = None) -> dict:
+    """Step 10: the bundle from every section a step produced, and the gap report. Since icx-mdz-04 the bundle carries
+    its features' and processes' evidence, hints, step signatures and reviews and its ``sections`` inline (contract
+    1.189.0), so no side file is needed beside it; the gap report stays: the run's steps, and why each gap is one."""
     out = r.out
     bundle_path = out / f"{name}.apptwin.json"
     args = ["tools/modernization/apptwin_export.py", "--app-id", app, "--out", str(bundle_path)]
@@ -188,6 +197,8 @@ def _export(r: Run, *, name: str, app: str, project: str, source_name: str, inpu
         args += ["--process", str(out / p)]
     if at:
         args += ["--at", at]
+    if environments:
+        args += ["--environments", str(Path(environments).resolve())]
     reasons = {**UNPRODUCED, **{s["section"]: s.get("reason") or "the step produced nothing"
                                 for s in r.steps if s.get("section") and not s["ok"]}}
     cn = next((s for s in reversed(r.steps) if s["step"] == "cloud-native"), None)
@@ -199,6 +210,7 @@ def _export(r: Run, *, name: str, app: str, project: str, source_name: str, inpu
     rc, so, se = r.tool("export", *args)
     if rc != 0 or not bundle_path.is_file():
         raise PipelineError(f"apptwin_export: {_why(se, so)}")
+    exported = _last_json(so) or {}
     bundle = json.loads(bundle_path.read_text())
     sections = json.loads((out / "sections.json").read_text())
     produced = {k for k, v in bundle.items() if v not in (None, [], {})}
@@ -207,6 +219,9 @@ def _export(r: Run, *, name: str, app: str, project: str, source_name: str, inpu
         if s.get("section") and not s["ok"]:
             unproduced[s["section"]] = s.get("reason") or "the step produced nothing"
     gaps = {k: unproduced.get(k, "no step produced it") for k in sorted(set(bundle) - produced - {"schema"})}
+    if "derived_waves" in gaps:
+        gaps["derived_waves"] = ("a migration plan carries the waves (migration.waves)" if bundle.get("migration")
+                                 else unproduced.get("migration.waves") or "no wave was derived")
     if (bundle.get("migration") or {}) and not (bundle["migration"].get("waves")):
         gaps["migration.waves"] = next((s.get("reason") for s in reversed(r.steps) if s["step"] == "waves" and not s["ok"]),
                                        None) or "no wave was planned, so ICDEV[OS]'s migration-plan gate will block"
@@ -214,6 +229,9 @@ def _export(r: Run, *, name: str, app: str, project: str, source_name: str, inpu
               "bundle": bundle_path.name, "bundle_sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
               "produced": sorted(produced - {"schema", "producer", "produced_at"}), "gaps": gaps, "steps": r.steps,
               "sections": sections, "inputs": inputs, "may_plan": may_plan,
+              # icx-mdz-04: the application's environment, declared with its source or unreported with why
+              "environment": exported.get("environment") or {"declared": False, "reason": "the exporter said nothing"},
+              "contract": exported.get("contract"),
               "at": at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     (out / "gaps.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
@@ -243,6 +261,22 @@ def _extract(r: Run, app: str, observed: Path | None, observed_processes: list[P
     return (rep if rep and (rep.get("features") or rep.get("processes")) else None), path
 
 
+def _seven_r(r: Run, project: str, app: str, gate: list[str]) -> dict | None:
+    """Step 4: the 7R. Retire's functional_redundancy is ICDEV[OS]'s measured redundancy from the same signed export the
+    planners ask (icx-mdz-04); with none, it is unmeasured, and the step says which."""
+    rc, so, se = r.tool("seven-r", "tools/modernization/seven_r_assessor.py", "--project-id", project, "--app-id", app,
+                        "--json", *gate)
+    seven = _last_json(so) if rc == 0 else None
+    if seven:
+        (r.out / "seven_r.json").write_text(json.dumps(seven, indent=2))
+    red = ((seven or {}).get("evidence") or {}).get("redundancy") if isinstance((seven or {}).get("evidence"), dict) else None
+    r.note("seven-r", bool(seven), "seven_r", None if seven else _why(se, so),
+           recommended=(seven or {}).get("recommended_strategy"), confidence=(seven or {}).get("confidence"),
+           recommendation=((seven or {}).get("recommendation") or {}).get("reason"),
+           redundancy={k: (red or {}).get(k) for k in ("share", "state", "why")} if red else None)
+    return seven
+
+
 def _gate(icos_decisions: Path | None, icos_jwks: Path | None) -> tuple[list[str], dict]:
     """The planners' may-plan options, and what the report says about them (never where the files are)."""
     if icos_decisions and icos_jwks:
@@ -255,7 +289,7 @@ def _gate(icos_decisions: Path | None, icos_jwks: Path | None) -> tuple[list[str
 def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: str | None = None,
              at: str | None = None, no_model: bool = False, targets: dict | None = None,
              icos_decisions: Path | None = None, icos_jwks: Path | None = None, observed: Path | None = None,
-             observed_processes: list[Path] | None = None) -> dict:
+             observed_processes: list[Path] | None = None, environments: Path | None = None) -> dict:
     source, out = source.resolve(), out.resolve()
     if not source.is_dir():
         raise PipelineError(f"no source directory {source}")
@@ -326,13 +360,7 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
            (f"no ORM model or SQL DDL the extractor reads ({_why(se, so)})" if rc else "no ORM model or SQL DDL the extractor reads"),
            tables=tables)
 
-    rc, so, se = r.tool("seven-r", "tools/modernization/seven_r_assessor.py", "--project-id", project, "--app-id", app, "--json")
-    seven = _last_json(so) if rc == 0 else None
-    if seven:
-        (out / "seven_r.json").write_text(json.dumps(seven, indent=2))
-    r.note("seven-r", bool(seven), "seven_r", None if seven else _why(se, so),
-           recommended=(seven or {}).get("recommended_strategy"), confidence=(seven or {}).get("confidence"),
-           recommendation=((seven or {}).get("recommendation") or {}).get("reason"))
+    seven = _seven_r(r, project, app, gate)
 
     chosen = strategy or (seven or {}).get("recommended_strategy")
     jobs = _refactor(r, app, chosen, a, gate)
@@ -391,11 +419,22 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
               "language": a["primary_language"], "language_version": a["language_version"],
               "framework": a["framework"]}
     return _export(r, name=name, app=app, project=project, source_name=source.name, inputs=inputs, at=at,
-                   may_plan=may_plan)
+                   may_plan=may_plan, environments=_keep_environments(out, environments))
+
+
+def _keep_environments(out: Path, environments: Path | None) -> Path | None:
+    """The declared environments file this run used (icx-mdz-04), copied into the run so --resume reads the same one;
+    with none given, the repository's ``args/modernisation_environments.yaml`` (the exporter's default)."""
+    dest = out / "environments.yaml"
+    if environments:
+        if Path(environments).resolve() != dest.resolve():
+            shutil.copyfile(environments, dest)
+        return dest
+    return dest if dest.is_file() else None
 
 
 def resume(out: Path, scratch_db: Path, *, icos_decisions: Path, icos_jwks: Path, strategy: str | None = None,
-           at: str | None = None) -> dict:
+           at: str | None = None, environments: Path | None = None) -> dict:
     """Plan the application a first run assessed, now that ICDEV[OS] has decided (icx-mdz-02).
 
     The first run cannot plan: a migration is planned only on ICDEV[OS]'s signed may-plan, which ICDEV[OS] gives after
@@ -410,10 +449,13 @@ def resume(out: Path, scratch_db: Path, *, icos_decisions: Path, icos_jwks: Path
         raise PipelineError(f"{scratch_db}: resume needs the first run's scratch database, never the operational one")
     r = Run(scratch_db, out)
     r.steps = [s for s in prior.get("steps") or [] if s.get("step") not in ("refactor", "framework", "plan", "waves",
-                                                                           "extract", "processify-source")]
+                                                                           "extract", "processify-source", "seven-r")]
     gate, may_plan = _gate(icos_decisions, icos_jwks)
     app, project, inputs = prior["app_id"], prior["project_id"], dict(prior.get("inputs") or {})
-    seven = json.loads((out / inputs["seven_r"]).read_text()) if inputs.get("seven_r") else {}
+    # icx-mdz-04: the 7R again, now that retire can read ICDEV[OS]'s measured redundancy from this export
+    seven = _seven_r(r, project, app, gate) or (json.loads((out / inputs["seven_r"]).read_text())
+                                                 if inputs.get("seven_r") else {})
+    inputs["seven_r"] = "seven_r.json" if (out / "seven_r.json").is_file() else inputs.get("seven_r")
     chosen = strategy or seven.get("recommended_strategy")
     a = {"primary_language": inputs.get("language"), "language_version": inputs.get("language_version"),
          "framework": inputs.get("framework")}
@@ -429,7 +471,8 @@ def resume(out: Path, scratch_db: Path, *, icos_decisions: Path, icos_jwks: Path
     inputs.update(refactor="refactor.json" if jobs else None, extract=ext_path.name if extract else None,
                   waves="waves.json" if (waves or {}).get("waves") else None)
     return _export(r, name=prior["application"], app=app, project=project, source_name=prior.get("source") or "",
-                   inputs=inputs, at=at or prior.get("at"), may_plan={**may_plan, "resumed": True})
+                   inputs=inputs, at=at or prior.get("at"), may_plan={**may_plan, "resumed": True},
+                   environments=_keep_environments(out, environments))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -452,6 +495,10 @@ def main(argv: list[str] | None = None) -> int:
                                        "source is never run here")
     ap.add_argument("--observed-process", action="append", default=[],
                     help="an observed Process-Ify draft from an REA capture made elsewhere; repeatable")
+    ap.add_argument("--environments",
+                    help="a declared environments file (args/modernisation_environments.yaml's shape): each "
+                         "application's security domain, impact level, ATO boundary and hosting as its deployment "
+                         "declares them, with the source (default: that file)")
     ap.add_argument("--resume", action="store_true",
                     help="plan the application a first run in --out assessed, once ICDEV[OS] decided "
                          "(needs --icos-decisions and --icos-jwks)")
@@ -461,7 +508,8 @@ def main(argv: list[str] | None = None) -> int:
             if not (a.icos_decisions and a.icos_jwks):
                 ap.error("--resume needs --icos-decisions and --icos-jwks")
             rep = resume(Path(a.out), Path(a.scratch_db), icos_decisions=Path(a.icos_decisions),
-                         icos_jwks=Path(a.icos_jwks), strategy=a.strategy, at=a.at)
+                         icos_jwks=Path(a.icos_jwks), strategy=a.strategy, at=a.at,
+                         environments=Path(a.environments) if a.environments else None)
         else:
             if not (a.source and a.name):
                 ap.error("--source and --name are required (or --resume)")
@@ -470,7 +518,8 @@ def main(argv: list[str] | None = None) -> int:
                            icos_decisions=Path(a.icos_decisions) if a.icos_decisions else None,
                            icos_jwks=Path(a.icos_jwks) if a.icos_jwks else None,
                            observed=Path(a.observed) if a.observed else None,
-                           observed_processes=[Path(p) for p in a.observed_process])
+                           observed_processes=[Path(p) for p in a.observed_process],
+                           environments=Path(a.environments) if a.environments else None)
     except (PipelineError, subprocess.TimeoutExpired) as e:
         print(json.dumps({"status": "error", "error": str(e)}))
         return 1

@@ -4762,6 +4762,9 @@ python tools/modernization/sample_pipeline.py --source DIR --name app --scratch-
 python tools/modernization/architecture_extractor.py --app-id "app-1" --json                                           # Extract architecture
 python tools/modernization/doc_generator.py --app-id "app-1" --output-dir /path/to/docs                               # Generate docs
 python tools/modernization/seven_r_assessor.py --project-id "proj-123" --app-id "app-1" --json                         # 7R assessment
+python tools/modernization/seven_r_assessor.py --project-id "proj-123" --app-id "app-1" --icos-decisions decisions.json --icos-jwks icos_jwks.json --json  # icx-mdz-04: retire reads ICDEV[OS]'s signed, measured redundancy
+python tools/modernization/icos_decisions.py --export decisions.json --jwks icos_jwks.json redundancy --app "app-1"  # icx-mdz-04: an app's measured redundancy in the signed export (exit 1 unmeasured)
+python tools/modernization/apptwin_export.py --app-id "app-1" --extract extract.json --environments args/modernisation_environments.yaml --out app.json  # icx-mdz-04: contract 1.189.0 inline; environment only as declared
 python tools/modernization/version_migrator.py --source /path --output /path --language python --from 2.7 --to 3.11    # Version migration
 python tools/modernization/framework_migrator.py --source /path --output /path --from struts --to spring-boot          # Framework migration
 python tools/modernization/monolith_decomposer.py --app-id "app-1" --target microservices --json                       # Decompose monolith

@@ -15,7 +15,10 @@ tests use small trees written in the shape those apps take, so each fix is pinne
 * most modernisation tools ignored ``ICDEV_DB_PATH`` and wrote ``data/icdev.db``;
 * (osx-fth-12) features were never reported: they are now, statically, from the entry points;
 * (icx-mdz-03) --no-model meant no processes, and a missing part was only an absent key: processes now come from the
-  source without a model, and every section and planning part is said present or missing, with why.
+  source without a model, and every section and planning part is said present or missing, with why;
+* (icx-mdz-04) the extras went beside the bundle, 7R retire never read ICDEV[OS]'s measured redundancy, and a wave had
+  no estimate: the bundle now carries them inline (contract 1.189.0), --resume reruns the 7R on the signed export, and
+  each planned wave carries the sum of its tasks' estimates.
 """
 from __future__ import annotations
 
@@ -97,7 +100,11 @@ def _icos_export(base: Path, app: str, strategy: str) -> tuple[Path, Path]:
     key = ec.generate_private_key(ec.SECP384R1())
     doc = {"schema": icd.SCHEMA, "issuer": "icos-test", "chain": {"verifies": True},
            "strategies": [{"application": app, "strategy": strategy, "at": 1, "item": "i-1", "accepted_by": "mo",
-                           "decision": "d-1"}]}
+                           "decision": "d-1"}],
+           # icx-mdz-04: ICDEV[OS]'s measured redundancy (osx-mdz-02), what 7R retire reads
+           "redundancy": [{"application": app, "marking": "internal", "criterion": "redundant_functionality",
+                           "value": 0.25, "state": "measured", "features": 1, "redundant": [], "unmeasured": [],
+                           "why": None, "method": "portfolio/v1 strategy against overlap (deterministic)"}]}
     protected = icd._b64u(json.dumps({"alg": icd.ALG, "typ": icd.TYP, "kid": "k1"}).encode())
     r, sig = decode_dss_signature(key.sign(f"{protected}.{icd._b64u(icd.jcs(doc).encode())}".encode(),
                                            ec.ECDSA(hashes.SHA384())))
@@ -298,3 +305,36 @@ def test_the_cloud_native_target_is_generated_as_cam_jobs_and_never_reached(run)
     assert t["containerised"]["status"] == "generated" and t["trade anomaly detection"]["status"] == "not_addressed"
     steps = {s["step"]: s for s in run["report"]["steps"]}
     assert steps["cloud-native"]["ok"] and "cloud_native" not in run["report"]["gaps"]
+
+
+def test_the_bundle_carries_the_1_189_fields_and_the_resumed_7r_reads_the_signed_redundancy(run):
+    """icx-mdz-04: inline, not beside the bundle -- the sections map, the waves derived before a plan, each process's
+    signature and review, each strategy's confidence; then, on ICDEV[OS]'s signed export, the 7R's retire reads its
+    measured redundancy, and each planned wave carries the sum of its tasks' estimates."""
+    first, b = run["first_bundle"], run["bundle"]
+    assert ax.validate(first) == [] and ax.validate(b) == []
+    assert first["sections"] == run["first"]["sections"] and b["sections"] == run["report"]["sections"]
+    assert first["migration"] is None and first["derived_waves"]["waves"], "derived before any plan"
+    assert first["sections"]["migration.waves"]["derived"] == len(first["derived_waves"]["waves"])
+    assert "derived_waves" not in b, "the plan carries them now"
+    [p] = b["processes"]
+    assert p["source"] == "static" and p["review"]["state"] == "unreviewed" and p["signature"]["steps"] == ["authenticate", "buy"]
+    assert set(p["review"]) <= {"state", "error"}, "unreviewed, and if the ledger could not be read, why"
+    assert [s["verb"] for s in p["steps"]] == ["authenticate", "buy"]
+    first_red = next(s for s in run["first"]["steps"] if s["step"] == "seven-r")["redundancy"]
+    assert first_red["share"] is None and first_red["state"] == "missing", "no export on the first run: unmeasured"
+    red = next(s for s in run["report"]["steps"] if s["step"] == "seven-r")["redundancy"]
+    assert red == {"share": 0.25, "state": "measured", "why": None}
+    retire = next(r for r in b["seven_r"]["ranked"] if r["strategy"] == "retire")
+    assert "functional_redundancy" not in retire.get("unmeasured", []) and "confidence" in retire
+    seven = json.loads((run["out"] / "seven_r.json").read_text())
+    assert seven["evidence"]["fitness_results"]["retire"]["functional_redundancy"] == 0.25
+    with sqlite3.connect(run["base"] / "db/icdev.db") as c:
+        names = dict(c.execute("SELECT id, COALESCE(qualified_name, name) FROM legacy_components").fetchall())
+        tasks = c.execute("SELECT legacy_component_id, estimated_hours FROM migration_tasks").fetchall()
+    for w in b["migration"]["waves"]:
+        want = [h for cid, h in tasks if names.get(cid) in set(w["components"])]
+        assert w.get("estimated_hours") == (float(sum(want)) if want and None not in want else None), w["id"]
+        assert "starts" not in w and "ends" not in w
+    assert any(w.get("estimated_hours") for w in b["migration"]["waves"])
+    assert run["report"]["environment"]["declared"] is False and "environment" not in b["application"]
