@@ -166,12 +166,23 @@ def test_chat_returns_a_message_metadata_so_the_card_can_render(monkeypatch):
     cm = importlib.import_module("tools.dashboard.chat_manager")
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
-    db.execute("CREATE TABLE chat_messages (context_id TEXT, turn_number INTEGER, role TEXT, "
-               "content TEXT, content_type TEXT, metadata TEXT, is_compressed INTEGER, "
-               "compression_tier TEXT, classification TEXT, created_at TEXT)")
+    # The schema of record's columns (tools/db/schema/pg_consolidated.sql), in SQLite.
+    db.execute("""CREATE TABLE chat_messages (
+        id INTEGER PRIMARY KEY NOT NULL,
+        context_id TEXT NOT NULL,
+        turn_number INTEGER NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        content_type TEXT DEFAULT 'text',
+        metadata TEXT,
+        is_compressed INTEGER DEFAULT 0,
+        compression_tier TEXT,
+        classification TEXT DEFAULT 'CUI',
+        created_at TEXT)""")
     card = {"card": "sme_team_suggestion", "suggestion_id": "sug-cnf08"}
-    db.execute("INSERT INTO chat_messages VALUES ('ctx-1', 1, 'system', 'fallback', "
-               "'action_card', ?, 0, NULL, 'CUI', 'now')", (json.dumps(card),))
+    db.execute("INSERT INTO chat_messages (context_id, turn_number, role, content, content_type, metadata, "
+               "is_compressed, compression_tier, classification, created_at) VALUES ('ctx-1', 1, 'system', "
+               "'fallback', 'action_card', ?, 0, NULL, 'CUI', 'now')", (json.dumps(card),))
     db.commit()
     monkeypatch.setattr(cm, "get_connection", lambda **_: _Conn(db))
     messages = cm.ChatManager.get_messages(object.__new__(cm.ChatManager), "ctx-1")
