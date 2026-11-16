@@ -999,6 +999,16 @@ jobs:
       ICDEV_AIML_CANVAS_ENABLED: "true"
       ICDEV_AISG_ENABLED: "true"
       ICDEV_ACE_ENABLED: "true"
+      # icx-cnf-08: one TEST role (tests/e2e/fixtures/ace_roles) declares an auto-eligible
+      # topic, so the Co-Worker page offers "Turn auto on" for the e2e gate to see sent.
+      # RoleLoader honours this only for a directory under tests/; no shipped role opts in.
+      ICDEV_ACE_E2E_ROLES_DIR: ${{ github.workspace }}/tests/e2e/fixtures/ace_roles
+      # icx-cnf-08: the audited features live on these canvases. Without them no Cortex,
+      # document-intelligence or conformance page exists in e2e, so no page could be seen
+      # sending the writes the feature-conformance audit credits to them.
+      ICDEV_CORTEX_ENABLED: "true"
+      ICDEV_DIC_ENABLED: "true"
+      ICDEV_TWIN_OBSERVATORY_ENABLED: "true"
       ICDEV_SLIDES_ENABLED: "true"
       # SIX CANVASES WERE OFF HERE, so the armed route smoke TOLERATED their 8
       # routes instead of covering them. Tolerated is not tested: a 500 on any
@@ -1360,6 +1370,16 @@ jobs:
             .tmp/test_runs/playwright-artifacts-dwo/
             .tmp/test_runs/e2e-env-diagnostics*.json
           retention-days: 30
+      - name: Upload observed calls (icx-cnf-08)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # tests/e2e/fixtures/observed_calls.ts: every request a page made in this
+          # shard, matched to its route. The aggregator's e2e gate merges all four.
+          name: observed-calls-shard-${{ matrix.shard }}
+          path: .tmp/test_runs/observed-calls*.json
+          retention-days: 30
+          if-no-files-found: warn
       # The DWO specs write their evidence to playwright/screenshots/ rather than
       # to outputDir, precisely because Playwright clears outputDir on each run.
       # Upload them so a CI failure has the same screenshots a local run produces.
@@ -1391,7 +1411,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [e2e-shard]
     if: always()
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Assert every E2E shard succeeded
         env:
@@ -1403,6 +1423,28 @@ jobs:
             exit 1
           fi
           echo "E2E: every shard green."
+      # icx-cnf-08: every write the feature-conformance audit credits to a page by its
+      # endpoint id must have been SENT BY A PAGE in this run (a test's own fetch does
+      # not count). Reads may be credited statically. The gate reads the committed
+      # snapshot (docs/audits/conformance-cortex-coworker.json, kept fresh by the
+      # coherence check), so this job needs no dashboard and no url_map probe.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install the gate's two dependencies
+        run: python -m pip install "pyyaml==6.0.2" "icdev-core==0.2.1"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          pattern: observed-calls-shard-*
+          path: .tmp/observed
+      - name: E2E gate — every credited write was sent by a page
+        run: |
+          files=$(find .tmp/observed -name 'observed-calls*.json' | sort)
+          if [ -z "$files" ]; then
+            echo "::error::no observed-calls file from any shard"; exit 1
+          fi
+          python tools/conformance/feature_audit.py --e2e-gate $files
 
   # ── Arch Linux package smoke (omx-ci-01) — NON-REQUIRED ──────────────────
   # Builds the AUR package from the wheel THIS run builds, runs
