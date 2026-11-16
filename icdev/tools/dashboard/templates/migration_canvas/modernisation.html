@@ -1,4 +1,4 @@
-<!-- CUI // SP-CTI — Modernisation: an application's waves, CAM jobs, cloud-native output and ICDEV[OS] bundle (icx-mdz-01) -->
+<!-- CUI // SP-CTI — Modernisation: an application's waves, CAM jobs, cloud-native output, features and processes, and ICDEV[OS] bundle (icx-mdz-01, icx-mdz-03) -->
 {% extends "base.html" %}
 {% block title %}Modernisation — ICDEV{% endblock %}
 {% block content %}
@@ -58,6 +58,14 @@
     <div id="mdz-cloud-body" class="mdz-muted">Pick an application.</div>
   </div>
 
+  <div class="mdz-card" id="mdz-features">
+    <h2>Features and processes</h2>
+    <p class="mdz-help">Derived <b>without a model</b> (<code>bundle_features</code>): features from the entry points the analyser read (<b>static</b>) and the routes an REA capture saw (<b>observed</b>; <b>both</b> when they agree), each with its evidence (<code>file:line</code>, <code>route:</code>, <code>rea:</code>) and capability <b>hints</b> from the reviewed rules in <code>args/modernisation_signatures.yaml</code> (a hint is for you to confirm in ICDEV[OS], never a mapping). A static process is the actions one controller offers, <b>in source order</b>, not an observed sequence; each step is normalised to <code>verb:object</code>, and the step signature's digest is what ICDEV[OS] compares across applications. Confirm or reject a process, with a reason: your step of <code>decl-wft-mdz-process-review</code>, bound to the signature digest you saw. A rejected process is left out of the bundle; a changed controller or rule set makes a review stale.</p>
+    <div id="mdz-features-body" class="mdz-muted">Pick an application.</div>
+    <div id="mdz-processes-body" class="mdz-muted"></div>
+    <div id="mdz-processes-msg" class="mdz-muted"></div>
+  </div>
+
   <div class="mdz-card" id="mdz-bundle">
     <h2>ICDEV[OS] bundle</h2>
     <p class="mdz-help">What <code>apptwin_export.py</code> would assemble from this database, validated against the vendored contract. A null section is read by ICDEV[OS] as unverified.</p>
@@ -112,7 +120,7 @@
     var id = appSel.value;
     if (!id) return;
     document.getElementById('mdz-app-meta').textContent = 'id ' + id;
-    loadWaves(id); loadJobs(id); loadCloud(id); loadBundle(id);
+    loadWaves(id); loadJobs(id); loadCloud(id); loadFeatures(id); loadBundle(id);
   }
   appSel.addEventListener('change', showApp);
 
@@ -181,6 +189,48 @@
     });
   }
 
+  function hints(f) {
+    var h = f.capability_hints || [];
+    return h.length ? h.map(function (x) {
+      return '<span class="mdz-tag" title="matched ' + esc(x.terms.join(', ')) + ' in ' + esc(x.from.join(', ')) + '">' + esc(x.capability) + '</span>';
+    }).join(' ') : '<span class="mdz-muted">none</span>';
+  }
+  function evidence(list) {
+    var ev = list || [];
+    var shown = ev.slice(0, 4).map(function (e) { return '<code>' + esc(e) + '</code>'; }).join('<br>');
+    return shown + (ev.length > 4 ? '<div class="mdz-muted">+' + (ev.length - 4) + ' more</div>' : '');
+  }
+  function processReview(p) {
+    var r = p.review || {state: 'unreviewed'};
+    if (r.state === 'reviewed' || r.state === 'rejected') {
+      return '<span class="mdz-tag ' + (r.state === 'reviewed' ? 'ok' : 'no') + '">' + esc(r.state) + '</span> by ' + esc(r.by) + ': ' + esc(r.reason);
+    }
+    return '<span class="mdz-tag">' + esc(r.state) + '</span>' + (r.error ? ' <span class="mdz-err">' + esc(r.error) + '</span>' : '') +
+      ' <input class="mdz-reason" placeholder="reason (required)" /> ' +
+      '<button type="button" class="mdz-btn" data-confirm-process="' + esc(p.id) + '" data-digest="' + esc(p.signature.digest) + '">Confirm</button> ' +
+      '<button type="button" class="mdz-btn reject" data-reject-process="' + esc(p.id) + '" data-digest="' + esc(p.signature.digest) + '">Reject</button>';
+  }
+  function loadFeatures(id) {
+    var box = document.getElementById('mdz-features-body'), pbox = document.getElementById('mdz-processes-body');
+    box.textContent = 'Loading…'; pbox.textContent = '';
+    getJson(icdevFetch('migration_canvas.api_modernisation_features', {app_id: id})).then(function (res) {
+      if (!res.ok) { box.innerHTML = '<span class="mdz-err">' + esc(res.j.error) + '</span>'; return; }
+      var d = res.j, feats = d.features || [], procs = d.processes || [];
+      box.innerHTML = '<div class="mdz-muted">rules <code>' + esc(d.rules.path) + '</code> digest <code>' + esc(String(d.rules.digest).slice(0, 12)) + '</code>; observed: ' + esc(d.observed.basis) + '</div>' +
+        (feats.length ? '<table><tr><th>Feature</th><th>Source</th><th>Confidence</th><th>Evidence</th><th>Capability hints</th><th>Processes</th></tr>' +
+          feats.map(function (f) {
+            return '<tr data-feature-id="' + esc(f.id) + '"><td>' + esc(f.name) + ' <span class="mdz-muted">' + esc(f.id) + '</span></td><td><span class="mdz-tag">' + esc(f.source) + '</span></td><td>' +
+              (f.confidence == null ? '—' : esc(Number(f.confidence).toFixed(2))) + '</td><td>' + evidence(f.evidence) + '</td><td>' + hints(f) + '</td><td>' + esc((f.processes || []).join(', ') || '—') + '</td></tr>';
+          }).join('') + '</table>' : '<div class="mdz-muted">No features: the analyser found no HTTP entry point, and no REA capture was given (the bundle carries null: unverified).</div>');
+      pbox.innerHTML = procs.length ? '<h2 style="margin-top:10px;">Processes</h2><table><tr><th>Process</th><th>Steps (verb:object, evidence)</th><th>Step signature</th><th>Review</th></tr>' +
+        procs.map(function (p) {
+          return '<tr data-process-id="' + esc(p.id) + '"><td>' + esc(p.title) + '<div class="mdz-muted">' + esc(p.source) + ': ' + esc(p.order) + '</div></td><td>' +
+            p.steps.map(function (st) { return esc(st.title) + ' <code>' + esc(st.signature) + '</code> <span class="mdz-muted">' + esc(st.evidence) + '</span>'; }).join('<br>') +
+            '</td><td><code class="mdz-digest">' + esc(p.signature.digest.slice(0, 16)) + '</code></td><td>' + processReview(p) + '</td></tr>';
+        }).join('') + '</table>' : '<div class="mdz-muted">No processes: no controller offers two or more actions, and no REA capture was given.</div>';
+    });
+  }
+
   function loadBundle(id) {
     var box = document.getElementById('mdz-bundle-body');
     box.textContent = 'Loading…';
@@ -190,7 +240,10 @@
       box.innerHTML = '<div>' + esc(d.schema) + ', inventory digest <code>' + esc(String(d.inventory_digest).slice(0, 16)) + '</code>, ' + esc(d.waves) + ' wave(s)</div>' +
         '<div>' + Object.keys(d.sections).map(function (k) {
           return '<span class="mdz-tag ' + (d.sections[k] ? 'ok' : '') + '" title="' + (d.sections[k] ? 'filled' : 'null: unverified') + '">' + esc(k) + '</span>';
-        }).join(' ') + '</div><div class="mdz-muted">Write it: <code>' + esc(d.write_with) + '</code></div>';
+        }).join(' ') + '</div>' + (Object.keys(d.missing || {}).length ? '<div class="mdz-muted" id="mdz-bundle-missing">Missing: ' +
+          Object.keys(d.missing).map(function (k) { return '<b>' + esc(k) + '</b> (' + esc(d.missing[k]) + ')'; }).join('; ') + '</div>' : '') +
+        '<div class="mdz-muted">' + esc((d.counts || {}).features || 0) + ' feature(s), ' + esc((d.counts || {}).processes || 0) + ' process(es), ' +
+        esc(d.processes_unreviewed || 0) + ' not reviewed</div><div class="mdz-muted">Write it: <code>' + esc(d.write_with) + '</code></div>';
     });
   }
 
@@ -210,6 +263,24 @@
       if (!res.ok) { msg.textContent = 'Not recorded: ' + (res.j.error || 'refused'); return; }
       msg.textContent = 'Recorded ' + res.j.review.decision + ' by ' + res.j.review.by + ' (step ' + res.j.decision_step.step_id + ').';
       loadJobs(appSel.value); loadCloud(appSel.value);
+    });
+  });
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var pid = t.getAttribute && (t.getAttribute('data-confirm-process') || t.getAttribute('data-reject-process'));
+    if (!pid) return;
+    var decision = t.hasAttribute('data-confirm-process') ? 'confirm' : 'reject';
+    var reason = (t.closest('tr').querySelector('.mdz-reason') || {}).value || '';
+    var msg = document.getElementById('mdz-processes-msg');
+    if (!reason.trim()) { msg.textContent = 'A reason is required.'; return; }
+    icdevFetch('migration_canvas.api_modernisation_process_review', {app_id: appSel.value, process_id: pid}, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({decision: decision, reason: reason.trim(), signature_digest: t.getAttribute('data-digest')})
+    }).then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); }).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not recorded: ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Recorded ' + res.j.review.state + ' by ' + res.j.review.by + ' (step ' + res.j.decision_step.step_id + ').';
+      loadFeatures(appSel.value); loadBundle(appSel.value);
     });
   });
 

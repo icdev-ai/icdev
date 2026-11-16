@@ -1,0 +1,677 @@
+{
+  "aiify": {
+    "assessed_at": "2026-11-15T00:00:00Z",
+    "decisions": [],
+    "opportunities": [],
+    "overall_verdict": "not_suitable",
+    "pillars": {
+      "append-only-audit": {
+        "passed": 1,
+        "percentage": 25.0,
+        "total": 4
+      },
+      "code-quality": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 6
+      },
+      "configuration": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 5
+      },
+      "dependencies": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 3
+      },
+      "documentation": {
+        "passed": 2,
+        "percentage": 50.0,
+        "total": 4
+      },
+      "il-classification": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 2
+      },
+      "nist-controls": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 4
+      },
+      "security": {
+        "passed": 1,
+        "percentage": 20.0,
+        "total": 5
+      },
+      "stig-compliance": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 4
+      },
+      "structure": {
+        "passed": 1,
+        "percentage": 25.0,
+        "total": 4
+      },
+      "testing": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 8
+      }
+    },
+    "posture_grade": null,
+    "readiness_score": 0.1004,
+    "roadmap": [],
+    "tool": "icdev-it/aiify"
+  },
+  "apis": [
+    {
+      "handler": "ErrorController.Default",
+      "method": "ALL",
+      "path": "/Error/Default"
+    },
+    {
+      "handler": "ErrorController.GenericError",
+      "method": "ALL",
+      "path": "/Error/GenericError"
+    },
+    {
+      "handler": "HomeController.Default",
+      "method": "ALL",
+      "path": "/Home/Default"
+    },
+    {
+      "handler": "SiteLayoutController.ContentLayout",
+      "method": "ALL",
+      "path": "/SiteLayout/ContentLayout"
+    },
+    {
+      "handler": "SiteLayoutController.FooterLayout",
+      "method": "ALL",
+      "path": "/SiteLayout/FooterLayout"
+    },
+    {
+      "handler": "SiteLayoutController.HeaderLayout",
+      "method": "ALL",
+      "path": "/SiteLayout/HeaderLayout"
+    }
+  ],
+  "application": {
+    "id": "lapp-9acc6e3fc69b",
+    "languages": [
+      "csharp"
+    ],
+    "title": "cycle-store"
+  },
+  "cloud_native": {
+    "ai_use_cases": [],
+    "artefact_digest": "745c85d017c69bac48f178c229cce48b57d62ae54b557eb76a883903ea336d2c",
+    "artefacts": [
+      {
+        "job": "5bdfa8f4-0494-4dcb-9cf9-18790ad15ce5",
+        "kind": "config_mapping",
+        "path": "config_externalisation/config-findings.json",
+        "review": "unreviewed",
+        "sha256": "62426511c6ffde72323d4b3b68a6635156978ddbc342fa6308c4b8fa978a6c0e"
+      },
+      {
+        "job": "5bdfa8f4-0494-4dcb-9cf9-18790ad15ce5",
+        "kind": "config_mapping",
+        "path": "config_externalisation/config.env.example",
+        "review": "unreviewed",
+        "sha256": "18df17b9d4e159343b796f440b0d95f4249c0fc0ed54febce5ce4d973f7e898a"
+      },
+      {
+        "job": "5bdfa8f4-0494-4dcb-9cf9-18790ad15ce5",
+        "kind": "config_mapping",
+        "path": "config_externalisation/env.mapping.json",
+        "review": "unreviewed",
+        "sha256": "f8e3aca76d06bd291f6ee70855fa9698f57a00da8072f4719e34cc04cb948a1d"
+      },
+      {
+        "job": "a9c201c5-7700-4a38-bcbc-3c7338c20ca3",
+        "kind": "container_definition",
+        "path": "container_definition/Containerfile",
+        "review": "unreviewed",
+        "sha256": "c75d52dad189e1a9b13edbe91296f1958281c5dc3b396e83b87b07178b9ba757"
+      },
+      {
+        "job": "a9c201c5-7700-4a38-bcbc-3c7338c20ca3",
+        "kind": "deployment_manifest",
+        "path": "container_definition/deployment.yaml",
+        "review": "unreviewed",
+        "sha256": "d2eb9f2a5de53ce4e49a5d7a02637bd5b65d329692d219c3b54def59178783b7"
+      },
+      {
+        "job": "769d39e9-2fa9-4211-b86c-fb2cc8a1e1d4",
+        "kind": "twelve_factor_report",
+        "path": "twelve_factor_report/twelve-factor.json",
+        "review": "unreviewed",
+        "sha256": "672f2eb1094595cce5ddf4d13552a2ab214792f70c3a3c03084d4d74d93b9407"
+      }
+    ],
+    "assessed_at": "2026-11-15T00:00:00Z",
+    "config": [
+      {
+        "env": "CONNECTION_STRING",
+        "kind": "connection_string",
+        "literal": true,
+        "location": "AdventureWorksMVC/Web.Debug.config:13"
+      },
+      {
+        "env": "CONNECTION_STRING",
+        "kind": "connection_string",
+        "literal": true,
+        "location": "AdventureWorksMVC/Web.Release.config:13"
+      },
+      {
+        "env": "CONNECTION_STRING_CYCLE_STOREENTITIES",
+        "key": "CYCLE_STOREEntities",
+        "kind": "connection_string",
+        "literal": true,
+        "location": "AdventureWorksMVC/Web.config:21"
+      },
+      {
+        "env": "CYCLE_STOREENTITIES_PASSWORD",
+        "key": "CYCLE_STOREEntities.password",
+        "kind": "credential",
+        "literal": true,
+        "location": "AdventureWorksMVC/Web.config:21"
+      },
+      {
+        "env": "ADVENTUREWORKS_AUTH_PATH",
+        "key": "ADVENTUREWORKS.AUTH.path",
+        "kind": "file_path",
+        "literal": true,
+        "location": "AdventureWorksMVC/Web.config:29"
+      }
+    ],
+    "env": [
+      {
+        "locations": [
+          "AdventureWorksMVC/Web.config:29"
+        ],
+        "name": "ADVENTUREWORKS_AUTH_PATH",
+        "secret": false
+      },
+      {
+        "locations": [
+          "AdventureWorksMVC/Web.Debug.config:13",
+          "AdventureWorksMVC/Web.Release.config:13"
+        ],
+        "name": "CONNECTION_STRING",
+        "secret": false
+      },
+      {
+        "locations": [
+          "AdventureWorksMVC/Web.config:21"
+        ],
+        "name": "CONNECTION_STRING_CYCLE_STOREENTITIES",
+        "secret": false
+      },
+      {
+        "locations": [
+          "AdventureWorksMVC/Web.config:21"
+        ],
+        "name": "CYCLE_STOREENTITIES_PASSWORD",
+        "secret": true
+      }
+    ],
+    "events": [],
+    "factors": [
+      {
+        "evidence": [
+          "1 source tree"
+        ],
+        "id": "codebase",
+        "status": "unverified",
+        "why": "one source tree was analysed; whether it is one codebase in revision control, deployed many times, is not visible in a source tree"
+      },
+      {
+        "evidence": [
+          "AdventureWorksMVC/AdventureWorksMVC_2013.csproj",
+          "AdventureWorksMVC/Business/AdventureWorksMVC_2013.csproj",
+          "AdventureWorksMVC/packages.config"
+        ],
+        "id": "dependencies",
+        "status": "met",
+        "why": "declared in 3 build or package file(s)"
+      },
+      {
+        "evidence": [
+          "AdventureWorksMVC/Web.Debug.config:13",
+          "AdventureWorksMVC/Web.Release.config:13",
+          "AdventureWorksMVC/Web.config:21",
+          "AdventureWorksMVC/Web.config:21",
+          "AdventureWorksMVC/Web.config:29"
+        ],
+        "id": "config",
+        "status": "not_met",
+        "why": "5 setting(s) written into the source (connection_string, credential, file_path); config-findings.json lists where"
+      },
+      {
+        "evidence": [
+          "AdventureWorksMVC/Web.Debug.config:13",
+          "AdventureWorksMVC/Web.Release.config:13",
+          "AdventureWorksMVC/Web.config:21"
+        ],
+        "id": "backing_services",
+        "status": "not_met",
+        "why": "a database location is written into the source"
+      },
+      {
+        "evidence": [
+          "AdventureWorksMVC/AdventureWorksMVC_2013.csproj",
+          "AdventureWorksMVC/Business/AdventureWorksMVC_2013.csproj"
+        ],
+        "id": "build_release_run",
+        "status": "unverified",
+        "why": "the build is declared (msbuild); whether release and run are separate stages is not visible in source"
+      },
+      {
+        "evidence": [],
+        "id": "processes",
+        "status": "unverified",
+        "why": "no session state was found by the patterns read; statelessness is not shown by its absence"
+      },
+      {
+        "evidence": [
+          "AdventureWorksMVC/Views/Web.config",
+          "AdventureWorksMVC/Web.config"
+        ],
+        "id": "port_binding",
+        "status": "not_met",
+        "why": "hosted by IIS (Web.config), not self-contained"
+      },
+      {
+        "evidence": [],
+        "id": "concurrency",
+        "status": "unverified",
+        "why": "scaling by running more processes depends on how it runs, which static analysis does not see"
+      },
+      {
+        "evidence": [
+          "AdventureWorksMVC/Global.asax.cs:15"
+        ],
+        "id": "disposability",
+        "status": "unverified",
+        "why": "start-up time and graceful shutdown are seen running, not in source"
+      },
+      {
+        "evidence": [
+          "AdventureWorksMVC/Web.config:66",
+          "AdventureWorksMVC/Web.Debug.config",
+          "AdventureWorksMVC/Web.Release.config"
+        ],
+        "id": "dev_prod_parity",
+        "status": "not_met",
+        "why": "a development database ships with the application and configuration differs by environment"
+      },
+      {
+        "evidence": [],
+        "id": "logs",
+        "status": "unverified",
+        "why": "no log file was found configured; writing to stdout is seen running"
+      },
+      {
+        "evidence": [],
+        "id": "admin_processes",
+        "status": "unverified",
+        "why": "no admin task was found; one-off processes are seen running"
+      }
+    ],
+    "stack": {
+      "build_tool": "msbuild",
+      "config_files": [
+        "AdventureWorksMVC/Views/Web.config",
+        "AdventureWorksMVC/Web.Debug.config",
+        "AdventureWorksMVC/Web.Release.config",
+        "AdventureWorksMVC/Web.config",
+        "AdventureWorksMVC/packages.config"
+      ],
+      "framework": "asp.net mvc",
+      "language": "csharp",
+      "packaging": "ASP.NET web application (IIS)",
+      "ports": [
+        {
+          "found": false,
+          "port": 8080
+        }
+      ],
+      "runtime": ".NET 8 ASP.NET Core (Kestrel)",
+      "version": "framework-4"
+    },
+    "targets": [
+      {
+        "by": [],
+        "factors": [],
+        "kind": "cloud",
+        "status": "not_addressed",
+        "target": ".NET 8",
+        "why": "no tool proposes it"
+      },
+      {
+        "by": [
+          "container_definition",
+          "deployment_manifest"
+        ],
+        "factors": [
+          "port_binding",
+          "processes",
+          "disposability"
+        ],
+        "kind": "cloud",
+        "status": "generated",
+        "target": "containerised",
+        "why": "proposed by container_definition, deployment_manifest: generated, unreviewed; not reached until it runs so"
+      },
+      {
+        "by": [],
+        "factors": [
+          "backing_services",
+          "dev_prod_parity"
+        ],
+        "kind": "cloud",
+        "status": "not_addressed",
+        "target": "managed postgres",
+        "why": "no tool proposes it"
+      },
+      {
+        "by": [],
+        "factors": [],
+        "kind": "ai",
+        "status": "not_addressed",
+        "target": "product recommendations",
+        "why": "AI-Ify reports code patterns, not this use case: its opportunities are drafted as AI use cases separately, and a person may draft this one"
+      },
+      {
+        "by": [],
+        "factors": [],
+        "kind": "ai",
+        "status": "not_addressed",
+        "target": "demand forecast",
+        "why": "AI-Ify reports code patterns, not this use case: its opportunities are drafted as AI use cases separately, and a person may draft this one"
+      }
+    ],
+    "tool": "icdev-it/cloud_native"
+  },
+  "coherence": null,
+  "components": [
+    {
+      "id": "AdventureWorks.Business.CYCLE_STOREEntities",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Business/CycleModel.Context.cs"
+    },
+    {
+      "id": "AdventureWorks.Business.CategoryManager",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Business/CategoryManager.cs"
+    },
+    {
+      "id": "AdventureWorks.Business.Common",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Business/Common.cs"
+    },
+    {
+      "id": "AdventureWorks.Business.Product",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Business/Product.cs"
+    },
+    {
+      "id": "AdventureWorks.Business.ProductCategory",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Business/ProductCategory.cs"
+    },
+    {
+      "id": "AdventureWorks.Business.ProductSubcategory",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Business/ProductSubcategory.cs"
+    },
+    {
+      "id": "AdventureWorks.Controllers.ErrorController",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Controllers/ErrorController.cs"
+    },
+    {
+      "id": "AdventureWorks.Controllers.HomeController",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Controllers/HomeController.cs"
+    },
+    {
+      "id": "AdventureWorks.Controllers.SiteLayoutController",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Controllers/SiteLayoutController.cs"
+    },
+    {
+      "id": "AdventureWorks.FilterConfig",
+      "kind": "class",
+      "path": "AdventureWorksMVC/App_Start/FilterConfig.cs"
+    },
+    {
+      "id": "AdventureWorks.Models.SiteLayoutModel",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Models/SiteLayoutModel.cs"
+    },
+    {
+      "id": "AdventureWorks.MvcApplication",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Global.asax.cs"
+    },
+    {
+      "id": "AdventureWorks.RouteConfig",
+      "kind": "class",
+      "path": "AdventureWorksMVC/App_Start/RouteConfig.cs"
+    },
+    {
+      "id": "AdventureWorks.WebApiConfig",
+      "kind": "class",
+      "path": "AdventureWorksMVC/App_Start/WebApiConfig.cs"
+    },
+    {
+      "id": "EpicAdventureWorks.ProductManager",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Business/ProductManager.cs"
+    },
+    {
+      "id": "UrlExtensions",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Helpers/WebResource.cs"
+    },
+    {
+      "id": "and",
+      "kind": "class",
+      "path": "AdventureWorksMVC/Business/CycleModel.Designer.cs"
+    }
+  ],
+  "consumers": null,
+  "data": [
+    {
+      "columns": [
+        "productid"
+      ],
+      "name": "product"
+    },
+    {
+      "columns": [
+        "productcategoryid"
+      ],
+      "name": "productcategory"
+    },
+    {
+      "columns": [
+        "productsubcategoryid"
+      ],
+      "name": "productsubcategory"
+    },
+    {
+      "columns": [
+        "AnonymousTemplateVisibility",
+        "LoggedInEmailID",
+        "LoggedInTemplateVisibility",
+        "ShoppingCartItemsCount"
+      ],
+      "name": "sitelayoutmodel"
+    }
+  ],
+  "dependencies": [],
+  "features": [
+    {
+      "basis": "source",
+      "confidence": 0.6,
+      "evidence": [
+        "AdventureWorksMVC/Controllers/ErrorController.cs:10",
+        "AdventureWorksMVC/Controllers/ErrorController.cs:16"
+      ],
+      "id": "error",
+      "provenance": "static",
+      "signatures": {
+        "apis": [
+          "ALL /Error/Default",
+          "ALL /Error/GenericError"
+        ],
+        "steps": [
+          "error-actions.s01",
+          "error-actions.s02"
+        ]
+      },
+      "title": "Error"
+    },
+    {
+      "basis": "source",
+      "confidence": 0.6,
+      "evidence": [
+        "AdventureWorksMVC/Controllers/HomeController.cs:10"
+      ],
+      "id": "home",
+      "provenance": "static",
+      "signatures": {
+        "apis": [
+          "ALL /Home/Default"
+        ]
+      },
+      "title": "Home"
+    },
+    {
+      "basis": "source",
+      "confidence": 0.6,
+      "evidence": [
+        "AdventureWorksMVC/Controllers/SiteLayoutController.cs:20",
+        "AdventureWorksMVC/Controllers/SiteLayoutController.cs:26",
+        "AdventureWorksMVC/Controllers/SiteLayoutController.cs:33"
+      ],
+      "id": "site-layout",
+      "provenance": "static",
+      "signatures": {
+        "apis": [
+          "ALL /SiteLayout/ContentLayout",
+          "ALL /SiteLayout/FooterLayout",
+          "ALL /SiteLayout/HeaderLayout"
+        ],
+        "steps": [
+          "site-layout-actions.s01",
+          "site-layout-actions.s02",
+          "site-layout-actions.s03"
+        ]
+      },
+      "title": "Site layout"
+    }
+  ],
+  "integrity": null,
+  "ivv": null,
+  "migration": null,
+  "processes": [
+    {
+      "basis": "source",
+      "id": "error-actions",
+      "steps": [
+        {
+          "id": "s01",
+          "title": "Default"
+        },
+        {
+          "id": "s02",
+          "title": "Generic error"
+        }
+      ],
+      "title": "Error: 2 actions of ErrorController"
+    },
+    {
+      "basis": "source",
+      "id": "site-layout-actions",
+      "steps": [
+        {
+          "id": "s01",
+          "title": "Header layout"
+        },
+        {
+          "id": "s02",
+          "title": "Footer layout"
+        },
+        {
+          "id": "s03",
+          "title": "Content layout"
+        }
+      ],
+      "title": "Site layout: 3 actions of SiteLayoutController"
+    }
+  ],
+  "produced_at": "2026-11-15T00:00:00Z",
+  "producer": {
+    "tool": "icdev-it/apptwin_export",
+    "version": "unpackaged"
+  },
+  "readiness": null,
+  "refactor": null,
+  "rtm": null,
+  "sbd": null,
+  "schema": "icos-apptwin/v1",
+  "seven_r": {
+    "assessed_at": "2026-11-16T05:14:01.826630+00:00",
+    "ato_impact": "low",
+    "cost_estimate_hours": 123.0,
+    "evidence": [
+      "recommendation: replatform scores 0.75 on 2 measured criteria (confidence 0.50)",
+      "rehost: confidence 0.70; unmeasured: licensing_transferability, operational_readiness",
+      "replatform: confidence 0.50; unmeasured: cost_optimization, operational_improvement, security_posture_change",
+      "refactor: confidence 0.55; unmeasured: cloud_service_adoption, compliance_alignment, team_capability",
+      "rearchitect: not assessable (nothing measured)",
+      "repurchase: confidence 0.20; unmeasured: fedramp_authorization, product_fit, total_cost_of_ownership, vendor_viability",
+      "retire: confidence 0.12; unmeasured: cost_savings, data_disposition, dependency_analysis, functional_redundancy, stakeholder_alignment",
+      "retain: confidence 0.25; unmeasured: cost_justification, migration_blocker_validity, reassessment_plan, risk_acceptance"
+    ],
+    "ranked": [
+      {
+        "score": 0.75,
+        "strategy": "replatform"
+      },
+      {
+        "score": 0.6364,
+        "strategy": "refactor"
+      },
+      {
+        "score": 0.6071,
+        "strategy": "rehost"
+      },
+      {
+        "score": 1.0,
+        "strategy": "retain"
+      },
+      {
+        "score": 0.5,
+        "strategy": "repurchase"
+      },
+      {
+        "score": 0.0,
+        "strategy": "retire"
+      }
+    ],
+    "recommended": "replatform",
+    "risk_score": 0.2226,
+    "tech_debt_reduction": 15.0,
+    "timeline_weeks": 6.0,
+    "tool": "icdev-it/seven_r_assessor",
+    "weights": {}
+  }
+}

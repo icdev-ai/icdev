@@ -17,10 +17,17 @@ migration canvas, and the routes it calls:
                                                                          exporter would carry
     GET  /migration-canvas/api/modernisation/apps/<app_id>/bundle        the bundle the exporter would write, which
                                                                          sections are null (unverified) and why
+    GET  /migration-canvas/api/modernisation/apps/<app_id>/features      (icx-mdz-03) the features and processes
+                                                                         derived without a model, with their evidence,
+                                                                         capability hints and step signatures
+    POST /migration-canvas/api/modernisation/apps/<app_id>/processes/<process_id>/review
+                                                                         a person confirms or rejects an extracted
+                                                                         process at its signature digest (declared step
+                                                                         decl-wft-mdz-process-review)
     POST /migration-canvas/api/modernisation/icos-decisions/check        verify a signed ICDEV[OS] decisions export
                                                                          against the PINNED JWKS; may-plan / may-retire
 
-Everything here reads, except the one approval, which is a person's step. Nothing runs a job, plans a migration or
+Everything here reads, except the job approval and the process review, which are a person's steps. Nothing runs a job, plans a migration or
 accepts a strategy: ICDEV[OS] signs the portfolio decisions, and ICDEV only records or proposes.
 
 The pinned ICDEV[OS] JWKS is a file the operator pinned once, named by ``ICDEV_ICOS_JWKS``. With none pinned, the check
@@ -130,24 +137,48 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def features(app_id: str) -> dict:
+    """The application's features and processes, derived without a model (``bundle_features.report``), each process
+    with the review a person took at its signature digest, if any. Writes nothing."""
+    from tools.modernization import bundle_features
+
+    conn = _core()
+    try:
+        return bundle_features.report(app_id, conn)
+    finally:
+        conn.close()
+
+
 def bundle_preview(app_id: str) -> dict:
     """The ``icos-apptwin/v1`` bundle the exporter would assemble from what this database holds (inventory, the latest
     plan with the derived waves, CAM's refactor and cloud-native jobs). Writes nothing. A section with no input stays
     null, which ICDEV[OS] reads as UNVERIFIED."""
-    from tools.modernization import apptwin_export, app_wave_planner, cloud_native_jobs, refactor_jobs as rj
+    from tools.modernization import app_wave_planner, apptwin_export, bundle_features, cloud_native_jobs
+    from tools.modernization import refactor_jobs as rj
 
     conn = _core()
     try:
         waves = app_wave_planner.report(app_id, conn)
         refactor = rj.report(app_id)
         cn = cloud_native_jobs.report(app_id)
+        extract, extract_error = None, None               # icx-mdz-03: features and processes, no model
+        try:
+            extract = bundle_features.report(app_id, conn)
+        except ValueError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — unreadable is said, and the sections stay null (unverified)
+            extract_error = str(exc)
+            conn.rollback()
         try:
             bundle = apptwin_export.build(app_id, conn, waves=waves, refactor=refactor["jobs"] or None,
-                                          cloud_native=cn if cn["jobs"] else None)
+                                          cloud_native=cn if cn["jobs"] else None, extract=extract)
         except apptwin_export.BundleError as exc:
             return {"app_id": app_id, "valid": False, "error": str(exc), "sections": None}
     finally:
         conn.close()
+    states = apptwin_export.section_states(bundle, waves=waves, reasons={
+        k: f"the features and processes could not be derived: {extract_error}" for k in ("features", "processes")
+    } if extract_error else None)
     sections = {k: v is not None for k, v in sorted(bundle.items())
                 if k not in ("schema", "producer", "produced_at", "application")}
     return {"app_id": app_id, "valid": True, "schema": bundle["schema"],
@@ -155,9 +186,13 @@ def bundle_preview(app_id: str) -> dict:
             "inventory_digest": apptwin_export.inventory_digest(bundle),
             "sections": sections,
             "unverified": sorted(k for k, filled in sections.items() if not filled),
-            "counts": {k: len(bundle[k]) for k in ("components", "apis", "data", "dependencies")
+            "counts": {k: len(bundle[k]) for k in ("components", "apis", "data", "dependencies", "features", "processes")
                        if isinstance(bundle.get(k), list)},
             "waves": len(((bundle.get("migration") or {}).get("waves")) or []),
+            "missing": {k: v.get("reason") for k, v in states.items() if v["state"] == "missing"},
+            "processes_unreviewed": sum(1 for p in (extract or {}).get("processes") or []
+                                        if (p.get("review") or {}).get("state") != "reviewed"),
+            **({"extract_error": extract_error} if extract_error else {}),
             "write_with": f"python tools/modernization/apptwin_export.py --app-id {app_id} --out <file>"}
 
 
@@ -275,6 +310,62 @@ def register_modernisation_routes(bp, login_required: Callable) -> None:
         except Exception as exc:  # noqa: BLE001
             logger.warning("modernisation bundle %s: %s", app_id, exc)
             return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/modernisation/apps/<app_id>/features")
+    @login_required
+    def api_modernisation_features(app_id):
+        try:
+            return jsonify(features(app_id))
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("modernisation features %s: %s", app_id, exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/modernisation/apps/<app_id>/processes/<process_id>/review", methods=["POST"])
+    @login_required
+    def api_modernisation_process_review(app_id, process_id):
+        """A person confirms or rejects one extracted process, with a reason, at the signature digest they saw.
+
+        Body: ``{decision: confirm|reject, reason, signature_digest}``. The person's step of the declared template
+        ``decl-wft-mdz-process-review``; the decided step is the review, bound to the step signature, its digest and
+        the rules digest. A digest that is not the process's now (the source or the rules changed) is refused, and a
+        process already reviewed at this digest is not reviewed twice. Nothing else is changed.
+        """
+        from tools.modernization import bundle_features, decisions
+        from tools.workflow_hitl import declared
+
+        data = request.get_json(force=True, silent=True) or {}
+        try:
+            rep = features(app_id)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        proc = next((p for p in rep.get("processes") or [] if p["id"] == process_id), None)
+        if proc is None:
+            return jsonify({"error": f"{app_id} has no process {process_id}"}), 404
+        if rep.get("review_error"):
+            return jsonify({"error": f"the review ledger could not be read: {rep['review_error']}"}), 503
+        digest = proc["signature"]["digest"]
+        if str(data.get("signature_digest") or "") != digest:
+            return jsonify({"error": "the process is not what you reviewed: its step signature is now "
+                                     f"{digest[:12]} (reload it)", "signature_digest": digest}), 409
+        if (proc.get("review") or {}).get("state") in ("reviewed", "rejected"):
+            return jsonify({"error": f"{process_id} has already been reviewed at this signature"}), 409
+        payload = {"app_id": app_id, "process_id": process_id, "source": proc["source"],
+                   "signature": proc["signature"]["steps"], "signature_digest": digest,
+                   "rules_digest": proc["signature"]["rules_digest"]}
+        try:
+            step = declared.take_step(decisions.TEMPLATE_PROCESS,
+                                      surface="migration_canvas.api_modernisation_process_review",
+                                      decision=str(data.get("decision") or "").strip().lower(),
+                                      subject=bundle_features.subject(app_id, process_id),
+                                      reason=str(data.get("reason") or "").strip(), payload=payload)
+        except declared.StepRefused as exc:
+            return jsonify(exc.to_dict()), exc.status
+        return jsonify({"app_id": app_id, "process_id": process_id, "decision_step": step,
+                        "review": {"state": "reviewed" if step["affirmative"] else "rejected",
+                                   "decision": step["decision"], "by": step["decided_by"],
+                                   "signature_digest": digest}})
 
     @bp.route("/api/modernisation/icos-decisions/check", methods=["POST"])
     @login_required

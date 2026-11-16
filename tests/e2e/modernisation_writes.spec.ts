@@ -1,6 +1,6 @@
 // CUI // SP-CTI
 // E2E: every modernisation write the feature-conformance audit credits to a page is SENT
-// BY THAT PAGE, as a person would send it (icx-mdz-01).
+// BY THAT PAGE, as a person would send it (icx-mdz-01; icx-mdz-03: the process review).
 //
 // The audit (tools/conformance/feature_audit.py) now judges six modernisation features:
 // the 7R assessment, AI-Ify, Process-Ify, an application's waves and CAM jobs,
@@ -159,7 +159,7 @@ test.describe('Every credited modernisation write is sent by its page (icx-mdz-0
   });
 
   // ── Waves, CAM jobs, cloud-native, the exporter ───────────────────────────
-  test('Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export', async ({ page }) => {
+  test('Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export', async ({ page }) => {
     await page.goto(`/migration-canvas/modernisation?app=${encodeURIComponent(s.app_id)}`);
     await expect(page.locator('#mdz-waves-body table')).toBeVisible({ timeout: T });
     await expect(page.locator('#mdz-bundle-body')).toContainText('icos-apptwin/v1', { timeout: T });
@@ -171,6 +171,16 @@ test.describe('Every credited modernisation write is sent by its page (icx-mdz-0
     await sends(page, 'POST', new RegExp(`^/migration-canvas/api/modernisation/refactor-jobs/${job!.id}/approve$`),
       () => row.locator(`[data-approve-job="${job!.id}"]`).click());
     await expect(page.locator('#mdz-jobs-msg')).toContainText('Recorded approve', { timeout: T });
+
+    // icx-mdz-03: the features and processes derived without a model, and a person's review of one process
+    await expect(page.locator('#mdz-features-body tr[data-feature-id="cart-views"]')).toContainText('shop/web.py:12', { timeout: T });
+    const proc = page.locator('#mdz-processes-body tr[data-process-id="cart-views-actions"]');
+    await expect(proc).toContainText('create:cart+item', { timeout: T });
+    await proc.locator('.mdz-reason').fill('mdz03 e2e: the cart flow, reviewed for the test');
+    await sends(page, 'POST', new RegExp(`^/migration-canvas/api/modernisation/apps/${s.app_id}/processes/cart-views-actions/review$`),
+      () => proc.locator('[data-confirm-process="cart-views-actions"]').click());
+    await expect(page.locator('#mdz-processes-msg')).toContainText('Recorded reviewed', { timeout: T });
+    await expect(page.locator('#mdz-processes-body tr[data-process-id="cart-views-actions"]')).toContainText('reviewed', { timeout: T });
 
     await page.fill('#mdz-icos-export', '{"document": {}, "signature": {}}');
     await sends(page, 'POST', /^\/migration-canvas\/api\/modernisation\/icos-decisions\/check$/,

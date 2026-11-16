@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+id: decl-wft-mdz-process-review
+name: "Modernisation: review an extracted process before the bundle marks it reviewed"
+description: >-
+  bundle_features derives an application's processes without a model: the
+  actions one controller offers, in source order, or an REA capture, each step
+  normalised to verb:object by the reviewed rule set. That is a CANDIDATE, not
+  a designed process. A person reads its steps, their evidence and its step
+  signature on the Modernisation page and confirms or rejects it, with a
+  reason. The review binds the signature digest the person saw: a changed
+  controller or rule set makes it stale, and it must be reviewed again.
+decides: [migration_canvas.api_modernisation_process_review]
+effect: >-
+  The decided step in wf_decision_steps is the review (subject:
+  "<app id>:<process id>"; payload: the step signature, its digest and the
+  rules digest). The exporter reads it: a confirmed process at that digest is
+  reviewed, a rejected one is left out of the icos-apptwin/v1 bundle. Nothing
+  else is changed.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: bundle_features derived the process and its step signature from the source (or an REA capture).
+  - name: review
+    step_type: manual
+    role: process_owner
+    holders: [admin, pm, isso, reviewer, developer, migration_engineer]
+    decisions: {confirm: affirm, reject: deny}
+    reason_required: [confirm, reject]

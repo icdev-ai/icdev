@@ -1,0 +1,271 @@
+{
+  "application": "jpetstore6",
+  "source": "jpetstore6@c3dbf6f56f6b",
+  "app_id": "lapp-51f585a7a5bf",
+  "project_id": "438a5b6a-9ed7-4ee9-9308-7f65560b4c60",
+  "bundle": "jpetstore6.apptwin.json",
+  "bundle_sha256": "96b4f906a6cfa93528a4bc0d7c2db406a4c0256d97177d81f1c10bcbcf937ef3",
+  "produced": [
+    "aiify",
+    "apis",
+    "application",
+    "cloud_native",
+    "components",
+    "data",
+    "dependencies",
+    "features",
+    "processes",
+    "seven_r"
+  ],
+  "gaps": {
+    "coherence": "no coherence check was run",
+    "consumers": "the exporter never carries consumers",
+    "integrity": "no SIPA assessment was run",
+    "ivv": "no IV&V assessment was run",
+    "migration": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+    "readiness": "no readiness assessment was run",
+    "refactor": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+    "rtm": "no requirements traceability was run",
+    "sbd": "no Secure by Design assessment was run"
+  },
+  "steps": [
+    {
+      "step": "project",
+      "ok": true,
+      "project_id": "438a5b6a-9ed7-4ee9-9308-7f65560b4c60"
+    },
+    {
+      "step": "analyze",
+      "ok": true,
+      "app_id": "lapp-51f585a7a5bf",
+      "language": "java",
+      "language_version": "11",
+      "framework": "Spring",
+      "legacy_components": 48,
+      "legacy_apis": 22,
+      "legacy_dependencies": 439
+    },
+    {
+      "step": "features",
+      "ok": true,
+      "section": "features",
+      "provenance": "static",
+      "features": 5,
+      "entry_points": 22,
+      "detected_by": {
+        "annotation": 22
+      }
+    },
+    {
+      "step": "extract",
+      "ok": true,
+      "rules_digest": "f7dfbe346aff1ede412929f7165a5e59212fdea2c484219a1404d44c06668516",
+      "features": 5,
+      "features_static": 5,
+      "features_observed": 0,
+      "features_both": 0,
+      "processes": 4,
+      "observed": {
+        "basis": "no REA observed inventory given (the source is never run here)",
+        "given": false,
+        "processes_given": 0,
+        "routes": 0
+      }
+    },
+    {
+      "step": "db-schema",
+      "ok": true,
+      "section": "data",
+      "tables": 13
+    },
+    {
+      "step": "seven-r",
+      "ok": true,
+      "section": "seven_r",
+      "recommended": "replatform",
+      "confidence": 0.5,
+      "recommendation": "replatform scores 1.00 on 2 measured criteria (confidence 0.50)"
+    },
+    {
+      "step": "refactor",
+      "ok": false,
+      "section": "refactor",
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "jobs": []
+    },
+    {
+      "step": "cloud-native",
+      "ok": true,
+      "section": "cloud_native",
+      "jobs": [
+        {
+          "kind": "config_externalisation",
+          "status": "completed",
+          "files": 3
+        },
+        {
+          "kind": "container_definition",
+          "status": "completed",
+          "files": 2
+        },
+        {
+          "kind": "twelve_factor_report",
+          "status": "completed",
+          "files": 1
+        }
+      ]
+    },
+    {
+      "step": "aiify",
+      "ok": true,
+      "section": "aiify",
+      "opportunities": 33,
+      "verdict": "Partially AI-ready"
+    },
+    {
+      "step": "processify-source",
+      "ok": true,
+      "section": "processes",
+      "processes": 4,
+      "static": 4,
+      "observed": 0,
+      "rules_digest": "f7dfbe346aff1ede412929f7165a5e59212fdea2c484219a1404d44c06668516"
+    },
+    {
+      "step": "processify",
+      "ok": false,
+      "reason": "skipped (--no-model): Process-Ify reads a document with a language model"
+    },
+    {
+      "step": "plan",
+      "ok": false,
+      "section": "migration",
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "strategy": "replatform",
+      "strategy_from": "the 7R recommendation"
+    },
+    {
+      "step": "waves",
+      "ok": true,
+      "section": "migration.waves",
+      "waves": 4,
+      "basis": "80 dependencies between 48 components of the application"
+    }
+  ],
+  "sections": {
+    "aiify": {
+      "state": "present"
+    },
+    "apis": {
+      "count": 22,
+      "state": "present"
+    },
+    "cloud_native": {
+      "state": "present"
+    },
+    "cloud_native.config": {
+      "count": 3,
+      "findings": 0,
+      "state": "present"
+    },
+    "cloud_native.containerisation": {
+      "count": 2,
+      "state": "present"
+    },
+    "cloud_native.events": {
+      "reason": "no event_contract job: CAM's cloud_native rules queue one only for an EJB application's message-driven beans (framework Spring)",
+      "state": "missing"
+    },
+    "cloud_native.twelve_factor": {
+      "count": 1,
+      "factors": 12,
+      "state": "present"
+    },
+    "coherence": {
+      "reason": "no coherence check was run",
+      "state": "missing"
+    },
+    "components": {
+      "count": 48,
+      "state": "present"
+    },
+    "consumers": {
+      "reason": "the exporter never carries consumers",
+      "state": "missing"
+    },
+    "data": {
+      "count": 13,
+      "state": "present"
+    },
+    "dependencies": {
+      "count": 80,
+      "state": "present"
+    },
+    "features": {
+      "count": 5,
+      "state": "present"
+    },
+    "integrity": {
+      "reason": "no SIPA assessment was run",
+      "state": "missing"
+    },
+    "ivv": {
+      "reason": "no IV&V assessment was run",
+      "state": "missing"
+    },
+    "migration": {
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "state": "missing"
+    },
+    "migration.waves": {
+      "derived": 4,
+      "reason": "no migration plan carries them, so ICDEV[OS]'s migration-plan gate will block",
+      "state": "missing"
+    },
+    "processes": {
+      "count": 4,
+      "state": "present"
+    },
+    "readiness": {
+      "reason": "no readiness assessment was run",
+      "state": "missing"
+    },
+    "refactor": {
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "state": "missing"
+    },
+    "refactor.jobs": {
+      "reason": "refused, no ICDEV[OS] may-plan (missing): no signed ICDEV[OS] decisions export: a migration is planned only on ICDEV[OS]'s may-plan (pass --icos-decisions, or set ICDEV_ICOS_DECISIONS, to GET /api/v1/portfolio/decisions/export)",
+      "state": "missing"
+    },
+    "rtm": {
+      "reason": "no requirements traceability was run",
+      "state": "missing"
+    },
+    "sbd": {
+      "reason": "no Secure by Design assessment was run",
+      "state": "missing"
+    },
+    "seven_r": {
+      "state": "present"
+    }
+  },
+  "inputs": {
+    "static_features": "features.static.json",
+    "extract": "features.extract.json",
+    "seven_r": "seven_r.json",
+    "aiify": "aiify.json",
+    "refactor": null,
+    "waves": "waves.json",
+    "cloud_native": "cloud_native.json",
+    "processes": [],
+    "language": "java",
+    "language_version": "11",
+    "framework": "Spring"
+  },
+  "may_plan": {
+    "given": false,
+    "reason": "no signed ICDEV[OS] decisions export given: the plan and the CAM refactor jobs wait for its may-plan (rerun with --resume once ICDEV[OS] decides)"
+  },
+  "at": "2026-11-15T00:00:00Z"
+}

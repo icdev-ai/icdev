@@ -4755,6 +4755,10 @@ python tools/maintenance/remediation_engine.py --project-id "proj-123" --auto   
 # Application Modernization (7Rs Migration)
 python tools/modernization/legacy_analyzer.py --project-id "proj-123" --app-id "app-1" --source-path /path/to/legacy   # Analyze legacy app
 python tools/modernization/static_features.py --app-id "app-1" --out features.json                                     # Features reported statically from entry points (never observed)
+python tools/modernization/bundle_features.py --app-id "app-1" [--observed inv.json] --out extract.json             # icx-mdz-03: features (file:line evidence, capability hints) and processes (step signatures) without a model
+python -m tools.workflow_canvas.processify --from-source "app-1" --json                                               # icx-mdz-03: an application's static processes, no model
+python tools/modernization/apptwin_export.py --app-id "app-1" --extract extract.json --sections-out sections.json --out app.json  # Bundle with features/processes; every part present or missing with why
+python tools/modernization/sample_pipeline.py --source DIR --name app --scratch-db /tmp/x/icdev.db --out /tmp/x/app --no-model  # A real app through the tooling on scratch (features and processes without a model)
 python tools/modernization/architecture_extractor.py --app-id "app-1" --json                                           # Extract architecture
 python tools/modernization/doc_generator.py --app-id "app-1" --output-dir /path/to/docs                               # Generate docs
 python tools/modernization/seven_r_assessor.py --project-id "proj-123" --app-id "app-1" --json                         # 7R assessment

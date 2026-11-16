@@ -2409,7 +2409,8 @@
       "cells": {
         "ai_native": {
           "evidence": [
-            "modernisation_bundle read-only, tool_authorization tier 'read'"
+            "modernisation_bundle read-only, tool_authorization tier 'read'",
+            "modernisation_features read-only, tool_authorization tier 'read'"
           ],
           "gaps": [],
           "status": "pass"
@@ -2418,7 +2419,11 @@
           "evidence": [
             "PM-MDZ-06 -> mdz.exporter, if.mdz.console -> tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_page_reads_apps_waves_and_the_bundle, tests/test_icx_mdz_01_modernisation.py::test_a_decisions_export_is_trusted_only_against_the_pinned_jwks",
             "PM-MDZ-07 -> mdz.twin, if.mdz.mcp -> tests/test_icx_mdz_01_modernisation.py::test_the_twin_finds_each_gap_with_its_thread, tests/test_icx_mdz_01_modernisation.py::test_an_unreadable_source_is_unverified_never_a_pass, tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays, tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only, tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id",
-            "PM-MDZ-11 -> mdz.plan_gate, if.mdz.console -> tests/test_icx_mdz_02_seven_r_evidence.py::test_may_plan_refused_or_missing_writes_no_plan, tests/test_icx_mdz_02_seven_r_evidence.py::test_the_planner_cli_and_the_mcp_tool_say_refused, tests/test_icx_mdz_02_seven_r_evidence.py::test_refactor_jobs_write_nothing_without_may_plan, tests/test_icx_mdz_02_seven_r_evidence.py::test_the_7r_page_shows_confidence_unmeasured_and_the_refusal, tests/test_icx_modsamples_pipeline.py::test_the_first_run_plans_nothing_without_icdev_os_may_plan"
+            "PM-MDZ-11 -> mdz.plan_gate, if.mdz.console -> tests/test_icx_mdz_02_seven_r_evidence.py::test_may_plan_refused_or_missing_writes_no_plan, tests/test_icx_mdz_02_seven_r_evidence.py::test_the_planner_cli_and_the_mcp_tool_say_refused, tests/test_icx_mdz_02_seven_r_evidence.py::test_refactor_jobs_write_nothing_without_may_plan, tests/test_icx_mdz_02_seven_r_evidence.py::test_the_7r_page_shows_confidence_unmeasured_and_the_refusal, tests/test_icx_modsamples_pipeline.py::test_the_first_run_plans_nothing_without_icdev_os_may_plan",
+            "PM-MDZ-13 -> mdz.bundle_features -> tests/test_icx_mdz_03_bundle_features.py::test_features_carry_file_line_evidence_and_capability_hints, tests/test_icx_mdz_03_bundle_features.py::test_an_observed_route_makes_a_feature_both_or_observed, tests/test_icx_mdz_03_bundle_features.py::test_the_same_source_gives_the_same_extract",
+            "PM-MDZ-14 -> mdz.bundle_features -> tests/test_icx_mdz_03_bundle_features.py::test_a_step_is_normalised_by_the_reviewed_rules_and_digested, tests/test_icx_mdz_03_bundle_features.py::test_a_rule_yaml_reads_as_a_boolean_is_refused, tests/test_icx_mdz_03_bundle_features.py::test_a_static_process_is_one_controllers_actions_in_source_order, tests/test_icx_mdz_03_bundle_features.py::test_an_observed_capture_is_a_process_with_its_signature, tests/test_icx_mdz_03_bundle_features.py::test_processify_from_source_needs_no_model",
+            "PM-MDZ-15 -> mdz.bundle_features, mdz.exporter -> tests/test_icx_mdz_03_bundle_features.py::test_the_bundle_carries_features_and_processes_and_still_validates, tests/test_icx_mdz_03_bundle_features.py::test_every_missing_part_is_said_with_its_reason, tests/test_icx_mdz_03_bundle_features.py::test_the_bundle_preview_counts_features_processes_and_what_is_missing, tests/test_icx_mdz_03_bundle_features.py::test_the_regenerated_real_bundles_validate_and_carry_features_and_processes, tests/test_icx_modsamples_pipeline.py::test_features_and_processes_come_without_a_model_and_every_part_is_said",
+            "PM-MDZ-16 -> mdz.bundle_features, mdz.twin, if.mdz.console, if.mdz.mcp -> tests/test_icx_mdz_03_bundle_features.py::test_reviewing_a_process_is_a_persons_step_bound_to_its_digest, tests/test_icx_mdz_03_bundle_features.py::test_the_page_shows_features_processes_and_calls_routes_by_id, tests/test_icx_mdz_03_bundle_features.py::test_the_twin_flags_no_features_unreviewed_processes_and_missing_parts, tests/test_icx_mdz_03_bundle_features.py::test_the_twin_observes_a_bundle_resolves_its_thread_and_replays, tests/test_icx_mdz_03_bundle_features.py::test_the_mcp_features_tool_is_read_only"
           ],
           "gaps": [],
           "status": "pass"
@@ -2426,6 +2431,7 @@
         "gui": {
           "evidence": [
             "migration_canvas.api_modernisation_icos_check called from tools/dashboard/templates/migration_canvas/modernisation.html",
+            "migration_canvas.api_modernisation_process_review called from tools/dashboard/templates/migration_canvas/modernisation.html",
             "nav links /migration-canvas/modernisation",
             "page /migration-canvas/modernisation renders migration_canvas/modernisation.html",
             "registry entry 'mdc'"
@@ -2443,6 +2449,30 @@
               "observed": true,
               "rule": "/migration-canvas/api/modernisation/apps/<app_id>/bundle",
               "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_modernisation_features",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/apps/<app_id>/features",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_modernisation_process_review",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/apps/<app_id>/processes/<process_id>/review",
+              "write": true
             },
             {
               "by_id": [
@@ -2468,10 +2498,10 @@
         },
         "workflow": {
           "evidence": [
-            "1 mutating route(s), none a decision a person takes"
+            "migration_canvas.api_modernisation_process_review (declared (tools/migration_canvas/modernisation.py: \"A person confirms or rejects one extracted process\")) -> template decl-wft-mdz-process-review (args/workflow_hitl_templates/mdz-process-review.yaml)"
           ],
           "gaps": [],
-          "status": "n/a"
+          "status": "pass"
         }
       },
       "component": "mdc",
@@ -3063,11 +3093,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 135,
-    "routes_by_id": 111,
-    "routes_observed": 95,
-    "writes_by_id": 52,
-    "writes_observed": 52
+    "routes": 137,
+    "routes_by_id": 113,
+    "routes_observed": 97,
+    "writes_by_id": 53,
+    "writes_observed": 53
   },
   "tool": "feature_audit",
   "version": 1

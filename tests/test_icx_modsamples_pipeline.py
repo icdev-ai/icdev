@@ -13,7 +13,9 @@ tests use small trees written in the shape those apps take, so each fix is pinne
 * AI-Ify's verdict sentence was exported where the contract wants its enum; module paths leaked the analyst's
   checkout; disqualifiers were dropped;
 * most modernisation tools ignored ``ICDEV_DB_PATH`` and wrote ``data/icdev.db``;
-* (osx-fth-12) features were never reported: they are now, statically, from the entry points.
+* (osx-fth-12) features were never reported: they are now, statically, from the entry points;
+* (icx-mdz-03) --no-model meant no processes, and a missing part was only an absent key: processes now come from the
+  source without a model, and every section and planning part is said present or missing, with why.
 """
 from __future__ import annotations
 
@@ -70,7 +72,9 @@ def _java_app(root: Path) -> Path:
     (web / "TradeServlet.java").write_text(
         "package com.acme;\nimport com.acme.Util;\nimport javax.servlet.http.HttpServlet;\n"
         '@WebServlet(name = "Trade", urlPatterns = { "/app", "/trade" })\n'
-        "public class TradeServlet extends HttpServlet { Util u; }\n")
+        "public class TradeServlet extends HttpServlet { Util u;\n"
+        '  void performTask(String action) { if (action.equals("login")) {} else if (action.equals("buy")) {} }\n'
+        "}\n")
     (root / "pom.xml").write_text("<project><properties><maven.compiler.source>1.8</maven.compiler.source>"
                                   "</properties></project>")
     (root / "schema.sql").write_text(
@@ -170,8 +174,8 @@ def test_every_section_not_produced_is_a_gap_with_its_reason(run):
     for k, v in b.items():
         if v in (None, [], {}) and k != "schema":
             assert gaps.get(k), f"{k} is empty and the report does not say why"
-    assert "--no-model" in gaps["processes"]
     assert "features" not in gaps, "reported statically, from the entry points (osx-fth-12)"
+    assert "processes" not in gaps, "icx-mdz-03: the dispatcher's actions, without a model"
 
 
 def test_features_are_reported_statically_never_observed(run):
@@ -181,6 +185,30 @@ def test_features_are_reported_statically_never_observed(run):
     assert f["signatures"]["apis"] == ["ALL /app", "ALL /trade"] and 0 < f["confidence"] <= 1
     step = next(s for s in run["report"]["steps"] if s["step"] == "features")
     assert step["ok"] and step["provenance"] == "static" and step["features"] == 1
+
+
+def test_features_and_processes_come_without_a_model_and_every_part_is_said(run):
+    """icx-mdz-03: under --no-model the features carry file:line evidence and the dispatcher's actions are a process
+    with its step signature; every section and planning part is present or missing, with why."""
+    b, first = run["bundle"], run["first"]
+    [p] = b["processes"]
+    assert p["id"] == "trade-actions" and p["basis"] == "source" and [s["title"] for s in p["steps"]] == ["Login", "Buy"]
+    ext = json.loads((run["out"] / "features.extract.json").read_text())
+    assert ext["processes"][0]["signature"]["steps"] == ["authenticate", "buy"]
+    assert ext["observed"]["given"] is False
+    [f] = b["features"]
+    assert f["signatures"]["steps"] == ["trade-actions.s01", "trade-actions.s02"]
+    assert f["evidence"] == ["web/src/main/java/com/acme/TradeServlet.java:5"], "the class, located in the source"
+    steps = {s["step"]: s for s in first["steps"]}
+    assert steps["processify-source"]["ok"] and steps["processify-source"]["static"] == 1
+    assert not steps["processify"]["ok"] and "--no-model" in steps["processify"]["reason"]
+    before, after = first["sections"], run["report"]["sections"]
+    assert before["migration.waves"]["state"] == "missing" and before["migration.waves"]["derived"] >= 1
+    assert "may-plan" in before["refactor.jobs"]["reason"]
+    assert after["migration.waves"]["state"] == "present" and after["refactor.jobs"]["state"] == "present"
+    assert after["cloud_native.twelve_factor"] == {"state": "present", "count": 1, "factors": 12}
+    assert after["cloud_native.events"]["state"] == "missing" and "EJB" in after["cloud_native.events"]["reason"]
+    assert all(v.get("reason") for v in after.values() if v["state"] == "missing")
 
 
 def test_the_scratch_database_must_be_new(tmp_path):

@@ -17,6 +17,10 @@ Every step is the existing tool, run as a subprocess with the scratch database i
      1. project_create             a scratch project
      2. legacy_analyzer            --register, then --analyze
         static_features            the entry points grouped into features (features, provenance static)
+        bundle_features            (icx-mdz-03) those features with file:line evidence and capability hints, merged
+                                   with the routes an REA observed inventory names (--observed; never captured here),
+                                   and the processes: the actions one controller offers in source order, or an REA
+                                   capture (--observed-process), each with its step signature -- no model
      3. architecture_extractor     --extract db-schema          (the bundle's data)
      4. seven_r_assessor           --json                       (seven_r)
      5. refactor_jobs              the migrators as CAM refactor jobs (refactor; osx-fth-13): the version migrator
@@ -28,14 +32,16 @@ Every step is the existing tool, run as a subprocess with the scratch database i
                                    its environment mapping, a twelve-factor report and, for message-driven beans, an
                                    event contract -- generated from the source, unreviewed, bound by SHA-256
      6. aiify.engine scan          (aiify; its opportunities are also DRAFTED as AI use cases in cloud_native)
-     7. processify --from-doc      the README (processes); skipped by --no-model, the only step that calls a model
+     7. processify --from-doc      the README (processes, basis document); skipped by --no-model, the only step that
+                                   calls a model. The static and observed processes above need none.
      8. monolith_decomposer        --create-plan with the strategy (migration)
      9. app_wave_planner           the plan's waves, each with its backout (migration.waves; osx-fth-13)
-    10. apptwin_export             every section a step produced
+    10. apptwin_export             every section a step produced, and every section's present/missing state
+                                   (``sections`` in gaps.json: the waves, refactor jobs and cloud-native parts too)
 
 The source is UNTRUSTED DATA: it is read, never built or run, and a step that would need the application running
 (observed inventory) is reported, not attempted: features are reported statically, from the entry points the
-analyser read, labelled ``static`` (never ``observed``). A section no step produced stays null in the bundle and is listed
+analyser read, labelled ``static`` (never ``observed``) unless an operator hands in an REA capture made elsewhere. A section no step produced stays null in the bundle and is listed
 in ``gaps.json`` with why -- nothing is filled in by hand. The scratch database is created here (``init_icdev_db``)
 and must not be the operational one.
 """
@@ -158,13 +164,23 @@ def _plan_and_waves(r: Run, app: str, project: str, chosen: str | None, strategy
     return waves
 
 
+#: Why a section no step of this pipeline makes is empty.
+UNPRODUCED = {
+    "consumers": "the exporter never carries consumers",
+    "integrity": "no SIPA assessment was run",
+    "ivv": "no IV&V assessment was run", "sbd": "no Secure by Design assessment was run",
+    "rtm": "no requirements traceability was run", "coherence": "no coherence check was run",
+    "readiness": "no readiness assessment was run"}
+
+
 def _export(r: Run, *, name: str, app: str, project: str, source_name: str, inputs: dict, at: str | None,
             may_plan: dict) -> dict:
     """Step 10: the bundle from every section a step produced, and the gap report."""
     out = r.out
     bundle_path = out / f"{name}.apptwin.json"
     args = ["tools/modernization/apptwin_export.py", "--app-id", app, "--out", str(bundle_path)]
-    for flag, key in (("--static-features", "static_features"), ("--seven-r", "seven_r"), ("--aiify", "aiify"),
+    feats = ("--extract", "extract") if inputs.get("extract") else ("--static-features", "static_features")
+    for flag, key in (feats, ("--seven-r", "seven_r"), ("--aiify", "aiify"),
                       ("--refactor", "refactor"), ("--waves", "waves"), ("--cloud-native", "cloud_native")):
         if inputs.get(key):
             args += [flag, str(out / inputs[key])]
@@ -172,17 +188,21 @@ def _export(r: Run, *, name: str, app: str, project: str, source_name: str, inpu
         args += ["--process", str(out / p)]
     if at:
         args += ["--at", at]
+    reasons = {**UNPRODUCED, **{s["section"]: s.get("reason") or "the step produced nothing"
+                                for s in r.steps if s.get("section") and not s["ok"]}}
+    cn = next((s for s in reversed(r.steps) if s["step"] == "cloud-native"), None)
+    if cn and cn["ok"] and not any(j["kind"] == "event_contract" for j in cn.get("jobs") or []):
+        reasons["cloud_native.events"] = (f"no event_contract job: CAM's cloud_native rules queue one only for an EJB "
+                                          f"application's message-driven beans (framework {inputs.get('framework')})")
+    (out / "reasons.json").write_text(json.dumps(reasons, indent=2, sort_keys=True) + "\n")
+    args += ["--reasons", str(out / "reasons.json"), "--sections-out", str(out / "sections.json")]
     rc, so, se = r.tool("export", *args)
     if rc != 0 or not bundle_path.is_file():
         raise PipelineError(f"apptwin_export: {_why(se, so)}")
     bundle = json.loads(bundle_path.read_text())
+    sections = json.loads((out / "sections.json").read_text())
     produced = {k for k, v in bundle.items() if v not in (None, [], {})}
-    unproduced = {
-        "consumers": "the exporter never carries consumers",
-        "integrity": "no SIPA assessment was run",
-        "ivv": "no IV&V assessment was run", "sbd": "no Secure by Design assessment was run",
-        "rtm": "no requirements traceability was run", "coherence": "no coherence check was run",
-        "readiness": "no readiness assessment was run"}
+    unproduced = dict(UNPRODUCED)
     for s in r.steps:
         if s.get("section") and not s["ok"]:
             unproduced[s["section"]] = s.get("reason") or "the step produced nothing"
@@ -193,10 +213,34 @@ def _export(r: Run, *, name: str, app: str, project: str, source_name: str, inpu
     report = {"application": name, "source": source_name, "app_id": app, "project_id": project,
               "bundle": bundle_path.name, "bundle_sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
               "produced": sorted(produced - {"schema", "producer", "produced_at"}), "gaps": gaps, "steps": r.steps,
-              "inputs": inputs, "may_plan": may_plan,
+              "sections": sections, "inputs": inputs, "may_plan": may_plan,
               "at": at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     (out / "gaps.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
+
+
+def _extract(r: Run, app: str, observed: Path | None, observed_processes: list[Path]) -> tuple[dict | None, Path]:
+    """bundle_features (icx-mdz-03): the features with their evidence and hints, and the processes, without a model.
+    An REA capture the operator made elsewhere is copied into the run, so the run says what it read."""
+    path = r.out / "features.extract.json"
+    args = ["tools/modernization/bundle_features.py", "--app-id", app, "--out", str(path)]
+    def keep(src: Path, name: str) -> Path:
+        dest = r.out / name
+        if Path(src).resolve() != dest.resolve():
+            shutil.copyfile(src, dest)
+        return dest
+    if observed:
+        args += ["--observed", str(keep(observed, "observed.inventory.json"))]
+    for i, p in enumerate(observed_processes):
+        args += ["--observed-process", str(keep(p, f"observed.process-{i + 1}.json"))]
+    rc, so, se = r.tool("extract", *args)
+    rep = json.loads(path.read_text()) if rc == 0 and path.is_file() else None
+    c = (rep or {}).get("counts") or {}
+    r.note("extract", rep is not None and bool(rep.get("features")), None,
+           None if rep else _why(se, so), rules_digest=((rep or {}).get("rules") or {}).get("digest"),
+           **{k: c[k] for k in ("features", "features_static", "features_observed", "features_both", "processes")
+              if k in c}, observed=(rep or {}).get("observed"))
+    return (rep if rep and (rep.get("features") or rep.get("processes")) else None), path
 
 
 def _gate(icos_decisions: Path | None, icos_jwks: Path | None) -> tuple[list[str], dict]:
@@ -210,7 +254,8 @@ def _gate(icos_decisions: Path | None, icos_jwks: Path | None) -> tuple[list[str
 
 def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: str | None = None,
              at: str | None = None, no_model: bool = False, targets: dict | None = None,
-             icos_decisions: Path | None = None, icos_jwks: Path | None = None) -> dict:
+             icos_decisions: Path | None = None, icos_jwks: Path | None = None, observed: Path | None = None,
+             observed_processes: list[Path] | None = None) -> dict:
     source, out = source.resolve(), out.resolve()
     if not source.is_dir():
         raise PipelineError(f"no source directory {source}")
@@ -267,6 +312,7 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
             "no HTTP entry point (API, controller, servlet or route) found statically"),
            provenance="static", features=n_feats, entry_points=(feats or {}).get("entry_points", 0),
            detected_by=(feats or {}).get("detected_by", {}))
+    extract, ext_path = _extract(r, app, observed, observed_processes or [])
 
     rc, so, se = r.tool("db-schema", "tools/modernization/architecture_extractor.py", "--app-id", app, "--extract",
                         "db-schema", "--source-path", str(source))
@@ -315,10 +361,16 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
 
     procs = []
     readme = next((p for p in (source / n for n in ("README.md", "README.txt", "README")) if p.is_file()), None)
+    n_procs = len((extract or {}).get("processes") or [])
+    r.note("processify-source", n_procs > 0, "processes", None if n_procs else
+           "no controller offers two or more actions, and no REA capture was given: no process without a model",
+           processes=n_procs, static=sum(1 for p in (extract or {}).get("processes") or [] if p["source"] == "static"),
+           observed=sum(1 for p in (extract or {}).get("processes") or [] if p["source"] == "observed"),
+           rules_digest=((extract or {}).get("rules") or {}).get("digest"))
     if no_model:
-        r.note("processify", False, "processes", "skipped (--no-model): Process-Ify reads a document with a language model")
+        r.note("processify", False, None, "skipped (--no-model): Process-Ify reads a document with a language model")
     elif readme is None:
-        r.note("processify", False, "processes", "no README to read a process from")
+        r.note("processify", False, None, "no README to read a process from")
     else:
         doc = out / "readme.txt"
         shutil.copyfile(readme, doc)
@@ -331,7 +383,8 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
 
     waves = _plan_and_waves(r, app, project, chosen, "--strategy" if strategy else "the 7R recommendation", gate)
 
-    inputs = {"static_features": feats_path.name if n_feats else None, "seven_r": "seven_r.json" if seven else None,
+    inputs = {"static_features": feats_path.name if n_feats else None, "extract": ext_path.name if extract else None,
+              "seven_r": "seven_r.json" if seven else None,
               "aiify": "aiify.json" if aiify else None, "refactor": "refactor.json" if jobs else None,
               "waves": "waves.json" if (waves or {}).get("waves") else None,
               "cloud_native": cn_path.name if cn_ok else None, "processes": procs,
@@ -356,16 +409,24 @@ def resume(out: Path, scratch_db: Path, *, icos_decisions: Path, icos_jwks: Path
     if scratch_db.resolve() == live or not scratch_db.is_file():
         raise PipelineError(f"{scratch_db}: resume needs the first run's scratch database, never the operational one")
     r = Run(scratch_db, out)
-    r.steps = [s for s in prior.get("steps") or [] if s.get("step") not in ("refactor", "framework", "plan", "waves")]
+    r.steps = [s for s in prior.get("steps") or [] if s.get("step") not in ("refactor", "framework", "plan", "waves",
+                                                                           "extract", "processify-source")]
     gate, may_plan = _gate(icos_decisions, icos_jwks)
     app, project, inputs = prior["app_id"], prior["project_id"], dict(prior.get("inputs") or {})
     seven = json.loads((out / inputs["seven_r"]).read_text()) if inputs.get("seven_r") else {}
     chosen = strategy or seven.get("recommended_strategy")
     a = {"primary_language": inputs.get("language"), "language_version": inputs.get("language_version"),
          "framework": inputs.get("framework")}
+    # icx-mdz-03: the processes again, so a review a person took since the first run is carried
+    obs = out / "observed.inventory.json"
+    extract, ext_path = _extract(r, app, obs if obs.is_file() else None, sorted(out.glob("observed.process-*.json")))
+    n = len((extract or {}).get("processes") or [])
+    r.note("processify-source", n > 0, "processes", None if n else
+           "no controller offers two or more actions, and no REA capture was given: no process without a model",
+           processes=n, rules_digest=((extract or {}).get("rules") or {}).get("digest"))
     jobs = _refactor(r, app, chosen, a, gate)
     waves = _plan_and_waves(r, app, project, chosen, "--strategy" if strategy else "the 7R recommendation", gate)
-    inputs.update(refactor="refactor.json" if jobs else None,
+    inputs.update(refactor="refactor.json" if jobs else None, extract=ext_path.name if extract else None,
                   waves="waves.json" if (waves or {}).get("waves") else None)
     return _export(r, name=prior["application"], app=app, project=project, source_name=prior.get("source") or "",
                    inputs=inputs, at=at or prior.get("at"), may_plan={**may_plan, "resumed": True})
@@ -387,6 +448,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--icos-decisions", help="ICDEV[OS]'s signed decisions export: the plan and the CAM refactor jobs "
                                              "run only on its may-plan (icx-mdz-02)")
     ap.add_argument("--icos-jwks", help="the ICDEV[OS] JWKS you PINNED")
+    ap.add_argument("--observed", help="an REA observed inventory captured elsewhere (observed_inventory JSON); the "
+                                       "source is never run here")
+    ap.add_argument("--observed-process", action="append", default=[],
+                    help="an observed Process-Ify draft from an REA capture made elsewhere; repeatable")
     ap.add_argument("--resume", action="store_true",
                     help="plan the application a first run in --out assessed, once ICDEV[OS] decided "
                          "(needs --icos-decisions and --icos-jwks)")
@@ -403,7 +468,9 @@ def main(argv: list[str] | None = None) -> int:
             rep = pipeline(Path(a.source), a.name, Path(a.scratch_db), Path(a.out), strategy=a.strategy, at=a.at,
                            no_model=a.no_model, targets={"cloud": a.target_cloud, "ai": a.target_ai},
                            icos_decisions=Path(a.icos_decisions) if a.icos_decisions else None,
-                           icos_jwks=Path(a.icos_jwks) if a.icos_jwks else None)
+                           icos_jwks=Path(a.icos_jwks) if a.icos_jwks else None,
+                           observed=Path(a.observed) if a.observed else None,
+                           observed_processes=[Path(p) for p in a.observed_process])
     except (PipelineError, subprocess.TimeoutExpired) as e:
         print(json.dumps({"status": "error", "error": str(e)}))
         return 1

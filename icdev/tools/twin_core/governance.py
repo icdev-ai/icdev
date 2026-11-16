@@ -650,6 +650,9 @@ _THREAD_TABLES = {
     "aiify_decision": ("aiify", "aiify_hitl_decisions", "id",
                        ("id", "source_type", "source_id", "phase_id", "decision", "reason",
                         "actor", "decided_at")),
+    # icx-mdz-03: an application whose bundle the twin previewed (its features, processes, missing parts).
+    "legacy_app": ("core", "legacy_applications", "id",
+                   ("id", "project_id", "name", "primary_language", "framework", "analysis_status")),
     # icx-mdz-02: a plan refused for want of ICDEV[OS]'s may-plan (tools/modernization/plan_gate.py).
     "audit_trail": ("core", "audit_trail", "id",
                     ("id", "event_type", "actor", "action", "details", "created_at", "hash")),

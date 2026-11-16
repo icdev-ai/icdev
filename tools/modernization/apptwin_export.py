@@ -8,6 +8,10 @@ produced, so every section is traceable to the tool that made it:
     inventory     components, apis, data, dependencies   the legacy_* tables (tools/modernization/legacy_analyzer.py)
     --features    features (basis observed)              tools/aiify/observed_inventory.py output (its ``features``)
     --static-features  features (provenance static)      tools/modernization/static_features.py (entry points)
+    --extract     features AND processes, no model       tools/modernization/bundle_features.py (icx-mdz-03): static
+                                                         and REA-observed features with file:line / route evidence;
+                                                         static and observed processes, each step normalised by the
+                                                         reviewed rule set; a process a person rejected is left out
     --process     processes (basis document | observed)  python -m tools.workflow_canvas.processify --json
     --aiify       aiify                                  python -m tools.aiify.engine scan --json
     --integrity   integrity                              python tools/integrity/engine.py --json (SIPA)
@@ -29,7 +33,10 @@ A verification result (``--ivv``/``--sbd``/``--rtm``/``--coherence``) is passed 
 --bundle``): this module never stamps a subject on one, because only the run that assessed the code knows what it saw.
 
 A section with no input stays ``null``: ICDEV[OS] reads null as UNVERIFIED, never as a pass, so nothing here
-fills a gap with a default. Nothing is invented either: a static feature is only what static_features grouped
+fills a gap with a default. ``sections`` (icx-mdz-03) says, for every section and for the parts ICDEV[OS] plans on --
+the waves, the CAM refactor jobs and the cloud-native twelve factors, container, configuration and events -- whether
+the bundle carries it (``present``, with a count) or not (``missing``, with why), so an absent part is explicit, never
+silently empty; ``--sections-out`` writes it. Nothing is invented either: a static feature is only what static_features grouped
 from the entry points the analyser found, labelled ``static`` and never ``observed``, and ``consumers`` (which
 needs every other application) is left to ICDEV[OS]. The bundle is validated against the vendored contract
 (``context/icos/apptwin.schema.json``, pinned by SHA-256) before it is written.
@@ -212,6 +219,35 @@ def features_from_static(doc: dict) -> list[dict] | None:
         out.append({k: f[k] for k in ("id", "title", "basis", "provenance", "confidence", "signatures", "evidence")
                     if f.get(k) not in (None, [], {})})
     return sorted(out, key=lambda f: f["id"])
+
+
+def features_from_extract(rep: dict) -> list[dict] | None:
+    """bundle_features.report's features in the contract's shape (icx-mdz-03). ``both`` and ``observed`` are
+    ``provenance: observed`` (seen running); ``static`` is ``static`` (read from source, never run). A feature's
+    ``signatures.steps`` names the steps of its processes a person did not reject (``<process>.<step>``)."""
+    feats = rep.get("features")
+    if feats is None:
+        return None
+    kept = {p["id"]: p for p in rep.get("processes") or [] if (p.get("review") or {}).get("state") != "rejected"}
+    out = []
+    for f in feats:
+        if f.get("source") not in ("static", "observed", "both"):
+            raise BundleError(f"feature {f.get('id')!r} says it is {f.get('source')!r}, not static, observed or both")
+        steps = [f"{pid}.{st['id']}" for pid in f.get("processes") or [] if pid in kept for st in kept[pid]["steps"]]
+        sig = {k: v for k, v in (("apis", sorted(f.get("apis") or [])), ("routes", sorted(f.get("routes") or [])),
+                                 ("steps", steps)) if v}
+        out.append({"id": f["id"], "title": f["name"], "basis": "observed" if f["source"] == "observed" else "source",
+                    "provenance": "static" if f["source"] == "static" else "observed",
+                    **({"confidence": float(f["confidence"])} if f.get("confidence") is not None else {}),
+                    **({"signatures": sig} if sig else {}), "evidence": list(f.get("evidence") or [])})
+    return sorted(out, key=lambda f: f["id"])
+
+
+def processes_from_extract(rep: dict) -> list[dict]:
+    """bundle_features.report's processes in the contract's shape; one a person REJECTED is not exported."""
+    return [{"id": p["id"], "title": p["title"], "basis": p["basis"],
+             "steps": [{"id": st["id"], "title": st["title"]} for st in p["steps"]]}
+            for p in rep.get("processes") or [] if (p.get("review") or {}).get("state") != "rejected"]
 
 
 def process_from_processify(doc: dict) -> dict | None:
@@ -508,15 +544,21 @@ def build(app_id: str, conn, *, at: str | None = None, features: dict | None = N
           aiify: dict | None = None, integrity: dict | None = None, seven_r: dict | None = None,
           sections: dict | None = None, waves: list | dict | None = None, strangler: list | None = None,
           refactor: list | dict | None = None, static_features: dict | None = None,
-          cloud_native: dict | None = None) -> dict:
+          cloud_native: dict | None = None, extract: dict | None = None) -> dict:
     at = at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    if features is not None and static_features is not None:
-        raise BundleError("give observed features or static features, not both: each is one tool's report")
+    if sum(x is not None for x in (features, static_features, extract)) > 1:
+        raise BundleError("give one features report (observed, static or the extract), not both: each is one tool's report")
     inv = inventory(app_id, conn)
     procs = [p for p in (process_from_processify(d) for d in processes) if p is not None]
+    if extract is not None:
+        if extract.get("app_id") not in (None, app_id):
+            raise BundleError(f"the extract is of {extract.get('app_id')!r}, not {app_id!r}")
+        taken = {p["id"] for p in procs}
+        procs += [p for p in processes_from_extract(extract) if p["id"] not in taken]
     bundle = {"schema": SCHEMA, "producer": {"tool": PRODUCER, "version": _version()}, "produced_at": at, **inv,
               "features": features_from_inventory(features) if features is not None else
-                          features_from_static(static_features) if static_features is not None else None,
+                          features_from_static(static_features) if static_features is not None else
+                          features_from_extract(extract) if extract is not None else None,
               "processes": sorted(procs, key=lambda p: p["id"]) or None,   # no measured steps: unverified, never "none"
               "consumers": None,
               "aiify": aiify_from_scan(aiify, at=at, root=_source_root(app_id, conn)) if aiify is not None else None,
@@ -535,11 +577,64 @@ def build(app_id: str, conn, *, at: str | None = None, features: dict | None = N
     return bundle
 
 
+#: The parts of the bundle ICDEV[OS] plans a migration on, beside its sections (icx-mdz-03).
+CLOUD_PARTS = (("twelve_factor", ("twelve_factor_report",)), ("containerisation", ("container_definition",
+               "deployment_manifest")), ("config", ("config_mapping",)), ("events", ("event_contract",)))
+
+
+def section_states(bundle: dict, *, waves: list | dict | None = None, reasons: dict | None = None) -> dict:
+    """Every section, and the waves, refactor jobs and cloud-native parts, as ``present`` (with a count) or ``missing``
+    (with why): what the bundle carries, said explicitly. ``reasons`` are the producing run's own (``gaps.json``);
+    ``waves`` is the wave planner's report, so waves derived but not carried (no plan to carry them) are said."""
+    reasons = dict(reasons or {})
+
+    def why(k, default):
+        return reasons.get(k) or default
+
+    def count(v):
+        return len(v) if isinstance(v, list) else None
+
+    out: dict[str, dict] = {}
+    for k in sorted(set(bundle) - {"schema", "producer", "produced_at", "application"}):
+        v = bundle[k]
+        out[k] = ({"state": "present", **({"count": count(v)} if count(v) is not None else {})}
+                  if v not in (None, [], {}) else {"state": "missing", "reason": why(k, "no step produced it")})
+    if isinstance(waves, dict):
+        waves = waves.get("waves")
+    carried = ((bundle.get("migration") or {}).get("waves")) or []
+    out["migration.waves"] = ({"state": "present", "count": len(carried)} if carried else
+                              {"state": "missing", **({"derived": len(waves)} if waves else {}),
+                               "reason": why("migration.waves", "no migration plan carries them, so ICDEV[OS]'s "
+                                             "migration-plan gate will block" if waves else "no wave was planned")})
+    jobs = ((bundle.get("refactor") or {}).get("jobs")) or []
+    out["refactor.jobs"] = ({"state": "present", "count": len(jobs)} if jobs else
+                            {"state": "missing", "reason": why("refactor", "no CAM refactor job ran")})
+    cn = bundle.get("cloud_native")
+    kinds: dict[str, int] = {}
+    for a in (cn or {}).get("artefacts") or []:
+        kinds[a["kind"]] = kinds.get(a["kind"], 0) + 1
+    for part, want in CLOUD_PARTS:
+        key = f"cloud_native.{part}"
+        n = sum(kinds.get(w, 0) for w in want)
+        if cn is None:
+            out[key] = {"state": "missing", "reason": why("cloud_native", "no cloud-native job ran")}
+        elif n:
+            extra = {"twelve_factor": ("factors", cn.get("factors")), "config": ("findings", cn.get("config")),
+                     "events": ("channels", cn.get("events"))}.get(part)
+            out[key] = {"state": "present", "count": n, **({extra[0]: len(extra[1] or [])} if extra else {})}
+        else:
+            out[key] = {"state": "missing", "reason": why(key, f"no {' or '.join(want)} job output in the run")}
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Export a legacy application as an ICDEV[OS] icos-apptwin/v1 bundle")
     ap.add_argument("--app-id", required=True, help="the legacy application's id (legacy_applications.id)")
     ap.add_argument("--features", type=Path, help="observed_inventory output (JSON)")
     ap.add_argument("--static-features", type=Path, help="static_features.py output (JSON)")
+    ap.add_argument("--extract", type=Path, help="bundle_features.py output (JSON): features and processes, no model")
+    ap.add_argument("--reasons", type=Path, help="why each missing section is missing (JSON {section: reason})")
+    ap.add_argument("--sections-out", type=Path, help="write every section's present/missing state here (JSON)")
     ap.add_argument("--process", type=Path, action="append", default=[], help="a Process-Ify draft (JSON); repeatable")
     ap.add_argument("--aiify", type=Path, help="python -m tools.aiify.engine scan --json output")
     ap.add_argument("--integrity", type=Path, help="SIPA assessment (JSON)")
@@ -563,17 +658,22 @@ def main(argv: list[str] | None = None) -> int:
                   processes=[load(p) for p in a.process], aiify=load(a.aiify), integrity=load(a.integrity),
                   seven_r=load(a.seven_r), sections={k: load(getattr(a, k)) for k in PASSTHROUGH},
                   waves=load(a.waves), strangler=load(a.strangler), refactor=load(a.refactor),
-                  static_features=load(a.static_features), cloud_native=load(a.cloud_native))
+                  static_features=load(a.static_features), cloud_native=load(a.cloud_native),
+                  extract=load(a.extract))
     except (BundleError, OSError, KeyError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}))
         return 1
     finally:
         conn.close()
+    states = section_states(b, waves=load(a.waves), reasons=load(a.reasons))
+    if a.sections_out:
+        a.sections_out.write_text(json.dumps(states, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     text = json.dumps(b, indent=2, sort_keys=True) + "\n"
     if a.out:
         a.out.write_text(text, encoding="utf-8")
         print(json.dumps({"status": "ok", "out": str(a.out), "application": b["application"]["id"],
-                          "unverified": sorted(k for k, v in b.items() if v is None)}))
+                          "unverified": sorted(k for k, v in b.items() if v is None),
+                          "missing": sorted(k for k, v in states.items() if v["state"] == "missing")}))
     else:
         sys.stdout.write(text)
     return 0

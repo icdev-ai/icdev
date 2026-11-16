@@ -1,0 +1,109 @@
+# CUI // SP-CTI
+# Step signatures and capability hints for the ICDEV[OS] app twin bundle (icx-mdz-03).
+#
+# Read by tools/modernization/bundle_features.py, which derives an application's
+# features and processes WITHOUT A MODEL: features from the entry points the
+# analyser read (static) and the routes REA saw (observed); processes from the
+# actions one controller offers, in source order (static), or an observed REA
+# capture. This file is the REVIEWED RULE SET that normalises them:
+#
+#   * a step's text (a handler name such as ``addItemToCart``, a dispatch value
+#     such as ``update_profile``, an observed step title) becomes ``verb:object``:
+#     split on case and punctuation, lowercased, ``phrases`` joined first, the
+#     first word in ``verbs`` is the verb (``default_verb`` when none is), the
+#     other words -- ``stopwords`` dropped, plurals folded, ``objects`` mapped --
+#     sorted and joined with ``+`` are the object;
+#   * a process's step signature is that list, in order, and its digest is the
+#     SHA-256 of the list joined by newlines. The digest of THIS FILE's rules
+#     (``rules_digest``) rides with every signature: two signatures compare only
+#     under the same rules, and a changed rule set makes every reviewed process
+#     stale until a person reviews it again;
+#   * a feature's capability hints are each capability here whose ``terms`` its
+#     words reach (``min_terms`` of them): a HINT for a person, never a mapping.
+#     ICDEV[OS] maps a feature to its own capability model only when a person
+#     confirms it.
+#
+# Changing a rule changes every signature's digest: review it like code. Nothing
+# here is learned or guessed by a model.
+
+version: 1
+
+# Joined before the words are split, so "checkOut" is one verb, not two words.
+phrases:
+  check out: checkout
+  sign on: signon
+  sign in: signon
+  log in: signon
+  login: signon
+  logon: signon
+  sign off: signoff
+  sign out: signoff
+  log out: signoff
+  logout: signoff
+  log off: signoff
+  update profile: update profile
+
+# canonical verb -> the words that mean it
+verbs:
+  view: [view, show, display, get, read, load, browse, open, default, index, home, main, detail, details, page]
+  list: [list, all]
+  search: [search, find, query, lookup, filter]
+  create: [add, new, create, insert, save, put, post, register, signup]
+  update: [update, edit, modify, change, set, configure, config]
+  delete: [remove, delete, clear, cancel, drop, reset]
+  submit: [submit, checkout, confirm, place, purchase, pay]
+  buy: [buy]
+  sell: [sell]
+  authenticate: [signon, authenticate, auth]
+  sign_out: [signoff]
+  ping: [ping, test, gc]
+
+# (YAML: quote a word YAML would read as a boolean, such as 'no' or 'on'.)
+
+# Used when a step's words name no verb (a handler called ``HeaderLayout``).
+default_verb: view
+
+# canonical object -> the words that mean it (a word not listed is kept as is)
+objects:
+  catalogue: [catalog, catalogue]
+  product: [product, products]
+  category: [category, categories, subcategory]
+  item: [item, items]
+  cart: [cart, basket, trolley]
+  order: [order, orders]
+  account: [account, accounts, user, users, profile, customer]
+  quote: [quote, quotes, quotation]
+  holding: [holding, holdings, portfolio, position]
+  quantity: [quantity, quantities, qty]
+
+# Dropped from a step's object and from a feature's words.
+stopwords: [a, an, and, the, of, or, to, for, by, 'on', in, at, is, it, from, with, into, form, action, servlet,
+            controller, handler, bean, request, response, http, java, cs, jsp, do, service, 'no', edge, ex,
+            id, ids, api, v1, v2]
+
+# What a dispatcher servlet's branches look like in source: one step per value,
+# in the order they appear. A single class that dispatches on a request
+# parameter (``action.equals("buy")``) offers those actions.
+dispatch:
+  - '\b(?:action|cmd|command|op|operation|method|task)\s*\.\s*equals(?:IgnoreCase)?\s*\(\s*"([A-Za-z_][\w-]*)"\s*\)'
+  - '"([A-Za-z_][\w-]*)"\s*\.\s*equals(?:IgnoreCase)?\s*\(\s*(?:action|cmd|command|op|operation|method|task)\s*\)'
+
+process:
+  # Fewer actions than this in one class is no sequence, and no process.
+  min_steps: 2
+  # More than this is cut, and the process says it was.
+  max_steps: 40
+
+# capability hint -> the words that suggest it. A feature reaching min_terms of
+# them carries the hint, with the words it matched and where they came from.
+capabilities:
+  catalogue: {title: Product catalogue, terms: [catalogue, product, category, item]}
+  cart: {title: Shopping cart, terms: [cart]}
+  order: {title: Order management, terms: [order, checkout, shipping, billing, payment]}
+  account: {title: Customer account, terms: [account, signon, signoff, password, register]}
+  trading: {title: Trading, terms: [trade, quote, holding, buy, sell, market]}
+  error_handling: {title: Error handling, terms: [error, exception]}
+  site_layout: {title: Site layout, terms: [header, footer, layout]}
+  diagnostics: {title: Diagnostics and test harness, terms: [ping, test, gc, explicit]}
+  configuration: {title: Runtime configuration, terms: [config, configure, scenario]}
+min_terms: 1

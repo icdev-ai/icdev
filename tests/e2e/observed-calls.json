@@ -448,7 +448,7 @@
    "page": true,
    "test": false,
    "tests": [
-    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
    ]
   },
   "GET migration_canvas.api_modernisation_bundle": {
@@ -457,7 +457,7 @@
    "page": true,
    "test": false,
    "tests": [
-    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
    ]
   },
   "GET migration_canvas.api_modernisation_cloud_native": {
@@ -466,7 +466,16 @@
    "page": true,
    "test": false,
    "tests": [
-    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
+   ]
+  },
+  "GET migration_canvas.api_modernisation_features": {
+   "endpoint": "migration_canvas.api_modernisation_features",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
    ]
   },
   "GET migration_canvas.api_modernisation_refactor_jobs": {
@@ -475,7 +484,7 @@
    "page": true,
    "test": false,
    "tests": [
-    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
    ]
   },
   "GET migration_canvas.api_modernisation_waves": {
@@ -484,7 +493,7 @@
    "page": true,
    "test": false,
    "tests": [
-    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
    ]
   },
   "GET migration_canvas.modernisation_page": {
@@ -493,7 +502,7 @@
    "page": true,
    "test": false,
    "tests": [
-    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
    ]
   },
   "GET migration_page": {
@@ -933,7 +942,16 @@
    "page": true,
    "test": false,
    "tests": [
-    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
+   ]
+  },
+  "POST migration_canvas.api_modernisation_process_review": {
+   "endpoint": "migration_canvas.api_modernisation_process_review",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
    ]
   },
   "POST migration_canvas.api_refactor_job_approve": {
@@ -942,7 +960,7 @@
    "page": true,
    "test": false,
    "tests": [
-    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
    ]
   },
   "POST workflow_canvas.api_cleanup_processify_tasks": {
