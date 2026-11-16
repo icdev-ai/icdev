@@ -2,7 +2,7 @@
 // E2E Test: Industry Research Engine Dashboard
 // Verifies the Research Engine page loads with stat grid, vertical dropdown, session creation form, and sessions table.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

@@ -2,7 +2,7 @@
 // E2E Test: Usage Tracking
 // Verifies the ICDEV™ dashboard usage page loads with cost breakdown and period selector.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

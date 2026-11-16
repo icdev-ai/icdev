@@ -2,7 +2,7 @@
 // E2E Test: SaaS Portal Authentication
 // Verifies portal login, session management, dashboard redirect, and logout flow.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

@@ -112,7 +112,7 @@
     Set <code style="color:#7ab3f0;">resolve.persist_findings: true</code> in <code style="color:#7ab3f0;">args/cortex_config.yaml</code>. This says nothing about whether your sources agree.
     {% else %}
     <strong style="color:#94a3b8;">Unmeasured.</strong> {{ cstats.detail or 'No resolution has been recorded on this deployment yet.' }}
-    Conflicts and gaps appear here once <code style="color:#7ab3f0;">cortex.resolve()</code> runs — a docmod sweep, a DocDrift draft screen, or <code style="color:#7ab3f0;">POST /cortex/api/v1/resolve</code>. This is <em>not</em> a clean bill of health.
+    Conflicts and gaps appear here once <code style="color:#7ab3f0;">cortex.resolve()</code> runs — a docmod sweep, a DocDrift draft screen, or the Resolve card on <a href="{{ url_for('cortex.verbs_page') }}" style="color:#7ab3f0;">Cortex verbs</a>. This is <em>not</em> a clean bill of health.
     {% endif %}
   </div>
   {% endif %}
@@ -262,7 +262,7 @@ function loadGaps() {
     reason: document.getElementById('gap-reason').value || '',
     backend: document.getElementById('gap-backend').value || ''
   });
-  fetch('/document-intelligence/api/explorer/cortex-findings?' + q.toString())
+  fetch(icdevRoute('dic.api_explorer_cortex_findings', {}, q))
     .then(function (r) { return r.json(); })
     .then(function (d) { renderGaps(d.findings || []); })
     .catch(function () { /* leave the server-rendered list in place */ });
@@ -329,7 +329,7 @@ document.addEventListener('click', function (ev) {
   if (!reason) { result.textContent = 'A reason is required.'; return; }
   box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
   result.textContent = 'Recording…';
-  fetch('/document-intelligence/api/explorer/cortex-findings/' + encodeURIComponent(box.dataset.finding) + '/adjudicate', {
+  fetch(icdevRoute('dic.api_explorer_cortex_finding_adjudicate', {finding_id: box.dataset.finding}), {
     method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({decision: btn.dataset.adj, reason: reason})
   }).then(function (r) {
@@ -442,7 +442,7 @@ function filterType(t) {
 </script>
 
 {% set iqe_canvas = "dic" %}
-{% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
+{% set iqe_api_route = url_for('dic.iqe_query') %}
 {% set iqe_title = "IQE Query — Explorer" %}
 {% set iqe_examples = [
   {"label": "Orphan docs", "query": "foreach d in dic.documents left join dic.versions v on v.doc_id == d.doc_id where v.doc_id is null select d.doc_id, d.title"}

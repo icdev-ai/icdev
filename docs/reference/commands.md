@@ -9876,6 +9876,31 @@ python tools/workflow/coherence_checker.py --check feature_conformance --json
 
 Console: `/twin-observatory/conformance`. MCP: `feature_conformance` (read-only).
 
+### Route ids (icx-cnf-08)
+
+A page of an audited feature calls a route by its Flask endpoint id, never by a path
+it writes itself: `icdevFetch('ace_api.api_launch', {}, {method: 'POST', ...})` or
+`icdevRoute('ace.instance_detail', {instance_id})` in JS (from
+`tools/dashboard/static/js/routes.gen.js`, loaded by base.html), `url_for('...')` in
+Jinja. The helpers refuse a missing, empty or extra parameter, an unknown endpoint and
+a method the rule does not serve. The audit credits only those ids; a hand-written
+`/api/` path in an audited file, a stale `routes.gen.js` or an unknown id fails
+`--check` (and the `feature_conformance` coherence check).
+
+```bash
+python tools/dashboard/routes_gen.py              # regenerate routes.gen.js from the live url_map
+python tools/dashboard/routes_gen.py --check      # exit 1 when it is stale
+python tools/conformance/feature_audit.py --e2e-gate .tmp/test_runs/observed-calls*.json
+                                                  # exit 1: a credited write no page sent in e2e
+```
+
+The e2e fixture `tests/e2e/fixtures/observed_calls.ts` records every request a page
+makes (a test's own `page.evaluate` fetch is recorded as `test`, not `page`); CI's
+`E2E (Playwright)` job runs the gate over all four shards. The committed record is
+`tests/e2e/observed-calls.json`. The e2e server sets `ICDEV_ACE_E2E_ROLES_DIR` to
+`tests/e2e/fixtures/ace_roles` (one test-only auto-eligible role; honoured only under
+`tests/`) and enables Cortex, DIC and the Twin Observatory.
+
 ## Cortex, ACE and Co-Workers console pages and reads (icx-cnf-05)
 
 Pages (each linked from `/cortex`): `/cortex/verbs` (resolve, complete, reason,

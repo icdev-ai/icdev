@@ -59,7 +59,8 @@
 // recorded at the describe block below. `ICDEV_DASHBOARD_URL` retargets it at a
 // dashboard on another port.
 
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import fs from 'fs';
 import path from 'path';
 

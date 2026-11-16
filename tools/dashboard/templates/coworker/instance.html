@@ -226,7 +226,7 @@
   <div class="breadcrumbs">
     <a href="/">Home</a>
     <span class="separator">/</span>
-    <a href="/coworker/">Co-Worker Engine</a>
+    <a href="{{ url_for('ace.index') }}">Co-Worker Engine</a>
     <span class="separator">/</span>
     <span>{{ instance.id }}</span>
   </div>
@@ -533,7 +533,7 @@
 
   function connectSSE() {
     try {
-      es = new EventSource("/api/events/stream");
+      es = new EventSource(icdevRoute('events_api.event_stream'));
 
       es.addEventListener("ace_progress", function (e) {
         try {
@@ -646,7 +646,7 @@
 
   // ── Fetch co-worker state refresh ────────────────────────────────
   function fetchCoworkers() {
-    fetch("/api/ace/" + INSTANCE_ID + "/status")
+    fetch(icdevRoute('ace_api.api_status', {instance_id: INSTANCE_ID}))
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
         if (!data || !data.coworkers) return;
@@ -706,8 +706,7 @@
   {% endif %}
 
   function fetchMessages() {
-    var url = "/api/ace/" + INSTANCE_ID + "/messages";
-    if (_lastMsgId) url += "?after=" + encodeURIComponent(_lastMsgId);
+    var url = icdevRoute('ace_api.api_messages', {instance_id: INSTANCE_ID}, {after: _lastMsgId || null});
     fetch(url)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
@@ -766,7 +765,7 @@
   // ── Fetch + render audit log ─────────────────────────────────────
   var _auditLoaded = false;
   function fetchAuditLog() {
-    fetch("/api/ace/" + INSTANCE_ID + "/audit?limit=200")
+    fetch(icdevRoute('ace_api.api_audit', {instance_id: INSTANCE_ID}, {limit: 200}))
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
         if (!data) return;
@@ -882,7 +881,7 @@
     btn.disabled = true;
     status.textContent = "Sending abort signal…";
 
-    fetch("/api/ace/" + INSTANCE_ID + "/abort", {
+    fetch(icdevRoute('ace_api.api_abort', {instance_id: INSTANCE_ID}), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ instance_id: INSTANCE_ID }),
@@ -919,7 +918,7 @@
     var btn = document.getElementById("resume-session-btn");
     if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
 
-    fetch("/coworker/" + INSTANCE_ID + "/resume?token=" + encodeURIComponent(RESUME_TOKEN))
+    fetch(icdevRoute('ace.instance_resume', {instance_id: INSTANCE_ID}, {token: RESUME_TOKEN}))
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (data) {
         var history = data.conversation_history || [];
@@ -1022,7 +1021,7 @@
   }
 
   function loadNovaState() {
-    fetch("/api/ace/" + INSTANCE_ID + "/nova-state")
+    fetch(icdevRoute('ace_api.api_nova_state', {instance_id: INSTANCE_ID}))
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (data) {
         var container = document.getElementById("nova-cards");

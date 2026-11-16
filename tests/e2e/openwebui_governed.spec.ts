@@ -20,7 +20,7 @@
 // Run: OWUI_E2E_URL=... ICDEV_E2E_REACHABILITY_CHECK=0 ICDEV_E2E_DB_CHECK=0 \
 //      ICDEV_E2E_WARMUP=0 npx playwright test tests/e2e/openwebui_governed.spec.ts
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import { execFileSync } from 'child_process';
 
 const OWUI = process.env.OWUI_E2E_URL || '';

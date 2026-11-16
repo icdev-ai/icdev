@@ -1,0 +1,34 @@
+# CUI // SP-CTI
+# E2E ONLY (icx-cnf-08). Not a shipped role: it is reached only through
+# ICDEV_ACE_E2E_ROLES_DIR, which RoleLoader honours only for a directory under the
+# repo's tests/, and only the e2e server sets it. It exists so the Co-Worker page's
+# "Turn auto on" form has one auto-eligible role/topic to offer, and the e2e run can
+# show a page sending the grant (then the revoke) as a person would. No shipped role
+# opts into auto (icx-ace-01).
+role_id: cnf08_e2e_auto_role
+display_name: E2E Auto-dispatch Role (test only)
+description: Test-only role that declares one auto-eligible topic, for the conformance e2e.
+version: '1.0'
+source: generated
+trust_tier: yellow
+default_count: 1
+max_instances: 1
+steps:
+- analyze
+- report
+llm_function: task_decomposition
+tool_permissions:
+- Read
+genesis_reflex: maintain
+communication:
+  protocol: a2a
+  listen_topics:
+  - e2e.cnf08.auto
+  emit_topics:
+  - task.completed
+auto_dispatch:
+  eligible_topics:
+  - e2e.cnf08.auto
+  reason: >-
+    Test only: lets the conformance e2e press "Turn auto on" and "Turn off" on the
+    Co-Worker page. Never shipped; reached only by the e2e server's roles override.

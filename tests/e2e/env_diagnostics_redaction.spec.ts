@@ -13,7 +13,7 @@
  * it proves the wiring and not just the helper. It was run RED first, against
  * the key-name-only `display()`: the sentinel password was in the file.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

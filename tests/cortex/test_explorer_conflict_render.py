@@ -43,6 +43,9 @@ def _render(**context) -> str:
         ]),
         autoescape=True,
     )
+    # icx-cnf-08: the page names routes by endpoint id; without an app there is no
+    # url_map, so url_for renders the id it was given.
+    env.globals["url_for"] = lambda endpoint, **_: f"/<{endpoint}>"
     context.setdefault("findings", [])
     context.setdefault("themes", [])
     return env.get_template(TEMPLATE).render(**context)
@@ -209,7 +212,8 @@ class TestGapListIsBrowsable:
         assert 'value="currency"' in html
 
     def test_filtering_calls_the_server_side_endpoint(self, html):
-        assert "/document-intelligence/api/explorer/cortex-findings" in html
+        # By endpoint id (icx-cnf-08): routes.gen.js fills the path.
+        assert "icdevRoute('dic.api_explorer_cortex_findings'" in html
 
     def test_an_outage_is_rendered_distinctly_from_a_reason(self, html):
         # A dead backend must not read as a statement about the corpus.

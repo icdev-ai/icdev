@@ -2,7 +2,8 @@
 // E2E Test: Workflow Studio Full Lifecycle (wex-ep11-03-d4)
 // Scenarios: Chat→Generate→Save→Run | Template Library | Run History | Canvas Trigger
 
-import { test, expect, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import path from 'path';
 import fs from 'fs';
 

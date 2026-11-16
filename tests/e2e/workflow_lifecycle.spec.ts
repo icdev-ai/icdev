@@ -2,7 +2,7 @@
 // E2E Test: Workflow Studio Lifecycle
 // Verifies /studio/workflows loads, allows CRUD operations, and streams execution.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import path from 'path';
 import fs from 'fs';
 

@@ -1,0 +1,2 @@
+# icx-cnf-08: route ids, exact GUI evidence, the e2e-only role guard, the suggested-team card
+tests/test_icx_cnf_08_route_ids.py

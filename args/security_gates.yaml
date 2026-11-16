@@ -2225,6 +2225,9 @@ feature_conformance:
     - open_conformance_gap        # a feature misses a rule with no stated reason
     - unregistered_conformance_gap  # a gap with no line in args/feature_conformance_census.txt
     - stale_conformance_record    # the doc, snapshot or a stated reason no longer matches the evidence
+    - hand_written_route_path     # icx-cnf-08: an audited file writes an /api/ path instead of an endpoint id
+    - stale_route_table           # icx-cnf-08: tools/dashboard/static/js/routes.gen.js is not the url_map's
+    - unsent_credited_write       # icx-cnf-08: e2e gate -- a write credited to a page that no page sent
   note: >
     A stated reason excuses only its own rule and goes stale when the rule
     holds without it. The census enumerates every open gap by name and its

@@ -43,8 +43,8 @@
 <div class="trends-page">
   <div class="breadcrumbs">
     <a href="/">Home</a><span class="sep">/</span>
-    <a href="/coworker">Co-Worker Engine</a><span class="sep">/</span>
-    <a href="/coworker/evals">Evaluations</a><span class="sep">/</span>
+    <a href="{{ url_for('ace.index') }}">Co-Worker Engine</a><span class="sep">/</span>
+    <a href="{{ url_for('ace.evals_page') }}">Evaluations</a><span class="sep">/</span>
     <span>Trends</span>
   </div>
 
@@ -104,7 +104,7 @@ async function reload() {
   var days   = document.getElementById('days-select').value;
   var bucket = document.getElementById('bucket-select').value;
   try {
-    var res  = await fetch('/api/ace/evals/trends?days=' + days + '&bucket=' + bucket);
+    var res  = await fetch(icdevRoute('ace_api.api_evals_trends', {}, {days: days, bucket: bucket}));
     var json = await res.json();
     if (json.error) { console.error('trends error:', json.error); return; }
     _data = json.trends || [];

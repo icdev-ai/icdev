@@ -2,7 +2,7 @@
 // E2E Test: Fine-Tuning Dashboard
 // Verifies the Fine-Tuning dashboard pages render correctly with stat grid, dataset/job/model management.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

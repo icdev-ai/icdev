@@ -629,7 +629,10 @@
                 if (!updates.up_to_date && updates.changes) {
                     for (var i = 0; i < updates.changes.length; i++) {
                         var change = updates.changes[i];
-                        if (change.type === 'new_message' && change.data && change.data.role === 'assistant') {
+                        // icx-cnf-08: a posted action card (the suggested team) is shown at once,
+                        // without waiting for the model's reply to the same turn.
+                        if ((change.type === 'new_message' && change.data && change.data.role === 'assistant')
+                            || change.type === 'action_card') {
                             if (!isIntakeContext(ctxId)) refreshChatMessages(ctxId);
                         }
                     }
@@ -1658,6 +1661,23 @@
                 + '<span class="pending-spinner"></span>'
                 + '<span class="pending-notice">' + escHtml(msg.content || PENDING_NOTICE_TEXT) + '</span>'
                 + '</div>';
+        }
+
+        // icx-cnf-08: an action card (e.g. the suggested co-worker team) is drawn by the
+        // shared renderer (includes/_chat_action_card.html), whose buttons confirm or
+        // decline it. Before this the card showed only its text fallback, so no page
+        // could take the person's step. An unknown card type keeps the fallback.
+        if (ct === 'action_card' && window.__icdevChatCards) {
+            var cardMeta = msg.metadata;
+            if (typeof cardMeta === 'string') {
+                try { cardMeta = JSON.parse(cardMeta); } catch (e) { cardMeta = null; }
+            }
+            var holder = document.createElement('div');
+            if (cardMeta && window.__icdevChatCards.render(cardMeta, holder)) {
+                return '<div class="msg-bubble msg-bubble--system"><div class="agent-name">System'
+                    + (msg.turn_number ? ' (#' + msg.turn_number + ')' : '') + '</div>'
+                    + holder.innerHTML + '</div>';
+            }
         }
 
         // Check if this is an advisory message type

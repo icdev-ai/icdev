@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 import importlib
-import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -196,13 +195,15 @@ def test_the_coworker_page_carries_both_panels_and_calls_the_routes(ace_env, mon
     assert "Decisions" in body and "decl-wft-ace-auto-dispatch" in body
 
     text = PANELS.read_text(encoding="utf-8")
-    for call in ('fetch("/api/ace/events?limit=50")', 'fetch("/api/ace/auto-dispatch")',
-                 'post("/api/ace/auto-dispatch/grant"', 'post("/api/ace/auto-dispatch/stop-all"',
-                 'post("/api/ace/auto-dispatch/resume-all"'):
+    # By endpoint id (icx-cnf-08): routes.gen.js fills each rule.
+    for call in ("fetch(icdevRoute('ace_api.api_ace_events', {}, {limit: 50}))",
+                 "fetch(icdevRoute('ace_api.api_auto_dispatch'))",
+                 "post(icdevRoute('ace_api.api_auto_dispatch_grant')",
+                 "post(icdevRoute('ace_api.api_auto_dispatch_stop_all')",
+                 "post(icdevRoute('ace_api.api_auto_dispatch_resume_all')",
+                 "post(icdevRoute('ace_api.api_auto_dispatch_revoke', {grant_id: grantId})"):
         assert call in text, call
-    assert re.search(r'post\("/api/ace/auto-dispatch/" \+ encodeURIComponent\(\w+\) \+ "/revoke"',
-                     text)
     # An auto-launched run can be aborted from the feed at once.
-    assert re.search(r'fetch\("/api/ace/" \+ encodeURIComponent\(\w+\) \+ "/abort"', text)
+    assert "fetch(icdevRoute('ace_api.api_abort', {instance_id: instanceId})" in text
     # Data is written with textContent, never as HTML.
     assert "innerHTML" not in text

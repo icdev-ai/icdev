@@ -1,6 +1,6 @@
 {# -*- CUI // SP-CTI -*- HITL gate panel — included in coworker/instance.html #}
 {# Renders pending HITL decisions for a co-worker instance.              #}
-{# Host page must POST to /api/ace/<instance_id>/hitl to approve/reject. #}
+{# Approve/reject is POSTed to ace_api.api_hitl_resolve for the instance. #}
 {# The click is the person's step of decl-wft-ace-hitl-resolve (icx-cnf-02). #}
 {% if pending_hitl %}
 <section class="hitl-panel" style="margin-top:1.25rem;">
@@ -55,7 +55,7 @@
     var detail    = btn.dataset.detail;
     btn.disabled  = true;
     btn.textContent = approved ? 'Approving…' : 'Rejecting…';
-    fetch('/api/ace/' + instance + '/hitl', {
+    fetch(icdevRoute('ace_api.api_hitl_resolve', {instance_id: instance}), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({coworker_id: coworker, detail: detail, approved: approved}),

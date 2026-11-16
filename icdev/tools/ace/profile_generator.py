@@ -84,6 +84,8 @@ def suggest_profile_names(description: str) -> list[str]:
         from tools.llm.provider import LLMRequest
 
         router = LLMRouter()
+        if router.is_no_llm_mode() or not router.has_any_llm():
+            raise RuntimeError("no model reachable")  # the deterministic names, at once
         req = LLMRequest(
             messages=[{
                 "role": "user",
@@ -175,6 +177,8 @@ def preview_profile(name: str, description: str = "") -> dict[str, Any]:
         import yaml
 
         router = LLMRouter()
+        if router.is_no_llm_mode() or not router.has_any_llm():
+            return base_spec  # no model reachable: the conservative spec, at once
         req = LLMRequest(
             messages=[{
                 "role": "user",

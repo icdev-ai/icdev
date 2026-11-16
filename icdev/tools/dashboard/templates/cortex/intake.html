@@ -52,7 +52,7 @@ function intakeCreate() {
     customer_org: document.getElementById('intake-org').value.trim(),
     verbatim_ask: document.getElementById('intake-ask').value
   };
-  cortexPost('/cortex/api/v1/intake/session', body).then(function(res) {
+  cortexPost(icdevRoute('cortex.api_v1_intake_session_create'), body).then(function(res) {
     cortexShow('intake-create-out', res);
     if (res.json && res.json.session_id) {
       document.getElementById('intake-session').value = res.json.session_id;
@@ -66,18 +66,18 @@ function intakeTurn() {
     session_id: document.getElementById('intake-session').value.trim(),
     message: document.getElementById('intake-message').value
   };
-  cortexPost('/cortex/api/v1/intake/turn', body).then(function(res) { cortexShow('intake-turn-out', res); });
+  cortexPost(icdevRoute('cortex.api_v1_intake_turn'), body).then(function(res) { cortexShow('intake-turn-out', res); });
 }
 
 function intakeShow() {
   var sid = document.getElementById('intake-session').value.trim();
   if (!sid) { return; }
-  cortexGet('/cortex/api/v1/intake/session/' + encodeURIComponent(sid))
+  cortexGet(icdevRoute('cortex.api_v1_intake_session_get', {session_id: sid}))
     .then(function(res) { cortexShow('intake-turn-out', res); });
 }
 
 function intakeList() {
-  cortexGet('/cortex/api/intake/sessions').then(function(res) {
+  cortexGet(icdevRoute('cortex.api_intake_sessions')).then(function(res) {
     var el = document.getElementById('intake-sessions');
     var rows = (res.json && res.json.sessions) || [];
     if (res.json && res.json.status === 'unavailable') {
@@ -99,7 +99,7 @@ intakeList();
 
 <!-- IQE Query Widget -->
 {% set iqe_canvas = "cortex" %}
-{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_api_route = url_for('cortex.api_iqe_query') %}
 {% set iqe_title = "IQE Query — Cortex" %}
 {% set iqe_examples = [
   {"label": "Recent sessions", "query": "foreach s in cortex.sessions select s.session_id, s.mode, s.domain, s.status"}

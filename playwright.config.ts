@@ -263,6 +263,12 @@ const config = defineConfig({
       // because they were the cause of anything. See e2p-back-01 in the note
       // above `webServer` for what the failures actually are.
       ICDEV_ACE_ENABLED: 'true',
+      // icx-cnf-08: the e2e-only test role that offers "Turn auto on" (honoured only under tests/).
+      ICDEV_ACE_E2E_ROLES_DIR: path.resolve(ROOT, 'tests/e2e/fixtures/ace_roles'),
+      // icx-cnf-08: the canvases the audited features live on (as in CI's e2e env).
+      ICDEV_CORTEX_ENABLED: 'true',
+      ICDEV_DIC_ENABLED: 'true',
+      ICDEV_TWIN_OBSERVATORY_ENABLED: 'true',
       ICDEV_AIIFY_ENABLED: 'true',
       ICDEV_AIML_CANVAS_ENABLED: 'true',
       ICDEV_AISG_ENABLED: 'true',

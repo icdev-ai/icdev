@@ -7,7 +7,7 @@
 
 <div style="padding:20px 28px;">
   <div style="font-size:12px;margin-bottom:10px;">
-    <a href="/">Home</a> / <a href="/coworker">Co-Worker Engine</a> / <a href="/coworker/sessions">Agent Sessions</a> / <span>ACE Chat</span>
+    <a href="/">Home</a> / <a href="{{ url_for('ace.index') }}">Co-Worker Engine</a> / <a href="{{ url_for('ace.sessions_list') }}">Agent Sessions</a> / <span>ACE Chat</span>
   </div>
   <h1 style="margin:0;font-size:22px;font-weight:700;">ACE Chat</h1>
   <p style="margin:4px 0 16px;color:var(--text-secondary,#7a8cb0);font-size:13px;max-width:900px;">
@@ -33,7 +33,7 @@
   <div style="margin-top:32px;">
     <h2 style="font-size:15px;font-weight:600;margin-bottom:12px;">Query Co-Worker data (IQE)</h2>
     {% set iqe_canvas = "ace" %}
-    {% set iqe_api_route = "/api/ace/iqe-query" %}
+    {% set iqe_api_route = url_for('ace_api.api_iqe_query') %}
     {% include "includes/iqe_query_widget.html" %}
   </div>
 </div>
@@ -65,7 +65,7 @@ function aceChatSend() {
   aceChatLine('You', msg);
   input.value = '';
   document.getElementById('ace-chat-status').textContent = 'Waiting for the reply…';
-  fetch('/api/ace/chat', {
+  fetch(icdevRoute('ace_api.api_ace_chat'), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({session_id: sid, user_message: msg})

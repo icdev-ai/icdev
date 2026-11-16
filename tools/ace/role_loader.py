@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -16,6 +17,8 @@ from icdev.tools.logging.icdev_logger import get_logger
 logger = get_logger(__name__)
 
 _ROLES_DIR = get_data_path("args") / "ace" / "roles"
+#: icx-cnf-08: a directory of TEST roles the e2e server adds to the shipped ones.
+_E2E_ROLES_ENV = "ICDEV_ACE_E2E_ROLES_DIR"
 _REQUIRED_FIELDS = {"role_id", "steps", "trust_tier", "tool_permissions"}
 _CACHE_TTL = 60  # seconds
 
@@ -240,6 +243,26 @@ class RoleTemplate:
         )
 
 
+def _e2e_roles_dir() -> Path | None:
+    """The e2e roles directory, when ``ICDEV_ACE_E2E_ROLES_DIR`` names one under the
+    repo's ``tests/`` (icx-cnf-08).
+
+    The e2e server adds one test role that declares an auto-eligible topic, so the
+    Co-Worker page has a "Turn auto on" form a test can press. Anywhere else the
+    variable is refused (logged, ignored): a deployment cannot add roles nobody
+    reviewed through it, and it never replaces or overrides a shipped role.
+    """
+    raw = os.environ.get(_E2E_ROLES_ENV, "").strip()
+    if not raw:
+        return None
+    tests = (get_data_path("args").parent / "tests").resolve()
+    path = Path(raw).resolve()
+    if path != tests and tests not in path.parents:
+        logger.warning("%s=%s is not under %s; ignored", _E2E_ROLES_ENV, raw, tests)
+        return None
+    return path if path.is_dir() else None
+
+
 class RoleLoader:
     """Loads ACE role definitions from YAML files with optional hot-reload."""
 
@@ -280,6 +303,10 @@ class RoleLoader:
 
     def _load(self) -> int:
         cache = _parse_roles_dir(self._roles_dir)
+        extra = _e2e_roles_dir() if self._roles_dir == _ROLES_DIR else None
+        if extra is not None:
+            # Added, never overriding: a shipped role keeps its own definition.
+            cache = {**_parse_roles_dir(extra), **cache}
         self._cache = cache
         self._loaded_at = time.monotonic()
         return len(cache)

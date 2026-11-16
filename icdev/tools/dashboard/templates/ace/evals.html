@@ -62,7 +62,7 @@
   <div class="breadcrumbs">
     <a href="/">Home</a>
     <span class="separator">/</span>
-    <a href="/coworker">Co-Worker Engine</a>
+    <a href="{{ url_for('ace.index') }}">Co-Worker Engine</a>
     <span class="separator">/</span>
     <span>Agent Evaluations</span>
   </div>
@@ -72,7 +72,7 @@
       <div class="page-title">Agent Evaluations</div>
       <div class="page-subtitle">Rule-based quality metrics for completed agent sessions</div>
     </div>
-    <a href="/coworker/evals/trends" class="link" style="font-size:13px;">Trends ›</a>
+    <a href="{{ url_for('ace.evals_trends_page') }}" class="link" style="font-size:13px;">Trends ›</a>
   </div>
 
   <div class="filter-bar">
@@ -124,11 +124,11 @@ function outcomeBadge(o) {
 
 function renderTable(evals) {
   if (!evals.length) {
-    return '<div class="empty-state">No evaluations found. Score a session via POST /api/ace/sessions/&lt;id&gt;/eval.</div>';
+    return '<div class="empty-state">No evaluations found. Score a session from its page under Agent Sessions.</div>';
   }
   var rows = evals.map(function(e) {
     return '<tr>' +
-      '<td><a class="link" style="font-family:monospace;font-size:12px;" href="/coworker/sessions/' + esc(e.session_id) + '">' + esc((e.session_id || '').slice(0, 12)) + '…</a></td>' +
+      '<td><a class="link" style="font-family:monospace;font-size:12px;" href="' + esc(icdevRoute('ace.session_detail', {session_id: e.session_id})) + '">' + esc((e.session_id || '').slice(0, 12)) + '…</a></td>' +
       '<td>' + outcomeBadge(e.outcome) + '</td>' +
       '<td>' + (e.turns_used || 0) + '</td>' +
       '<td>' + scoreBar(e.efficiency_score || 0) + '</td>' +
@@ -162,7 +162,7 @@ async function loadEvals(newOffset) {
 
   document.getElementById('evals-content').innerHTML = '<div class="loading-state">Loading…</div>';
   try {
-    var res = await fetch('/api/ace/evals?' + params.toString());
+    var res = await fetch(icdevRoute('ace_api.api_evals_list', {}, params));
     var data = await res.json();
     _total = data.total || 0;
     document.getElementById('evals-content').innerHTML = renderTable(data.evals || []);

@@ -52,12 +52,45 @@ def model(monkeypatch):
     })}
 
     class _Router:
+        def is_no_llm_mode(self):
+            return False
+
+        def has_any_llm(self):
+            return True
+
         def invoke(self, function, request):
             return type("R", (), reply)()
 
     router_mod = importlib.import_module("tools.llm.router")
     monkeypatch.setattr(router_mod, "LLMRouter", _Router)
     return reply
+
+
+def test_with_no_model_reachable_preview_and_names_answer_at_once_without_a_call(roles, monkeypatch):
+    """No model reachable: the conservative spec and the fixed names, and invoke is never called
+    (a router waiting on absent providers hung the page's AI Assist, icx-cnf-08)."""
+    calls = []
+
+    class _NoModel:
+        def is_no_llm_mode(self):
+            return False
+
+        def has_any_llm(self):
+            return False
+
+        def invoke(self, function, request):
+            calls.append(function)  # recorded, not raised: the generator swallows errors
+            raise TimeoutError("waiting on an absent provider")
+
+    router_mod = importlib.import_module("tools.llm.router")
+    monkeypatch.setattr(router_mod, "LLMRouter", _NoModel)
+    spec = pg.preview_profile("Data Steward", "keeps the catalogue tidy")
+    assert spec["role_id"] == "data_steward" and spec["trust_tier"] == "yellow"
+    assert spec["tool_permissions"] == ["Read", "Grep", "Glob"]
+    assert pg.suggest_profile_names("keeps the catalogue tidy") == [
+        "Custom Co-Worker", "Specialist Agent", "Domain Expert"]
+    assert not list(roles.glob("data_steward*"))
+    assert calls == [], "invoke must not be called when no model is reachable"
 
 
 def test_preview_writes_nothing_and_holds_the_model_to_the_allowlists(roles, model):

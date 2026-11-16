@@ -1519,7 +1519,8 @@ class ChatManager:
             conn = get_connection(db_path=str(DB_PATH))
             rows = conn.execute(
                 """SELECT turn_number, role, content, content_type,
-                          is_compressed, compression_tier, classification, created_at
+                          is_compressed, compression_tier, classification, created_at,
+                          metadata
                    FROM chat_messages
                    WHERE context_id = %s AND turn_number > %s
                    ORDER BY turn_number

@@ -50,7 +50,7 @@
   <div class="breadcrumbs">
     <a href="/">Home</a>
     <span class="separator">/</span>
-    <a href="/coworker">Co-Worker Engine</a>
+    <a href="{{ url_for('ace.index') }}">Co-Worker Engine</a>
     <span class="separator">/</span>
     <span>Trust Leaderboard</span>
   </div>
@@ -63,7 +63,7 @@
         NOVA TRUST — current trust scores and autonomy bands for all co-worker roles.
       </p>
     </div>
-    <a href="/coworker" class="btn btn-secondary" style="font-size:12px;">← Co-Worker Engine</a>
+    <a href="{{ url_for('ace.index') }}" class="btn btn-secondary" style="font-size:12px;">← Co-Worker Engine</a>
   </div>
 
   <!-- ── Stats ────────────────────────────────────────────────────── -->
@@ -164,7 +164,7 @@
   <div style="background:var(--bg-card,#16213e); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; padding:40px; text-align:center; color:var(--text-secondary,#555); font-size:13px;">
     No trust events recorded yet. Launch a co-worker team to start building the trust ledger.
     <div style="margin-top:12px;">
-      <a href="/coworker" class="btn" style="font-size:12px; background:var(--accent-color,#2563eb); color:#fff;">Launch a Team →</a>
+      <a href="{{ url_for('ace.index') }}" class="btn" style="font-size:12px; background:var(--accent-color,#2563eb); color:#fff;">Launch a Team →</a>
     </div>
   </div>
   {% endif %}

@@ -2,7 +2,7 @@
 // E2E Test: SaaS Portal Pages
 // Verifies all portal pages load correctly with CUI banners and sidebar navigation.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

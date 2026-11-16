@@ -3,7 +3,7 @@
 // Verifies the mission canvas dashboard loads, 4 zones render,
 // navigation works, and API routes respond.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

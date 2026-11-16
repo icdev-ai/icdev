@@ -2,7 +2,7 @@
 // E2E Test: Proposal Genesis — Autonomous Capture Pipeline Dashboard
 // Verifies the Proposal Genesis dashboard loads with daemon status, Phase A reflexes, quality scores, and audit trail.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import { dismissOverlays, loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
 import { resolveBaseUrl } from './fixtures/base_url';
 

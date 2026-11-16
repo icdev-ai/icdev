@@ -65,7 +65,8 @@
 // goes straight to playwright/screenshots/ — the repo convention, and not the
 // output dir — resolved from __dirname so cwd changes cannot move it.
 
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import net from 'net';

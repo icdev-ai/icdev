@@ -3,7 +3,7 @@
 // Every ACE event is a recommendation a person decides at /decisions; a role runs
 // on auto only under a live grant. Stop-all is immediate and needs a reason.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import path from 'path';
 import fs from 'fs';
 

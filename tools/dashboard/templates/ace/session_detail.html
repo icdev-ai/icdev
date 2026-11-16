@@ -106,9 +106,9 @@
   <div class="breadcrumbs">
     <a href="/">Home</a>
     <span class="separator">/</span>
-    <a href="/coworker">Co-Worker Engine</a>
+    <a href="{{ url_for('ace.index') }}">Co-Worker Engine</a>
     <span class="separator">/</span>
-    <a href="/coworker/sessions">Agent Sessions</a>
+    <a href="{{ url_for('ace.sessions_list') }}">Agent Sessions</a>
     <span class="separator">/</span>
     <span>{{ session_id[:8] }}…</span>
   </div>
@@ -220,7 +220,7 @@ function toggleCollapsible(el) {
 async function loadSession() {
   var content = document.getElementById('page-content');
   try {
-    var res  = await fetch('/api/ace/sessions/' + SESSION_ID);
+    var res  = await fetch(icdevRoute('ace_api.api_session_detail', {session_id: SESSION_ID}));
     var data = await res.json();
 
     if (data.error) {
@@ -237,7 +237,7 @@ async function loadSession() {
           '<h1 style="margin:0; font-size:20px; font-weight:700; font-family:monospace;">' + esc(SESSION_ID) + '</h1>' +
           '<div style="margin-top:6px;">' + subtypeBadge(sub) + '</div>' +
         '</div>' +
-        '<a href="/coworker/sessions" style="font-size:12px; color:var(--accent-color,#4a9eff); text-decoration:none;">&#8592; All Sessions</a>' +
+        '<a href="' + icdevRoute('ace.sessions_list') + '" style="font-size:12px; color:var(--accent-color,#4a9eff); text-decoration:none;">&#8592; All Sessions</a>' +
       '</div>' +
       '<div class="meta-grid">' +
         '<div class="meta-card"><div class="lbl">Co-Worker</div><div class="val mono">' + esc(s.coworker_id || '—') + '</div></div>' +
@@ -330,7 +330,7 @@ async function loadEval() {
   var container = document.getElementById('eval-container');
   if (!container) return;
   try {
-    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval');
+    var res = await fetch(icdevRoute('ace_api.api_session_eval_get', {session_id: SESSION_ID}));
     if (res.status === 404) {
       container.innerHTML =
         '<div style="margin-top:20px;border:1px dashed var(--border-color,#2a2a4a);border-radius:6px;padding:20px;text-align:center;">' +
@@ -357,7 +357,7 @@ async function runEval() {
   if (!container) return;
   container.innerHTML = '<div style="margin-top:20px;text-align:center;padding:20px;color:var(--text-secondary,#7a8cb0);">Running eval…</div>';
   try {
-    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
+    var res = await fetch(icdevRoute('ace_api.api_session_eval_post', {session_id: SESSION_ID}), {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
     var data = await res.json();
     if (data.error) {
       container.innerHTML = '<div style="margin-top:20px;color:#e74c3c;font-size:13px;">Eval failed: ' + esc(data.error) + '</div>';
@@ -375,7 +375,7 @@ async function loadSuggestions() {
   var suggestionsDiv = document.getElementById('suggestions-container');
   if (!suggestionsDiv) return;
   try {
-    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval/suggestions');
+    var res = await fetch(icdevRoute('ace_api.api_session_eval_suggestions', {session_id: SESSION_ID}));
     var data = await res.json();
     if (data.error || !data.suggestions || !data.suggestions.length) {
       suggestionsDiv.innerHTML = '';
@@ -418,7 +418,7 @@ async function rerun() {
   var btn = document.getElementById('rerun-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Launching…'; }
   try {
-    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/rerun', {
+    var res = await fetch(icdevRoute('ace_api.api_session_rerun', {session_id: SESSION_ID}), {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({apply_suggestions: true})
@@ -426,7 +426,7 @@ async function rerun() {
     var data = await res.json();
     if (data.error) { alert('Re-run failed: ' + data.error); return; }
     var dest = data.new_instance_id || data.new_session_id;
-    if (dest) window.location.href = '/coworker/live/' + dest;
+    if (dest) window.location.href = icdevRoute('ace.live_monitor', {instance_id: dest});
   } catch(e) {
     alert('Re-run failed: ' + e.message);
   } finally {
@@ -446,7 +446,7 @@ async function runCompare() {
   var out = document.getElementById('compare-output');
   if (out) out.innerHTML = '<em style="color:#7a8cb0;">Loading…</em>';
   try {
-    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval/compare?baseline=' + encodeURIComponent(baseline));
+    var res = await fetch(icdevRoute('ace_api.api_session_eval_compare', {session_id: SESSION_ID}, {baseline: baseline}));
     var data = await res.json();
     if (data.error) { if (out) out.innerHTML = '<span style="color:#e74c3c;">' + esc(data.error) + '</span>'; return; }
     if (out) out.innerHTML = renderCompare(data);

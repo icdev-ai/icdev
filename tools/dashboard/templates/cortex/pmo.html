@@ -20,13 +20,13 @@
 
 <script>
 var CORTEX_PMO_PATHS = {
-  slides: '/cortex/api/v1/slides',
-  win_themes: '/cortex/api/v1/win_themes',
-  staffing_matrix: '/cortex/api/v1/staffing_matrix',
-  cost_volume: '/cortex/api/v1/cost_volume',
-  dashboard: '/cortex/api/v1/dashboard',
-  bom: '/cortex/api/v1/bom',
-  award: '/cortex/api/v1/award'
+  slides: icdevRoute('cortex.api_v1_slides'),
+  win_themes: icdevRoute('cortex.api_v1_win_themes'),
+  staffing_matrix: icdevRoute('cortex.api_v1_staffing_matrix'),
+  cost_volume: icdevRoute('cortex.api_v1_cost_volume'),
+  dashboard: icdevRoute('cortex.api_v1_dashboard'),
+  bom: icdevRoute('cortex.api_v1_bom'),
+  award: icdevRoute('cortex.api_v1_award')
 };
 </script>
 {% include "cortex/_rest_runner.html" %}
@@ -43,7 +43,7 @@ var CORTEX_PMO_PATHS = {
 <script>
 function pmoStatus() {
   var opp = document.getElementById('pmo-opp').value.trim();
-  cortexGet('/cortex/api/pmo/status?opportunity_id=' + encodeURIComponent(opp))
+  cortexGet(icdevRoute('cortex.api_pmo_status', {}, {opportunity_id: opp}))
     .then(function(res) { cortexShow('pmo-status-out', res); });
 }
 </script>
@@ -133,7 +133,7 @@ function pmoAward() {
 
 <!-- IQE Query Widget -->
 {% set iqe_canvas = "cortex" %}
-{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_api_route = url_for('cortex.api_iqe_query') %}
 {% set iqe_title = "IQE Query — Cortex" %}
 {% set iqe_examples = [
   {"label": "Governance audit", "query": "foreach a in cortex.audit select a.function, a.outcome, a.blocked, a.created_at"}

@@ -2,7 +2,7 @@
 // E2E Test: Chat Right Panels — RICOAS, GOV, INTEL tabs
 // Covers: tab DOM presence, spinner elements, content population after context switch
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

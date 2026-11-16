@@ -2,7 +2,7 @@
 // E2E Lifecycle Test: Ops Hub Canvas (OHC) — Phase 71
 // Tests all 8 sub-pages, JSON API endpoints, nav links, IQE widget, and CUI banners.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import { resolveBaseUrl } from './fixtures/base_url';
 
 // ONE resolver, shared with playwright.config.ts and fixtures/auth.ts, so the
