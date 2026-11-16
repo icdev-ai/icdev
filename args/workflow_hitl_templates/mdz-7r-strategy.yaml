@@ -11,7 +11,8 @@ description: >-
 decides: [migration_api_legacy.record_strategy, migration_api_v1.record_strategy]
 effect: >-
   The decided step in wf_decision_steps is the record (subject: the assessment
-  id; payload: application, strategy, the assessor's recommendation). Nothing
+  id; payload: application, strategy, the assessor's recommendation with its
+  confidence and the strategies it could not assess, icx-mdz-02). Nothing
   else is written.
 approval_policy: any_one
 kickback_limit: 1

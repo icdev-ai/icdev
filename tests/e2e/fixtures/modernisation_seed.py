@@ -13,7 +13,10 @@ the product uses, never a hand-written INSERT of derived state:
   Modernisation page has a completed job whose output a person can approve;
 * one observed Process-Ify draft (``observed_processify.build_draft`` + ``save_draft``)
   from a capture record written as REA reports one, so the Process-Ify page offers
-  Approve / Reject.
+  Approve / Reject;
+* (icx-mdz-02) one plan attempted for the application with no ICDEV[OS] decisions
+  export (``monolith_decomposer.create_migration_plan``), which ``plan_gate`` refuses,
+  writing nothing but its audit row, so /migration lists the refusal.
 
 The 7R assessment itself is NOT seeded: the test presses Assess on /migration.
 Everything is named ``mdz01-e2e-*`` so it cannot be mistaken for real data. Synthetic.
@@ -72,11 +75,26 @@ def seed_observed_draft(run: str) -> str:
     return op.save_draft(op.build_draft(capture, name=f"mdz01-e2e observed draft {run}"))
 
 
+def seed_refused_plan(project_id: str, app_id: str) -> dict:
+    import os
+
+    from tools.modernization import monolith_decomposer
+    from tools.modernization.plan_gate import PlanRefused
+
+    os.environ.pop("ICDEV_ICOS_DECISIONS", None)          # no signed may-plan: the planner must refuse
+    try:
+        monolith_decomposer.create_migration_plan(project_id, app_id, "rehost")
+    except PlanRefused as exc:
+        return {"status": exc.answer["status"], "audit_id": exc.answer.get("audit_id")}
+    raise RuntimeError("a plan was written without ICDEV[OS]'s may-plan")
+
+
 def main() -> int:
     run = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     app = seed_application(run)
     out = {**app, "source": str(SOURCE), "cloud_native": seed_cloud_native(app["app_id"]),
-           "observed_workflow_id": seed_observed_draft(run)}
+           "observed_workflow_id": seed_observed_draft(run),
+           "refused_plan": seed_refused_plan(app["project_id"], app["app_id"])}
     print(json.dumps(out, default=str))
     return 0
 

@@ -1709,7 +1709,7 @@ TOOL_REGISTRY = {
         "category": "modernization",
         "module": "tools.mcp.modernization_server",
         "handler": "handle_create_migration_plan",
-        "description": "Create a migration plan with decomposition tasks, timeline, and effort estimates",
+        "description": "Create a migration plan with decomposition tasks, timeline, and effort estimates -- refused, with nothing written, unless ICDEV[OS]'s signed may-plan allows it for this application and strategy (the operator's ICDEV_ICOS_DECISIONS export, verified against ICDEV_ICOS_JWKS)",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -9022,7 +9022,7 @@ RESOURCE_REGISTRY = {
         "category": "modernization",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_modernisation_seven_r",
-        "description": "Read the 7R assessments (each application's scores and the strategy the assessor recommends) and the strategy a person RECORDED for each, with who, when and why. A recorded strategy is a proposal to ICDEV[OS]: its mission owner accepts one through the signed migration-assessment workflow, and a migration may be planned only when icos_decisions.py may-plan allows it. Read-only: assesses, records and plans nothing.",
+        "description": "Read the 7R assessments (each application's scores, each strategy's confidence -- the share of its criterion weight that was measured -- and its unmeasured criteria, which strategies are not assessable, and the strategy the assessor recommends, or why it recommends none) and the strategy a person RECORDED for each, with who, when and why, and the plans refused for want of ICDEV[OS]'s signed may-plan. A recorded strategy is a proposal to ICDEV[OS]: its mission owner accepts one through the signed migration-assessment workflow, and a migration may be planned only when icos_decisions.py may-plan allows it. Read-only: assesses, records and plans nothing.",
         "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "Only this legacy application"}, "limit": {"type": "integer", "default": 50, "description": "Max assessments (1-200)"}}},
     },
     "aiify_promotions": {

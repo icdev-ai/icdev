@@ -31,6 +31,7 @@ const T = 30_000;
 
 type Seeded = {
   project_id: string; app_id: string; source: string; observed_workflow_id: string;
+  refused_plan: { status: string; audit_id: number | null };
   cloud_native: { jobs: { id: string; scaffold: string; status: string }[] };
 };
 
@@ -72,6 +73,11 @@ test.describe('Every credited modernisation write is sent by its page (icx-mdz-0
     await expect(page.locator('#assess-status')).toContainText('Assessment complete', { timeout: T });
 
     const row = page.locator('#assessments-body tr', { hasText: s.app_id }).first();
+    // icx-mdz-02: what the recommendation rests on, and the plan refused for want of may-plan
+    await expect(row.locator('.seven-r-evidence')).toContainText(/confidence|none recommended/, { timeout: T });
+    await expect(row.locator('.seven-r-evidence')).toContainText('not assessable');
+    await expect(page.locator('#plan-refusals-body tr', { hasText: s.app_id }).first())
+      .toContainText(s.refused_plan.status, { timeout: T });
     await expect(row.locator('.record-reason')).toBeVisible({ timeout: T });
     await row.locator('.record-reason').fill('mdz01 e2e: recorded for the test');
     await sends(page, 'POST', /^\/api\/migration\/assessments\/[^/]+\/strategy$/,

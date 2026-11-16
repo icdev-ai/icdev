@@ -311,12 +311,21 @@ def _json(v, default):
     return default if v is None else v
 
 
-def seven_r_from_assessment(a: dict, *, at: str) -> dict:
-    """The 7R assessment, carried whole (ICDEV[OS] Phase 247): the ranking, the recommendation and its own estimates."""
+def seven_r_from_assessment(a: dict, *, at: str) -> dict | None:
+    """The 7R assessment, carried whole (ICDEV[OS] Phase 247): the ranking, the recommendation and its own estimates.
+
+    icx-mdz-02: only an ASSESSABLE strategy is ranked (the contract's score is a number); a not-assessable one, and
+    each ranked strategy's confidence and unmeasured criteria, are said in ``evidence``. With no strategy assessable
+    there is no ranking, and the section is None (unverified), never a ranking of made-up scores.
+    """
     ev = _json(a.get("evidence"), {})
     ranking = (ev.get("ranking") if isinstance(ev, dict) else None) or a.get("ranking") or []
+    ranked = [{"strategy": r.get("strategy_id") or r.get("strategy"), "score": float(r["score"])}
+              for r in ranking if r.get("score") is not None]
+    if not ranked:
+        return None
     out = {"tool": "icdev-it/seven_r_assessor", "assessed_at": _iso(a.get("assessed_at") or a.get("created_at")) or at,
-           "ranked": [{"strategy": r.get("strategy_id") or r.get("strategy"), "score": float(r["score"])} for r in ranking]}
+           "ranked": ranked}
     for k, src in (("recommended", "recommended_strategy"), ("ato_impact", "ato_impact")):
         if a.get(src):
             out[k] = str(a[src])
@@ -327,6 +336,15 @@ def seven_r_from_assessment(a: dict, *, at: str) -> dict:
     if isinstance(w, dict) and w:
         out["weights"] = {str(k): float(v) for k, v in w.items() if isinstance(v, int | float)}
     notes = [str(x) for x in (ev.get("rationale") or ev.get("notes") or [])] if isinstance(ev, dict) else []
+    strategies = ev.get("strategies") if isinstance(ev, dict) else None
+    if isinstance(strategies, dict):           # icx-mdz-02: what each score rests on
+        rec = ev.get("recommendation") or {}
+        if rec.get("reason"):
+            notes.append(f"recommendation: {rec['reason']}")
+        for sid, v in strategies.items():
+            un = ", ".join(v.get("unmeasured") or []) or "none"
+            notes.append(f"{sid}: not assessable (nothing measured)" if not v.get("assessable") else
+                         f"{sid}: confidence {float(v.get('confidence') or 0):.2f}; unmeasured: {un}")
     if notes:
         out["evidence"] = notes[:20]
     return out

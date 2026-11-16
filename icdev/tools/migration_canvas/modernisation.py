@@ -59,10 +59,14 @@ def list_apps() -> list[dict]:
             "SELECT legacy_app_id, COUNT(*) FROM legacy_components GROUP BY legacy_app_id").fetchall()}
         latest: dict[str, dict] = {}
         try:
+            from tools.modernization.seven_r_assessor import summarise
+
             for r in conn.execute(
-                    "SELECT id, legacy_app_id, recommended_strategy, assessed_at FROM migration_assessments "
+                    "SELECT id, legacy_app_id, recommended_strategy, assessed_at, evidence FROM migration_assessments "
                     "WHERE assessment_scope = 'application' ORDER BY assessed_at").fetchall():
-                latest[r[1]] = {"id": r[0], "recommended_strategy": r[2], "assessed_at": str(r[3] or "")}
+                seen = summarise({"id": r[0], "legacy_app_id": r[1], "recommended_strategy": r[2], "evidence": r[4]})
+                latest[r[1]] = {"id": r[0], "recommended_strategy": r[2], "assessed_at": str(r[3] or ""),
+                                "confidence": seen["confidence"], "not_assessable": seen["not_assessable"]}
         except Exception as exc:  # noqa: BLE001 — no assessments table: nothing assessed here
             logger.debug("modernisation: assessments unreadable: %s", exc)
             conn.rollback()

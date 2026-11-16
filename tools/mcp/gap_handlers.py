@@ -4623,7 +4623,7 @@ def handle_modernisation_seven_r(args: dict) -> dict:
         try:
             sql = ("SELECT id, legacy_app_id, recommended_strategy, rehost_score, replatform_score, "
                    "refactor_score, rearchitect_score, repurchase_score, retire_score, retain_score, "
-                   "ato_impact, risk_score, assessed_at FROM migration_assessments")
+                   "ato_impact, risk_score, assessed_at, evidence FROM migration_assessments")
             params: tuple = ()
             if app_id:
                 sql += " WHERE legacy_app_id = %s"
@@ -4631,21 +4631,42 @@ def handle_modernisation_seven_r(args: dict) -> dict:
             rows = conn.execute(sql + " ORDER BY assessed_at DESC LIMIT %s", (*params, limit)).fetchall()
         finally:
             conn.close()
+        from tools.modernization import plan_gate
+        from tools.modernization.seven_r_assessor import summarise
+
         cols = ("id", "legacy_app_id", "recommended_strategy", "rehost", "replatform", "refactor",
-                "rearchitect", "repurchase", "retire", "retain", "ato_impact", "risk_score", "assessed_at")
+                "rearchitect", "repurchase", "retire", "retain", "ato_impact", "risk_score", "assessed_at",
+                "evidence")
         out = []
         for r in rows:
             row = dict(zip(cols, tuple(r)))
+            seen = summarise({"id": row["id"], "legacy_app_id": row["legacy_app_id"],
+                              "recommended_strategy": row["recommended_strategy"], "evidence": row["evidence"],
+                              **{f"{k}_score": row[k] for k in decisions.STRATEGIES}})
             out.append({"id": row["id"], "legacy_app_id": row["legacy_app_id"],
                         "recommended_strategy": row["recommended_strategy"],
                         "scores": {k: row[k] for k in decisions.STRATEGIES},
+                        # icx-mdz-02: what the recommendation rests on, by strategy
+                        "confidence": seen["confidence"], "min_confidence": seen["min_confidence"],
+                        "recommendation": seen["recommendation"], "not_assessable": seen["not_assessable"],
+                        "strategies": {k: {f: v.get(f) for f in ("score", "confidence", "assessable", "unmeasured")}
+                                       for k, v in (seen["strategies"] or {}).items()},
+                        "method": seen["method"],
                         "ato_impact": row["ato_impact"], "risk_score": row["risk_score"],
                         "assessed_at": str(row["assessed_at"] or "")})
         recs = decisions.decided(decisions.TEMPLATE_7R, [a["id"] for a in out])
         for a in out:
             a["strategy_record"] = decisions.strategy_record(recs.get(a["id"]))
+        try:
+            refused, refused_error = plan_gate.refusals([app_id] if app_id else None, limit=limit), None
+        except Exception as exc:  # noqa: BLE001 -- unreadable is said, never "none refused"
+            refused, refused_error = None, str(exc)
         return {"classification": CORTEX_CLASSIFICATION, "assessments": out, "count": len(out),
-                "record_means": decisions.SEVEN_R_BINDING, "record_at": "/migration (Record strategy)"}
+                "record_means": decisions.SEVEN_R_BINDING, "record_at": "/migration (Record strategy)",
+                "confidence_means": ("the share of a strategy's criterion weight that was measured; an unmeasured "
+                                     "criterion is left out of the score, and only a strategy at or above "
+                                     "min_confidence is recommended"),
+                "plan_refusals": refused, "plan_refusals_error": refused_error}
     except Exception as exc:  # noqa: BLE001 — a read reports its fault, never raises
         logger.warning("handle_modernisation_seven_r: %s", exc)
         return {"error": str(exc)}

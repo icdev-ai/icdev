@@ -50,5 +50,10 @@ modernisation:
   job_review_warn_days: 7
   # An observed Process-Ify draft still waiting for a person, by age.
   draft_review_warn_days: 7
+  # icx-mdz-02: an application's latest 7R recommendation resting on less than
+  # this confidence (the share of its criterion weight that was measured) is a
+  # finding; one with no recommendation at all (no strategy reached the
+  # catalogue's minimum) is always one.
+  seven_r_confidence_warn: 0.7
   # Newest rows read per table.
   scan_limit: 500

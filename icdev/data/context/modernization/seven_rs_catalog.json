@@ -9,6 +9,10 @@
     "environment": "AWS GovCloud (us-gov-west-1)",
     "compliance_framework": "NIST 800-53 Rev 5 / RMF"
   },
+  "assessment": {
+    "min_confidence_to_recommend": 0.5,
+    "rule": "icx-mdz-02: every scoring criterion is measured BY NAME by tools/modernization/seven_r_assessor.py, or is unmeasured (null). An unmeasured criterion is left out of its strategy's score and lowers that strategy's confidence, the share of the strategy's criterion weight that was measured. A strategy with no measured criterion is not assessable. Only a strategy whose confidence reaches min_confidence_to_recommend may be recommended; when none does, no strategy is recommended and the assessment says why."
+  },
   "default_weights": {
     "technical_fitness": 0.25,
     "business_value": 0.20,

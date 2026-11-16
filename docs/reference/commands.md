@@ -4765,6 +4765,9 @@ python tools/modernization/db_migration_planner.py --app-id "app-1" --target pos
 python tools/modernization/strangler_fig_manager.py --plan-id "plan-1" --status --json                                 # Strangler fig status
 python tools/modernization/app_wave_planner.py --app-id "app-1" --out waves.json                                     # An application's own waves (strangler order, backouts)
 python tools/modernization/refactor_jobs.py --app-id "app-1" --strategy rehost --out refactor.json                     # The migrators as CAM refactor jobs
+python tools/modernization/refactor_jobs.py --app-id "app-1" --icos-decisions decisions.json --icos-jwks icos_jwks.json  # icx-mdz-02: runs only on ICDEV[OS]'s signed may-plan (else exit 3, nothing written)
+python tools/modernization/monolith_decomposer.py --app-id "app-1" --create-plan --project-id "proj-123" --strategy rehost --icos-decisions decisions.json --icos-jwks icos_jwks.json --json  # Plan only on may-plan
+python tools/modernization/sample_pipeline.py --resume --scratch-db /tmp/x/icdev.db --out /tmp/x/app --icos-decisions decisions.json --icos-jwks icos_jwks.json  # Plan a sample once ICDEV[OS] decided
 python tools/modernization/cloud_native_jobs.py --app-id "app-1" --target-cloud containerised --out cloud_native.json  # The cloud-native target as CAM jobs (generated, unreviewed)
 python tools/modernization/compliance_bridge.py --plan-id "plan-1" --validate --json                                   # ATO compliance bridge
 python tools/modernization/migration_code_generator.py --plan-id "plan-1" --generate-all --output /path                # Generate migration code

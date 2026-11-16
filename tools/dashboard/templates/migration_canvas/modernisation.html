@@ -100,7 +100,7 @@
       if (!apps.length) { appSel.innerHTML = '<option value="">No legacy applications registered (legacy_analyzer.py)</option>'; return; }
       appSel.innerHTML = apps.map(function (a) {
         return '<option value="' + esc(a.id) + '">' + esc(a.name) + ' (' + esc(a.primary_language || '?') + ', ' +
-          esc(a.components) + ' components' + (a.assessment ? ', 7R recommends ' + esc(a.assessment.recommended_strategy) : '') + ')</option>';
+          esc(a.components) + ' components' + (a.assessment ? (a.assessment.recommended_strategy ? ', 7R recommends ' + esc(a.assessment.recommended_strategy) + (a.assessment.confidence != null ? ' at confidence ' + Number(a.assessment.confidence).toFixed(2) : '') : ', 7R recommends nothing (insufficient evidence)') : '') + ')</option>';
       }).join('');
       var want = new URLSearchParams(window.location.search).get('app');
       if (want) appSel.value = want;

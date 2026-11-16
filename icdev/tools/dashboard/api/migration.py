@@ -133,7 +133,7 @@ def list_assessments():
             f"rehost_score, replatform_score, refactor_score, rearchitect_score, "
             f"repurchase_score, retire_score, retain_score, "
             f"recommended_strategy, cost_estimate_hours, risk_score, "
-            f"timeline_weeks, ato_impact, tech_debt_reduction, assessed_at "
+            f"timeline_weeks, ato_impact, tech_debt_reduction, assessed_at, evidence "
             f"FROM migration_assessments{where_sql} "
             f"ORDER BY assessed_at DESC LIMIT %s OFFSET %s",
             params + [per_page, (page - 1) * per_page],
@@ -161,6 +161,9 @@ def list_assessments():
                     "ato_impact": r[15],
                     "tech_debt_reduction": r[16],
                     "assessed_at": r[17],
+                    # icx-mdz-02: what the recommendation rests on -- per strategy its score from measured criteria,
+                    # its confidence and what was not measured; a strategy with nothing measured is not assessable
+                    "seven_r": _seven_r_summary(r),
                 }
             )
 
@@ -176,6 +179,16 @@ def list_assessments():
         for a in assessments:
             a["strategy_record"] = decisions.strategy_record(recs.get(a["id"])) if not records_error else None
 
+        # icx-mdz-02: plans refused for want of ICDEV[OS]'s signed may-plan (read from the audit trail). An audit
+        # trail that cannot be read says so, never "none refused".
+        refusals, refusals_error = None, None
+        try:
+            from tools.modernization import plan_gate
+
+            refusals = plan_gate.refusals(limit=50)
+        except Exception as exc:  # noqa: BLE001
+            refusals_error = f"the audit trail cannot be read: {exc}"
+
         return jsonify(
             {
                 "assessments": assessments,
@@ -183,6 +196,8 @@ def list_assessments():
                 "page": page,
                 "per_page": per_page,
                 "records_error": records_error,
+                "plan_refusals": refusals,
+                "plan_refusals_error": refusals_error,
             }
         )
     except Exception as exc:
@@ -190,6 +205,18 @@ def list_assessments():
     finally:
         if conn:
             conn.close()
+
+
+def _seven_r_summary(r):
+    """The assessor's own reading of one assessment row (``seven_r_assessor.summarise``), for the page."""
+    from tools.modernization.seven_r_assessor import summarise
+
+    keys = ("id", "legacy_app_id", "component_id", "assessment_scope", "rehost_score", "replatform_score",
+            "refactor_score", "rearchitect_score", "repurchase_score", "retire_score", "retain_score",
+            "recommended_strategy")
+    out = summarise({**dict(zip(keys, tuple(r)[:12])), "assessed_at": r[17], "evidence": r[18]})
+    return {k: out[k] for k in ("confidence", "min_confidence", "recommendation", "strategies", "not_assessable",
+                                "method")}
 
 
 # ---------------------------------------------------------------------------
@@ -496,7 +523,8 @@ def trigger_assessment():
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": str(exc)}), 500
     keep = ("id", "legacy_app_id", "project_id", "recommended_strategy", "ranking", "risk_score",
-            "cost_estimate_hours", "timeline_weeks", "ato_impact", "assessed_at")
+            "cost_estimate_hours", "timeline_weeks", "ato_impact", "assessed_at",
+            "confidence", "recommendation", "strategies")   # icx-mdz-02: what the recommendation rests on
     return jsonify({k: result.get(k) for k in keep})
 
 
@@ -525,7 +553,7 @@ def record_strategy(assessment_id):
     try:
         conn = _get_db()
         row = conn.execute(
-            "SELECT id, legacy_app_id, recommended_strategy FROM migration_assessments WHERE id = %s",
+            "SELECT id, legacy_app_id, recommended_strategy, evidence FROM migration_assessments WHERE id = %s",
             (assessment_id,),
         ).fetchone() if _table_exists(conn, "migration_assessments") else None
     except Exception as exc:  # noqa: BLE001
@@ -535,7 +563,12 @@ def record_strategy(assessment_id):
             conn.close()
     if row is None:
         return jsonify({"error": f"no assessment {assessment_id}"}), 404
+    from tools.modernization.seven_r_assessor import summarise
+
+    seen = summarise({"id": row[0], "legacy_app_id": row[1], "recommended_strategy": row[2], "evidence": row[3]})
+    # icx-mdz-02: the step binds what the person saw -- the recommendation's confidence and what was not assessable
     payload = {"assessment_id": row[0], "legacy_app_id": row[1], "recommended_strategy": row[2],
+               "confidence": seen["confidence"], "not_assessable": seen["not_assessable"],
                "strategy": strategy if decision == "record" else None}
     try:
         step = declared.take_step(decisions.TEMPLATE_7R, surface=request.endpoint, decision=decision,

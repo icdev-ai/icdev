@@ -2,8 +2,14 @@
 # CUI // SP-CTI
 """Migration Intelligence — Strategy Generator + Roadmap Builder.
 
-Generates 7R migration strategies for scored opportunities and assembles
+Generates migration strategy options for scored opportunities and assembles
 wave-based roadmaps aligned to enterprise goals.
+
+It does not score 7R (icx-mdz-02). For an opportunity raised from a legacy application (``source_canvas`` ``mdc``,
+``source_entity_id`` the application's id), the strategy marked ``recommended`` is the one THE 7R engine,
+``tools/modernization/seven_r_assessor.py``, recommended in its latest assessment (``strategy_for_app``), with its
+confidence. With no assessment, or one that recommends nothing for lack of evidence, no option is marked
+recommended and the result says why: the first option in a list is never a recommendation.
 """
 
 from __future__ import annotations
@@ -94,6 +100,22 @@ _STRATEGY_TEMPLATES: dict[str, dict] = {
         "cons": ["Requires config changes", "Moderate testing"],
         "prerequisites": ["Platform compatibility assessed", "Config delta documented"],
     },
+    "refactor": {
+        "title": "Refactor (Modernise the Code)",
+        "rationale": "Upgrade the language level and frameworks in place, keeping the architecture.",
+        "risk_level": "medium",
+        "pros": ["Removes end-of-life dependencies", "Keeps the domain logic", "Incremental"],
+        "cons": ["Code changes need regression tests", "Architecture limits remain"],
+        "prerequisites": ["Upgrade path identified", "Regression tests in place"],
+    },
+    "rebuild": {
+        "title": "Rebuild (Rearchitect Cloud-Native)",
+        "rationale": "Redesign the application into cloud-native services.",
+        "risk_level": "high",
+        "pros": ["Full cloud-native benefits", "Scales independently"],
+        "cons": ["Highest effort", "New ATO boundary"],
+        "prerequisites": ["Target architecture agreed", "Service boundaries identified"],
+    },
     "replace": {
         "title": "Replace (Buy vs Build)",
         "rationale": "Retire current system and replace with commercial off-the-shelf or SaaS equivalent.",
@@ -147,6 +169,42 @@ _STRATEGY_TEMPLATES: dict[str, dict] = {
 _NETWORK_EXTRA = {"rip_and_replace", "phased_cutover", "parallel_run"}
 _NETWORK_TYPES = {"eol_replacement", "network_redesign"}
 
+#: The 7R engine's strategy names in this canvas's vocabulary (mi_strategies.strategy_type).
+SEVEN_R_TO_MI = {"rehost": "rehost", "replatform": "replatform", "refactor": "refactor", "rearchitect": "rebuild",
+                 "repurchase": "replace", "retire": "retire", "retain": "retain"}
+#: Opportunities raised from a legacy application carry its id here (the modernisation canvas).
+APP_SOURCE_CANVAS = "mdc"
+
+
+def seven_r_for_opportunity(opp: dict) -> dict:
+    """What THE 7R engine says for an opportunity's application (icx-mdz-02): never a score of its own.
+
+    ``status`` is ``recommended`` (with ``strategy`` in this canvas's vocabulary and the engine's ``confidence``),
+    ``insufficient_evidence`` (assessed, but no strategy reached the minimum confidence), ``not_assessed`` (the
+    application has no assessment), ``not_an_application`` (the opportunity was not raised from one) or
+    ``unreadable``.
+    """
+    app_id = (opp.get("source_entity_id") or "").strip()
+    if (opp.get("source_canvas") or "").strip().lower() != APP_SOURCE_CANVAS or not app_id:
+        return {"status": "not_an_application", "strategy": None,
+                "reason": "not raised from a legacy application (source_canvas mdc): the 7R engine has nothing to assess"}
+    try:
+        from tools.modernization.seven_r_assessor import strategy_for_app
+        summary = strategy_for_app(app_id)
+    except Exception as exc:  # noqa: BLE001 -- unreadable is said, never a recommendation
+        return {"status": "unreadable", "strategy": None, "app_id": app_id, "reason": f"the 7R assessment cannot be read: {exc}"}
+    if summary is None:
+        return {"status": "not_assessed", "strategy": None, "app_id": app_id,
+                "reason": f"{app_id} has no 7R assessment: assess it on /migration first"}
+    rec = summary["recommended_strategy"]
+    out = {"app_id": app_id, "assessment_id": summary["assessment_id"], "seven_r_strategy": rec,
+           "confidence": summary["confidence"], "min_confidence": summary["min_confidence"],
+           "not_assessable": summary["not_assessable"],
+           "reason": (summary.get("recommendation") or {}).get("reason")}
+    if not rec:
+        return {**out, "status": "insufficient_evidence", "strategy": None}
+    return {**out, "status": "recommended", "strategy": SEVEN_R_TO_MI[rec]}
+
 
 def generate_strategies_for_opportunity(
     opportunity_id: str,
@@ -173,11 +231,20 @@ def generate_strategies_for_opportunity(
                 if s not in strategy_types:
                     strategy_types.append(s)
         strategy_types = strategy_types[:max_strats]
+        # The recommendation is THE 7R engine's (icx-mdz-02); its strategy is always among the options
+        seven_r = seven_r_for_opportunity(opp)
+        recommended_type = seven_r.get("strategy")
+        if recommended_type and recommended_type not in strategy_types:
+            strategy_types = [recommended_type, *strategy_types][:max(max_strats, 1)]
 
         created = []
         for st in strategy_types:
             tmpl = _STRATEGY_TEMPLATES.get(st, {})
             strat_id = f"strat-{uuid.uuid4().hex[:8]}"
+            rationale = tmpl.get("rationale", "")
+            if st == recommended_type:
+                rationale = (f"{rationale} Recommended by the 7R assessment {seven_r['assessment_id']} "
+                             f"(confidence {seven_r['confidence']:.2f}).").strip()
             effort_est = _estimate_effort(opp, st)
             cost_est = effort_est * 1500  # rough $/day
 
@@ -191,25 +258,26 @@ def generate_strategies_for_opportunity(
                 (
                     strat_id, opportunity_id, st,
                     tmpl.get("title", st.replace("_", " ").title()),
-                    tmpl.get("rationale", ""),
+                    rationale,
                     opp.get("target_platform", ""),
                     effort_est, cost_est,
                     tmpl.get("risk_level", "medium"),
                     json.dumps(tmpl.get("pros", [])),
                     json.dumps(tmpl.get("cons", [])),
                     json.dumps(tmpl.get("prerequisites", [])),
-                    1 if st == strategy_types[0] else 0,
+                    1 if st == recommended_type else 0,
                     "generated", _now(),
                 ),
             )
-            created.append({"id": strat_id, "type": st})
+            created.append({"id": strat_id, "type": st, "recommended": st == recommended_type})
 
         conn.execute(
             "UPDATE mi_opportunities SET status='strategy_generated', updated_at=%s WHERE id=%s",
             (_now(), opportunity_id),
         )
         conn.commit()
-        return {"ok": True, "opportunity_id": opportunity_id, "strategies_created": len(created), "strategies": created}
+        return {"ok": True, "opportunity_id": opportunity_id, "strategies_created": len(created), "strategies": created,
+                "recommended": recommended_type, "seven_r": seven_r}
     finally:
         conn.close()
 
