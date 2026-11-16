@@ -1,0 +1,17 @@
+The three real applications ICDEV[OS]'s modernisation samples are tested on (ICDEV[OS] Phases 253-257,
+examples/modernisation/apps.yaml there) are third-party open-source applications. This directory holds only what
+ICDEV[IT]'s tools derived from their source, statically and without a model (icx-mdz-03):
+
+    <app>.apptwin.json   the icos-apptwin/v1 bundle (tools/modernization/apptwin_export.py)
+    <app>.gaps.json      the run's report: every step, and every section present or missing with why
+    <app>.features.json  the features and processes with their evidence and step signatures
+                         (tools/modernization/bundle_features.py)
+
+Regenerated with tools/modernization/sample_pipeline.py --no-model on a scratch database, at the commits pinned in
+ICDEV[OS]'s apps.yaml, with that file's cloud and AI targets. Nothing in them is hand-filled. Their source is never
+committed here.
+
+- DayTrader 7, https://github.com/WASdev/sample.daytrader7 @ 643d04c1, Apache License 2.0.
+- Legacy Cycle Store MVC app, https://github.com/aws-samples/legacy-cycle-store-mvc-app @ 378fe3a6, MIT No
+  Attribution (Amazon.com, Inc. or its affiliates). Based on the AdventureWorks sample.
+- JPetStore 6, https://github.com/mybatis/jpetstore-6 @ c3dbf6f5, Apache License 2.0, the MyBatis team.

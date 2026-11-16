@@ -1,0 +1,1945 @@
+{
+  "aiify": {
+    "assessed_at": "2026-11-15T00:00:00Z",
+    "decisions": [],
+    "opportunities": [
+      {
+        "ai_readiness": "not_suitable",
+        "composite_score": 0.5024,
+        "disqualifiers": [
+          "trivial_function"
+        ],
+        "feasibility": 0.6825,
+        "id": "33",
+        "module_path": ".mvn/wrapper/MavenWrapperDownloader.java",
+        "pattern_type": "nested_conditionals",
+        "risk": 0.725,
+        "value": 0.4635
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.556,
+        "feasibility": 0.605,
+        "id": "24",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java",
+        "pattern_type": "large_rule_table",
+        "risk": 0.6875,
+        "value": 0.626
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.556,
+        "feasibility": 0.605,
+        "id": "25",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java",
+        "pattern_type": "large_rule_table",
+        "risk": 0.6875,
+        "value": 0.626
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "1",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "2",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "3",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "4",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "5",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "not_suitable",
+        "composite_score": 0.5384,
+        "disqualifiers": [
+          "trivial_function"
+        ],
+        "feasibility": 0.6825,
+        "id": "29",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+        "pattern_type": "nested_conditionals",
+        "risk": 0.725,
+        "value": 0.5435
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "6",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "7",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "8",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "9",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "10",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "26",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "27",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "28",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "11",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "12",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "13",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "14",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "15",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "30",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.556,
+        "feasibility": 0.605,
+        "id": "31",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java",
+        "pattern_type": "large_rule_table",
+        "risk": 0.6875,
+        "value": 0.626
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5515,
+        "feasibility": 0.6825,
+        "id": "21",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java",
+        "pattern_type": "nested_conditionals",
+        "risk": 0.725,
+        "value": 0.5725
+      },
+      {
+        "ai_readiness": "not_suitable",
+        "composite_score": 0.5267,
+        "disqualifiers": [
+          "trivial_function"
+        ],
+        "feasibility": 0.6825,
+        "id": "32",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java",
+        "pattern_type": "nested_conditionals",
+        "risk": 0.725,
+        "value": 0.5175
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "16",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "17",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "18",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "19",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "20",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5932,
+        "feasibility": 0.845,
+        "id": "22",
+        "module_path": "src/main/java/org/mybatis/jpetstore/web/controllers/RootController.java",
+        "pattern_type": "string_template_rendering",
+        "risk": 0.775,
+        "value": 0.561
+      },
+      {
+        "ai_readiness": "partial",
+        "composite_score": 0.5466,
+        "feasibility": 0.74,
+        "id": "23",
+        "module_path": "src/test/java/org/mybatis/jpetstore/ScreenTransitionIT.java",
+        "pattern_type": "regex_user_input",
+        "risk": 0.7625,
+        "value": 0.5335
+      }
+    ],
+    "overall_verdict": "partial",
+    "pillars": {
+      "append-only-audit": {
+        "passed": 1,
+        "percentage": 25.0,
+        "total": 4
+      },
+      "code-quality": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 6
+      },
+      "configuration": {
+        "passed": 2,
+        "percentage": 40.0,
+        "total": 5
+      },
+      "dependencies": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 3
+      },
+      "documentation": {
+        "passed": 1,
+        "percentage": 25.0,
+        "total": 4
+      },
+      "il-classification": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 2
+      },
+      "nist-controls": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 4
+      },
+      "security": {
+        "passed": 3,
+        "percentage": 60.0,
+        "total": 5
+      },
+      "stig-compliance": {
+        "passed": 0,
+        "percentage": 0.0,
+        "total": 4
+      },
+      "structure": {
+        "passed": 3,
+        "percentage": 75.0,
+        "total": 4
+      },
+      "testing": {
+        "passed": 2,
+        "percentage": 25.0,
+        "total": 8
+      }
+    },
+    "posture_grade": null,
+    "readiness_score": 0.1996,
+    "roadmap": [],
+    "tool": "icdev-it/aiify"
+  },
+  "apis": [
+    {
+      "handler": "RootController.redirectToHome",
+      "method": "GET",
+      "path": "/"
+    },
+    {
+      "handler": "AccountController.signonForm",
+      "method": "GET",
+      "path": "/account"
+    },
+    {
+      "handler": "AccountController.editAccountForm",
+      "method": "GET",
+      "path": "/account/edit"
+    },
+    {
+      "handler": "AccountController.editAccount",
+      "method": "POST",
+      "path": "/account/edit"
+    },
+    {
+      "handler": "AccountController.newAccountForm",
+      "method": "GET",
+      "path": "/account/new"
+    },
+    {
+      "handler": "AccountController.newAccount",
+      "method": "POST",
+      "path": "/account/new"
+    },
+    {
+      "handler": "AccountController.signoff",
+      "method": "GET",
+      "path": "/account/signoff"
+    },
+    {
+      "handler": "AccountController.signon",
+      "method": "POST",
+      "path": "/account/signon"
+    },
+    {
+      "handler": "CartController.viewCart",
+      "method": "GET",
+      "path": "/cart"
+    },
+    {
+      "handler": "CartController.addItemToCart",
+      "method": "GET",
+      "path": "/cart/addItem"
+    },
+    {
+      "handler": "CartController.checkOut",
+      "method": "GET",
+      "path": "/cart/checkout"
+    },
+    {
+      "handler": "CartController.removeItemFromCart",
+      "method": "GET",
+      "path": "/cart/removeItem"
+    },
+    {
+      "handler": "CartController.updateCartQuantities",
+      "method": "POST",
+      "path": "/cart/update"
+    },
+    {
+      "handler": "CatalogController.viewMain",
+      "method": "GET",
+      "path": "/catalog"
+    },
+    {
+      "handler": "CatalogController.searchProducts",
+      "method": "GET",
+      "path": "/catalog/searchProducts"
+    },
+    {
+      "handler": "CatalogController.viewCategory",
+      "method": "GET",
+      "path": "/catalog/viewCategory"
+    },
+    {
+      "handler": "CatalogController.viewItem",
+      "method": "GET",
+      "path": "/catalog/viewItem"
+    },
+    {
+      "handler": "CatalogController.viewProduct",
+      "method": "GET",
+      "path": "/catalog/viewProduct"
+    },
+    {
+      "handler": "OrderController.listOrders",
+      "method": "GET",
+      "path": "/order/list"
+    },
+    {
+      "handler": "OrderController.newOrderForm",
+      "method": "GET",
+      "path": "/order/new"
+    },
+    {
+      "handler": "OrderController.newOrder",
+      "method": "POST",
+      "path": "/order/new"
+    },
+    {
+      "handler": "OrderController.viewOrder",
+      "method": "GET",
+      "path": "/order/view"
+    }
+  ],
+  "application": {
+    "id": "lapp-51f585a7a5bf",
+    "languages": [
+      "java"
+    ],
+    "title": "jpetstore6"
+  },
+  "cloud_native": {
+    "ai_use_cases": [
+      {
+        "best_score": 0.556,
+        "id": "jpetstore6-large-rule-table",
+        "modules": [
+          "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java",
+          "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java"
+        ],
+        "opportunities": [
+          "24",
+          "25",
+          "31"
+        ],
+        "pattern_type": "large_rule_table",
+        "status": "draft",
+        "title": "large rule table in jpetstore6"
+      },
+      {
+        "best_score": 0.5515,
+        "id": "jpetstore6-nested-conditionals",
+        "modules": [
+          "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java"
+        ],
+        "opportunities": [
+          "21"
+        ],
+        "pattern_type": "nested_conditionals",
+        "status": "draft",
+        "title": "nested conditionals in jpetstore6"
+      },
+      {
+        "best_score": 0.5466,
+        "id": "jpetstore6-regex-user-input",
+        "modules": [
+          "src/test/java/org/mybatis/jpetstore/ScreenTransitionIT.java"
+        ],
+        "opportunities": [
+          "23"
+        ],
+        "pattern_type": "regex_user_input",
+        "status": "draft",
+        "title": "regex user input in jpetstore6"
+      },
+      {
+        "best_score": 0.5932,
+        "id": "jpetstore6-string-template-rendering",
+        "modules": [
+          "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java",
+          "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java",
+          "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java",
+          "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java",
+          "src/main/java/org/mybatis/jpetstore/web/controllers/RootController.java"
+        ],
+        "opportunities": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "26",
+          "27",
+          "28",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "30",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20",
+          "22"
+        ],
+        "pattern_type": "string_template_rendering",
+        "status": "draft",
+        "title": "string template rendering in jpetstore6"
+      }
+    ],
+    "artefact_digest": "fc1ac8f54ed7b5480ac386e9985fd26eeab01bd484c4de672c88388e672436ea",
+    "artefacts": [
+      {
+        "job": "28d40689-0776-4a90-90d0-bbb85685a45a",
+        "kind": "config_mapping",
+        "path": "config_externalisation/config-findings.json",
+        "review": "unreviewed",
+        "sha256": "6008fdef65a0a1759f241b9d0dc4454dd01870375291a2869db1975ba31a8c7c"
+      },
+      {
+        "job": "28d40689-0776-4a90-90d0-bbb85685a45a",
+        "kind": "config_mapping",
+        "path": "config_externalisation/config.env.example",
+        "review": "unreviewed",
+        "sha256": "1749e7dd395345580c031c3f8085d961cc83ac33e46d4592577375244929b163"
+      },
+      {
+        "job": "28d40689-0776-4a90-90d0-bbb85685a45a",
+        "kind": "config_mapping",
+        "path": "config_externalisation/env.mapping.json",
+        "review": "unreviewed",
+        "sha256": "32d6b6991c961f465ac0a1460750863816e6b841898a07a236b77f6f770a3279"
+      },
+      {
+        "job": "4d66fad0-8983-44ca-a91f-334ed9a923ed",
+        "kind": "container_definition",
+        "path": "container_definition/Containerfile",
+        "review": "unreviewed",
+        "sha256": "d7c6293f97a3b0a165ec080b0e40a95b8b67864e7da4af36f9ef86dd84c9f079"
+      },
+      {
+        "job": "4d66fad0-8983-44ca-a91f-334ed9a923ed",
+        "kind": "deployment_manifest",
+        "path": "container_definition/deployment.yaml",
+        "review": "unreviewed",
+        "sha256": "37ee5082e566654dbd8d726a29768b4093b0cd0487990831e039f04943838348"
+      },
+      {
+        "job": "a4d2da76-dbe6-41a5-8817-30128ab1324f",
+        "kind": "twelve_factor_report",
+        "path": "twelve_factor_report/twelve-factor.json",
+        "review": "unreviewed",
+        "sha256": "9d862f375ac887e9eff560fabb96c2bc257bb77505ad9eccf11291f95f75a8fd"
+      }
+    ],
+    "assessed_at": "2026-11-15T00:00:00Z",
+    "config": [],
+    "env": [],
+    "events": [],
+    "factors": [
+      {
+        "evidence": [
+          "1 source tree"
+        ],
+        "id": "codebase",
+        "status": "unverified",
+        "why": "one source tree was analysed; whether it is one codebase in revision control, deployed many times, is not visible in a source tree"
+      },
+      {
+        "evidence": [
+          "pom.xml"
+        ],
+        "id": "dependencies",
+        "status": "met",
+        "why": "declared in 1 build or package file(s)"
+      },
+      {
+        "evidence": [],
+        "id": "config",
+        "status": "unverified",
+        "why": "no hard-coded setting was found by the patterns read; that does not show all configuration comes from the environment"
+      },
+      {
+        "evidence": [
+          "src/main/webapp/WEB-INF/applicationContext.xml:31"
+        ],
+        "id": "backing_services",
+        "status": "not_met",
+        "why": "the database is embedded in the application, not an attached resource"
+      },
+      {
+        "evidence": [
+          "pom.xml",
+          ".github/"
+        ],
+        "id": "build_release_run",
+        "status": "unverified",
+        "why": "the build is declared (maven (wrapper)); whether release and run are separate stages is not visible in source"
+      },
+      {
+        "evidence": [
+          "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:22",
+          "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:21",
+          "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:22"
+        ],
+        "id": "processes",
+        "status": "not_met",
+        "why": "server-side session state is kept (3 file(s)): a process is not stateless"
+      },
+      {
+        "evidence": [
+          "pom.xml"
+        ],
+        "id": "port_binding",
+        "status": "not_met",
+        "why": "deployed into an application server as a war, not self-contained"
+      },
+      {
+        "evidence": [],
+        "id": "concurrency",
+        "status": "unverified",
+        "why": "scaling by running more processes depends on how it runs, which static analysis does not see"
+      },
+      {
+        "evidence": [
+          "src/main/java/org/mybatis/jpetstore/web/configuration/StaxFactoryInitializationListener.java:19"
+        ],
+        "id": "disposability",
+        "status": "unverified",
+        "why": "start-up time and graceful shutdown are seen running, not in source"
+      },
+      {
+        "evidence": [
+          "pom.xml:73",
+          "src/main/webapp/WEB-INF/applicationContext.xml:32"
+        ],
+        "id": "dev_prod_parity",
+        "status": "not_met",
+        "why": "a development database ships with the application"
+      },
+      {
+        "evidence": [],
+        "id": "logs",
+        "status": "unverified",
+        "why": "no log file was found configured; writing to stdout is seen running"
+      },
+      {
+        "evidence": [
+          "src/main/webapp/WEB-INF/applicationContext.xml:32"
+        ],
+        "id": "admin_processes",
+        "status": "not_met",
+        "why": "the schema or data is set up by the running application, not by a one-off admin process"
+      }
+    ],
+    "stack": {
+      "build_tool": "maven (wrapper)",
+      "config_files": [
+        ".mvn/jvm.config",
+        ".mvn/maven.config",
+        ".mvn/wrapper/maven-wrapper.properties",
+        "src/main/webapp/WEB-INF/applicationContext.xml",
+        "src/main/webapp/WEB-INF/web.xml"
+      ],
+      "container_files": [
+        "Dockerfile",
+        "docker-compose.yaml"
+      ],
+      "framework": "spring",
+      "language": "java",
+      "packaging": "war",
+      "ports": [
+        {
+          "found": false,
+          "port": 8080
+        }
+      ],
+      "runtime": "Java 17 servlet container",
+      "version": "11"
+    },
+    "targets": [
+      {
+        "by": [],
+        "factors": [],
+        "kind": "cloud",
+        "status": "not_addressed",
+        "target": "Java 17",
+        "why": "no tool proposes it"
+      },
+      {
+        "by": [
+          "container_definition",
+          "deployment_manifest"
+        ],
+        "factors": [
+          "port_binding",
+          "processes",
+          "disposability"
+        ],
+        "kind": "cloud",
+        "status": "generated",
+        "target": "containerised",
+        "why": "proposed by container_definition, deployment_manifest: generated, unreviewed; not reached until it runs so (the source already carries Dockerfile, docker-compose.yaml: read, never built)"
+      },
+      {
+        "by": [],
+        "factors": [
+          "backing_services",
+          "dev_prod_parity"
+        ],
+        "kind": "cloud",
+        "status": "not_addressed",
+        "target": "managed postgres",
+        "why": "no tool proposes it"
+      },
+      {
+        "by": [],
+        "factors": [],
+        "kind": "ai",
+        "status": "not_addressed",
+        "target": "product recommendations",
+        "why": "AI-Ify reports code patterns, not this use case: its opportunities are drafted as AI use cases separately, and a person may draft this one"
+      }
+    ],
+    "tool": "icdev-it/cloud_native"
+  },
+  "coherence": null,
+  "components": [
+    {
+      "id": "MavenWrapperDownloader",
+      "kind": "class",
+      "path": ".mvn/wrapper/MavenWrapperDownloader.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.ScreenTransitionIT",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/ScreenTransitionIT.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Account",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/domain/Account.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Cart",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/domain/Cart.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.CartItem",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/domain/CartItem.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.CartTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/domain/CartTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Category",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/domain/Category.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Item",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/domain/Item.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.LineItem",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/domain/LineItem.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Order",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/domain/Order.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.OrderTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/domain/OrderTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Product",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/domain/Product.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.domain.Sequence",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/domain/Sequence.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.AccountMapper",
+      "kind": "interface",
+      "path": "src/main/java/org/mybatis/jpetstore/mapper/AccountMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.AccountMapperTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/mapper/AccountMapperTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.CategoryMapper",
+      "kind": "interface",
+      "path": "src/main/java/org/mybatis/jpetstore/mapper/CategoryMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.CategoryMapperTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/mapper/CategoryMapperTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.ItemMapper",
+      "kind": "interface",
+      "path": "src/main/java/org/mybatis/jpetstore/mapper/ItemMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.ItemMapperTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/mapper/ItemMapperTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.LineItemMapper",
+      "kind": "interface",
+      "path": "src/main/java/org/mybatis/jpetstore/mapper/LineItemMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.LineItemMapperTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/mapper/LineItemMapperTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.MapperTestContext",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/mapper/MapperTestContext.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.OrderMapper",
+      "kind": "interface",
+      "path": "src/main/java/org/mybatis/jpetstore/mapper/OrderMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.OrderMapperTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/mapper/OrderMapperTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.ProductMapper",
+      "kind": "interface",
+      "path": "src/main/java/org/mybatis/jpetstore/mapper/ProductMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.ProductMapperTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/mapper/ProductMapperTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.SequenceMapper",
+      "kind": "interface",
+      "path": "src/main/java/org/mybatis/jpetstore/mapper/SequenceMapper.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.mapper.SequenceMapperTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/mapper/SequenceMapperTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.service.AccountService",
+      "kind": "service",
+      "path": "src/main/java/org/mybatis/jpetstore/service/AccountService.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.service.AccountServiceTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/service/AccountServiceTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.service.CatalogService",
+      "kind": "service",
+      "path": "src/main/java/org/mybatis/jpetstore/service/CatalogService.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.service.CatalogServiceTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/service/CatalogServiceTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.service.OrderService",
+      "kind": "service",
+      "path": "src/main/java/org/mybatis/jpetstore/service/OrderService.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.service.OrderServiceTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/service/OrderServiceTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.configuration.StaxFactoryInitializationListener",
+      "kind": "class",
+      "path": "src/main/java/org/mybatis/jpetstore/web/configuration/StaxFactoryInitializationListener.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.configuration.StaxFactoryInitializationListenerTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/web/configuration/StaxFactoryInitializationListenerTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.AccountController",
+      "kind": "controller",
+      "path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.AccountControllerTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/web/controllers/AccountControllerTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.AccountSession",
+      "kind": "controller",
+      "path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.CartController",
+      "kind": "controller",
+      "path": "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.CartControllerTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/web/controllers/CartControllerTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.CatalogController",
+      "kind": "controller",
+      "path": "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.CatalogControllerTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/web/controllers/CatalogControllerTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.OrderController",
+      "kind": "controller",
+      "path": "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.OrderControllerTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/web/controllers/OrderControllerTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.RootController",
+      "kind": "controller",
+      "path": "src/main/java/org/mybatis/jpetstore/web/controllers/RootController.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.RootControllerTest",
+      "kind": "class",
+      "path": "src/test/java/org/mybatis/jpetstore/web/controllers/RootControllerTest.java"
+    },
+    {
+      "id": "org.mybatis.jpetstore.web.controllers.to",
+      "kind": "controller",
+      "path": "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java"
+    }
+  ],
+  "consumers": null,
+  "data": [
+    {
+      "columns": [
+        "addr1",
+        "addr2",
+        "city",
+        "country",
+        "email",
+        "firstname",
+        "lastname",
+        "phone",
+        "state",
+        "status",
+        "userid",
+        "zip"
+      ],
+      "name": "account"
+    },
+    {
+      "columns": [
+        "bannername",
+        "favcategory"
+      ],
+      "name": "bannerdata"
+    },
+    {
+      "columns": [
+        "catid",
+        "descn",
+        "name"
+      ],
+      "name": "category"
+    },
+    {
+      "columns": [
+        "itemid",
+        "qty"
+      ],
+      "name": "inventory"
+    },
+    {
+      "columns": [
+        "attr1",
+        "attr2",
+        "attr3",
+        "attr4",
+        "attr5",
+        "itemid",
+        "listprice",
+        "productid",
+        "references",
+        "status",
+        "supplier",
+        "unitcost"
+      ],
+      "name": "item"
+    },
+    {
+      "columns": [
+        "itemid",
+        "linenum",
+        "orderid",
+        "quantity",
+        "unitprice"
+      ],
+      "name": "lineitem"
+    },
+    {
+      "columns": [
+        "billaddr1",
+        "billaddr2",
+        "billcity",
+        "billcountry",
+        "billstate",
+        "billtofirstname",
+        "billtolastname",
+        "billzip",
+        "cardtype",
+        "courier",
+        "creditcard",
+        "exprdate",
+        "locale",
+        "orderdate",
+        "orderid",
+        "shipaddr1",
+        "shipaddr2",
+        "shipcity",
+        "shipcountry",
+        "shipstate",
+        "shiptofirstname",
+        "shiptolastname",
+        "shipzip",
+        "totalprice",
+        "userid"
+      ],
+      "name": "orders"
+    },
+    {
+      "columns": [
+        "linenum",
+        "orderid",
+        "status",
+        "timestamp"
+      ],
+      "name": "orderstatus"
+    },
+    {
+      "columns": [
+        "category",
+        "descn",
+        "name",
+        "productid",
+        "references"
+      ],
+      "name": "product"
+    },
+    {
+      "columns": [
+        "banneropt",
+        "favcategory",
+        "langpref",
+        "mylistopt",
+        "userid"
+      ],
+      "name": "profile"
+    },
+    {
+      "columns": [
+        "name",
+        "nextid"
+      ],
+      "name": "sequence"
+    },
+    {
+      "columns": [
+        "password",
+        "username"
+      ],
+      "name": "signon"
+    },
+    {
+      "columns": [
+        "addr1",
+        "addr2",
+        "city",
+        "name",
+        "phone",
+        "state",
+        "status",
+        "suppid",
+        "zip"
+      ],
+      "name": "supplier"
+    }
+  ],
+  "dependencies": [
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.AccountMapper",
+      "target": "org.mybatis.jpetstore.domain.Account"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.AccountMapperTest",
+      "target": "org.mybatis.jpetstore.domain.Account"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.CategoryMapper",
+      "target": "org.mybatis.jpetstore.domain.Category"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.CategoryMapperTest",
+      "target": "org.mybatis.jpetstore.domain.Category"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.ItemMapper",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.ItemMapperTest",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.LineItemMapper",
+      "target": "org.mybatis.jpetstore.domain.LineItem"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.LineItemMapperTest",
+      "target": "org.mybatis.jpetstore.domain.LineItem"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.OrderMapper",
+      "target": "org.mybatis.jpetstore.domain.Order"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.OrderMapperTest",
+      "target": "org.mybatis.jpetstore.domain.Order"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.ProductMapper",
+      "target": "org.mybatis.jpetstore.domain.Product"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.ProductMapperTest",
+      "target": "org.mybatis.jpetstore.domain.Product"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.SequenceMapper",
+      "target": "org.mybatis.jpetstore.domain.Sequence"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.mapper.SequenceMapperTest",
+      "target": "org.mybatis.jpetstore.domain.Sequence"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.AccountService",
+      "target": "org.mybatis.jpetstore.domain.Account"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.AccountService",
+      "target": "org.mybatis.jpetstore.mapper.AccountMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.AccountServiceTest",
+      "target": "org.mybatis.jpetstore.domain.Account"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.AccountServiceTest",
+      "target": "org.mybatis.jpetstore.mapper.AccountMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogService",
+      "target": "org.mybatis.jpetstore.domain.Category"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogService",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogService",
+      "target": "org.mybatis.jpetstore.domain.Product"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogService",
+      "target": "org.mybatis.jpetstore.mapper.CategoryMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogService",
+      "target": "org.mybatis.jpetstore.mapper.ItemMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogService",
+      "target": "org.mybatis.jpetstore.mapper.ProductMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogServiceTest",
+      "target": "org.mybatis.jpetstore.domain.Category"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogServiceTest",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogServiceTest",
+      "target": "org.mybatis.jpetstore.domain.Product"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogServiceTest",
+      "target": "org.mybatis.jpetstore.mapper.CategoryMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogServiceTest",
+      "target": "org.mybatis.jpetstore.mapper.ItemMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.CatalogServiceTest",
+      "target": "org.mybatis.jpetstore.mapper.ProductMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderService",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderService",
+      "target": "org.mybatis.jpetstore.domain.Order"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderService",
+      "target": "org.mybatis.jpetstore.domain.Sequence"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderService",
+      "target": "org.mybatis.jpetstore.mapper.ItemMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderService",
+      "target": "org.mybatis.jpetstore.mapper.LineItemMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderService",
+      "target": "org.mybatis.jpetstore.mapper.OrderMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderService",
+      "target": "org.mybatis.jpetstore.mapper.SequenceMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderServiceTest",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderServiceTest",
+      "target": "org.mybatis.jpetstore.domain.LineItem"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderServiceTest",
+      "target": "org.mybatis.jpetstore.domain.Order"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderServiceTest",
+      "target": "org.mybatis.jpetstore.domain.Sequence"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderServiceTest",
+      "target": "org.mybatis.jpetstore.mapper.ItemMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderServiceTest",
+      "target": "org.mybatis.jpetstore.mapper.LineItemMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderServiceTest",
+      "target": "org.mybatis.jpetstore.mapper.OrderMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.service.OrderServiceTest",
+      "target": "org.mybatis.jpetstore.mapper.SequenceMapper"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountController",
+      "target": "org.mybatis.jpetstore.domain.Account"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountController",
+      "target": "org.mybatis.jpetstore.domain.Product"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountController",
+      "target": "org.mybatis.jpetstore.service.AccountService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountController",
+      "target": "org.mybatis.jpetstore.service.CatalogService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountControllerTest",
+      "target": "org.mybatis.jpetstore.domain.Account"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountControllerTest",
+      "target": "org.mybatis.jpetstore.service.AccountService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountControllerTest",
+      "target": "org.mybatis.jpetstore.service.CatalogService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountSession",
+      "target": "org.mybatis.jpetstore.domain.Account"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountSession",
+      "target": "org.mybatis.jpetstore.domain.Product"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountSession",
+      "target": "org.mybatis.jpetstore.service.AccountService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.AccountSession",
+      "target": "org.mybatis.jpetstore.service.CatalogService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CartController",
+      "target": "org.mybatis.jpetstore.domain.Cart"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CartController",
+      "target": "org.mybatis.jpetstore.domain.CartItem"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CartController",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CartController",
+      "target": "org.mybatis.jpetstore.service.CatalogService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CartControllerTest",
+      "target": "org.mybatis.jpetstore.domain.Cart"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CartControllerTest",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CartControllerTest",
+      "target": "org.mybatis.jpetstore.service.CatalogService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CatalogController",
+      "target": "org.mybatis.jpetstore.domain.Category"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CatalogController",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CatalogController",
+      "target": "org.mybatis.jpetstore.domain.Product"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CatalogController",
+      "target": "org.mybatis.jpetstore.service.CatalogService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CatalogControllerTest",
+      "target": "org.mybatis.jpetstore.domain.Category"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CatalogControllerTest",
+      "target": "org.mybatis.jpetstore.domain.Item"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CatalogControllerTest",
+      "target": "org.mybatis.jpetstore.domain.Product"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.CatalogControllerTest",
+      "target": "org.mybatis.jpetstore.service.CatalogService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.OrderController",
+      "target": "org.mybatis.jpetstore.domain.Cart"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.OrderController",
+      "target": "org.mybatis.jpetstore.domain.Order"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.OrderController",
+      "target": "org.mybatis.jpetstore.service.OrderService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.OrderControllerTest",
+      "target": "org.mybatis.jpetstore.domain.Cart"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.OrderControllerTest",
+      "target": "org.mybatis.jpetstore.service.OrderService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.to",
+      "target": "org.mybatis.jpetstore.domain.Account"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.to",
+      "target": "org.mybatis.jpetstore.domain.Product"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.to",
+      "target": "org.mybatis.jpetstore.service.AccountService"
+    },
+    {
+      "kind": "import",
+      "source": "org.mybatis.jpetstore.web.controllers.to",
+      "target": "org.mybatis.jpetstore.service.CatalogService"
+    }
+  ],
+  "features": [
+    {
+      "basis": "source",
+      "confidence": 0.9,
+      "evidence": [
+        "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:70",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:89",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:111",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:125",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:141",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:157",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/AccountController.java:178"
+      ],
+      "id": "account",
+      "provenance": "static",
+      "signatures": {
+        "apis": [
+          "GET /account",
+          "GET /account/edit",
+          "GET /account/new",
+          "GET /account/signoff",
+          "POST /account/edit",
+          "POST /account/new",
+          "POST /account/signon"
+        ],
+        "steps": [
+          "account-actions.s01",
+          "account-actions.s02",
+          "account-actions.s03",
+          "account-actions.s04",
+          "account-actions.s05",
+          "account-actions.s06",
+          "account-actions.s07"
+        ]
+      },
+      "title": "Account"
+    },
+    {
+      "basis": "source",
+      "confidence": 0.9,
+      "evidence": [
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:77",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:95",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:126",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:155",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CartController.java:186"
+      ],
+      "id": "cart",
+      "provenance": "static",
+      "signatures": {
+        "apis": [
+          "GET /cart",
+          "GET /cart/addItem",
+          "GET /cart/checkout",
+          "GET /cart/removeItem",
+          "POST /cart/update"
+        ],
+        "steps": [
+          "cart-actions.s01",
+          "cart-actions.s02",
+          "cart-actions.s03",
+          "cart-actions.s04",
+          "cart-actions.s05"
+        ]
+      },
+      "title": "Cart"
+    },
+    {
+      "basis": "source",
+      "confidence": 0.9,
+      "evidence": [
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:51",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:66",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:87",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:108",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/CatalogController.java:127"
+      ],
+      "id": "catalog",
+      "provenance": "static",
+      "signatures": {
+        "apis": [
+          "GET /catalog",
+          "GET /catalog/searchProducts",
+          "GET /catalog/viewCategory",
+          "GET /catalog/viewItem",
+          "GET /catalog/viewProduct"
+        ],
+        "steps": [
+          "catalog-actions.s01",
+          "catalog-actions.s02",
+          "catalog-actions.s03",
+          "catalog-actions.s04",
+          "catalog-actions.s05"
+        ]
+      },
+      "title": "Catalog"
+    },
+    {
+      "basis": "source",
+      "confidence": 0.9,
+      "evidence": [
+        "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:75",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:99",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:138",
+        "src/main/java/org/mybatis/jpetstore/web/controllers/OrderController.java:222"
+      ],
+      "id": "order",
+      "provenance": "static",
+      "signatures": {
+        "apis": [
+          "GET /order/list",
+          "GET /order/new",
+          "GET /order/view",
+          "POST /order/new"
+        ],
+        "steps": [
+          "order-actions.s01",
+          "order-actions.s02",
+          "order-actions.s03",
+          "order-actions.s04"
+        ]
+      },
+      "title": "Order"
+    },
+    {
+      "basis": "source",
+      "confidence": 0.9,
+      "evidence": [
+        "src/main/java/org/mybatis/jpetstore/web/controllers/RootController.java:33"
+      ],
+      "id": "root",
+      "provenance": "static",
+      "signatures": {
+        "apis": [
+          "GET /"
+        ]
+      },
+      "title": "Root"
+    }
+  ],
+  "integrity": null,
+  "ivv": null,
+  "migration": null,
+  "processes": [
+    {
+      "basis": "source",
+      "id": "account-actions",
+      "steps": [
+        {
+          "id": "s01",
+          "title": "Signon form"
+        },
+        {
+          "id": "s02",
+          "title": "Signon"
+        },
+        {
+          "id": "s03",
+          "title": "Signoff"
+        },
+        {
+          "id": "s04",
+          "title": "New account form"
+        },
+        {
+          "id": "s05",
+          "title": "New account"
+        },
+        {
+          "id": "s06",
+          "title": "Edit account form"
+        },
+        {
+          "id": "s07",
+          "title": "Edit account"
+        }
+      ],
+      "title": "Account: 7 actions of AccountController"
+    },
+    {
+      "basis": "source",
+      "id": "cart-actions",
+      "steps": [
+        {
+          "id": "s01",
+          "title": "View cart"
+        },
+        {
+          "id": "s02",
+          "title": "Add item to cart"
+        },
+        {
+          "id": "s03",
+          "title": "Remove item from cart"
+        },
+        {
+          "id": "s04",
+          "title": "Update cart quantities"
+        },
+        {
+          "id": "s05",
+          "title": "Check out"
+        }
+      ],
+      "title": "Cart: 5 actions of CartController"
+    },
+    {
+      "basis": "source",
+      "id": "catalog-actions",
+      "steps": [
+        {
+          "id": "s01",
+          "title": "View main"
+        },
+        {
+          "id": "s02",
+          "title": "View category"
+        },
+        {
+          "id": "s03",
+          "title": "View product"
+        },
+        {
+          "id": "s04",
+          "title": "View item"
+        },
+        {
+          "id": "s05",
+          "title": "Search products"
+        }
+      ],
+      "title": "Catalog: 5 actions of CatalogController"
+    },
+    {
+      "basis": "source",
+      "id": "order-actions",
+      "steps": [
+        {
+          "id": "s01",
+          "title": "List orders"
+        },
+        {
+          "id": "s02",
+          "title": "New order form"
+        },
+        {
+          "id": "s03",
+          "title": "New order"
+        },
+        {
+          "id": "s04",
+          "title": "View order"
+        }
+      ],
+      "title": "Order: 4 actions of OrderController"
+    }
+  ],
+  "produced_at": "2026-11-15T00:00:00Z",
+  "producer": {
+    "tool": "icdev-it/apptwin_export",
+    "version": "unpackaged"
+  },
+  "readiness": null,
+  "refactor": null,
+  "rtm": null,
+  "sbd": null,
+  "schema": "icos-apptwin/v1",
+  "seven_r": {
+    "assessed_at": "2026-11-16T05:14:08.106361+00:00",
+    "ato_impact": "low",
+    "cost_estimate_hours": 978.0,
+    "evidence": [
+      "recommendation: replatform scores 1.00 on 2 measured criteria (confidence 0.50)",
+      "rehost: confidence 0.70; unmeasured: licensing_transferability, operational_readiness",
+      "replatform: confidence 0.50; unmeasured: cost_optimization, operational_improvement, security_posture_change",
+      "refactor: confidence 0.55; unmeasured: cloud_service_adoption, compliance_alignment, team_capability",
+      "rearchitect: not assessable (nothing measured)",
+      "repurchase: confidence 0.20; unmeasured: fedramp_authorization, product_fit, total_cost_of_ownership, vendor_viability",
+      "retire: confidence 0.12; unmeasured: cost_savings, data_disposition, dependency_analysis, functional_redundancy, stakeholder_alignment",
+      "retain: confidence 0.25; unmeasured: cost_justification, migration_blocker_validity, reassessment_plan, risk_acceptance"
+    ],
+    "ranked": [
+      {
+        "score": 1.0,
+        "strategy": "replatform"
+      },
+      {
+        "score": 0.6786,
+        "strategy": "rehost"
+      },
+      {
+        "score": 0.6364,
+        "strategy": "refactor"
+      },
+      {
+        "score": 1.0,
+        "strategy": "retain"
+      },
+      {
+        "score": 1.0,
+        "strategy": "repurchase"
+      },
+      {
+        "score": 0.0,
+        "strategy": "retire"
+      }
+    ],
+    "recommended": "replatform",
+    "risk_score": 0.2619,
+    "tech_debt_reduction": 15.0,
+    "timeline_weeks": 24.0,
+    "tool": "icdev-it/seven_r_assessor",
+    "weights": {}
+  }
+}

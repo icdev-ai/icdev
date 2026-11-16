@@ -1,6 +1,7 @@
 # CUI // SP-CTI
 # ICDEV platform model: application modernisation (icx-mdz-01; icx-mdz-02: 7R on
-# evidence, one 7R engine, may-plan enforced) -- the 7R assessment,
+# evidence, one 7R engine, may-plan enforced; icx-mdz-03: features and processes
+# without a model, every bundle part present or missing) -- the 7R assessment,
 # AI-Ify, Process-Ify, an application's waves and CAM refactor jobs, cloud-native
 # targets, and the ICDEV[OS] apptwin exporter and decision import.
 #
@@ -85,6 +86,28 @@ elements:
       - tools/migration_canvas/modernisation.py::bundle_preview
       - tools/migration_canvas/modernisation.py::icos_check
 
+  - id: mdz.bundle_features
+    type: sysml_element
+    kind: block
+    name: Features and processes without a model, step signatures by a reviewed rule set, reviewed by a person
+    features: [mdz.exporter]
+    code:
+      - tools/modernization/bundle_features.py::report
+      - tools/modernization/bundle_features.py::features
+      - tools/modernization/bundle_features.py::processes
+      - tools/modernization/bundle_features.py::normalise
+      - tools/modernization/bundle_features.py::signature
+      - tools/modernization/bundle_features.py::review_states
+      - tools/modernization/apptwin_export.py::features_from_extract
+      - tools/modernization/apptwin_export.py::processes_from_extract
+      - tools/modernization/apptwin_export.py::section_states
+      - tools/modernization/sample_pipeline.py::pipeline
+      - tools/workflow_canvas/processify.py::from_source
+      - tools/migration_canvas/modernisation.py::features
+      - tools/migration_canvas/modernisation.py::register_modernisation_routes
+      - args/modernisation_signatures.yaml
+      - args/workflow_hitl_templates/mdz-process-review.yaml
+
   - id: mdz.seven_r_consumers
     type: sysml_element
     kind: block
@@ -115,6 +138,7 @@ elements:
     features: [mdz.seven_r, mdz.aiify, mdz.processify, mdz.waves_cam, mdz.cloud_native, mdz.exporter]
     code:
       - tools/twin_core/adapters/modernisation.py::ModernisationGovernanceTwin
+      - tools/twin_core/adapters/modernisation.py::_bundles
       - tools/twin_core/governance.py::resolve_thread
 
 interfaces:
@@ -141,6 +165,7 @@ interfaces:
       - tools/mcp/gap_handlers.py::handle_modernisation_waves_jobs
       - tools/mcp/gap_handlers.py::handle_modernisation_cloud_native
       - tools/mcp/gap_handlers.py::handle_modernisation_bundle
+      - tools/mcp/gap_handlers.py::handle_modernisation_features
 
 requirements:
   - id: PM-MDZ-01
@@ -354,3 +379,86 @@ requirements:
       - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_twin_finds_thin_evidence_and_plans_attempted_without_may_plan
       - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_twin_observes_a_refusal_resolves_its_thread_and_replays
       - tests/test_icx_mdz_02_seven_r_evidence.py::test_the_mcp_read_tool_carries_confidence_unmeasured_and_refusals
+
+  - id: PM-MDZ-13
+    title: Features come from source and REA without a model, with file:line or route evidence
+    text: >-
+      bundle_features groups the analyser's entry points into features and
+      locates each handler's declaration line; a route an REA observed
+      inventory names makes a feature both or observed, never one read from
+      source alone. Capability hints come from the reviewed rule set
+      (args/modernisation_signatures.yaml) with the words matched and where,
+      and are hints, never mappings. The same source gives the same extract.
+    type: functional
+    priority: high
+    features: [mdz.exporter]
+    elements: [mdz.bundle_features]
+    controls: [SA-11, SI-10]
+    tests:
+      - tests/test_icx_mdz_03_bundle_features.py::test_features_carry_file_line_evidence_and_capability_hints
+      - tests/test_icx_mdz_03_bundle_features.py::test_an_observed_route_makes_a_feature_both_or_observed
+      - tests/test_icx_mdz_03_bundle_features.py::test_the_same_source_gives_the_same_extract
+
+  - id: PM-MDZ-14
+    title: Processes come without a model, each with a step signature under a reviewed rule set
+    text: >-
+      A static process is the actions one controller offers, in source
+      order (its handlers, or a dispatcher's branches), said to be no
+      observed sequence; an observed one is an REA capture. Each step is
+      normalised to verb:object by the reviewed rules; the step signature is
+      that list, its SHA-256 and the rules' digest. A rule YAML would read as
+      a boolean is refused. Process-Ify's --from-source asks no model.
+    type: functional
+    priority: high
+    features: [mdz.exporter]
+    elements: [mdz.bundle_features]
+    controls: [SA-11, CM-2]
+    tests:
+      - tests/test_icx_mdz_03_bundle_features.py::test_a_step_is_normalised_by_the_reviewed_rules_and_digested
+      - tests/test_icx_mdz_03_bundle_features.py::test_a_rule_yaml_reads_as_a_boolean_is_refused
+      - tests/test_icx_mdz_03_bundle_features.py::test_a_static_process_is_one_controllers_actions_in_source_order
+      - tests/test_icx_mdz_03_bundle_features.py::test_an_observed_capture_is_a_process_with_its_signature
+      - tests/test_icx_mdz_03_bundle_features.py::test_processify_from_source_needs_no_model
+
+  - id: PM-MDZ-15
+    title: The bundle carries features and processes, still valid, and every part is present or missing with why
+    text: >-
+      The exporter carries the extract in the icos-apptwin/v1 contract's
+      shape and validates it; a process a person rejected is left out. For
+      every section, and the waves, CAM refactor jobs and cloud-native
+      twelve factors, container, configuration and events, it says present
+      (with a count) or missing (with the run's reason), never silently
+      empty. The three real applications' bundles are regenerated this way.
+    type: interface
+    priority: high
+    features: [mdz.exporter]
+    elements: [mdz.bundle_features, mdz.exporter]
+    controls: [SI-7, CM-8]
+    tests:
+      - tests/test_icx_mdz_03_bundle_features.py::test_the_bundle_carries_features_and_processes_and_still_validates
+      - tests/test_icx_mdz_03_bundle_features.py::test_every_missing_part_is_said_with_its_reason
+      - tests/test_icx_mdz_03_bundle_features.py::test_the_bundle_preview_counts_features_processes_and_what_is_missing
+      - tests/test_icx_mdz_03_bundle_features.py::test_the_regenerated_real_bundles_validate_and_carry_features_and_processes
+      - tests/test_icx_modsamples_pipeline.py::test_features_and_processes_come_without_a_model_and_every_part_is_said
+
+  - id: PM-MDZ-16
+    title: A person reviews a process at its signature digest; the twin and agents only read
+    text: >-
+      The Modernisation page shows features with their evidence and hints,
+      and processes with their steps and step signature. Confirming or
+      rejecting one is the person's step (decl-wft-mdz-process-review),
+      bound to the digest they saw, taken once; a changed signature makes it
+      stale. The twin finds a bundle with no features, unreviewed processes
+      and missing parts, each threaded to the application, and replays. The
+      MCP features tool is read-only.
+    type: non_functional
+    priority: high
+    features: [mdz.exporter]
+    elements: [mdz.bundle_features, mdz.twin, if.mdz.console, if.mdz.mcp]
+    controls: [AC-5, AU-10, CA-7]
+    tests:
+      - tests/test_icx_mdz_03_bundle_features.py::test_reviewing_a_process_is_a_persons_step_bound_to_its_digest
+      - tests/test_icx_mdz_03_bundle_features.py::test_the_page_shows_features_processes_and_calls_routes_by_id
+      - tests/test_icx_mdz_03_bundle_features.py::test_the_twin_flags_no_features_unreviewed_processes_and_missing_parts
+      - tests/test_icx_mdz_03_bundle_features.py::test_the_twin_observes_a_bundle_resolves_its_thread_and_replays
+      - tests/test_icx_mdz_03_bundle_features.py::test_the_mcp_features_tool_is_read_only

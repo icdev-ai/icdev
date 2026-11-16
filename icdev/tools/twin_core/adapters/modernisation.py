@@ -19,10 +19,14 @@ drafts, and the vendored bundle contract, so that is what it reads:
 * **CAM jobs** -- a completed refactor or cloud-native job whose generated output nobody reviewed after
   ``job_review_warn_days``; a file a completed job lists that is no longer on disk (the bundle would not bind it).
 * **Exporter** -- the vendored ``icos-apptwin/v1`` contract still hashes to the digest the exporter pins.
+  (icx-mdz-03) Each application's bundle as the exporter would write it now (``modernisation.bundle_preview``, no
+  model): one that would carry no features; extracted processes no person has reviewed at their step-signature digest
+  (``decl-wft-mdz-process-review``; stale counts as unreviewed); and the parts ICDEV[OS] plans on that it would not
+  carry (``bundle_required``: waves, refactor jobs, cloud-native parts), each with the exporter's reason.
 
 A source that cannot be read is an unverified check, never a pass. Threads: ``mdz_assessment:<id>``,
 ``migration_plan:<id>``, ``audit_trail:<id>``, ``aiify_decision:<id>``, ``studio_workflow:<id>``, ``mc_refactor_job:<id>``,
-``config:<path>@<sha256>``.
+``config:<path>@<sha256>``, ``legacy_app:<id>``.
 """
 from __future__ import annotations
 
@@ -58,6 +62,37 @@ def _decided(template_id: str) -> list[dict]:
                    for s, r in decisions.decided(template_id).items()), key=lambda r: r["subject"])
 
 
+def _bundles(limit: int) -> list[dict]:
+    """Each legacy application's bundle as the exporter would write it now: features, processes and their review
+    states, and what it would not carry (with the exporter's reason). An application whose preview fails says so."""
+    from tools.db.storage import get_canvas_connection
+    from tools.migration_canvas.modernisation import bundle_preview, features
+
+    conn = get_canvas_connection()
+    try:
+        apps = rows_as_dicts(conn.execute("SELECT id, name FROM legacy_applications ORDER BY id LIMIT %s", (limit,)),
+                             ("id", "name"))
+    finally:
+        close_quietly(conn)
+    out = []
+    for a in apps:
+        app = str(a["id"])
+        try:
+            pre = bundle_preview(app)
+            rep = features(app)
+        except Exception as exc:  # noqa: BLE001 — one application unreadable is said, never skipped
+            out.append({"app": app, "name": str(a["name"]), "error": str(exc)})
+            continue
+        out.append({"app": app, "name": str(a["name"]), "valid": bool(pre.get("valid")),
+                    "error": None if pre.get("valid") else pre.get("error"),
+                    "features": len(rep.get("features") or []),
+                    "processes": sorted(({"id": p["id"], "state": (p.get("review") or {}).get("state") or "unreviewed",
+                                          "digest": p["signature"]["digest"]} for p in rep.get("processes") or []),
+                                        key=lambda p: p["id"]),
+                    "missing": dict(sorted((pre.get("missing") or {}).items()))})
+    return out
+
+
 @register_twin
 class ModernisationGovernanceTwin(GovernanceTwinAdapter):
     canvas_key = "mdc"
@@ -81,7 +116,7 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
         ev: dict = {"canvas": self.canvas_key, "target_id": "fleet", "observed_at": now_iso(),
                     "policy": policy, "assessments": None, "plans": None, "strategy_records": None,
                     "aiify_decisions": None, "aiify_steps": None, "drafts": None, "jobs": None,
-                    "job_reviews": None, "schema": None, "refusals": None, "errors": {}}
+                    "job_reviews": None, "schema": None, "refusals": None, "bundles": None, "errors": {}}
         conn = None
         try:
             conn = get_canvas_connection()
@@ -191,6 +226,11 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
             ev["errors"]["jobs"] = str(exc)
         finally:
             close_quietly(conn)
+
+        try:
+            ev["bundles"] = _bundles(int(policy.get("bundle_scan_limit") or 50))
+        except Exception as exc:  # noqa: BLE001 — unreadable is unverified
+            ev["errors"]["bundles"] = str(exc)
 
         try:
             from tools.modernization.apptwin_export import SCHEMA_SHA256
@@ -348,7 +388,45 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
                 detail=f"pinned {schema['pinned'][:12]}, file {schema['sha256'][:12]}",
                 recommendation="Re-vendor the contract from ICDEV[OS] and update SCHEMA_SHA256 together."))
 
+        if readable("bundles", "Each application's bundle as the exporter would write it", evidence.get("bundles")):
+            required = list(policy.get("bundle_required") or ())
+            for b in evidence["bundles"]:
+                thread = f"legacy_app:{b['app']}"
+                if b.get("error"):
+                    findings.append(finding(
+                        "mdz.exporter.bundle_invalid", "high", f"{b['name']}: the bundle cannot be assembled",
+                        thread_id=thread, detail=str(b["error"])[:300],
+                        recommendation="Fix what the exporter refuses; ICDEV[OS] gets nothing for this application."))
+                    continue
+                if not b["features"]:
+                    findings.append(finding(
+                        "mdz.exporter.no_features", "high", f"{b['name']}: the bundle would carry no features",
+                        thread_id=thread, detail=(b["missing"].get("features") or "no entry point found, no REA "
+                                                  "capture given"),
+                        recommendation="ICDEV[OS]'s overlap engine finds nothing without features: re-analyse the "
+                                       "source, or hand in an REA observed inventory."))
+                open_ = [p for p in b["processes"] if p["state"] != "reviewed"]
+                if open_:
+                    findings.append(finding(
+                        "mdz.exporter.processes_unreviewed", "medium",
+                        f"{b['name']}: {len(open_)} of {len(b['processes'])} extracted process(es) not reviewed",
+                        thread_id=thread,
+                        detail=", ".join(f"{p['id']} ({p['state']})" for p in open_[:10]),
+                        recommendation="Confirm or reject each on /migration-canvas/modernisation "
+                                       "(decl-wft-mdz-process-review)."))
+                gone = [k for k in required if k in b["missing"]]
+                if gone:
+                    findings.append(finding(
+                        "mdz.exporter.sections_missing", "low",
+                        f"{b['name']}: the bundle would not carry {', '.join(gone)}", thread_id=thread,
+                        detail="; ".join(f"{k}: {b['missing'][k]}" for k in gone)[:600],
+                        recommendation="Each is null in the bundle (unverified in ICDEV[OS]); produce it, or let the "
+                                       "reason stand."))
+
         summary = {
+            "bundles_previewed": len(evidence.get("bundles") or []),
+            "bundles_without_features": sum(1 for b in evidence.get("bundles") or []
+                                            if not b.get("error") and not b.get("features")),
             "applications_assessed": len(evidence.get("assessments") or []),
             "applications_without_recommendation": sum(1 for a in evidence.get("assessments") or []
                                                        if not a["recommended"]),

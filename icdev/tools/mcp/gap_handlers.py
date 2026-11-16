@@ -4792,6 +4792,26 @@ def handle_modernisation_bundle(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_modernisation_features(args: dict) -> dict:
+    """MCP: one legacy application's features and processes, derived without a model (icx-mdz-03): evidence,
+    capability hints, step signatures and each process's review. Read-only: writes and reviews nothing."""
+    app_id = _app_id(args)
+    if not app_id:
+        return {"error": "app_id is required"}
+    try:
+        from tools.migration_canvas.modernisation import features
+
+        return {"classification": CORTEX_CLASSIFICATION, **features(app_id),
+                "review_means": "a person confirms or rejects a process at its signature digest on "
+                                "/migration-canvas/modernisation (decl-wft-mdz-process-review); a hint is never a "
+                                "capability mapping"}
+    except ValueError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_modernisation_features: %s", exc)
+        return {"error": str(exc)}
+
+
 # ---------------------------------------------------------------------------
 # platform model (icx-cnf-04)
 # ---------------------------------------------------------------------------

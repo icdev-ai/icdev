@@ -9060,6 +9060,13 @@ RESOURCE_REGISTRY = {
         "description": "Preview the icos-apptwin/v1 bundle apptwin_export.py would assemble for one legacy application from what this database holds: whether it meets the vendored contract, its inventory digest, and which sections are null (ICDEV[OS] reads null as unverified). Read-only: writes no bundle.",
         "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
     },
+    "modernisation_features": {
+        "category": "modernization",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_modernisation_features",
+        "description": "Read one legacy application's features and processes as derived WITHOUT A MODEL for its icos-apptwin/v1 bundle: each feature's source (static, observed or both), evidence (file:line, route, REA evidence id) and capability hints from the reviewed rule set (hints, never mappings); each process's steps normalised to verb:object, its step signature digest and rules digest, and the review a person took at that digest (reviewed, rejected, stale or unreviewed). Read-only: reviews nothing, writes no bundle.",
+        "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
+    },
     # -- governance twins (icx-cnf-03 — Cortex, ACE, Co-Workers, the audit) -----
     "twin_governance": {
         "category": "conformance",
@@ -9780,6 +9787,7 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "modernisation_waves_jobs":                 True,
     "modernisation_cloud_native":               True,
     "modernisation_bundle":                     True,
+    "modernisation_features":                   True,
 })
 
 

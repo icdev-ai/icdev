@@ -121,3 +121,6 @@ tests/test_icx_mdz_01_ambient.py
 # icx-mdz-02: a may-plan refusal written to the hash-chained audit trail, read back by
 # plan_gate.refusals and the modernisation twin (thread audit_trail:<id>) on the ambient PG.
 tests/test_icx_mdz_02_ambient.py
+# icx-mdz-03: a person's process review written to wf_decision_steps and read back at its
+# signature digest (bundle_features.review_states), and the twin's bundle preview, on the ambient PG.
+tests/test_icx_mdz_03_ambient.py

@@ -55,5 +55,11 @@ modernisation:
   # finding; one with no recommendation at all (no strategy reached the
   # catalogue's minimum) is always one.
   seven_r_confidence_warn: 0.7
+  # icx-mdz-03: the applications whose bundle is previewed each observation, and
+  # the parts ICDEV[OS] plans on that are a finding when the bundle would not
+  # carry them (each with the exporter's reason).
+  bundle_scan_limit: 50
+  bundle_required: [processes, migration.waves, refactor.jobs, cloud_native.twelve_factor,
+                    cloud_native.containerisation, cloud_native.config, cloud_native.events]
   # Newest rows read per table.
   scan_limit: 500

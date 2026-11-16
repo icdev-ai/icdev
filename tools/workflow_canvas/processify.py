@@ -11,10 +11,13 @@ CLI (JSON out; nothing is saved and no kanban card is seeded)::
 
     python -m tools.workflow_canvas.processify --from-doc sop.docx [--industry Logistics] --json
     python -m tools.workflow_canvas.processify --observed capture.json --json
+    python -m tools.workflow_canvas.processify --from-source <legacy app id> --json
 
 ``--observed`` reads a captured scenario (``observed_processify.capture_scenario``
 output) and returns the deterministic draft built from what was observed, with
-no model call.
+no model call. ``--from-source`` (icx-mdz-03) returns a legacy application's static processes -- the actions one
+controller offers, in source order, each step normalised to ``verb:object`` by the reviewed rule set
+(``tools/modernization/bundle_features.py``) -- with no model call either.
 """
 from __future__ import annotations
 
@@ -194,11 +197,26 @@ def from_observed(capture: dict) -> dict:
     return observed_processify.build_draft(capture)
 
 
+def from_source(app_id: str) -> list[dict]:
+    """A legacy application's static processes with their step signatures (no model call);
+    ``[]`` when no controller offers two or more actions."""
+    from tools.db.storage import get_connection
+    from tools.modernization import bundle_features
+
+    conn = get_connection()
+    try:
+        return bundle_features.report(app_id, conn)["processes"] or []
+    finally:
+        conn.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Process-Ify: a process document (or an observed capture) as a workflow draft")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--from-doc", type=pathlib.Path, help="a PDF, DOCX, PNG, JPG or TXT process document")
     src.add_argument("--observed", type=pathlib.Path, help="a captured scenario (JSON) from observed_processify")
+    src.add_argument("--from-source", metavar="APP_ID",
+                     help="a legacy application's static processes, from its analysed source (no model)")
     ap.add_argument("--industry", default="General")
     ap.add_argument("--json", action="store_true", help="JSON out (the default; kept for CLI parity)")
     a = ap.parse_args(argv)
@@ -206,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
         if a.from_doc:
             out = {"status": "ok", "workflow": digitize(extract_text(a.from_doc), industry=a.industry,
                                                         source_name=a.from_doc.stem)}
+        elif a.from_source:
+            out = {"status": "ok", "processes": from_source(a.from_source)}
         else:
             out = {"status": "ok", "workflow": from_observed(json.loads(a.observed.read_text(encoding="utf-8")))}
     except (ValueError, OSError) as exc:
