@@ -1,0 +1,27 @@
+# CUI // SP-CTI
+id: decl-wft-mdz-7r-strategy
+name: "Modernisation: record the 7R strategy ICDEV proposes for an application"
+description: >-
+  The assessor recommends a 7R strategy; a person records which strategy ICDEV
+  proposes for the application, or declines to propose one, with a reason. The
+  record is a PROPOSAL to ICDEV[OS]: there the mission owner accepts a strategy
+  through the signed migration-assessment workflow, and ICDEV may plan a
+  migration only when icos_decisions.py may-plan says so. Recording a strategy
+  here plans, approves and accepts nothing.
+decides: [migration_api_legacy.record_strategy, migration_api_v1.record_strategy]
+effect: >-
+  The decided step in wf_decision_steps is the record (subject: the assessment
+  id; payload: application, strategy, the assessor's recommendation). Nothing
+  else is written.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: seven_r_assessor scored the strategies and recommended one.
+  - name: record
+    step_type: manual
+    role: modernisation_lead
+    holders: [admin, pm, migration_engineer]
+    decisions: {record: affirm, decline: deny}
+    reason_required: [record, decline]

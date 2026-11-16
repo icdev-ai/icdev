@@ -38,7 +38,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_backend, get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -162,7 +162,8 @@ def _get_db(db_path=None):
         FileNotFoundError: If the database file does not exist.
     """
     path = db_path or DB_PATH
-    if not path.exists():
+    # The file is SQLite's; on PostgreSQL (the primary backend) there is no file to find (icx-mdz-01).
+    if get_backend() == "sqlite" and not Path(path).exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
     return conn

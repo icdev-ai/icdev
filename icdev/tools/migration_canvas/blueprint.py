@@ -3984,4 +3984,8 @@ def create_migration_blueprint():
             )
         return jsonify(result)
 
+    # icx-mdz-01: the Modernisation page (an application's waves, CAM jobs, cloud-native output, bundle)
+    from tools.migration_canvas.modernisation import register_modernisation_routes
+    register_modernisation_routes(bp, mdc_login_required)
+
     return bp

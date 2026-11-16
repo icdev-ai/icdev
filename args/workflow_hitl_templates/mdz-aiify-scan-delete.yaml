@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+id: decl-wft-mdz-aiify-scan-delete
+name: "AI-Ify: delete a scan, or every scan"
+description: >-
+  Deleting a scan removes its opportunities, scores and roadmaps and cannot be
+  undone. Deleting every scan also clears the AI-Ify audit log. A person holding
+  the step takes it from the AI-Ify page; the deletion runs only after the step
+  is recorded.
+decides: [aiify.api_delete_scan, aiify.api_delete_all_scans]
+effect: The existing cascade delete, unchanged.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: A person asked to delete AI-Ify scans.
+  - name: delete
+    step_type: manual
+    role: aiify_curator
+    holders: [admin, pm, developer, isso]
+    decisions: {delete: affirm}
+    reason_required: []

@@ -9901,6 +9901,25 @@ makes (a test's own `page.evaluate` fetch is recorded as `test`, not `page`); CI
 `tests/e2e/fixtures/ace_roles` (one test-only auto-eligible role; honoured only under
 `tests/`) and enables Cortex, DIC and the Twin Observatory.
 
+### Modernisation in the audit (icx-mdz-01)
+
+Six modernisation features are judged: 7R (`/migration`), AI-Ify (`/ai-ify`), Process-Ify
+(`/workflow-canvas/processify`), an application's waves and CAM jobs, cloud-native targets
+and the ICDEV[OS] exporter (all three on `/migration-canvas/modernisation`). A person's
+decisions run through `decl-wft-mdz-7r-strategy` (a proposal to ICDEV[OS], never
+binding), `decl-wft-mdz-aiify-promote`, `decl-wft-mdz-aiify-scan-delete`,
+`decl-wft-mdz-processify-observed-approve` and `decl-wft-mdz-cam-refactor-approve`. The
+decisions check verifies a signed ICDEV[OS] export only against the JWKS named by
+`ICDEV_ICOS_JWKS`. MCP (read-only): `modernisation_seven_r`, `aiify_promotions`,
+`processify_observed_drafts`, `modernisation_waves_jobs`, `modernisation_cloud_native`,
+`modernisation_bundle`.
+
+```bash
+python -m tools.twin_core.governance --observe --canvas mdc --json     # the modernisation twin
+python -m tools.twin_core.governance --thread mdz_assessment:<id>      # a finding's record
+npx playwright test tests/e2e/modernisation_writes.spec.ts             # every credited write, pressed
+```
+
 ## Cortex, ACE and Co-Workers console pages and reads (icx-cnf-05)
 
 Pages (each linked from `/cortex`): `/cortex/verbs` (resolve, complete, reason,

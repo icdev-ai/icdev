@@ -17,6 +17,13 @@ import yaml
 
 op = importlib.import_module("tools.workflow_canvas.observed_processify")
 reg = importlib.import_module("tools.mcp_client.registry")
+# icx-mdz-01: the review route records the person's declared step. These modules bind
+# storage.get_connection when first imported, so import them before any fixture patches it
+# (the test must pass alone as well as in-suite).
+for _mod in ("tools.workflow_hitl.declared", "tools.workflow_hitl.engine",
+             "tools.workflow_hitl.feedback", "tools.workflow_hitl.template_manager",
+             "tools.workflow_hitl.intake_promote_handler"):
+    importlib.import_module(_mod)
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -261,8 +268,10 @@ def test_non_observed_workflows_are_not_gated():
 # -- dashboard routes ----------------------------------------------------------
 
 @pytest.fixture
-def client(db, monkeypatch):
-    from flask import Flask
+def client(wf_db, db, monkeypatch):
+    # wf_db first: the review is a person's declared step (icx-mdz-01), recorded in the
+    # platform DB's wf_ tables, before db points storage.get_connection at the draft DB.
+    from flask import Flask, g
 
     bpmod = importlib.import_module("tools.workflow_canvas.blueprint")
     storage = importlib.import_module("tools.db.storage")
@@ -276,6 +285,11 @@ def client(db, monkeypatch):
     monkeypatch.setattr(bpmod, "_INIT_DONE", True)
     monkeypatch.setattr(bpmod, "get_connection", _wfc_connect)
     app = Flask(__name__)
+
+    @app.before_request
+    def _person():
+        g.current_user = {"id": "u-pm", "role": "pm"}
+
     app.register_blueprint(bpmod.create_wfc_blueprint())
     return app.test_client()
 
@@ -308,6 +322,9 @@ def test_route_drafts_then_chain_link_waits_for_review(client, exe, monkeypatch)
     r = client.post(f"/workflow-canvas/api/workflows/{wid}/observed-review",
                     json={"decision": "maybe", "reviewer": "op"})
     assert r.status_code == 400
+    # icx-mdz-01: the reviewer is the person who took the declared step, never a typed name.
     r = client.post(f"/workflow-canvas/api/workflows/{wid}/observed-review",
                     json={"decision": "approve", "reviewer": "op"})
     assert r.status_code == 200 and r.get_json()["review"]["state"] == op.REVIEW_APPROVED
+    assert r.get_json()["review"]["reviewer"] == "u-pm"
+    assert r.get_json()["decision_step"]["template_id"] == "decl-wft-mdz-processify-observed-approve"

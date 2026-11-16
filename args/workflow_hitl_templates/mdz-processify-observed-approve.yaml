@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+id: decl-wft-mdz-processify-observed-approve
+name: "Process-Ify: approve or reject an observed draft workflow"
+description: >-
+  An observed draft is what REA saw a program do, turned into steps. It cannot
+  be linked into a process chain until a person approves it
+  (observed_processify.chain_eligibility). Approve or reject it once, from the
+  Process-Ify page; the reviewer recorded on the draft is the person who took
+  this step, never a name typed into the request.
+decides: [workflow_canvas.api_observed_review]
+effect: observed_processify.review_draft (studio_workflows review block), unchanged.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: observed_processify.save_draft wrote a pending observed draft.
+  - name: review
+    step_type: manual
+    role: process_owner
+    holders: [admin, pm, isso, reviewer, developer]
+    decisions: {approve: affirm, reject: deny}
+    reason_required: [reject]

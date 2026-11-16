@@ -10,6 +10,24 @@
     "ACE: suggest a name, preview, create, then delete the profile"
    ]
   },
+  "DELETE aiify.api_delete_all_scans": {
+   "endpoint": "aiify.api_delete_all_scans",
+   "method": "DELETE",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "DELETE aiify.api_delete_scan": {
+   "endpoint": "aiify.api_delete_scan",
+   "method": "DELETE",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
   "GET ace.chat_page": {
    "endpoint": "ace.chat_page",
    "method": "GET",
@@ -280,6 +298,51 @@
     "instance detail page has Activity Log tab"
    ]
   },
+  "GET aiify.api_get_scan": {
+   "endpoint": "aiify.api_get_scan",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "GET aiify.api_intelligence_feed": {
+   "endpoint": "aiify.api_intelligence_feed",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "GET aiify.api_posture_summary": {
+   "endpoint": "aiify.api_posture_summary",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "GET aiify.index": {
+   "endpoint": "aiify.index",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "GET aiify.posture_page": {
+   "endpoint": "aiify.posture_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
   "GET cortex.api_agent_launches": {
    "endpoint": "cortex.api_agent_launches",
    "method": "GET",
@@ -352,6 +415,96 @@
     "Cortex findings: adjudicate an open finding with a reason"
    ]
   },
+  "GET migration_api_legacy.list_assessments": {
+   "endpoint": "migration_api_legacy.list_assessments",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "7R: assess an application, then record the strategy it proposes"
+   ]
+  },
+  "GET migration_api_legacy.list_plans": {
+   "endpoint": "migration_api_legacy.list_plans",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "7R: assess an application, then record the strategy it proposes"
+   ]
+  },
+  "GET migration_api_legacy.migration_stats": {
+   "endpoint": "migration_api_legacy.migration_stats",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "7R: assess an application, then record the strategy it proposes"
+   ]
+  },
+  "GET migration_canvas.api_modernisation_apps": {
+   "endpoint": "migration_canvas.api_modernisation_apps",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+   ]
+  },
+  "GET migration_canvas.api_modernisation_bundle": {
+   "endpoint": "migration_canvas.api_modernisation_bundle",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+   ]
+  },
+  "GET migration_canvas.api_modernisation_cloud_native": {
+   "endpoint": "migration_canvas.api_modernisation_cloud_native",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+   ]
+  },
+  "GET migration_canvas.api_modernisation_refactor_jobs": {
+   "endpoint": "migration_canvas.api_modernisation_refactor_jobs",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+   ]
+  },
+  "GET migration_canvas.api_modernisation_waves": {
+   "endpoint": "migration_canvas.api_modernisation_waves",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+   ]
+  },
+  "GET migration_canvas.modernisation_page": {
+   "endpoint": "migration_canvas.modernisation_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+   ]
+  },
+  "GET migration_page": {
+   "endpoint": "migration_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "7R: assess an application, then record the strategy it proposes"
+   ]
+  },
   "GET twin_observatory.conformance_page": {
    "endpoint": "twin_observatory.conformance_page",
    "method": "GET",
@@ -359,6 +512,24 @@
    "test": false,
    "tests": [
     "the conformance page shows each route named by id and seen in e2e"
+   ]
+  },
+  "GET workflow_canvas.api_observed_drafts": {
+   "endpoint": "workflow_canvas.api_observed_drafts",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Process-Ify: launch a process, clean up old runs, approve an observed draft"
+   ]
+  },
+  "GET workflow_canvas.processify": {
+   "endpoint": "workflow_canvas.processify",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Process-Ify: launch a process, clean up old runs, approve an observed draft"
    ]
   },
   "POST ace_api.api_abort": {
@@ -511,6 +682,69 @@
    "test": false,
    "tests": [
     "ACE: a suggested team is confirmed and declined from its chat card"
+   ]
+  },
+  "POST aiify.api_generate_prd": {
+   "endpoint": "aiify.api_generate_prd",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "POST aiify.api_hitl_decision": {
+   "endpoint": "aiify.api_hitl_decision",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "POST aiify.api_iqe_query": {
+   "endpoint": "aiify.api_iqe_query",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "POST aiify.api_posture_snapshot": {
+   "endpoint": "aiify.api_posture_snapshot",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "POST aiify.api_prd_dry_run": {
+   "endpoint": "aiify.api_prd_dry_run",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "POST aiify.api_scan": {
+   "endpoint": "aiify.api_scan",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
+   ]
+  },
+  "POST aiify.api_send_to_kanban": {
+   "endpoint": "aiify.api_send_to_kanban",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "AI-Ify: scan, accept the PRD, dry-run, send to Kanban, ask IQE, snapshot, delete"
    ]
   },
   "POST cortex.api_chat": {
@@ -673,6 +907,78 @@
    "test": false,
    "tests": [
     "Cortex findings: adjudicate an open finding with a reason"
+   ]
+  },
+  "POST migration_api_legacy.record_strategy": {
+   "endpoint": "migration_api_legacy.record_strategy",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "7R: assess an application, then record the strategy it proposes"
+   ]
+  },
+  "POST migration_api_legacy.trigger_assessment": {
+   "endpoint": "migration_api_legacy.trigger_assessment",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "7R: assess an application, then record the strategy it proposes"
+   ]
+  },
+  "POST migration_canvas.api_modernisation_icos_check": {
+   "endpoint": "migration_canvas.api_modernisation_icos_check",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+   ]
+  },
+  "POST migration_canvas.api_refactor_job_approve": {
+   "endpoint": "migration_canvas.api_refactor_job_approve",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, check an ICDEV[OS] export"
+   ]
+  },
+  "POST workflow_canvas.api_cleanup_processify_tasks": {
+   "endpoint": "workflow_canvas.api_cleanup_processify_tasks",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Process-Ify: launch a process, clean up old runs, approve an observed draft"
+   ]
+  },
+  "POST workflow_canvas.api_observed_review": {
+   "endpoint": "workflow_canvas.api_observed_review",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Process-Ify: launch a process, clean up old runs, approve an observed draft"
+   ]
+  },
+  "POST workflow_canvas.api_processify_workflow": {
+   "endpoint": "workflow_canvas.api_processify_workflow",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Process-Ify: launch a process, clean up old runs, approve an observed draft"
+   ]
+  },
+  "POST workflow_canvas.api_save_processify_workflow": {
+   "endpoint": "workflow_canvas.api_save_processify_workflow",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Process-Ify: launch a process, clean up old runs, approve an observed draft"
    ]
   }
  },

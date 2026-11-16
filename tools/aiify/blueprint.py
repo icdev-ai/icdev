@@ -119,6 +119,23 @@ def _audit_aiify_event(event_type: str, scan_id, actor: str, detail: dict) -> No
         logger.warning("aiify: audit write failed (%s)", event_type, exc_info=True)
 
 
+def _decision_step(template_id: str, decision: str, *, subject: str = "", reason: str = "",
+                   payload=None):
+    """The person's step of a declared template, taken in this request (icx-mdz-01).
+
+    Returns ``(step, None)``, or ``(None, response)`` when the step is refused; the
+    effect must not run then. A step that cannot be recorded is refused too
+    (``store_unavailable``, 503), so a decision is never taken unrecorded.
+    """
+    from tools.workflow_hitl import declared
+
+    try:
+        return declared.take_step(template_id, surface=request.endpoint, decision=decision,
+                                  subject=subject, reason=reason, payload=payload), None
+    except declared.StepRefused as exc:
+        return None, (jsonify(exc.to_dict()), exc.status)
+
+
 def _parse_phases(raw):
     if isinstance(raw, str):
         try:
@@ -314,7 +331,12 @@ def index():
 @aiify_bp.route("/api/scan/<int:scan_id>", methods=["DELETE"])
 @require_role(*_AIIFY_MUTATE_ROLES)
 def api_delete_scan(scan_id: int):
-    """Delete a single scan and cascade to its opportunities, scores, and roadmaps."""
+    """Delete a single scan and cascade to its opportunities, scores, and roadmaps.
+
+    A person's step of ``decl-wft-mdz-aiify-scan-delete`` (icx-mdz-01), taken
+    before anything is deleted. Body (optional): ``{reason}``.
+    """
+    data = request.get_json(force=True, silent=True) or {}
     conn = _conn()
     try:
         row = conn.execute(
@@ -322,11 +344,16 @@ def api_delete_scan(scan_id: int):
         ).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
+        step, refused = _decision_step("decl-wft-mdz-aiify-scan-delete", "delete",
+                                       subject=str(scan_id),
+                                       reason=str(data.get("reason") or "").strip())
+        if refused:
+            return refused
         # CASCADE FK constraints handle opportunities → scores and roadmaps.
         # audit_log rows are SET NULL (preserved for audit trail).
         conn.execute("DELETE FROM aiify_scans WHERE scan_id = %s", (scan_id,))
         conn.commit()
-        return jsonify({"deleted": scan_id})
+        return jsonify({"deleted": scan_id, "decision_step": step})
     finally:
         conn.close()
 
@@ -334,11 +361,21 @@ def api_delete_scan(scan_id: int):
 @aiify_bp.route("/api/scan/all", methods=["DELETE"])
 @require_role(*_AIIFY_MUTATE_ROLES)
 def api_delete_all_scans():
-    """Delete all scan records and their cascaded children."""
+    """Delete all scan records and their cascaded children.
+
+    A person's step of ``decl-wft-mdz-aiify-scan-delete`` (icx-mdz-01), taken
+    before anything is deleted. Body (optional): ``{reason}``.
+    """
+    data = request.get_json(force=True, silent=True) or {}
     conn = _conn()
     try:
         count_row = conn.execute("SELECT COUNT(*) FROM aiify_scans").fetchone()
         count = count_row[0] if count_row else 0
+        step, refused = _decision_step("decl-wft-mdz-aiify-scan-delete", "delete", subject="all",
+                                       reason=str(data.get("reason") or "").strip(),
+                                       payload={"scans": count})
+        if refused:
+            return refused
         # Delete in dependency order to satisfy FK constraints where CASCADE
         # may not be enforced (e.g., SQLite without PRAGMA foreign_keys=ON).
         conn.execute("DELETE FROM aiify_audit_log")
@@ -347,7 +384,7 @@ def api_delete_all_scans():
         conn.execute("DELETE FROM aiify_opportunities")
         conn.execute("DELETE FROM aiify_scans")
         conn.commit()
-        return jsonify({"deleted_scans": count})
+        return jsonify({"deleted_scans": count, "decision_step": step})
     finally:
         conn.close()
 
@@ -1374,7 +1411,15 @@ def api_intelligence_feed():
 
 @aiify_bp.route("/api/hitl-decision", methods=["POST"])
 def api_hitl_decision():
-    """Record an accept / reject / clear HITL decision for an engine signal or PRD."""
+    """Record an accept / reject / clear HITL decision for an engine signal or PRD.
+
+    The decision is the person's step of the declared template
+    ``decl-wft-mdz-aiify-promote`` (icx-mdz-01): a held role, a reason to reject.
+    The step is taken first; only then is ``aiify_hitl_decisions`` written, so a
+    refused or unrecordable step changes nothing (fail closed), and Send to
+    Kanban's own fail-closed gate reads the same rows as before. A PRD phase is
+    keyed ``<roadmap_id>:<phase_id>``, the key Send to Kanban and the PRD read.
+    """
     data = request.get_json(force=True, silent=True) or {}
     source_type = (data.get("source_type") or "").strip()
     source_id   = str(data.get("source_id") or "").strip()
@@ -1389,6 +1434,13 @@ def api_hitl_decision():
     if decision not in ("accept", "reject", "clear"):
         return jsonify({"error": "decision must be accept, reject, or clear"}), 400
 
+    step, refused = _decision_step(
+        "decl-wft-mdz-aiify-promote", decision, subject=f"{source_type}:{source_id}",
+        reason=reason or "",
+        payload={"source_type": source_type, "source_id": source_id, "phase_id": phase_id})
+    if refused:
+        return refused
+
     conn = _conn()
     try:
         conn.execute(
@@ -1398,20 +1450,22 @@ def api_hitl_decision():
         if decision != "clear":
             conn.execute(
                 "INSERT INTO aiify_hitl_decisions "
-                "(source_type, source_id, phase_id, decision, reason) "
-                "VALUES (%s,%s,%s,%s,%s)",
-                (source_type, source_id, phase_id, decision, reason),
+                "(source_type, source_id, phase_id, decision, reason, actor) "
+                "VALUES (%s,%s,%s,%s,%s,%s)",
+                (source_type, source_id, phase_id, decision, reason, step["decided_by"]),
             )
         conn.execute(
             "INSERT INTO aiify_audit_log (event_type, actor, detail) VALUES (%s,%s,%s)",
             (
                 "hitl_decision",
-                "user",
+                step["decided_by"],
                 json.dumps({
                     "source_type": source_type,
                     "source_id": source_id,
                     "decision": decision,
                     "reason": reason,
+                    "step_id": step["step_id"],
+                    "decided_by": step["decided_by"],
                 }),
             ),
         )
@@ -1419,7 +1473,7 @@ def api_hitl_decision():
     finally:
         conn.close()
 
-    return jsonify({"status": "ok", "decision": decision})
+    return jsonify({"status": "ok", "decision": decision, "decision_step": step})
 
 
 @aiify_bp.route("/api/run-innovation", methods=["POST"])

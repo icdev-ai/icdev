@@ -39,8 +39,10 @@ a file ``target_auth`` can hash and grant, and REA 6.4.0's recorded catalog
 capture made elsewhere can still be turned into a draft with
 :func:`build_draft`, which accepts REA's evidence record as given.
 
-Library, no CLI. Dashboard: ``POST /workflow-canvas/api/workflows/observed-draft``
-and ``POST /workflow-canvas/api/workflows/<id>/observed-review``.
+Library, no CLI. Dashboard: ``POST /workflow-canvas/api/workflows/observed-draft``,
+``GET /workflow-canvas/api/workflows/observed-drafts`` and
+``POST /workflow-canvas/api/workflows/<id>/observed-review`` (a person's step of the
+declared template ``decl-wft-mdz-processify-observed-approve``, icx-mdz-01).
 """
 from __future__ import annotations
 
@@ -60,6 +62,7 @@ __all__ = [
     "build_draft",
     "capture_scenario",
     "chain_eligibility",
+    "list_drafts",
     "review_draft",
     "save_draft",
     "steps_from_capture",
@@ -409,6 +412,46 @@ def review_draft(workflow_id: str, decision: str, *, reviewer: str, note: str = 
            f"observed draft {workflow_id} {review['state']}",
            {"workflow_id": workflow_id, "reviewer": review["reviewer"], "note": review["note"]})
     return review
+
+
+def list_drafts(*, state: Optional[str] = None, limit: int = 100, conn: Any = None) -> List[Dict[str, Any]]:
+    """Observed drafts, newest first, with their review block (icx-mdz-01).
+
+    ``state`` narrows to one review state (``pending_hitl``, ``approved``,
+    ``rejected``). Reads only. Raises when ``studio_workflows`` cannot be read.
+    """
+    import yaml
+
+    from icdev.tools.db.storage import get_connection, sql_placeholder
+
+    own = conn is None
+    conn = conn or get_connection()
+    try:
+        ph = sql_placeholder(conn)
+        rows = conn.execute(
+            f"SELECT workflow_id, name, template_yaml, created_at, updated_at FROM studio_workflows "
+            f"WHERE category = {ph} ORDER BY created_at DESC",
+            ("observed",),
+        ).fetchall()
+    finally:
+        if own:
+            conn.close()
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        wf = yaml.safe_load(r[2] or "{}") or {}
+        if wf.get("basis") != "observed":
+            continue
+        review = wf.get("review") or {}
+        if state and review.get("state") != state:
+            continue
+        out.append({"workflow_id": r[0], "name": r[1], "review": review,
+                    "steps": len(wf.get("steps") or []), "steps_basis": wf.get("steps_basis"),
+                    "evidence_ids": wf.get("evidence_ids") or [],
+                    "target_sha256": (wf.get("provenance") or {}).get("target_sha256"),
+                    "created_at": str(r[3] or ""), "updated_at": str(r[4] or "")})
+        if len(out) >= max(1, min(int(limit), 500)):
+            break
+    return out
 
 
 def chain_eligibility(template: Optional[Mapping[str, Any]]) -> Tuple[bool, Optional[str]]:

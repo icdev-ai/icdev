@@ -1,0 +1,27 @@
+# CUI // SP-CTI
+id: decl-wft-mdz-aiify-promote
+name: "AI-Ify: accept or reject a PRD phase or an engine signal for promotion"
+description: >-
+  A person decides whether an AI-Ify PRD phase (or an Innovation, Creative or
+  Research signal) is accepted. Accepting a PRD phase is what lets Send to
+  Kanban seed its tasks into the backlog; with no accepted decision they land
+  in 'suggested' quarantine, and a rejected phase is never seeded. Clear
+  withdraws an earlier decision, so the phase is undecided again. The gate on
+  Send to Kanban stays fail-closed: when the decisions cannot be read it
+  refuses (503) unless an operator forces it, audited.
+decides: [aiify.api_hitl_decision]
+effect: >-
+  aiify_hitl_decisions (the row Send to Kanban and the PRD read), written only
+  after this step is recorded; the step id rides on the aiify_audit_log row.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: The AI-Ify scan scored the opportunities and built the roadmap and PRD.
+  - name: promote
+    step_type: manual
+    role: aiify_curator
+    holders: [admin, pm, developer, isso]
+    decisions: {accept: affirm, reject: deny, clear: deny}
+    reason_required: [reject]

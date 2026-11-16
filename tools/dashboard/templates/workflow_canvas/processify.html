@@ -145,6 +145,17 @@
       </div>
       <div id="chain-status-msg" style="margin-top:10px;font-size:0.85rem;color:var(--text-secondary)"></div>
     </div>
+
+    <!-- ── Observed drafts awaiting review (icx-mdz-01) ─────────────────── -->
+    <div id="observed-drafts" style="margin-top:28px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;padding:18px">
+      <div style="font-size:0.95rem;font-weight:700;margin-bottom:4px">Observed drafts</div>
+      <p style="margin:0 0 10px;font-size:0.82rem;color:var(--text-secondary);line-height:1.5">
+        A draft REA captured from what a program was seen doing. It cannot join a process chain until a person approves it.
+        Approve or reject is your step of the declared workflow <code>decl-wft-mdz-processify-observed-approve</code>; a reject needs a reason, and the reviewer recorded is you.
+      </p>
+      <div id="observed-drafts-list" style="font-size:0.85rem;color:var(--text-secondary)">Loading…</div>
+      <div id="observed-drafts-msg" style="margin-top:8px;font-size:0.8rem;color:var(--text-secondary)"></div>
+    </div>
   </div>
 
   <!-- ── Progress screen ────────────────────────────────────────────────── -->
@@ -411,7 +422,7 @@ async function launchProcess() {
     /* Steps 1+2 together — digitize call does both */
     setStep(2, 'running', '');
 
-    var digitizeResp = await fetch('/workflow-canvas/api/workflows/processify', {method:'POST', body:formData});
+    var digitizeResp = await icdevFetch('workflow_canvas.api_processify_workflow', {}, {method:'POST', body:formData});
     var digitizeData = await digitizeResp.json();
     if (digitizeData.error) throw new Error('Digitize: ' + digitizeData.error);
 
@@ -427,7 +438,7 @@ async function launchProcess() {
     /* Steps 3+4: Save workflow + forms + kanban in one call */
     setStep(3, 'running');
     setStep(4, 'running', '');
-    var saveResp = await fetch('/workflow-canvas/api/workflows/save-processify', {
+    var saveResp = await icdevFetch('workflow_canvas.api_save_processify_workflow', {}, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({workflow: workflowDef, create_kanban_tasks: !document.getElementById('skip-kanban-chk').checked, source_doc_text: sourceDocText})
@@ -476,7 +487,7 @@ async function launchCoworkers(wfDef, workflowId) {
   if (!roleRequests.length) return 0;
 
   /* Step A: ensure roles exist — auto-generate any missing ones */
-  var ensureResp = await fetch('/workflow-canvas/api/workflows/ensure-roles', {
+  var ensureResp = await icdevFetch('workflow_canvas.api_ensure_roles', {}, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({roles: roleRequests})
@@ -494,7 +505,7 @@ async function launchCoworkers(wfDef, workflowId) {
     return (i+1) + '. ' + (s.title || s.id) + (s.assignee_role ? ' [' + s.assignee_role + ']' : '');
   }).join('; ');
 
-  var resp = await fetch('/api/ace/launch', {
+  var resp = await icdevFetch('ace_api.api_launch', {}, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
@@ -590,7 +601,7 @@ function stopTaskProgressPolling() {
 
 async function _pollTaskStatus(workflowId) {
   try {
-    var resp = await fetch('/workflow-canvas/api/workflows/' + workflowId + '/task-status');
+    var resp = await icdevFetch('workflow_canvas.api_workflow_task_status', {workflow_id: workflowId});
     if (!resp.ok) return;
     var data = await resp.json();
     var total = data.total || 0;
@@ -640,7 +651,7 @@ async function cleanupPriorRuns() {
   btn.textContent = '⏳ Cancelling…';
   msg.style.display = 'none';
   try {
-    var resp = await fetch('/workflow-canvas/api/workflows/cleanup-processify', {
+    var resp = await icdevFetch('workflow_canvas.api_cleanup_processify_tasks', {}, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({workflow_name: wfName, status_filter: ['backlog', 'in_progress', 'scheduled']})
@@ -815,7 +826,7 @@ async function launchChain() {
 
   try {
     // 1. Create chain record
-    var chainResp = await fetch('/workflow-canvas/api/workflows/chains', {
+    var chainResp = await icdevFetch('workflow_canvas.api_create_chain', {}, {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
         name: chainName,
@@ -836,7 +847,7 @@ async function launchChain() {
       msg.textContent = 'Phase ' + (i+1) + ': ' + (phase.name || 'Phase ' + (i+1));
 
       // Add phase
-      var phResp = await fetch('/workflow-canvas/api/workflows/chains/' + _currentChainId + '/phases', {
+      var phResp = await icdevFetch('workflow_canvas.api_add_chain_phase', {chain_id: _currentChainId}, {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({name: phase.name || ('Phase ' + (i+1)), team_name: phase.teamName, team_role: phase.teamRole})
       });
@@ -850,12 +861,12 @@ async function launchChain() {
         if (phase.file) fd.append('file', phase.file);
         if (phase.text.trim()) fd.append('text', phase.text.trim());
         fd.append('industry', document.getElementById('chain-industry-select').value);
-        var pResp = await fetch('/workflow-canvas/api/workflows/processify', {method:'POST', body:fd});
+        var pResp = await icdevFetch('workflow_canvas.api_processify_workflow', {}, {method:'POST', body:fd});
         var pData = await pResp.json();
         if (pData.error) throw new Error('Phase ' + (i+1) + ' processify: ' + pData.error);
 
         // Save the workflow
-        var sResp = await fetch('/workflow-canvas/api/workflows/save-processify', {
+        var sResp = await icdevFetch('workflow_canvas.api_save_processify_workflow', {}, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({workflow: pData.workflow, create_kanban_tasks: !document.getElementById('skip-kanban-chk').checked, source_doc_text: pData.source_doc_text || ''})
         });
@@ -863,7 +874,7 @@ async function launchChain() {
         if (sData.error) throw new Error('Phase ' + (i+1) + ' save: ' + sData.error);
 
         // Link workflow to phase
-        await fetch('/workflow-canvas/api/workflows/chains/' + _currentChainId + '/phases/' + phaseId + '/processify', {
+        await icdevFetch('workflow_canvas.api_processify_chain_phase', {chain_id: _currentChainId, phase_id: phaseId}, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({workflow_id: sData.workflow_id})
         });
@@ -934,14 +945,14 @@ async function startRegenDoc(scope, workflowIdOverride) {
   try {
     var resp, data;
     if (scope === 'chain' && _currentChainId) {
-      resp = await fetch('/workflow-canvas/api/chains/' + _currentChainId + '/regen-doc', {
+      resp = await icdevFetch('workflow_canvas.api_regen_chain_doc', {chain_id: _currentChainId}, {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({format: fmt})
       });
     } else {
       var wfId = workflowIdOverride || _currentWorkflowId;
       if (!wfId) { statusEl.textContent = '❌ No workflow ID — launch a process first.'; return; }
-      resp = await fetch('/workflow-canvas/api/workflows/' + wfId + '/regen-doc', {
+      resp = await icdevFetch('workflow_canvas.api_regen_workflow_doc', {workflow_id: wfId}, {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({format: fmt})
       });
@@ -962,7 +973,7 @@ function pollRegenStatus(jobId) {
   stopRegenPoll();
   _regenPollTimer = setInterval(async function() {
     try {
-      var resp = await fetch('/workflow-canvas/api/regen-jobs/' + jobId + '/status');
+      var resp = await icdevFetch('workflow_canvas.api_regen_job_status', {job_id: jobId});
       var job = await resp.json();
       var statusEl = document.getElementById('regen-status');
       var dlEl = document.getElementById('regen-downloads');
@@ -975,7 +986,7 @@ function pollRegenStatus(jobId) {
         dlEl.innerHTML = '<div style="font-size:0.78rem;font-weight:700;color:var(--text-secondary);margin-bottom:8px">Download:</div>' +
           (job.files || []).map(function(f) {
             var icons = {markdown:'📝', html:'🌐', docx:'📄', pdf:'📋'};
-            return '<a href="/workflow-canvas/api/regen-jobs/' + esc(jobId) + '/download/' + esc(f.filename) + '" ' +
+            return '<a href="' + esc(icdevRoute('workflow_canvas.api_regen_download', {job_id: jobId, filename: f.filename})) + '" ' +
               'download="' + esc(f.filename) + '" ' +
               'style="display:inline-block;margin-right:8px;margin-bottom:6px;padding:6px 14px;background:var(--bg-secondary);' +
               'border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);text-decoration:none;font-size:0.82rem">' +
@@ -988,6 +999,50 @@ function pollRegenStatus(jobId) {
     } catch(e) { /* silent */ }
   }, 3000);
 }
+
+/* ── Observed drafts (icx-mdz-01) ── */
+async function loadObservedDrafts() {
+  var box = document.getElementById('observed-drafts-list');
+  if (!box) return;
+  try {
+    var resp = await icdevFetch('workflow_canvas.api_observed_drafts');
+    var data = await resp.json();
+    if (!resp.ok || data.error) { box.textContent = 'Observed drafts could not be read: ' + (data.error || resp.status); return; }
+    var drafts = data.drafts || [];
+    if (!drafts.length) { box.textContent = 'No observed drafts. A draft appears here after an REA scenario capture.'; return; }
+    box.innerHTML = drafts.map(function(d) {
+      var st = (d.review || {}).state || '';
+      var pending = st === 'pending_hitl';
+      return '<div class="observed-draft" data-workflow-id="' + esc(d.workflow_id) + '" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border-color)">' +
+        '<span style="flex:1;color:var(--text-primary)">' + esc(d.name || d.workflow_id) + ' <span style="color:var(--text-secondary)">(' + esc(d.steps) + ' observed steps)</span></span>' +
+        '<span class="observed-state">' + esc(pending ? 'awaiting review' : st + ((d.review || {}).reviewer ? ' by ' + d.review.reviewer : '')) + '</span>' +
+        (pending
+          ? '<button type="button" data-observed-approve="' + esc(d.workflow_id) + '" onclick="reviewObserved(\'' + esc(d.workflow_id) + '\',\'approve\')" style="padding:4px 12px;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer">Approve</button>' +
+            '<button type="button" data-observed-reject="' + esc(d.workflow_id) + '" onclick="reviewObserved(\'' + esc(d.workflow_id) + '\',\'reject\')" style="padding:4px 12px;background:rgba(220,38,38,0.15);color:#fca5a5;border:1px solid rgba(220,38,38,0.4);border-radius:6px;cursor:pointer">Reject</button>'
+          : '') +
+        '</div>';
+    }).join('');
+  } catch (e) { box.textContent = 'Observed drafts could not be read: ' + e.message; }
+}
+
+async function reviewObserved(workflowId, decision) {
+  var msg = document.getElementById('observed-drafts-msg');
+  var note = window.prompt(decision === 'reject' ? 'Why reject this draft? (required)' : 'Note (optional)', '');
+  if (note === null) return;
+  if (decision === 'reject' && !note.trim()) { alert('A reason is required to reject.'); return; }
+  try {
+    var resp = await icdevFetch('workflow_canvas.api_observed_review', {workflow_id: workflowId}, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({decision: decision, note: note.trim()})
+    });
+    var data = await resp.json();
+    if (!resp.ok || data.error) { msg.textContent = 'Not recorded: ' + (data.error || resp.status); return; }
+    msg.textContent = 'Recorded: ' + data.review.state + ' by ' + data.review.reviewer + ' (step ' + data.decision_step.step_id + ')';
+    loadObservedDrafts();
+  } catch (e) { msg.textContent = 'Not recorded: ' + e.message; }
+}
+
+window.addEventListener('DOMContentLoaded', loadObservedDrafts);
 
 /* ── Restore result screen after Back-button navigation ── */
 window.addEventListener('DOMContentLoaded', function() {

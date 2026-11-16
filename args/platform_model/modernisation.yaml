@@ -1,0 +1,230 @@
+# CUI // SP-CTI
+# ICDEV platform model: application modernisation (icx-mdz-01) -- the 7R assessment,
+# AI-Ify, Process-Ify, an application's waves and CAM refactor jobs, cloud-native
+# targets, and the ICDEV[OS] apptwin exporter and decision import.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the
+# header of args/platform_model/cortex.yaml.
+
+component: mdc
+project_id: icdev-platform
+
+elements:
+  - id: mdz.seven_r
+    type: sysml_element
+    kind: block
+    name: 7R assessment and the strategy a person records (a proposal to ICDEV[OS])
+    features: [mdz.seven_r]
+    code:
+      - tools/modernization/seven_r_assessor.py::run_seven_r_assessment
+      - tools/dashboard/api/migration.py::trigger_assessment
+      - tools/dashboard/api/migration.py::record_strategy
+      - tools/modernization/decisions.py::strategy_record
+      - args/workflow_hitl_templates/mdz-7r-strategy.yaml
+
+  - id: mdz.aiify
+    type: sysml_element
+    kind: block
+    name: AI-Ify promotion and scan deletion through declared steps, Send to Kanban fail-closed
+    features: [mdz.aiify]
+    code:
+      - tools/aiify/blueprint.py::api_hitl_decision
+      - tools/aiify/blueprint.py::api_send_to_kanban
+      - tools/aiify/blueprint.py::api_delete_scan
+      - tools/aiify/blueprint.py::api_delete_all_scans
+      - args/workflow_hitl_templates/mdz-aiify-promote.yaml
+      - args/workflow_hitl_templates/mdz-aiify-scan-delete.yaml
+
+  - id: mdz.processify
+    type: sysml_element
+    kind: block
+    name: Process-Ify observed drafts and their review
+    features: [mdz.processify]
+    code:
+      - tools/workflow_canvas/observed_processify.py::list_drafts
+      - tools/workflow_canvas/observed_processify.py::review_draft
+      - tools/workflow_canvas/blueprint.py::create_wfc_blueprint
+      - args/workflow_hitl_templates/mdz-processify-observed-approve.yaml
+
+  - id: mdz.waves_cam
+    type: sysml_element
+    kind: block
+    name: An application's waves and its CAM refactor jobs, reviewed by a person
+    features: [mdz.waves_cam]
+    code:
+      - tools/modernization/app_wave_planner.py::report
+      - tools/modernization/refactor_jobs.py::report
+      - tools/migration_canvas/modernisation.py::refactor_jobs
+      - tools/migration_canvas/modernisation.py::register_modernisation_routes
+      - args/workflow_hitl_templates/mdz-cam-refactor-approve.yaml
+
+  - id: mdz.cloud_native
+    type: sysml_element
+    kind: block
+    name: Cloud-native jobs and the cloud_native section the exporter carries
+    features: [mdz.cloud_native]
+    code:
+      - tools/modernization/cloud_native_jobs.py::report
+      - tools/modernization/apptwin_export.py::cloud_native_from_jobs
+      - tools/migration_canvas/modernisation.py::cloud_native
+
+  - id: mdz.exporter
+    type: sysml_element
+    kind: block
+    name: The icos-apptwin/v1 exporter and the signed ICDEV[OS] decisions import
+    features: [mdz.exporter]
+    code:
+      - tools/modernization/apptwin_export.py::build
+      - tools/modernization/icos_decisions.py::verify
+      - tools/modernization/icos_decisions.py::may_plan
+      - tools/migration_canvas/modernisation.py::bundle_preview
+      - tools/migration_canvas/modernisation.py::icos_check
+
+  - id: mdz.twin
+    type: sysml_element
+    kind: block
+    name: Modernisation governance twin (canvas mdc)
+    features: [mdz.seven_r, mdz.aiify, mdz.processify, mdz.waves_cam, mdz.cloud_native, mdz.exporter]
+    code:
+      - tools/twin_core/adapters/modernisation.py::ModernisationGovernanceTwin
+      - tools/twin_core/governance.py::resolve_thread
+
+interfaces:
+  - id: if.mdz.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /migration, /ai-ify, /workflow-canvas/processify and /migration-canvas/modernisation
+    features: [mdz.seven_r, mdz.aiify, mdz.processify, mdz.waves_cam, mdz.cloud_native, mdz.exporter]
+    code:
+      - tools/dashboard/templates/migration.html
+      - tools/dashboard/templates/aiify/page.html
+      - tools/dashboard/templates/workflow_canvas/processify.html
+      - tools/dashboard/templates/migration_canvas/modernisation.html
+
+  - id: if.mdz.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP read tools for modernisation
+    features: [mdz.seven_r, mdz.aiify, mdz.processify, mdz.waves_cam, mdz.cloud_native, mdz.exporter]
+    code:
+      - tools/mcp/gap_handlers.py::handle_modernisation_seven_r
+      - tools/mcp/gap_handlers.py::handle_aiify_promotions
+      - tools/mcp/gap_handlers.py::handle_processify_observed_drafts
+      - tools/mcp/gap_handlers.py::handle_modernisation_waves_jobs
+      - tools/mcp/gap_handlers.py::handle_modernisation_cloud_native
+      - tools/mcp/gap_handlers.py::handle_modernisation_bundle
+
+requirements:
+  - id: PM-MDZ-01
+    title: The 7R strategy a person records is a declared step and only a proposal
+    text: >-
+      The assessor recommends and decides nothing. A person holding the step
+      records the strategy ICDEV proposes, or declines to, with a reason
+      (decl-wft-mdz-7r-strategy); the decided step is the record, marked not
+      binding: ICDEV[OS] accepts a strategy, and may-plan is its answer.
+    type: functional
+    priority: high
+    features: [mdz.seven_r]
+    elements: [mdz.seven_r, if.mdz.console]
+    controls: [AC-5, AU-10]
+    tests:
+      - tests/test_icx_mdz_01_modernisation.py::test_the_assess_route_runs_the_assessor_for_one_application
+      - tests/test_icx_mdz_01_modernisation.py::test_recording_a_7r_strategy_is_a_persons_step_and_only_a_proposal
+
+  - id: PM-MDZ-02
+    title: AI-Ify promotion and deletion are a person's steps, and the gate stays fail-closed
+    text: >-
+      Accepting or rejecting a PRD phase or a signal, and deleting scans, run
+      through declared templates before anything is written; a step that
+      cannot be recorded changes nothing; Send to Kanban refuses when the
+      decisions cannot be read.
+    type: functional
+    priority: high
+    features: [mdz.aiify]
+    elements: [mdz.aiify, if.mdz.console]
+    controls: [AC-5, SI-10]
+    tests:
+      - tests/test_icx_mdz_01_modernisation.py::test_an_aiify_promotion_is_the_persons_step_before_anything_is_written
+      - tests/test_icx_mdz_01_modernisation.py::test_an_aiify_promotion_that_cannot_be_recorded_changes_nothing
+      - tests/test_icx_mdz_01_modernisation.py::test_send_to_kanban_still_fails_closed_when_decisions_cannot_be_read
+      - tests/test_icx_mdz_01_modernisation.py::test_deleting_aiify_scans_is_a_persons_step
+
+  - id: PM-MDZ-03
+    title: An observed draft is reviewed once, by the person who took the step
+    text: >-
+      The Process-Ify page lists observed drafts; approving or rejecting one is
+      the person's step (decl-wft-mdz-processify-observed-approve), and the
+      reviewer recorded on the draft is that person.
+    type: functional
+    priority: high
+    features: [mdz.processify]
+    elements: [mdz.processify, if.mdz.console]
+    controls: [AC-5, AU-10]
+    tests:
+      - tests/test_icx_mdz_01_modernisation.py::test_reviewing_an_observed_draft_is_a_persons_step_and_names_them
+      - tests/test_observed_processify.py::test_route_drafts_then_chain_link_waits_for_review
+
+  - id: PM-MDZ-04
+    title: Waves are derived and read; a CAM job's output is approved once, bound to its files
+    text: >-
+      The Modernisation page reads an application's waves and CAM jobs. A
+      person approves or rejects a completed job's generated output with a
+      reason (decl-wft-mdz-cam-refactor-approve), bound to each file's SHA-256,
+      once. Nothing is applied.
+    type: functional
+    priority: high
+    features: [mdz.waves_cam]
+    elements: [mdz.waves_cam, if.mdz.console]
+    controls: [CM-3, SA-11]
+    tests:
+      - tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_page_reads_apps_waves_and_the_bundle
+      - tests/test_icx_mdz_01_modernisation.py::test_approving_a_cam_jobs_output_binds_its_files_and_is_taken_once
+
+  - id: PM-MDZ-05
+    title: Cloud-native output is read from its jobs, never re-run
+    text: >-
+      The cloud-native jobs and the twelve factors are read back from what the
+      jobs wrote; an unmeasured factor is unverified, never a pass, and a read
+      runs no job.
+    type: functional
+    priority: medium
+    features: [mdz.cloud_native]
+    elements: [mdz.cloud_native, if.mdz.console]
+    controls: [CM-2]
+    tests:
+      - tests/test_icx_mdz_01_modernisation.py::test_cloud_native_reads_the_jobs_and_the_section_without_running_any
+
+  - id: PM-MDZ-06
+    title: The bundle is previewed, and a decisions export is trusted only against the pinned JWKS
+    text: >-
+      The exporter's bundle is assembled and validated without being written.
+      A signed ICDEV[OS] decisions export is verified against the JWKS the
+      operator pinned, never a key that came with it; may-plan and may-retire
+      are answered only for a trusted export.
+    type: interface
+    priority: high
+    features: [mdz.exporter]
+    elements: [mdz.exporter, if.mdz.console]
+    controls: [SC-12, SI-7]
+    tests:
+      - tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_page_reads_apps_waves_and_the_bundle
+      - tests/test_icx_mdz_01_modernisation.py::test_a_decisions_export_is_trusted_only_against_the_pinned_jwks
+
+  - id: PM-MDZ-07
+    title: The twin observes modernisation with threads, and agents only read it
+    text: >-
+      The modernisation twin finds unrecorded strategies, plans that diverge
+      from them, decisions outside the declared workflow, waiting drafts and
+      unreviewed or missing generated files, each with a thread, and replays;
+      an unreadable source is unverified. Its MCP tools are read-only.
+    type: non_functional
+    priority: high
+    features: [mdz.seven_r, mdz.aiify, mdz.processify, mdz.waves_cam, mdz.cloud_native, mdz.exporter]
+    elements: [mdz.twin, if.mdz.mcp]
+    controls: [CA-7, AU-6]
+    tests:
+      - tests/test_icx_mdz_01_modernisation.py::test_the_twin_finds_each_gap_with_its_thread
+      - tests/test_icx_mdz_01_modernisation.py::test_an_unreadable_source_is_unverified_never_a_pass
+      - tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays
+      - tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only
+      - tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id

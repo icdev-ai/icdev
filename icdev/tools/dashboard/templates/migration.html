@@ -6,11 +6,14 @@
     <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
         <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
         <span style="color:#999;"> &gt; </span>
-        <span style="color:#333;">Migration</span>
+        <span><a href="{{ url_for('migration_canvas.mc_index') }}" style="color:#1976d2;text-decoration:none;">Migration Canvas</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">7R Assessment</span>
     </nav>
 
     <h1>Application Migration Tracker</h1>
     <p class="text-muted">7R strategy assessment with compliance impact scoring — evaluate Rehost, Replatform, Refactor, Rearchitect, Repurchase, Retire, and Retain strategies against ATO and security baselines.</p>
+    <p class="text-muted" id="seven-r-help">The assessor <b>recommends</b>; it decides nothing. A person records the strategy ICDEV <b>proposes</b> for each application (Record strategy, a declared workflow step with a reason). That record is a proposal to ICDEV[OS]: there the mission owner accepts a strategy through the signed migration-assessment workflow, and a migration is planned only when <code>icos_decisions.py may-plan</code> allows it. An application's waves, CAM jobs and cloud-native output are on <a href="{{ url_for('migration_canvas.modernisation_page') }}">Modernisation</a>.</p>
 
     <!-- Stats Grid -->
     <div id="stats-grid" class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1.5rem 0;">
@@ -61,6 +64,7 @@
                         <th style="padding:0.6rem 0.75rem;text-align:right;cursor:pointer;" onclick="sortAssessments('risk_score')">Risk Score &#x25B4;&#x25BE;</th>
                         <th style="padding:0.6rem 0.75rem;text-align:right;cursor:pointer;" onclick="sortAssessments('cost_estimate_hours')">Cost Est. (hrs) &#x25B4;&#x25BE;</th>
                         <th style="padding:0.6rem 0.75rem;text-align:right;cursor:pointer;" onclick="sortAssessments('timeline_weeks')">Timeline (wks) &#x25B4;&#x25BE;</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Recorded proposal</th>
                     </tr>
                 </thead>
                 <tbody id="assessments-body"></tbody>
@@ -106,7 +110,8 @@
     <div style="margin:1.5rem 0;padding:1.25rem;border:2px solid #1976d2;border-radius:12px;background:linear-gradient(135deg,#e3f2fd 0%,#fafafa 100%);">
         <h2 style="margin:0 0 0.75rem;font-size:1.1rem;color:#1565c0;">Run Migration Assessment</h2>
         <div style="display:flex;gap:0.75rem;align-items:center;">
-            <input id="assess-project" type="text" placeholder="Enter project_id..." style="flex:1;padding:0.65rem 1rem;border:1px solid #bbdefb;border-radius:8px;font-size:0.95rem;" onkeydown="if(event.key==='Enter')runAssessment()" />
+            <input id="assess-project" type="text" placeholder="project_id" style="flex:1;padding:0.65rem 1rem;border:1px solid #bbdefb;border-radius:8px;font-size:0.95rem;" />
+            <input id="assess-app" type="text" placeholder="legacy application id" style="flex:1;padding:0.65rem 1rem;border:1px solid #bbdefb;border-radius:8px;font-size:0.95rem;" onkeydown="if(event.key==='Enter')runAssessment()" />
             <button onclick="runAssessment()" style="padding:0.65rem 1.5rem;background:#1976d2;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:0.95rem;font-weight:600;white-space:nowrap;">Assess</button>
         </div>
         <div id="assess-status" style="margin-top:0.5rem;font-size:0.9rem;color:#666;"></div>
@@ -151,20 +156,24 @@ const STATUS_COLORS = {
 /* -- Load stats -- */
 async function loadStats() {
     try {
-        const resp = await fetch('/api/migration/stats');
+        const resp = await icdevFetch('migration_api_legacy.migration_stats');
         if (!resp.ok) throw new Error('Stats fetch failed');
         const d = await resp.json();
         const s = d.data || d;
         document.getElementById('stat-total').textContent = s.total_assessments ?? 0;
-        document.getElementById('stat-plans').textContent = s.active_plans ?? 0;
-        document.getElementById('stat-tasks').textContent = s.tasks_completed ?? 0;
+        const plans = s.plans_by_status || {};
+        const tasks = s.tasks_by_status || {};
+        const ato = s.ato_impact_breakdown || s.ato_distribution || {};
+        document.getElementById('stat-plans').textContent =
+            Object.entries(plans).filter(([k]) => !['completed', 'cancelled'].includes(k)).reduce((n, [, v]) => n + v, 0);
+        document.getElementById('stat-tasks').textContent = tasks.completed ?? 0;
         document.getElementById('stat-pct').textContent = (s.completion_pct != null ? s.completion_pct + '%' : '0%');
-        document.getElementById('stat-ato').textContent = s.ato_high_critical ?? 0;
+        document.getElementById('stat-ato').textContent = (ato.high || 0) + (ato.critical || 0);
 
         // Strategy distribution
         if (s.strategy_distribution) renderStrategyChart(s.strategy_distribution);
         // ATO impact breakdown
-        if (s.ato_distribution) renderAtoPanel(s.ato_distribution);
+        renderAtoPanel(ato);
     } catch (e) {
         console.warn('Stats load error:', e);
     }
@@ -208,9 +217,10 @@ function renderAtoPanel(dist) {
 /* -- Load Assessments -- */
 async function loadAssessments() {
     try {
-        const resp = await fetch('/api/migration/assessments');
+        const resp = await icdevFetch('migration_api_legacy.list_assessments');
         if (!resp.ok) throw new Error('Assessments fetch failed');
         const d = await resp.json();
+        recordsError = d.records_error || null;
         assessmentsData = d.data || d.assessments || d || [];
         if (!Array.isArray(assessmentsData)) assessmentsData = [];
         renderAssessments();
@@ -232,13 +242,13 @@ function renderAssessments() {
     empty.style.display = 'none';
 
     tbody.innerHTML = assessmentsData.map(a => {
-        const strategy = (a.strategy || '').toLowerCase();
+        const strategy = (a.recommended_strategy || a.strategy || '').toLowerCase();
         const ato = (a.ato_impact || 'none').toLowerCase();
         const sColor = STRATEGY_COLORS[strategy] || '#999';
         const aColor = ATO_COLORS[ato] || '#999';
 
         return `<tr style="border-bottom:1px solid #eee;">
-            <td style="padding:0.5rem 0.75rem;">${esc(a.app_id || a.project_id || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;">${esc(a.legacy_app_id || a.app_id || '—')}</td>
             <td style="padding:0.5rem 0.75rem;">
                 <span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.8rem;font-weight:600;color:#fff;background:${sColor};text-transform:capitalize;">${esc(strategy || '—')}</span>
             </td>
@@ -248,8 +258,48 @@ function renderAssessments() {
             <td style="padding:0.5rem 0.75rem;text-align:right;">${a.risk_score != null ? Number(a.risk_score).toFixed(1) : '—'}</td>
             <td style="padding:0.5rem 0.75rem;text-align:right;">${a.cost_estimate_hours != null ? Number(a.cost_estimate_hours).toLocaleString() : '—'}</td>
             <td style="padding:0.5rem 0.75rem;text-align:right;">${a.timeline_weeks != null ? a.timeline_weeks : '—'}</td>
+            <td style="padding:0.5rem 0.75rem;" class="strategy-record" data-assessment-id="${esc(a.id)}">${renderRecord(a)}</td>
         </tr>`;
     }).join('');
+}
+
+/* -- The strategy a person records (icx-mdz-01): a declared step, a proposal to ICDEV[OS] -- */
+const STRATEGIES = ['rehost', 'replatform', 'refactor', 'rearchitect', 'repurchase', 'retire', 'retain'];
+let recordsError = null;
+
+function renderRecord(a) {
+    const r = a.strategy_record;
+    if (recordsError) return `<span style="color:#d32f2f;">${esc(recordsError)}</span>`;
+    if (r) {
+        const what = r.recorded ? `proposes <b>${esc(r.strategy)}</b>` : 'declined to propose';
+        return `<span>${what}</span> <span style="color:#666;font-size:0.8rem;">by ${esc(r.by)}: ${esc(r.reason)}</span>
+                <div style="color:#999;font-size:0.75rem;">not binding; ICDEV[OS] accepts</div>`;
+    }
+    const opts = STRATEGIES.map(s => `<option value="${s}"${s === (a.recommended_strategy || '') ? ' selected' : ''}>${s}</option>`).join('');
+    return `<select class="record-strategy" aria-label="Strategy to propose">${opts}</select>
+            <input class="record-reason" type="text" placeholder="reason (required)" style="width:10rem;" />
+            <button type="button" class="record-btn" data-decision="record" onclick="recordStrategy('${esc(a.id)}', 'record', this)">Record</button>
+            <button type="button" class="record-btn" data-decision="decline" onclick="recordStrategy('${esc(a.id)}', 'decline', this)">Decline</button>
+            <div class="record-msg" style="font-size:0.75rem;color:#666;"></div>`;
+}
+
+async function recordStrategy(assessmentId, decision, btn) {
+    const cell = btn.closest('.strategy-record');
+    const msg = cell.querySelector('.record-msg');
+    const reason = cell.querySelector('.record-reason').value.trim();
+    const strategy = cell.querySelector('.record-strategy').value;
+    if (!reason) { msg.textContent = 'A reason is required.'; msg.style.color = '#d32f2f'; return; }
+    try {
+        const resp = await icdevFetch('migration_api_legacy.record_strategy', {assessment_id: assessmentId}, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({decision: decision, strategy: strategy, reason: reason})
+        });
+        const d = await resp.json();
+        if (!resp.ok || d.error) { msg.textContent = 'Not recorded: ' + (d.error || resp.status); msg.style.color = '#d32f2f'; return; }
+        msg.textContent = 'Recorded (step ' + d.decision_step.step_id + ').';
+        msg.style.color = '#4caf50';
+        await loadAssessments();
+    } catch (e) { msg.textContent = 'Not recorded: ' + e.message; msg.style.color = '#d32f2f'; }
 }
 
 /* -- Sorting -- */
@@ -271,7 +321,7 @@ function sortAssessments(col) {
 /* -- Load Plans -- */
 async function loadPlans() {
     try {
-        const resp = await fetch('/api/migration/plans');
+        const resp = await icdevFetch('migration_api_legacy.list_plans');
         if (!resp.ok) throw new Error('Plans fetch failed');
         const d = await resp.json();
         plansData = d.data || d.plans || d || [];
@@ -376,9 +426,10 @@ function closePlanDetail() {
 /* -- Run Assessment -- */
 async function runAssessment() {
     const projectId = document.getElementById('assess-project').value.trim();
+    const appId = document.getElementById('assess-app').value.trim();
     const statusEl = document.getElementById('assess-status');
-    if (!projectId) {
-        statusEl.textContent = 'Please enter a project ID.';
+    if (!projectId || !appId) {
+        statusEl.textContent = 'Please enter a project ID and a legacy application ID.';
         statusEl.style.color = '#d32f2f';
         return;
     }
@@ -386,14 +437,14 @@ async function runAssessment() {
     statusEl.style.color = '#1976d2';
 
     try {
-        const resp = await fetch('/api/migration/assess', {
+        const resp = await icdevFetch('migration_api_legacy.trigger_assessment', {}, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_id: projectId })
+            body: JSON.stringify({ project_id: projectId, app_id: appId })
         });
         const d = await resp.json();
         if (resp.ok && d.status !== 'error') {
-            statusEl.textContent = 'Assessment complete. Refreshing data...';
+            statusEl.textContent = 'Assessment complete: ' + (d.recommended_strategy || '?') + ' recommended. Refreshing data...';
             statusEl.style.color = '#4caf50';
             await Promise.all([loadStats(), loadAssessments(), loadPlans()]);
         } else {

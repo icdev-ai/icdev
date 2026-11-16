@@ -27,7 +27,9 @@ Routes:
   # pif-* Process-Ify Enhancement Suite
   GET  /workflow-canvas/api/workflows/<id>/bpmn              BPMN 2.0 XML (pif-bpmn-01)
   POST /workflow-canvas/api/workflows/observed-draft          opt-in REA capture -> observed draft (rea-pif-01)
-  POST /workflow-canvas/api/workflows/<id>/observed-review    HITL approve/reject an observed draft (rea-pif-01)
+  GET  /workflow-canvas/api/workflows/observed-drafts          observed drafts and their review state (icx-mdz-01)
+  POST /workflow-canvas/api/workflows/<id>/observed-review    HITL approve/reject an observed draft (rea-pif-01;
+                                                              declared step, icx-mdz-01)
   POST /workflow-canvas/api/workflows/diff                   Version diff (pif-diff-01)
   GET  /workflow-canvas/api/chains/<id>/roi                  ROI calc (pif-roi-01)
   GET  /workflow-canvas/api/chains/<id>/simulate             Timeline sim (pif-sim-01)
@@ -1521,18 +1523,52 @@ Form description: {text}"""
         return jsonify({"status": "ok", "workflow_id": workflow_id, "review": draft["review"],
                         "steps": len(draft["steps"]), "provenance": draft["provenance"]})
 
+    @bp.route("/api/workflows/observed-drafts")
+    def api_observed_drafts():
+        """Observed drafts and their review state (icx-mdz-01). ``?state=pending_hitl`` narrows."""
+        from tools.workflow_canvas.observed_processify import list_drafts
+        try:
+            drafts = list_drafts(state=(request.args.get("state") or "").strip() or None)
+        except Exception as exc:  # noqa: BLE001 — unreadable is said, never an empty list
+            logger.warning("wfc observed drafts read error: %s", exc)
+            return jsonify({"error": str(exc), "drafts": None}), 500
+        return jsonify({"drafts": drafts, "count": len(drafts)})
+
     @bp.route("/api/workflows/<workflow_id>/observed-review", methods=["POST"])
     def api_observed_review(workflow_id: str):
-        """HITL decision on an observed draft: {decision: approve|reject, reviewer, note}."""
-        from tools.workflow_canvas.observed_processify import review_draft
+        """HITL decision on an observed draft: {decision: approve|reject, note}.
+
+        The person's step of the declared template
+        ``decl-wft-mdz-processify-observed-approve`` (icx-mdz-01), taken before the
+        review is written. The reviewer recorded on the draft is the person who
+        took the step, never a name in the request.
+        """
+        from tools.workflow_canvas.observed_processify import (DECISIONS, REVIEW_PENDING, list_drafts,
+                                                               review_draft)
+        from tools.workflow_hitl import declared
         data = request.get_json(force=True) or {}
+        decision = str(data.get("decision") or "")
+        note = str(data.get("note") or "")
+        if decision not in DECISIONS:
+            return jsonify({"error": f"decision must be one of {sorted(DECISIONS)}"}), 400
+        # A step is taken only for a draft that is still waiting: no decided step without its effect.
+        draft = next((d for d in list_drafts() if d["workflow_id"] == workflow_id), None)
+        if draft is None:
+            return jsonify({"error": f"workflow {workflow_id!r} is not an observed draft"}), 404
+        if draft["review"].get("state") != REVIEW_PENDING:
+            return jsonify({"error": f"workflow {workflow_id!r} was already {draft['review'].get('state')}"}), 409
         try:
-            review = review_draft(workflow_id, str(data.get("decision") or ""),
-                                  reviewer=str(data.get("reviewer") or ""),
-                                  note=str(data.get("note") or ""))
+            step = declared.take_step("decl-wft-mdz-processify-observed-approve",
+                                      surface="workflow_canvas.api_observed_review",
+                                      decision=decision, subject=workflow_id, reason=note)
+        except declared.StepRefused as exc:
+            return jsonify(exc.to_dict()), exc.status
+        try:
+            review = review_draft(workflow_id, decision, reviewer=step["decided_by"], note=note)
         except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        return jsonify({"status": "ok", "workflow_id": workflow_id, "review": review})
+            return jsonify({"error": str(exc), "decision_step": step}), 400
+        return jsonify({"status": "ok", "workflow_id": workflow_id, "review": review,
+                        "decision_step": step})
 
     # ── pif-diff-01: Process Version Diff ─────────────────────────────────────
     @bp.route("/api/workflows/diff", methods=["POST"])
