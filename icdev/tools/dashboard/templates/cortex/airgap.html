@@ -27,12 +27,12 @@
   <p style="color:#7a8cb0;font-size:12px;margin:0 0 4px;">Routing functions checked: {{ posture.routing_functions | join(', ') }}</p>
   <p style="color:#7a8cb0;font-size:12px;margin:0;">Models excluded while air-gapped: {{ posture.excluded_models | join(', ') if posture.excluded_models else ('none' if posture.airgap else 'not applied (air-gap off)') }}</p>
   {% endif %}
-  <p style="color:#5a6b8a;font-size:11px;margin:10px 0 0;">The public liveness probe <code>/cortex/api/v1/health</code> reports the same switch to external callers.</p>
+  <p style="color:#5a6b8a;font-size:11px;margin:10px 0 0;">The public liveness probe <code>{{ url_for('cortex.api_v1_health') }}</code> reports the same switch to external callers.</p>
 </div>
 
 <!-- IQE Query Widget -->
 {% set iqe_canvas = "cortex" %}
-{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_api_route = url_for('cortex.api_iqe_query') %}
 {% set iqe_title = "IQE Query — Cortex" %}
 {% set iqe_examples = [
   {"label": "Governance audit", "query": "foreach a in cortex.audit select a.function, a.outcome, a.blocked, a.created_at"}

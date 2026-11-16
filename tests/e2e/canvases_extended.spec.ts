@@ -2,7 +2,7 @@
 // E2E Test: Canvases Menu — all feature-gated and unconditional canvas subpages
 // Feature-gated pages may return 404 if disabled in .env — those are marked as soft checks.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

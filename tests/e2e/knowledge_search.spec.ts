@@ -2,7 +2,7 @@
 // E2E Test: Knowledge Search (RAG) Dashboard
 // Verifies the Knowledge Search page renders correctly with RAG system status and semantic search.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

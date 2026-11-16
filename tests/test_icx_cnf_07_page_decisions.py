@@ -102,12 +102,18 @@ def ace_env(wf_db, tmp_path, monkeypatch):
 
 
 def _roles_call() -> tuple[str, str]:
-    """(url prefix, method) of the delete call the roles page makes."""
+    """(url prefix, method) of the delete call the roles page makes.
+
+    The page names the route by endpoint id (icx-cnf-08); its rule comes from the
+    generated table, so the replay below hits exactly the route the page calls.
+    """
+    from tools.dashboard.routes_gen import rule_of
+
     text = _text(ROLES)
-    match = re.search(r"fetch\('(/api/ace/profiles/)'\s*\+\s*encodeURIComponent\(\w+\),\s*"
+    match = re.search(r"icdevFetch\('(ace_api\.api_profiles_delete)',\s*\{role_id:\s*\w+\},\s*"
                       r"\{\s*method:\s*'(\w+)'", text)
-    assert match, "the roles page makes no delete call to /api/ace/profiles/<role_id>"
-    return match.group(1), match.group(2)
+    assert match, "the roles page makes no delete call to ace_api.api_profiles_delete"
+    return rule_of(match.group(1)).replace("<role_id>", ""), match.group(2)
 
 
 def test_the_roles_page_calls_the_profile_delete_route():
@@ -166,7 +172,10 @@ def test_the_pmo_page_proposes_award_with_the_opportunity_id_only():
 
     award = next(v for v in PMO_VERBS if v["verb"] == "award")
     text = _text(PMO)
-    assert f"award: '{award['path']}'" in text
+    # By endpoint id (icx-cnf-08), and that endpoint's rule is the verb's own path.
+    from tools.dashboard.routes_gen import rule_of
+    assert "award: icdevRoute('cortex.api_v1_award')" in text
+    assert rule_of("cortex.api_v1_award") == award["path"]
     call = _pmo_award_body()
     assert "cortexPost(CORTEX_PMO_PATHS.award, {opportunity_id: opp})" in call
     # The page proposes and sends the person to /decisions; it never decides.
@@ -194,7 +203,10 @@ def test_the_pmo_page_call_is_a_proposal_another_person_accepts(wf_db, monkeypat
     monkeypatch.setattr(pm_mod, "transition_from_opportunity",
                         lambda oid, created_by="": {"status": "ok", "contract_id": "c-7",
                                                     "contract_status": "draft"})
-    path = re.search(r"award: '([^']+)'", _text(PMO)).group(1)
+    from tools.dashboard.routes_gen import rule_of
+
+    endpoint = re.search(r"award: icdevRoute\('([\w.]+)'\)", _text(PMO)).group(1)
+    path = rule_of(endpoint)
     resp = _isolated_app(PM, cortex_bp).post(path, json={"opportunity_id": "opp-77"})
     assert resp.status_code == 200, resp.get_data(as_text=True)
     step = resp.get_json()["acceptance"]

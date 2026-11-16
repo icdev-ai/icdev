@@ -12,7 +12,7 @@
  *   7. Run Tests remediation hints
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import { resolveBaseUrl } from './fixtures/base_url';
 
 const CUI_BANNER = 'CUI // SP-CTI';

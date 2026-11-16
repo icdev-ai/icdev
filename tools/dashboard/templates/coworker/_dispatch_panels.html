@@ -102,7 +102,7 @@
   // ── Event feed ──
   function abortRun(instanceId) {
     if (!window.confirm("Abort run " + instanceId + " now?")) return;
-    fetch("/api/ace/" + encodeURIComponent(instanceId) + "/abort", { method: "POST" })
+    fetch(icdevRoute('ace_api.api_abort', {instance_id: instanceId}), { method: "POST" })
       .then(function (r) { say("ace-feed-msg", r.ok ? "Aborted " + instanceId + "." : "Abort failed (" + r.status + ")."); loadFeed(); });
   }
   function nextCell(r) {
@@ -111,7 +111,7 @@
     }
     if ((r.status === "launched" || r.status === "auto_launched") && r.instance_id) {
       var span = document.createElement("span");
-      var link = el("a", r.instance_id); link.href = "/coworker/" + encodeURIComponent(r.instance_id);
+      var link = el("a", r.instance_id); link.href = icdevRoute('ace.instance_detail', {instance_id: r.instance_id});
       span.appendChild(link);
       if (r.status === "auto_launched") {
         span.appendChild(document.createTextNode(" — auto, under grant " + r.grant_id + " "));
@@ -125,7 +125,7 @@
   }
   function loadFeed() {
     var tbody = document.getElementById("ace-feed-rows");
-    fetch("/api/ace/events?limit=50")
+    fetch(icdevRoute('ace_api.api_ace_events', {}, {limit: 50}))
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
       .then(function (res) {
         if (!res.ok) { empty(tbody, 6, res.data.message || "The event log cannot be read."); return; }
@@ -143,7 +143,7 @@
 
   // ── Auto-dispatch ──
   function loadAuto() {
-    fetch("/api/ace/auto-dispatch")
+    fetch(icdevRoute('ace_api.api_auto_dispatch'))
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
       .then(function (res) {
         var d = res.data;
@@ -197,7 +197,7 @@
   function revoke(grantId) {
     var reason = window.prompt("Why turn auto-dispatch off for " + grantId + "?");
     if (!reason) return;
-    post("/api/ace/auto-dispatch/" + encodeURIComponent(grantId) + "/revoke", { reason: reason })
+    post(icdevRoute('ace_api.api_auto_dispatch_revoke', {grant_id: grantId}), { reason: reason })
       .then(function (res) { say("ace-auto-msg", res.ok ? "Turned off " + grantId + "." : (res.data.error || "Refused.")); loadAuto(); });
   }
   document.getElementById("ace-auto-grant-btn").addEventListener("click", function () {
@@ -207,19 +207,19 @@
                  expires_at: document.getElementById("ace-auto-expiry").value,
                  max_per_day: parseInt(document.getElementById("ace-auto-perday").value, 10) };
     if (!body.reason) { say("ace-auto-msg", "A reason is required."); return; }
-    post("/api/ace/auto-dispatch/grant", body)
+    post(icdevRoute('ace_api.api_auto_dispatch_grant'), body)
       .then(function (res) { say("ace-auto-msg", res.ok ? "Auto on: grant " + res.data.grant.grant_id + "." : (res.data.error || "Refused.")); loadAuto(); });
   });
   document.getElementById("ace-auto-stop-btn").addEventListener("click", function () {
     var reason = document.getElementById("ace-auto-stop-reason").value.trim();
     if (!reason) { say("ace-auto-msg", "Say why you are stopping auto-dispatch."); return; }
-    post("/api/ace/auto-dispatch/stop-all", { reason: reason })
+    post(icdevRoute('ace_api.api_auto_dispatch_stop_all'), { reason: reason })
       .then(function (res) { say("ace-auto-msg", res.ok ? "All auto-dispatch stopped." : (res.data.error || "Refused.")); loadAuto(); });
   });
   document.getElementById("ace-auto-resume-btn").addEventListener("click", function () {
     var reason = document.getElementById("ace-auto-stop-reason").value.trim();
     if (!reason) { say("ace-auto-msg", "A reason is required to resume."); return; }
-    post("/api/ace/auto-dispatch/resume-all", { reason: reason })
+    post(icdevRoute('ace_api.api_auto_dispatch_resume_all'), { reason: reason })
       .then(function (res) { say("ace-auto-msg", res.ok ? "Auto-dispatch resumed." : (res.data.error || "Refused.")); loadAuto(); });
   });
   loadFeed(); loadAuto();

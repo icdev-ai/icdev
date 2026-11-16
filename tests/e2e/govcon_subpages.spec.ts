@@ -1,7 +1,7 @@
 // CUI // SP-CTI
 // E2E Smoke Test: GovCon sub-pages — requirements matrix and capabilities library
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 const CUI_BANNER = 'CUI // SP-CTI';

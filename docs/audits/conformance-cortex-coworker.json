@@ -36,6 +36,21 @@
             "registry entry 'ace'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/_dispatch_panels.html",
+                "tools/dashboard/templates/coworker/instance.html"
+              ],
+              "endpoint": "ace_api.api_abort",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/<instance_id>/abort",
+              "write": true
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -85,6 +100,64 @@
             "registry entry 'ace'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/hitl.html"
+              ],
+              "endpoint": "ace_api.api_hitl_resolve",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/<instance_id>/hitl",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "ace_api.api_hitl_pending",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/<instance_id>/hitl/pending",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "ace_api.api_suggestion_get",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/suggestions/<suggestion_id>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/includes/_chat_action_card.html"
+              ],
+              "endpoint": "ace_api.api_suggestion_confirm",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/suggestions/<suggestion_id>/confirm",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/includes/_chat_action_card.html"
+              ],
+              "endpoint": "ace_api.api_suggestion_decline",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/suggestions/<suggestion_id>/decline",
+              "write": true
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -139,6 +212,102 @@
             "registry entry 'ace'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "ace_api.api_presets_list",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/presets",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "ace_api.api_profiles_list",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/profiles",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/roles.html"
+              ],
+              "endpoint": "ace_api.api_profiles_delete",
+              "methods": [
+                "DELETE"
+              ],
+              "observed": true,
+              "rule": "/api/ace/profiles/<role_id>",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/profile_new.html"
+              ],
+              "endpoint": "ace_api.api_profiles_generate",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/profiles/generate",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/profile_new.html"
+              ],
+              "endpoint": "ace_api.api_profiles_preview",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/profiles/preview",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/profile_new.html"
+              ],
+              "endpoint": "ace_api.api_profiles_suggest_name",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/profiles/suggest-name",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/profile_new.html",
+                "tools/dashboard/templates/coworker/roles.html"
+              ],
+              "endpoint": "ace.profiles_new",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/coworker/profiles/new",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/index.html",
+                "tools/dashboard/templates/coworker/profile_new.html"
+              ],
+              "endpoint": "ace.roles",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/coworker/roles",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -196,6 +365,207 @@
             "registry entry 'ace'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "ace_api.api_artifacts",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/<instance_id>/artifacts",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/instance.html"
+              ],
+              "endpoint": "ace_api.api_audit",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/ace/<instance_id>/audit",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/instance.html"
+              ],
+              "endpoint": "ace_api.api_messages",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/ace/<instance_id>/messages",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/instance.html"
+              ],
+              "endpoint": "ace_api.api_status",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/ace/<instance_id>/status",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/live.html"
+              ],
+              "endpoint": "ace_api.api_stream",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/<instance_id>/stream",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/chat.html"
+              ],
+              "endpoint": "ace_api.api_ace_chat",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/chat",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "ace_api.api_instances",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/instances",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/index.html"
+              ],
+              "endpoint": "ace_api.api_launch",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/launch",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/session_detail.html"
+              ],
+              "endpoint": "ace_api.api_session_rerun",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/sessions/<session_id>/rerun",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/chat.html",
+                "tools/dashboard/templates/ace/evals.html",
+                "tools/dashboard/templates/ace/live.html",
+                "tools/dashboard/templates/ace/session_detail.html",
+                "tools/dashboard/templates/ace/sessions.html",
+                "tools/dashboard/templates/ace/trends.html",
+                "tools/dashboard/templates/ace/trust.html",
+                "tools/dashboard/templates/coworker/instance.html",
+                "tools/dashboard/templates/coworker/profile_new.html",
+                "tools/dashboard/templates/coworker/roles.html",
+                "tools/dashboard/templates/coworker/trust.html"
+              ],
+              "endpoint": "ace.index",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/coworker",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/chat.html",
+                "tools/dashboard/templates/ace/evals.html",
+                "tools/dashboard/templates/ace/live.html",
+                "tools/dashboard/templates/ace/session_detail.html",
+                "tools/dashboard/templates/ace/sessions.html",
+                "tools/dashboard/templates/ace/trends.html",
+                "tools/dashboard/templates/ace/trust.html",
+                "tools/dashboard/templates/coworker/instance.html",
+                "tools/dashboard/templates/coworker/profile_new.html",
+                "tools/dashboard/templates/coworker/roles.html",
+                "tools/dashboard/templates/coworker/trust.html"
+              ],
+              "endpoint": "ace.index",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/coworker/",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/live.html",
+                "tools/dashboard/templates/coworker/_dispatch_panels.html",
+                "tools/dashboard/templates/coworker/index.html",
+                "tools/dashboard/templates/coworker/trust.html"
+              ],
+              "endpoint": "ace.instance_detail",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/coworker/<instance_id>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/instance.html"
+              ],
+              "endpoint": "ace.instance_resume",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/coworker/<instance_id>/resume",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/sessions.html"
+              ],
+              "endpoint": "ace.chat_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/coworker/chat",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/session_detail.html"
+              ],
+              "endpoint": "ace.live_monitor",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/coworker/live/<instance_id>",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -256,7 +626,7 @@
             "ace_api.api_auto_dispatch_revoke called from tools/dashboard/templates/coworker/_dispatch_panels.html",
             "ace_api.api_auto_dispatch_stop_all called from tools/dashboard/templates/coworker/_dispatch_panels.html",
             "ace_api.api_iqe_query called from tools/dashboard/templates/ace/chat.html",
-            "ace_api.api_session_eval_post called from tools/dashboard/templates/ace/evals.html",
+            "ace_api.api_session_eval_post called from tools/dashboard/templates/ace/session_detail.html",
             "nav links /coworker/sessions",
             "page /coworker/evals renders ace/evals.html",
             "page /coworker/evals/trends renders ace/trends.html",
@@ -266,6 +636,295 @@
             "registry entry 'ace'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/instance.html"
+              ],
+              "endpoint": "ace_api.api_nova_state",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/ace/<instance_id>/nova-state",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/_dispatch_panels.html"
+              ],
+              "endpoint": "ace_api.api_auto_dispatch",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/ace/auto-dispatch",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/_dispatch_panels.html"
+              ],
+              "endpoint": "ace_api.api_auto_dispatch_revoke",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/auto-dispatch/<grant_id>/revoke",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/_dispatch_panels.html"
+              ],
+              "endpoint": "ace_api.api_auto_dispatch_grant",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/auto-dispatch/grant",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/_dispatch_panels.html"
+              ],
+              "endpoint": "ace_api.api_auto_dispatch_resume_all",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/auto-dispatch/resume-all",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/_dispatch_panels.html"
+              ],
+              "endpoint": "ace_api.api_auto_dispatch_stop_all",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/auto-dispatch/stop-all",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "ace_api.api_coworker_stats",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/coworkers/<coworker_id>/stats",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/evals.html"
+              ],
+              "endpoint": "ace_api.api_evals_list",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/evals",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/trends.html"
+              ],
+              "endpoint": "ace_api.api_evals_trends",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/evals/trends",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/_dispatch_panels.html"
+              ],
+              "endpoint": "ace_api.api_ace_events",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/ace/events",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "ace_api.api_ace_event_topics",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/events/topics",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/chat.html",
+                "tools/dashboard/templates/coworker/index.html"
+              ],
+              "endpoint": "ace_api.api_iqe_query",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/iqe-query",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "ace_api.api_monitor_summary",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/monitor-summary",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/sessions.html"
+              ],
+              "endpoint": "ace_api.api_sessions_list",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/sessions",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/session_detail.html"
+              ],
+              "endpoint": "ace_api.api_session_detail",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/ace/sessions/<session_id>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/session_detail.html"
+              ],
+              "endpoint": "ace_api.api_session_eval_get",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/ace/sessions/<session_id>/eval",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/session_detail.html"
+              ],
+              "endpoint": "ace_api.api_session_eval_post",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/api/ace/sessions/<session_id>/eval",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/session_detail.html"
+              ],
+              "endpoint": "ace_api.api_session_eval_compare",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/api/ace/sessions/<session_id>/eval/compare",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/session_detail.html"
+              ],
+              "endpoint": "ace_api.api_session_eval_suggestions",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/api/ace/sessions/<session_id>/eval/suggestions",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/trends.html"
+              ],
+              "endpoint": "ace.evals_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/coworker/evals",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/evals.html"
+              ],
+              "endpoint": "ace.evals_trends_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/coworker/evals/trends",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/chat.html",
+                "tools/dashboard/templates/ace/live.html",
+                "tools/dashboard/templates/ace/session_detail.html",
+                "tools/dashboard/templates/coworker/index.html"
+              ],
+              "endpoint": "ace.sessions_list",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/coworker/sessions",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/ace/evals.html",
+                "tools/dashboard/templates/ace/sessions.html"
+              ],
+              "endpoint": "ace.session_detail",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/coworker/sessions/<session_id>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/coworker/index.html"
+              ],
+              "endpoint": "ace.trust_leaderboard",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/coworker/trust",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -305,7 +964,8 @@
             "PM-CNF-02 -> conformance.audit -> tests/test_feature_conformance_audit.py::test_two_runs_and_a_shuffled_url_map_are_byte_identical, tests/test_feature_conformance_audit.py::test_check_fails_on_a_stale_doc_snapshot_or_census, tests/test_feature_conformance_audit.py::test_the_census_ceiling_may_not_be_exceeded",
             "PM-CNF-03 -> conformance.audit, if.conformance.console, if.conformance.mcp -> tests/test_feature_conformance_audit.py::test_the_console_page_and_api_render_the_snapshot, tests/test_feature_conformance_audit.py::test_the_mcp_tool_is_declared_read_only_and_serves_the_snapshot",
             "PM-CNF-04 -> platform_model.seeder -> tests/test_platform_model.py::test_the_shipped_model_validates, tests/test_platform_model.py::test_an_invented_test_name_is_refused, tests/test_platform_model.py::test_an_untested_requirement_is_a_gap_not_a_pass, tests/test_platform_model.py::test_seeded_thread_has_no_orphans_or_gaps_for_traced_features, tests/test_platform_model.py::test_mcp_trace_forward_and_backward_resolve_a_requirement",
-            "PM-CNF-05 -> if.lineage.platform_model, if.conformance.mcp -> tests/test_platform_model.py::test_lineage_route_and_page_show_the_trace, tests/test_platform_model.py::test_mcp_platform_model_trace_is_read_only"
+            "PM-CNF-05 -> if.lineage.platform_model, if.conformance.mcp -> tests/test_platform_model.py::test_lineage_route_and_page_show_the_trace, tests/test_platform_model.py::test_mcp_platform_model_trace_is_read_only",
+            "PM-CNF-08 -> conformance.route_ids, conformance.audit, if.conformance.console -> tests/test_feature_conformance_audit.py::test_a_page_that_builds_a_path_for_a_route_is_not_credited, tests/test_feature_conformance_audit.py::test_a_hand_written_api_path_in_an_audited_file_fails_check, tests/test_feature_conformance_audit.py::test_a_stale_route_table_or_an_unknown_id_fails_check, tests/test_feature_conformance_audit.py::test_the_e2e_gate_fails_on_a_named_write_no_page_sent, tests/test_feature_conformance_audit.py::test_the_e2e_gate_fails_on_an_overclaiming_record_or_a_stray_request, tests/test_icx_cnf_08_route_ids.py::test_no_audited_file_hand_writes_an_api_path, tests/test_icx_cnf_08_route_ids.py::test_every_credited_write_was_seen_sent_by_a_page"
           ],
           "gaps": [],
           "status": "pass"
@@ -317,6 +977,32 @@
             "registry entry 'twin_observatory'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/twin_observatory/conformance.html"
+              ],
+              "endpoint": "twin_observatory.api_conformance",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/twin-observatory/api/conformance",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/twin_observatory/index.html"
+              ],
+              "endpoint": "twin_observatory.conformance_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/twin-observatory/conformance",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -365,6 +1051,30 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/govern.html"
+              ],
+              "endpoint": "cortex.api_agent_launches",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/agent-launches",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "cortex.api_v1_agent",
+              "methods": [
+                "POST"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/v1/agent",
+              "write": true
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -412,6 +1122,42 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/index.html"
+              ],
+              "endpoint": "cortex.airgap_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/airgap",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "cortex.api_airgap",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/airgap",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/airgap.html"
+              ],
+              "endpoint": "cortex.api_v1_health",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/v1/health",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -458,6 +1204,42 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/document_intelligence/explorer.html"
+              ],
+              "endpoint": "dic.api_explorer_cortex_findings",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/document-intelligence/api/explorer/cortex-findings",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/document_intelligence/explorer.html"
+              ],
+              "endpoint": "dic.api_explorer_cortex_finding_adjudicate",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/document-intelligence/api/explorer/cortex-findings/<finding_id>/adjudicate",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "dic.explorer",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/document-intelligence/explorer",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -505,6 +1287,42 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "cortex.api_trust_chain",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/trust-chain",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/govern.html"
+              ],
+              "endpoint": "cortex.api_v1_govern",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/govern",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/index.html"
+              ],
+              "endpoint": "cortex.govern_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/cortex/govern",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -561,6 +1379,81 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/verbs.html"
+              ],
+              "endpoint": "cortex.api_v1_classify",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/classify",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/verbs.html"
+              ],
+              "endpoint": "cortex.api_v1_complete",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/complete",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/verbs.html"
+              ],
+              "endpoint": "cortex.api_v1_extract",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/extract",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/verbs.html"
+              ],
+              "endpoint": "cortex.api_v1_reason",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/reason",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/verbs.html"
+              ],
+              "endpoint": "cortex.api_v1_resolve",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/resolve",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/index.html",
+                "tools/dashboard/templates/document_intelligence/explorer.html"
+              ],
+              "endpoint": "cortex.verbs_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/cortex/verbs",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -607,6 +1500,68 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/intake.html"
+              ],
+              "endpoint": "cortex.api_intake_sessions",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/intake/sessions",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/intake.html"
+              ],
+              "endpoint": "cortex.api_v1_intake_session_create",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/intake/session",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/intake.html"
+              ],
+              "endpoint": "cortex.api_v1_intake_session_get",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/v1/intake/session/<session_id>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/intake.html"
+              ],
+              "endpoint": "cortex.api_v1_intake_turn",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/intake/turn",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/index.html"
+              ],
+              "endpoint": "cortex.intake_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/cortex/intake",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -651,6 +1606,42 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "cortex.api_metrics",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/metrics",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "cortex.api_metrics_tile",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/metrics/tile",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/govern.html",
+                "tools/dashboard/templates/cortex/index.html",
+                "tools/dashboard/templates/cortex/verbs.html"
+              ],
+              "endpoint": "cortex.metrics_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/metrics",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -705,6 +1696,116 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/pmo.html"
+              ],
+              "endpoint": "cortex.api_pmo_status",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/pmo/status",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/pmo.html"
+              ],
+              "endpoint": "cortex.api_v1_award",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/award",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/pmo.html"
+              ],
+              "endpoint": "cortex.api_v1_bom",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/bom",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/pmo.html"
+              ],
+              "endpoint": "cortex.api_v1_cost_volume",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/cost_volume",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/pmo.html"
+              ],
+              "endpoint": "cortex.api_v1_dashboard",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/dashboard",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/pmo.html"
+              ],
+              "endpoint": "cortex.api_v1_slides",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/slides",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/pmo.html"
+              ],
+              "endpoint": "cortex.api_v1_staffing_matrix",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/staffing_matrix",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/pmo.html"
+              ],
+              "endpoint": "cortex.api_v1_win_themes",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/v1/win_themes",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/index.html"
+              ],
+              "endpoint": "cortex.pmo_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/cortex/pmo",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -757,6 +1858,86 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/airgap.html",
+                "tools/dashboard/templates/cortex/govern.html",
+                "tools/dashboard/templates/cortex/intake.html",
+                "tools/dashboard/templates/cortex/metrics.html",
+                "tools/dashboard/templates/cortex/pmo.html",
+                "tools/dashboard/templates/cortex/service_keys.html",
+                "tools/dashboard/templates/cortex/verbs.html"
+              ],
+              "endpoint": "cortex.index",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/cortex/",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/index.html"
+              ],
+              "endpoint": "cortex.api_chat",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/chat",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/airgap.html",
+                "tools/dashboard/templates/cortex/govern.html",
+                "tools/dashboard/templates/cortex/index.html",
+                "tools/dashboard/templates/cortex/intake.html",
+                "tools/dashboard/templates/cortex/pmo.html",
+                "tools/dashboard/templates/cortex/service_keys.html",
+                "tools/dashboard/templates/cortex/verbs.html"
+              ],
+              "endpoint": "cortex.api_iqe_query",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/cortex/api/iqe-query",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "cortex.api_session",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/session/<session_id>",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "cortex.api_v1_ask",
+              "methods": [
+                "POST"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/v1/ask",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "cortex.api_v1_search",
+              "methods": [
+                "POST"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/v1/search",
+              "write": true
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -802,6 +1983,30 @@
             "registry entry 'cortex'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "cortex.api_service_keys",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/api/service-keys",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/cortex/index.html"
+              ],
+              "endpoint": "cortex.service_keys_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/cortex/service-keys",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -848,6 +2053,48 @@
             "registry entry 'cwk'"
           ],
           "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "coworkers.index",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/coworkers",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "coworkers.index",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/coworkers/",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "coworkers.open_chat",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/coworkers/c/<path:coworker_id>",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "coworkers.status",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/coworkers/status",
+              "write": false
+            }
+          ],
           "status": "pass"
         },
         "twin": {
@@ -870,6 +2117,45 @@
       "label": "Co-Workers canvas"
     }
   ],
+  "route_ids": {
+    "audited_files": [
+      "tools/dashboard/templates/ace/chat.html",
+      "tools/dashboard/templates/ace/evals.html",
+      "tools/dashboard/templates/ace/live.html",
+      "tools/dashboard/templates/ace/session_detail.html",
+      "tools/dashboard/templates/ace/sessions.html",
+      "tools/dashboard/templates/ace/trends.html",
+      "tools/dashboard/templates/ace/trust.html",
+      "tools/dashboard/templates/cortex/_rest_runner.html",
+      "tools/dashboard/templates/cortex/airgap.html",
+      "tools/dashboard/templates/cortex/govern.html",
+      "tools/dashboard/templates/cortex/index.html",
+      "tools/dashboard/templates/cortex/intake.html",
+      "tools/dashboard/templates/cortex/metrics.html",
+      "tools/dashboard/templates/cortex/pmo.html",
+      "tools/dashboard/templates/cortex/service_keys.html",
+      "tools/dashboard/templates/cortex/verbs.html",
+      "tools/dashboard/templates/coworker/_dispatch_panels.html",
+      "tools/dashboard/templates/coworker/hitl.html",
+      "tools/dashboard/templates/coworker/index.html",
+      "tools/dashboard/templates/coworker/instance.html",
+      "tools/dashboard/templates/coworker/profile_new.html",
+      "tools/dashboard/templates/coworker/roles.html",
+      "tools/dashboard/templates/coworker/trust.html",
+      "tools/dashboard/templates/coworkers/index.html",
+      "tools/dashboard/templates/document_intelligence/explorer.html",
+      "tools/dashboard/templates/includes/_chat_action_card.html",
+      "tools/dashboard/templates/includes/iqe_query_widget.html",
+      "tools/dashboard/templates/twin_observatory/conformance.html",
+      "tools/dashboard/templates/twin_observatory/index.html"
+    ],
+    "hand_written": [],
+    "routes_gen": {
+      "current": true,
+      "file": "tools/dashboard/static/js/routes.gen.js"
+    },
+    "unknown_ids": []
+  },
   "rules": [
     "gui",
     "workflow",
@@ -1009,7 +2295,12 @@
       "twin": 0,
       "workflow": 0
     },
-    "gaps_total": 0
+    "gaps_total": 0,
+    "routes": 101,
+    "routes_by_id": 78,
+    "routes_observed": 61,
+    "writes_by_id": 35,
+    "writes_observed": 35
   },
   "tool": "feature_audit",
   "version": 1

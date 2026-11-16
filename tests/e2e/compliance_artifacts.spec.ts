@@ -2,7 +2,7 @@
 // E2E Test: Compliance Artifact Generation
 // Verifies compliance artifacts (SSP, POAM, STIG, SBOM) are viewable through the dashboard.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

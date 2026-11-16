@@ -57,7 +57,7 @@
     You get the governance report and the redacted text. The run is itself governed, so it writes one audit row.</p>
   <label for="govern-body" style="color:#7a8cb0;font-size:11px;">Request body (JSON)</label>
   <textarea id="govern-body" rows="6" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-family:monospace;font-size:12px;">{"text": "The SSP is current as of this quarter [source: ssp-2026q3].", "context_sources": ["ssp-2026q3"], "retrieval": true}</textarea>
-  <button type="button" onclick="cortexRun('/cortex/api/v1/govern', 'govern-body', 'govern-out')"
+  <button type="button" onclick="cortexRun(icdevRoute('cortex.api_v1_govern'), 'govern-body', 'govern-out')"
     style="margin-top:8px;background:#0f2a4a;color:#b8d0e8;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">Run the chain</button>
   <div id="govern-out" style="margin-top:10px;"></div>
 </div>
@@ -68,7 +68,7 @@
   <div id="govern-launches"><span style="color:#7a8cb0;font-size:12px;">Loading…</span></div>
 </div>
 <script>
-cortexGet('/cortex/api/agent-launches').then(function(res) {
+cortexGet(icdevRoute('cortex.api_agent_launches')).then(function(res) {
   var el = document.getElementById('govern-launches');
   var j = res.json || {};
   if (j.status === 'unavailable') {
@@ -86,7 +86,7 @@ cortexGet('/cortex/api/agent-launches').then(function(res) {
 
 <!-- IQE Query Widget -->
 {% set iqe_canvas = "cortex" %}
-{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_api_route = url_for('cortex.api_iqe_query') %}
 {% set iqe_title = "IQE Query — Cortex" %}
 {% set iqe_examples = [
   {"label": "Blocked invocations", "query": "foreach a in cortex.audit where a.blocked == true select a.function, a.outcome, a.session_id, a.created_at"}

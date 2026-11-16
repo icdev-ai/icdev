@@ -95,7 +95,7 @@
   <div class="breadcrumbs">
     <a href="/">Home</a>
     <span class="separator">/</span>
-    <a href="/coworker">Co-Worker Engine</a>
+    <a href="{{ url_for('ace.index') }}">Co-Worker Engine</a>
     <span class="separator">/</span>
     <span>Agent Sessions</span>
   </div>
@@ -109,7 +109,7 @@
       </p>
     </div>
     <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
-      <a href="/coworker/chat" class="filter-btn" title="Multi-turn chat with the Co-Worker Engine" style="background:var(--bg-secondary,#1a1a2e); border:1px solid var(--border-color,#2a2a4a); color:var(--text-primary,#e2e8f0); text-decoration:none;">&#128172; ACE chat</a>
+      <a href="{{ url_for('ace.chat_page') }}" class="filter-btn" title="Multi-turn chat with the Co-Worker Engine" style="background:var(--bg-secondary,#1a1a2e); border:1px solid var(--border-color,#2a2a4a); color:var(--text-primary,#e2e8f0); text-decoration:none;">&#128172; ACE chat</a>
       <button class="filter-btn" onclick="loadSessions()" style="background:var(--bg-secondary,#1a1a2e); border:1px solid var(--border-color,#2a2a4a); color:var(--text-primary,#e2e8f0);">&#8635; Refresh</button>
     </div>
   </div>
@@ -224,7 +224,7 @@ async function loadSessions() {
   tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Loading…</td></tr>';
 
   try {
-    const res  = await fetch('/api/ace/sessions?' + params);
+    const res  = await fetch(icdevRoute('ace_api.api_sessions_list', {}, params));
     const data = await res.json();
 
     if (data.error) {
@@ -247,7 +247,7 @@ async function loadSessions() {
     } else {
       tbody.innerHTML = sessions.map(function(s) {
         return '<tr>' +
-          '<td><a class="session-id-link" href="/coworker/sessions/' + s.session_id + '" title="' + s.session_id + '">' + shortId(s.session_id) + '</a></td>' +
+          '<td><a class="session-id-link" href="' + icdevRoute('ace.session_detail', {session_id: s.session_id}) + '" title="' + s.session_id + '">' + shortId(s.session_id) + '</a></td>' +
           '<td style="font-size:12px;">' + truncate(s.coworker_id, 24) + '</td>' +
           '<td style="font-size:12px; font-family:monospace;">' + truncate(s.instance_id, 16) + '</td>' +
           '<td>' + subtypeBadge(s.result_subtype) + '</td>' +

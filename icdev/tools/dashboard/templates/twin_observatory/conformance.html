@@ -7,7 +7,7 @@
     CUI // SP-CTI &mdash; Feature Conformance
   </div>
 
-  <p style="margin:0 0 0.5rem 0;"><a href="/twin-observatory/" style="color:#5aa9e6;font-size:0.85rem;">&larr; Twin Observatory</a></p>
+  <p style="margin:0 0 0.5rem 0;"><a href="{{ url_for('twin_observatory.index') }}" style="color:#5aa9e6;font-size:0.85rem;">&larr; Twin Observatory</a></p>
   <h1 style="color:#eaeaea;">Feature Conformance</h1>
   <p style="color:#7a8cb0;">
     Each feature judged against the five rules: a console page, a declared workflow for every
@@ -41,6 +41,15 @@
       <div style="color:#eaeaea;font-size:1rem;">{{ report.enforcement }}</div>
     </div>
   </div>
+
+  {# icx-cnf-08: the GUI rule's evidence is exact. A route counts as a page's only when the page
+     names its endpoint id; a write counts as sent only when the e2e run saw a page send it. #}
+  <p id="conformance-routes-summary" style="color:#7a8cb0;font-size:0.85rem;">
+    Routes: {{ s.routes_by_id }} of {{ s.routes }} are named by a page by endpoint id
+    (<code>icdevRoute</code>, <code>icdevFetch</code> or <code>url_for</code>). Writes: a page was seen
+    sending {{ s.writes_observed }} of the {{ s.writes_by_id }} a page names, in the recorded e2e run.
+    CI's e2e job fails on any write it does not see a page send.
+  </p>
 
   <h2 style="color:#eaeaea;font-size:1.1rem;">Matrix</h2>
   <div style="overflow-x:auto;">
@@ -82,12 +91,30 @@
       </ul>
     </div>
     {% endfor %}
+    {% set routes = f.cells.gui.routes or [] %}
+    {% if routes %}
+    <table class="conformance-routes" data-feature="{{ f.key }}" style="width:100%;border-collapse:collapse;margin:8px 0 4px 8px;font-size:0.8rem;">
+      <thead><tr style="text-align:left;color:#7a8cb0;border-bottom:1px solid #1e3a6e;">
+        <th style="padding:4px;">Route</th><th style="padding:4px;">Endpoint</th>
+        <th style="padding:4px;">Named by id in</th><th style="padding:4px;">Seen in e2e</th></tr></thead>
+      <tbody>
+        {% for r in routes %}
+        <tr data-endpoint="{{ r.endpoint }}" style="border-bottom:1px solid #16203a;">
+          <td style="padding:4px;"><code>{{ r.methods|join('/') }} {{ r.rule }}</code>{% if r.write %} <span style="color:#e0a030;">write</span>{% endif %}</td>
+          <td style="padding:4px;"><code>{{ r.endpoint }}</code></td>
+          <td style="padding:4px;color:#7a8cb0;">{{ r.by_id|join(', ') or '—' }}</td>
+          <td style="padding:4px;">{% if r.observed %}<span style="color:#2e7d32;">seen</span>{% else %}<span style="color:#7a8cb0;">—</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
   </details>
   {% endfor %}
 
   <p style="color:#5a6b8c;font-size:0.75rem;margin-top:1rem;">
     Source: {{ report.source.snapshot }} (regenerate: <code>{{ report.source.regenerate }}</code>).
-    Also as JSON at <a href="/twin-observatory/api/conformance" style="color:#5aa9e6;">/twin-observatory/api/conformance</a>
+    Also as JSON at <a href="{{ url_for('twin_observatory.api_conformance') }}" style="color:#5aa9e6;">{{ url_for('twin_observatory.api_conformance') }}</a>
     and through the MCP tool <code>feature_conformance</code>.
   </p>
   {% endif %}

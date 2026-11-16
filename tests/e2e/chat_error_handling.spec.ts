@@ -1,7 +1,7 @@
 // CUI // SP-CTI
 // E2E Test: Chat Error Handling — Spinner DOM states, disabled send, 429 messaging
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

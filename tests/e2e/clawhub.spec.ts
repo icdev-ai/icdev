@@ -2,7 +2,7 @@
 // E2E Test: ClawHub Skill Browser
 // Verifies the ClawHub Skill Browser page loads correctly with search, import queue, and action buttons.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import * as net from 'net';
 
 const CUI_BANNER = 'CUI // SP-CTI';

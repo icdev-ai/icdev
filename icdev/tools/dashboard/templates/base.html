@@ -85,6 +85,9 @@
         }
     })();
     </script>
+    {#- icx-cnf-08: the route table, generated from the url_map (tools/dashboard/routes_gen.py).
+        Not deferred: page scripts call routes by endpoint id (icdevRoute / icdevFetch) as they load. #}
+    <script src="{{ url_for('static', filename='js/routes.gen.js') }}"></script>
     <script>
     // Apply theme before render to prevent FOUC
     (function() {

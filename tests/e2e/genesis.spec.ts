@@ -2,7 +2,7 @@
 // E2E Test: Genesis v2.0 Autonomous Research Lab Dashboard
 // Verifies the Genesis dashboard loads with daemon status, 14 reflexes table, GKP promoter stats, and feedback-driven priorities.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import { loginIfPrompted, suppressOnboarding } from './fixtures/onboarding';
 import { resolveBaseUrl } from './fixtures/base_url';
 

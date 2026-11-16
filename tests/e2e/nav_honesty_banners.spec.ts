@@ -14,7 +14,7 @@
 // Feature-gated surfaces are probed and skipped (not failed) when the owning
 // feature is disabled in this environment.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

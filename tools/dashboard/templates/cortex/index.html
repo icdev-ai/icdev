@@ -76,7 +76,7 @@ function cortexAsk() {
   var btn = document.getElementById('cortex-send');
   btn.disabled = true;
   out.textContent = 'Thinking…';
-  fetch('/cortex/api/chat', {
+  fetch(icdevRoute('cortex.api_chat'), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
@@ -155,7 +155,7 @@ function cortexConfirmAgent() {
 
 <!-- IQE Query Widget -->
 {% set iqe_canvas = "cortex" %}
-{% set iqe_api_route = "/cortex/api/iqe-query" %}
+{% set iqe_api_route = url_for('cortex.api_iqe_query') %}
 {% set iqe_title = "IQE Query — Cortex" %}
 {% set iqe_examples = [
   {"label": "Recent sessions", "query": "foreach s in cortex.sessions select s.session_id, s.mode, s.domain, s.status"},

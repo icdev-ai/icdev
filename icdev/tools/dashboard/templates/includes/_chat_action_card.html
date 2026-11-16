@@ -91,7 +91,8 @@
     actions.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
     result.textContent = approve ? 'Starting the team…' : 'Dismissing…';
 
-    fetch('/api/ace/suggestions/' + encodeURIComponent(id) + (approve ? '/confirm' : '/decline'), {
+    fetch(approve ? icdevRoute('ace_api.api_suggestion_confirm', {suggestion_id: id})
+                  : icdevRoute('ace_api.api_suggestion_decline', {suggestion_id: id}), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}'

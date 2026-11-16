@@ -18,7 +18,7 @@
 // is wiped each run; these explicit screenshots live under playwright/screenshots
 // and are NOT wiped by the runner.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import path from 'path';
 import fs from 'fs';
 

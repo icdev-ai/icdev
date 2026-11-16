@@ -101,13 +101,13 @@
  */
 
 import {
-  test as base,
-  expect,
   type APIRequestContext,
   type Browser,
   type BrowserContext,
   type BrowserContextOptions,
 } from '@playwright/test';
+// icx-cnf-08: built on the observed-calls fixture, so every authed spec records its pages' requests.
+import { test as base, expect } from './observed_calls';
 import { resolveBaseUrl } from './base_url';
 
 /** Set by `tools/security/csrf.py::register_csrf`; readable by page JS by design. */

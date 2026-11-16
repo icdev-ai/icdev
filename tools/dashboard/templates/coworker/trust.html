@@ -27,7 +27,7 @@
   <div class="breadcrumbs">
     <a href="/">Home</a>
     <span class="separator">/</span>
-    <a href="/coworker/">Co-Worker Engine</a>
+    <a href="{{ url_for('ace.index') }}">Co-Worker Engine</a>
     <span class="separator">/</span>
     <span>Trust Leaderboard</span>
   </div>
@@ -44,7 +44,7 @@
                <span class="trust-red">RED</span> &lt; 50
       </p>
     </div>
-    <a href="/coworker/" class="btn btn-secondary" style="font-size:12px;">← Back to Co-Workers</a>
+    <a href="{{ url_for('ace.index') }}" class="btn btn-secondary" style="font-size:12px;">← Back to Co-Workers</a>
   </div>
 
   <!-- ── Stat row ───────────────────────────────────────────────────── -->
@@ -92,7 +92,7 @@
             <div style="font-size:11px; color:var(--text-secondary,#555);">{{ row.coworker_id[:20] }}</div>
           </td>
           <td>
-            <a href="/coworker/{{ row.instance_id }}" style="font-size:11px; color:var(--accent-color,#4a90d9);">
+            <a href="{{ url_for('ace.instance_detail', instance_id=row.instance_id) }}" style="font-size:11px; color:var(--accent-color,#4a90d9);">
               {{ row.instance_id[:16] }}…
             </a>
           </td>
@@ -129,7 +129,7 @@
     <div style="font-size:14px; font-weight:600; margin-bottom:6px;">No co-worker runs yet</div>
     <p style="font-size:13px; color:var(--text-secondary,#7a8cb0); margin:0 0 16px; max-width:400px; margin-left:auto; margin-right:auto;">
       Trust scores accumulate as co-workers complete instance runs.
-      Launch an instance from the <a href="/coworker/" style="color:var(--accent-color,#4a90d9);">Co-Worker Engine</a> to get started.
+      Launch an instance from the <a href="{{ url_for('ace.index') }}" style="color:var(--accent-color,#4a90d9);">Co-Worker Engine</a> to get started.
     </p>
   </div>
   {% endif %}

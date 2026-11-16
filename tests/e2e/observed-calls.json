@@ -1,0 +1,681 @@
+{
+ "about": "The record of a local e2e run (tests/e2e/fixtures/observed_calls.ts), limited to the routes of the features tools/conformance/feature_audit.py judges. 'page' means a page's own code sent it; 'test' means only a test's own request did. CI's e2e gate fails if this record claims a write the CI run did not see a page send (icx-cnf-08).",
+ "routes": {
+  "DELETE ace_api.api_profiles_delete": {
+   "endpoint": "ace_api.api_profiles_delete",
+   "method": "DELETE",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: suggest a name, preview, create, then delete the profile"
+   ]
+  },
+  "GET ace.chat_page": {
+   "endpoint": "ace.chat_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE"
+   ]
+  },
+  "GET ace.index": {
+   "endpoint": "ace.index",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE",
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "ACE: stop all, resume, turn auto on and off from the Co-Worker page",
+    "GET /api/ace/<id>/artifacts returns paginated response",
+    "GET /api/ace/<id>/audit returns events array",
+    "GET /api/ace/<id>/messages returns paginated response",
+    "GET /api/ace/<id>/status returns state field",
+    "GET /api/ace/events and /api/ace/auto-dispatch answer 200",
+    "GET /api/ace/events/topics returns 200 and topics",
+    "GET /api/ace/instances returns 200 and paginated list",
+    "GET /api/ace/presets returns 19 presets (C-1 fix + bi_dashboard presets)",
+    "GET /coworker/<id> instance detail loads",
+    "POST /api/ace/<id>/abort transitions state to cancelled",
+    "POST /api/ace/launch with valid problem returns instance_id",
+    "edge: GET /api/ace/<id>/messages?after=999999 \u2192 empty messages list",
+    "edge: POST /api/ace/iqe-query with plain text \u2192 non-500 response",
+    "edge: abort non-existent instance \u2192 404",
+    "edge: launch with empty problem \u2192 non-500 validation response",
+    "edge: launch with single-word problem \u2192 instance_id returned",
+    "edge: two sequential launches appear in /api/ace/instances",
+    "index loads with CUI banner and stat cards",
+    "orchestrator: coworker index links to roles and trust leaderboard",
+    "stop all auto needs a reason, then takes effect at once",
+    "the Co-Worker page shows the Event feed and Auto-dispatch panels",
+    "the route helpers fill a rule and refuse a missing, empty or unknown parameter"
+   ]
+  },
+  "GET ace.instance_detail": {
+   "endpoint": "ace.instance_detail",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "GET /coworker/<id> instance detail loads",
+    "edge: GET /coworker/<unknown-id> \u2192 graceful error, not 500",
+    "instance detail page has Activity Log tab"
+   ]
+  },
+  "GET ace.profiles_new": {
+   "endpoint": "ace.profiles_new",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: suggest a name, preview, create, then delete the profile",
+    "profile creator form loads with required fields"
+   ]
+  },
+  "GET ace.roles": {
+   "endpoint": "ace.roles",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: suggest a name, preview, create, then delete the profile",
+    "role catalog loads with \u22651 role listed"
+   ]
+  },
+  "GET ace.session_detail": {
+   "endpoint": "ace.session_detail",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE"
+   ]
+  },
+  "GET ace.trust_leaderboard": {
+   "endpoint": "ace.trust_leaderboard",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "trust leaderboard page loads (empty data ok)"
+   ]
+  },
+  "GET ace_api.api_ace_event_topics": {
+   "endpoint": "ace_api.api_ace_event_topics",
+   "method": "GET",
+   "page": false,
+   "test": true,
+   "tests": [
+    "GET /api/ace/events/topics returns 200 and topics"
+   ]
+  },
+  "GET ace_api.api_ace_events": {
+   "endpoint": "ace_api.api_ace_events",
+   "method": "GET",
+   "page": true,
+   "test": true,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE",
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "ACE: stop all, resume, turn auto on and off from the Co-Worker page",
+    "GET /api/ace/<id>/artifacts returns paginated response",
+    "GET /api/ace/<id>/audit returns events array",
+    "GET /api/ace/<id>/messages returns paginated response",
+    "GET /api/ace/<id>/status returns state field",
+    "GET /api/ace/events and /api/ace/auto-dispatch answer 200",
+    "GET /api/ace/events/topics returns 200 and topics",
+    "GET /api/ace/instances returns 200 and paginated list",
+    "GET /api/ace/presets returns 19 presets (C-1 fix + bi_dashboard presets)",
+    "GET /coworker/<id> instance detail loads",
+    "POST /api/ace/<id>/abort transitions state to cancelled",
+    "POST /api/ace/launch with valid problem returns instance_id",
+    "edge: GET /api/ace/<id>/messages?after=999999 \u2192 empty messages list",
+    "edge: POST /api/ace/iqe-query with plain text \u2192 non-500 response",
+    "edge: abort non-existent instance \u2192 404",
+    "edge: launch with empty problem \u2192 non-500 validation response",
+    "edge: launch with single-word problem \u2192 instance_id returned",
+    "edge: two sequential launches appear in /api/ace/instances",
+    "index loads with CUI banner and stat cards",
+    "orchestrator: coworker index links to roles and trust leaderboard",
+    "stop all auto needs a reason, then takes effect at once",
+    "the Co-Worker page shows the Event feed and Auto-dispatch panels",
+    "the route helpers fill a rule and refuse a missing, empty or unknown parameter"
+   ]
+  },
+  "GET ace_api.api_artifacts": {
+   "endpoint": "ace_api.api_artifacts",
+   "method": "GET",
+   "page": false,
+   "test": true,
+   "tests": [
+    "GET /api/ace/<id>/artifacts returns paginated response"
+   ]
+  },
+  "GET ace_api.api_audit": {
+   "endpoint": "ace_api.api_audit",
+   "method": "GET",
+   "page": true,
+   "test": true,
+   "tests": [
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "GET /api/ace/<id>/audit returns events array",
+    "GET /coworker/<id> instance detail loads",
+    "instance detail page has Activity Log tab"
+   ]
+  },
+  "GET ace_api.api_auto_dispatch": {
+   "endpoint": "ace_api.api_auto_dispatch",
+   "method": "GET",
+   "page": true,
+   "test": true,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE",
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "ACE: stop all, resume, turn auto on and off from the Co-Worker page",
+    "GET /api/ace/<id>/artifacts returns paginated response",
+    "GET /api/ace/<id>/audit returns events array",
+    "GET /api/ace/<id>/messages returns paginated response",
+    "GET /api/ace/<id>/status returns state field",
+    "GET /api/ace/events and /api/ace/auto-dispatch answer 200",
+    "GET /api/ace/events/topics returns 200 and topics",
+    "GET /api/ace/instances returns 200 and paginated list",
+    "GET /api/ace/presets returns 19 presets (C-1 fix + bi_dashboard presets)",
+    "GET /coworker/<id> instance detail loads",
+    "POST /api/ace/<id>/abort transitions state to cancelled",
+    "POST /api/ace/launch with valid problem returns instance_id",
+    "edge: GET /api/ace/<id>/messages?after=999999 \u2192 empty messages list",
+    "edge: POST /api/ace/iqe-query with plain text \u2192 non-500 response",
+    "edge: abort non-existent instance \u2192 404",
+    "edge: launch with empty problem \u2192 non-500 validation response",
+    "edge: launch with single-word problem \u2192 instance_id returned",
+    "edge: two sequential launches appear in /api/ace/instances",
+    "index loads with CUI banner and stat cards",
+    "orchestrator: coworker index links to roles and trust leaderboard",
+    "stop all auto needs a reason, then takes effect at once",
+    "the Co-Worker page shows the Event feed and Auto-dispatch panels",
+    "the route helpers fill a rule and refuse a missing, empty or unknown parameter"
+   ]
+  },
+  "GET ace_api.api_instances": {
+   "endpoint": "ace_api.api_instances",
+   "method": "GET",
+   "page": false,
+   "test": true,
+   "tests": [
+    "GET /api/ace/instances returns 200 and paginated list",
+    "edge: two sequential launches appear in /api/ace/instances"
+   ]
+  },
+  "GET ace_api.api_messages": {
+   "endpoint": "ace_api.api_messages",
+   "method": "GET",
+   "page": true,
+   "test": true,
+   "tests": [
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "GET /api/ace/<id>/messages returns paginated response",
+    "GET /coworker/<id> instance detail loads",
+    "edge: GET /api/ace/<id>/messages?after=999999 \u2192 empty messages list",
+    "instance detail page has Activity Log tab"
+   ]
+  },
+  "GET ace_api.api_nova_state": {
+   "endpoint": "ace_api.api_nova_state",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "GET /coworker/<id> instance detail loads",
+    "instance detail page has Activity Log tab"
+   ]
+  },
+  "GET ace_api.api_presets_list": {
+   "endpoint": "ace_api.api_presets_list",
+   "method": "GET",
+   "page": false,
+   "test": true,
+   "tests": [
+    "GET /api/ace/presets returns 19 presets (C-1 fix + bi_dashboard presets)"
+   ]
+  },
+  "GET ace_api.api_session_detail": {
+   "endpoint": "ace_api.api_session_detail",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE"
+   ]
+  },
+  "GET ace_api.api_session_eval_get": {
+   "endpoint": "ace_api.api_session_eval_get",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE"
+   ]
+  },
+  "GET ace_api.api_session_eval_suggestions": {
+   "endpoint": "ace_api.api_session_eval_suggestions",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE"
+   ]
+  },
+  "GET ace_api.api_status": {
+   "endpoint": "ace_api.api_status",
+   "method": "GET",
+   "page": true,
+   "test": true,
+   "tests": [
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "GET /api/ace/<id>/status returns state field",
+    "GET /coworker/<id> instance detail loads",
+    "instance detail page has Activity Log tab"
+   ]
+  },
+  "GET cortex.api_agent_launches": {
+   "endpoint": "cortex.api_agent_launches",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "GET cortex.api_intake_sessions": {
+   "endpoint": "cortex.api_intake_sessions",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "GET cortex.govern_page": {
+   "endpoint": "cortex.govern_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "GET cortex.index": {
+   "endpoint": "cortex.index",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "GET cortex.intake_page": {
+   "endpoint": "cortex.intake_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "GET cortex.pmo_page": {
+   "endpoint": "cortex.pmo_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: every PMO verb, and an award proposed for another person to decide"
+   ]
+  },
+  "GET cortex.verbs_page": {
+   "endpoint": "cortex.verbs_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "GET dic.explorer": {
+   "endpoint": "dic.explorer",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex findings: adjudicate an open finding with a reason"
+   ]
+  },
+  "GET twin_observatory.conformance_page": {
+   "endpoint": "twin_observatory.conformance_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "the conformance page shows each route named by id and seen in e2e"
+   ]
+  },
+  "POST ace_api.api_abort": {
+   "endpoint": "ace_api.api_abort",
+   "method": "POST",
+   "page": true,
+   "test": true,
+   "tests": [
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "POST /api/ace/<id>/abort transitions state to cancelled",
+    "edge: abort non-existent instance \u2192 404"
+   ]
+  },
+  "POST ace_api.api_ace_chat": {
+   "endpoint": "ace_api.api_ace_chat",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE"
+   ]
+  },
+  "POST ace_api.api_auto_dispatch_grant": {
+   "endpoint": "ace_api.api_auto_dispatch_grant",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: stop all, resume, turn auto on and off from the Co-Worker page"
+   ]
+  },
+  "POST ace_api.api_auto_dispatch_resume_all": {
+   "endpoint": "ace_api.api_auto_dispatch_resume_all",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: stop all, resume, turn auto on and off from the Co-Worker page",
+    "stop all auto needs a reason, then takes effect at once"
+   ]
+  },
+  "POST ace_api.api_auto_dispatch_revoke": {
+   "endpoint": "ace_api.api_auto_dispatch_revoke",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: stop all, resume, turn auto on and off from the Co-Worker page"
+   ]
+  },
+  "POST ace_api.api_auto_dispatch_stop_all": {
+   "endpoint": "ace_api.api_auto_dispatch_stop_all",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: stop all, resume, turn auto on and off from the Co-Worker page",
+    "stop all auto needs a reason, then takes effect at once"
+   ]
+  },
+  "POST ace_api.api_hitl_resolve": {
+   "endpoint": "ace_api.api_hitl_resolve",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: launch from /coworker, approve its checkpoint, abort it"
+   ]
+  },
+  "POST ace_api.api_iqe_query": {
+   "endpoint": "ace_api.api_iqe_query",
+   "method": "POST",
+   "page": true,
+   "test": true,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE",
+    "edge: POST /api/ace/iqe-query with plain text \u2192 non-500 response"
+   ]
+  },
+  "POST ace_api.api_launch": {
+   "endpoint": "ace_api.api_launch",
+   "method": "POST",
+   "page": true,
+   "test": true,
+   "tests": [
+    "ACE: launch from /coworker, approve its checkpoint, abort it",
+    "POST /api/ace/launch with valid problem returns instance_id",
+    "edge: launch with empty problem \u2192 non-500 validation response",
+    "edge: launch with single-word problem \u2192 instance_id returned"
+   ]
+  },
+  "POST ace_api.api_profiles_generate": {
+   "endpoint": "ace_api.api_profiles_generate",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: suggest a name, preview, create, then delete the profile"
+   ]
+  },
+  "POST ace_api.api_profiles_preview": {
+   "endpoint": "ace_api.api_profiles_preview",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: suggest a name, preview, create, then delete the profile"
+   ]
+  },
+  "POST ace_api.api_profiles_suggest_name": {
+   "endpoint": "ace_api.api_profiles_suggest_name",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: suggest a name, preview, create, then delete the profile"
+   ]
+  },
+  "POST ace_api.api_session_eval_post": {
+   "endpoint": "ace_api.api_session_eval_post",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE"
+   ]
+  },
+  "POST ace_api.api_session_rerun": {
+   "endpoint": "ace_api.api_session_rerun",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: chat, run an eval and re-run a session, ask IQE"
+   ]
+  },
+  "POST ace_api.api_suggestion_confirm": {
+   "endpoint": "ace_api.api_suggestion_confirm",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: a suggested team is confirmed and declined from its chat card"
+   ]
+  },
+  "POST ace_api.api_suggestion_decline": {
+   "endpoint": "ace_api.api_suggestion_decline",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "ACE: a suggested team is confirmed and declined from its chat card"
+   ]
+  },
+  "POST cortex.api_chat": {
+   "endpoint": "cortex.api_chat",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_iqe_query": {
+   "endpoint": "cortex.api_iqe_query",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_v1_award": {
+   "endpoint": "cortex.api_v1_award",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: every PMO verb, and an award proposed for another person to decide"
+   ]
+  },
+  "POST cortex.api_v1_bom": {
+   "endpoint": "cortex.api_v1_bom",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: every PMO verb, and an award proposed for another person to decide"
+   ]
+  },
+  "POST cortex.api_v1_classify": {
+   "endpoint": "cortex.api_v1_classify",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_v1_complete": {
+   "endpoint": "cortex.api_v1_complete",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_v1_cost_volume": {
+   "endpoint": "cortex.api_v1_cost_volume",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: every PMO verb, and an award proposed for another person to decide"
+   ]
+  },
+  "POST cortex.api_v1_dashboard": {
+   "endpoint": "cortex.api_v1_dashboard",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: every PMO verb, and an award proposed for another person to decide"
+   ]
+  },
+  "POST cortex.api_v1_extract": {
+   "endpoint": "cortex.api_v1_extract",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_v1_govern": {
+   "endpoint": "cortex.api_v1_govern",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_v1_intake_session_create": {
+   "endpoint": "cortex.api_v1_intake_session_create",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_v1_intake_turn": {
+   "endpoint": "cortex.api_v1_intake_turn",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_v1_reason": {
+   "endpoint": "cortex.api_v1_reason",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_v1_resolve": {
+   "endpoint": "cortex.api_v1_resolve",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: chat, govern, every verb, intake, and IQE"
+   ]
+  },
+  "POST cortex.api_v1_slides": {
+   "endpoint": "cortex.api_v1_slides",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: every PMO verb, and an award proposed for another person to decide"
+   ]
+  },
+  "POST cortex.api_v1_staffing_matrix": {
+   "endpoint": "cortex.api_v1_staffing_matrix",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: every PMO verb, and an award proposed for another person to decide"
+   ]
+  },
+  "POST cortex.api_v1_win_themes": {
+   "endpoint": "cortex.api_v1_win_themes",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex: every PMO verb, and an award proposed for another person to decide"
+   ]
+  },
+  "POST dic.api_explorer_cortex_finding_adjudicate": {
+   "endpoint": "dic.api_explorer_cortex_finding_adjudicate",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Cortex findings: adjudicate an open finding with a reason"
+   ]
+  }
+ },
+ "schema": "icdev-observed-calls/v1",
+ "unmatched": []
+}

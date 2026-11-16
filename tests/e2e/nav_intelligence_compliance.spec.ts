@@ -1,7 +1,8 @@
 // CUI // SP-CTI
 // E2E Test: Intelligence & Compliance Menus — all submenu pages load
 
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

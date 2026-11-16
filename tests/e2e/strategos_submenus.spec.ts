@@ -1,7 +1,7 @@
 // CUI // SP-CTI
 // E2E Test: Strategos Menu — all 33 submenu pages load without server errors
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

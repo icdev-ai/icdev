@@ -1,7 +1,7 @@
 // CUI // SP-CTI
 // E2E Test: Canvas Smoke — All 11 canvases load without errors; IQE widget present
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

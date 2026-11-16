@@ -2,7 +2,7 @@
 // E2E Test: Chat Multi-Pane Interface
 // Verifies the unified Chat page loads with multi-context UI, RICOAS sidebar, message send, and intervention controls.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

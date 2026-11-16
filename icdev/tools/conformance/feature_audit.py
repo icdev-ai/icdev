@@ -17,10 +17,16 @@ never from that file:
 ``gui``           the LIVE url_map, read in a scrubbed subprocess (the same probe
                   environment ``tools/dashboard/nav_paths.py`` uses, every
                   registry component forced on), the view functions' source, the
-                  registry and ``base.html`` nav hrefs, and the templates and
-                  scripts a page ships. A page is a GET route that renders a
-                  template; one must be in the nav or one link from a nav page,
-                  and every mutating route must be called by a page.
+                  registry and ``base.html`` nav hrefs, and the endpoint ids the
+                  templates and scripts a page ships name in code
+                  (``icdevRoute('<endpoint>')``, ``icdevFetch('<endpoint>')``,
+                  ``url_for('<endpoint>')``; icx-cnf-08). A page is a GET route
+                  that renders a template; one must be in the nav or one link from
+                  a nav page, and every mutating route must be called by a page.
+                  A path a page writes or builds itself names nothing; in an
+                  audited file any ``/api/`` path fails ``--check``. CI's e2e job
+                  holds every write credited to a page to having been SENT by a
+                  page (``--e2e-gate``).
 ``workflow``      a decision is a mutating route or MCP tool a person decides:
                   its name carries a decision verb (launch, confirm, approve,
                   award, delete, ...) or its source a HITL/approval/confirm
@@ -54,6 +60,7 @@ CLI::
     python tools/conformance/feature_audit.py --markdown   # rewrite doc tables + snapshot
     python tools/conformance/feature_audit.py --census     # rewrite the gap census
     python tools/conformance/feature_audit.py --check      # exit 1: stale doc/reason/census
+    python tools/conformance/feature_audit.py --e2e-gate FILE...  # exit 1: a credited write no page sent
 """
 from __future__ import annotations
 
@@ -109,7 +116,6 @@ _RENDER_RE = re.compile(
     r"\b(?:render_template|\w*render\w*(?=\(\s*[\"'][^\"']+\.html[\"']))"
     r"\(\s*(?:[\"']([^\"']+)[\"'])?"
 )
-_URL_FOR_RE = r"url_for\(\s*[\"']{endpoint}[\"']"
 _HREF_RE = re.compile(r"href=\"(/[^\"#?\s{]*)\"")
 _INCLUDE_RE = re.compile(r"\{%-?\s*(?:include|extends)\s+[\"']([^\"']+)[\"']")
 _PARAM_RE = re.compile(r"<(?:[^:<>]+:)?[^<>]+>")
@@ -267,29 +273,44 @@ def nav_hrefs(root: Path, files: _Files) -> set[str]:
     return {_norm(h) for h in hrefs if h.startswith("/")}
 
 
-def _path_regex(rule: str) -> re.Pattern[str]:
-    """How a page refers to a route: the literal path, or for a parameterised
-    route its literal pieces in order on one line with something dynamic
-    between them (``'/api/ace/' + id + '/abort'``, ``/coworker/{{ i.id }}``)."""
-    pieces = _PARAM_RE.split(rule)
-    if len(pieces) == 1:
-        body = re.escape(_norm(rule)) + "/?"
-        return re.compile(r"(?<![\w/.-])" + body + r"(?=[\"'`?#)\s]|\$\{|$)")
-    parts = [re.escape(p) for p in pieces]
-    body = parts[0]
-    for part in parts[1:]:
-        body += r"[^\n]{1,80}?" + part if part else r"(?:[\"'`]\s*\+|\$\{|\{\{)"
-    return re.compile(r"(?<![\w/.-])" + body)
+#: How a page names a route: the string-literal first argument of ``icdevRoute(``,
+#: ``icdevFetch(`` (tools/dashboard/static/js/routes.gen.js) or Jinja's ``url_for(``.
+#: A variable, a concatenation or a template literal names nothing (icx-cnf-08).
+_REF_RE = re.compile(r"\b(?:icdevRoute|icdevFetch|url_for)\(\s*([\"'])([A-Za-z_][\w.]*)\1")
+_COMMENT_RES = (
+    re.compile(r"\{#.*?#\}", re.S),           # Jinja
+    re.compile(r"<!--.*?-->", re.S),            # HTML
+    re.compile(r"(?:(?<=\s)|^)/\*.*?\*/", re.S | re.M),  # JS block (not '*/*')
+    re.compile(r"(?:(?<=[\s;{}(),])|^)//[^\n]*", re.M),    # JS line (not 'https://')
+)
+#: The generated route table: it lists every endpoint, so it names none.
+ROUTES_GEN_RELPATH = "tools/dashboard/static/js/routes.gen.js"
+#: The committed record of an e2e run (tests/e2e/fixtures/observed_calls.ts).
+OBSERVED_RELPATH = "tests/e2e/observed-calls.json"
+_API_RE = re.compile(r"/api/")
 
 
-def _refers(rule: dict[str, Any], text: str) -> bool:
-    """Does *text* link to or call this route (by path or ``url_for``)?"""
-    url_for = re.compile(_URL_FOR_RE.format(endpoint=re.escape(rule["endpoint"])))
-    return bool(_path_regex(rule["rule"]).search(text) or url_for.search(text))
+def code_of(text: str) -> str:
+    """*text* with its comments blanked, so a commented-out call names nothing."""
+    for pattern in _COMMENT_RES:
+        text = pattern.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    return text
 
 
-def _callers(rule: dict[str, Any], ui_text: dict[str, str]) -> list[str]:
-    return sorted(rel for rel, text in ui_text.items() if _refers(rule, text))
+def refs_in(text: str) -> set[str]:
+    """Every endpoint id *text* names in code: exact, nothing inferred."""
+    return {m.group(2) for m in _REF_RE.finditer(code_of(text))}
+
+
+def endpoint_refs(ui_text: dict[str, str]) -> dict[str, list[str]]:
+    """endpoint -> the UI files that name it."""
+    out: dict[str, set[str]] = {}
+    for rel, text in ui_text.items():
+        if rel == ROUTES_GEN_RELPATH:
+            continue
+        for endpoint in refs_in(text):
+            out.setdefault(endpoint, set()).add(rel)
+    return {k: sorted(v) for k, v in sorted(out.items())}
 
 
 # ── evidence: workflow, twin, architecture, AI-native ────────────────────────
@@ -469,6 +490,8 @@ class _Context:
         ui = _ui_files(root)
         self.ui = ui
         self.ui_text = {rel: self.files.text(rel) for rel in ui}
+        self.refs = endpoint_refs(self.ui_text)
+        self.observed = load_observed(root)
         self.templates = workflow_templates(
             root, cfg.get("workflow_templates_dir", "args/workflow_hitl_templates"))
         self.policy = approval_policy(
@@ -551,10 +574,10 @@ def judge_gui(ctx: _Context, feature: dict[str, Any]) -> dict[str, Any]:
         if path in ctx.nav:
             reached = True
             evidence.append(f"nav links {path}")
-        elif _refers(rule, ctx.nav_page_text()):
+        elif rule["endpoint"] in refs_in(ctx.nav_page_text()):
             reached = True
             evidence.append(f"{rule['rule']} linked from a nav page")
-        elif rule["endpoint"] not in seen_pages and not _callers(rule, ctx.ui_text):
+        elif rule["endpoint"] not in seen_pages and not ctx.refs.get(rule["endpoint"]):
             gaps.append(_gap(f"gui:orphan-page:{rule['endpoint']}",
                              f"{rule['rule']} is linked from no nav entry, template or script"))
         seen_pages.add(rule["endpoint"])
@@ -565,7 +588,7 @@ def judge_gui(ctx: _Context, feature: dict[str, Any]) -> dict[str, Any]:
     for rule in rules:
         if not MUTATING & set(rule["methods"]):
             continue
-        callers = _callers(rule, ctx.ui_text)
+        callers = ctx.refs.get(rule["endpoint"], [])
         if rule["endpoint"] in machine:
             if callers:
                 stale.append(f"{feature['key']}: machine_endpoints {rule['endpoint']} — a page "
@@ -578,7 +601,23 @@ def judge_gui(ctx: _Context, feature: dict[str, Any]) -> dict[str, Any]:
         else:
             gaps.append(_gap(f"gui:uncalled:{rule['endpoint']}",
                              f"mutating route {rule['rule']} is called by no page"))
-    return {"gaps": gaps, "evidence": evidence, "stale": stale}
+    return {"gaps": gaps, "evidence": evidence, "stale": stale,
+            "routes": _route_rows(ctx, feature)}
+
+
+def _route_rows(ctx: _Context, feature: dict[str, Any]) -> list[dict[str, Any]]:
+    """Per route of the feature: the files that name it by id, whether it writes, and
+    whether the recorded e2e run saw a page send it (icx-cnf-08)."""
+    rows = []
+    for rule in _feature_rules(ctx, feature):
+        methods = sorted(set(rule["methods"]) - {"HEAD", "OPTIONS"})
+        write = bool(MUTATING & set(methods))
+        seen = any(ctx.observed.get(f"{m} {rule['endpoint']}", {}).get("page")
+                   for m in methods if not write or m in MUTATING)
+        rows.append({"endpoint": rule["endpoint"], "rule": rule["rule"], "methods": methods,
+                     "by_id": ctx.refs.get(rule["endpoint"], []), "write": write,
+                     "observed": seen})
+    return sorted(rows, key=lambda r: (r["rule"], r["endpoint"]))
 
 
 def _decisions(ctx: _Context, feature: dict[str, Any]) -> dict[str, str]:
@@ -758,6 +797,78 @@ JUDGES = {
 }
 
 
+_INC_RE = re.compile(r"\{%-?\s*(?:include|extends|import|from)\s+[\"']([^\"']+)[\"']")
+_STATIC_RE = re.compile(
+    r"url_for\(\s*[\"']static[\"']\s*,\s*filename\s*=\s*[\"']([^\"']+)[\"']"
+    r"|src=[\"']/static/([^\"'?#]+)")
+
+
+def audited_files(ctx: _Context) -> list[str]:
+    """The files the audit holds to route ids, derived, never listed (icx-cnf-08).
+
+    The templates every audited feature's pages render (``served_by`` included),
+    with everything they include, import or extend (``base.html``, the shell, left
+    out), the first-party scripts they load, and every UI file that names an
+    audited endpoint: a file is held to the rule from the moment it carries credit.
+    """
+    owned: set[str] = set()
+    for feature in ctx.cfg["features"]:
+        owned.update(r["endpoint"] for r in _feature_rules(ctx, feature, served=True))
+    todo: list[str] = []
+    for rule in ctx.rules:
+        if rule["endpoint"] in owned and "GET" in rule["methods"]:
+            todo.extend(rel for rel in (_template_file(ctx.files, ctx.ui, n)
+                                        for n in ctx.renders(rule)) if rel)
+    todo.extend(rel for ep in owned for rel in ctx.refs.get(ep, []))
+    seen: set[str] = set()
+    while todo:
+        rel = todo.pop()
+        if rel in seen or rel.endswith("/templates/base.html"):
+            continue
+        seen.add(rel)
+        text = ctx.files.text(rel)
+        for name in _INC_RE.findall(text):
+            found = _template_file(ctx.files, ctx.ui, name)
+            if found:
+                todo.append(found)
+        for a, b in _STATIC_RE.findall(text):
+            name = a or b
+            if name.startswith("vendor/") or name.endswith(".min.js"):
+                continue
+            todo.extend(u for u in ctx.ui if u.endswith("/static/" + name))
+    seen.discard(ROUTES_GEN_RELPATH)
+    return sorted(seen)
+
+
+def route_id_problems(ctx: _Context, rules: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the route-id rule finds: hand-written ``/api/`` paths in audited files,
+    endpoint ids no route has, and whether routes.gen.js is the url_map's."""
+    from tools.dashboard import routes_gen
+
+    hand = []
+    files = audited_files(ctx)
+    for rel in files:
+        for no, line in enumerate(ctx.files.text(rel).splitlines(), 1):
+            if _API_RE.search(line):
+                hand.append(f"{rel}:{no}: {line.strip()[:120]}")
+    held = set(files)
+    unknown = sorted(f"{ep} ({', '.join(f for f in files_ if f in held)})"
+                     for ep, files_ in ctx.refs.items()
+                     if ep not in ctx.by_endpoint and ep != "static" and held & set(files_))
+    return {"audited_files": files, "hand_written": hand, "unknown_ids": unknown,
+            "routes_gen": {"file": ROUTES_GEN_RELPATH,
+                           "current": routes_gen.current(rules, ctx.root)}}
+
+
+def load_observed(root: Path) -> dict[str, dict[str, Any]]:
+    """``METHOD endpoint`` -> what the recorded e2e run saw (``{"page": bool, ...}``)."""
+    try:
+        data = json.loads((root / OBSERVED_RELPATH).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return dict(data.get("routes") or {})
+
+
 def _ownership_errors(ctx: _Context) -> list[str]:
     errors: list[str] = []
     owner: dict[str, str] = {}
@@ -849,11 +960,15 @@ def audit(root: Optional[Path] = None, *, rules: Optional[list[dict[str, Any]]] 
                 else:
                     stale.append(f"{feature['key']}: reason for '{rule}' excuses nothing — the "
                                  "rule holds without it; drop the reason")
+            if "routes" in result:
+                cell["routes"] = result["routes"]
             cells[rule] = cell
         features.append({"key": feature["key"], "component": feature["component"],
                          "label": feature.get("label", feature["key"]), "cells": cells})
 
     by_rule = {rule: sum(len(f["cells"][rule]["gaps"]) for f in features) for rule in RULES}
+    routes = [r for f in features for r in f["cells"]["gui"].get("routes", [])]
+    writes = [r for r in routes if r["write"] and r["by_id"]]
     return {
         "tool": "feature_audit",
         "version": 1,
@@ -869,7 +984,13 @@ def audit(root: Optional[Path] = None, *, rules: Optional[list[dict[str, Any]]] 
                                 for f in features},
             "features_conforming": sum(
                 1 for f in features if all(not f["cells"][r]["gaps"] for r in RULES)),
+            "routes": len(routes),
+            "routes_by_id": sum(1 for r in routes if r["by_id"]),
+            "routes_observed": sum(1 for r in routes if r["observed"]),
+            "writes_by_id": len(writes),
+            "writes_observed": sum(1 for r in writes if r["observed"]),
         },
+        "route_ids": route_id_problems(ctx, rules),
         "config_errors": sorted(set(config_errors)),
         "stale_reasons": sorted(set(stale)),
     }
@@ -957,6 +1078,19 @@ def render_markdown(report: dict[str, Any]) -> str:
     out += ["", "### Gaps per rule", "", "| Rule | Open gaps |", "|---|---|"]
     for rule in RULES:
         out.append(f"| {RULE_TITLES[rule]} | {s['gaps_by_rule'][rule]} |")
+    out += ["", "### Routes: named by id, seen in e2e", "",
+            (f"Of {s['routes']} routes, {s['routes_by_id']} are named by a page by endpoint id "
+             f"(`icdevRoute`/`icdevFetch` in tools/dashboard/static/js/routes.gen.js, or `url_for`), "
+             f"and a page was seen sending {s['routes_observed']} in the recorded e2e run "
+             f"(`{OBSERVED_RELPATH}`). Of the {s['writes_by_id']} writes a page names, "
+             f"{s['writes_observed']} were seen: CI's e2e job fails on any it does not see "
+             "(`--e2e-gate`). Reads may be credited by id alone."),
+            "", "| Feature | Route | Endpoint | Named by id in | Seen in e2e |", "|---|---|---|---|---|"]
+    for f in report["features"]:
+        for r in f["cells"]["gui"].get("routes", []):
+            out.append(f"| `{f['key']}` | `{_md('/'.join(r['methods']) + ' ' + r['rule'])}` | "
+                       f"`{r['endpoint']}` | {_md(', '.join(r['by_id'])) or '—'} | "
+                       f"{'✓' if r['observed'] else ''} |")
     out += ["", "### Evidence and gaps per feature", ""]
     for f in report["features"]:
         out += [f"#### {_md(f['label'])} (`{f['key']}`, component `{f['component']}`)", ""]
@@ -1015,6 +1149,14 @@ def check(report: dict[str, Any], root: Path, cfg: dict[str, Any]) -> list[str]:
     """Every reason ``--check`` fails: stale doc, snapshot, reason or census."""
     problems = [f"config: {e}" for e in report["config_errors"]]
     problems += [f"stale reason: {e}" for e in report["stale_reasons"]]
+    ids = report.get("route_ids") or {}
+    problems += [f"hand-written /api/ path in an audited file (call it by endpoint id: "
+                 f"icdevRoute/icdevFetch or url_for): {h}" for h in ids.get("hand_written", [])]
+    problems += [f"a page names an endpoint id no route has: {u}"
+                 for u in ids.get("unknown_ids", [])]
+    if not (ids.get("routes_gen") or {}).get("current"):
+        problems.append(f"{ROUTES_GEN_RELPATH} is stale against the url_map — run "
+                        "python tools/dashboard/routes_gen.py")
     doc = root / cfg.get("doc", "docs/audits/conformance-cortex-coworker.md")
     block = doc_block(doc.read_text(encoding="utf-8")) if doc.exists() else None
     if block != render_markdown(report):
@@ -1030,6 +1172,60 @@ def check(report: dict[str, Any], root: Path, cfg: dict[str, Any]) -> list[str]:
     if census["over_ceiling"]:
         problems.append(f"census {census['registered']} over census_max {census['ceiling']}")
     return problems
+
+
+def _audited_prefixes(report: dict[str, Any]) -> set[str]:
+    """The literal head (first two segments) of every audited route."""
+    out = set()
+    for f in report["features"]:
+        for r in f["cells"]["gui"].get("routes", []):
+            head = _PARAM_RE.split(r["rule"])[0].strip("/").split("/")[:2]
+            out.add("/" + "/".join(head))
+    return out
+
+
+def e2e_gate(report: dict[str, Any], run_files: list[Path],
+             record: Optional[dict[str, dict[str, Any]]] = None) -> dict[str, Any]:
+    """CI's e2e gate (icx-cnf-08): every WRITE the audit credits to a page by id was
+    sent by a page in this run (a test's own request does not count), the committed
+    record claims no write the run did not see, and no request under an audited route
+    prefix matched no route. ``run_files`` are the shards' observed-calls files."""
+    seen: dict[str, dict[str, Any]] = {}
+    unmatched: set[str] = set()
+    for path in run_files:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        for key, v in (data.get("routes") or {}).items():
+            s = seen.setdefault(key, {"page": False, "test": False})
+            s["page"] = s["page"] or bool(v.get("page"))
+            s["test"] = s["test"] or bool(v.get("test"))
+        unmatched.update(data.get("unmatched") or [])
+    missing = []
+    writes = 0
+    for f in report["features"]:
+        for r in f["cells"]["gui"].get("routes", []):
+            if not (r["write"] and r["by_id"]):
+                continue
+            writes += 1
+            keys = [f"{m} {r['endpoint']}" for m in r["methods"] if m in MUTATING]
+            if not any(seen.get(k, {}).get("page") for k in keys):
+                how = " (only a test's own request)" if any(
+                    seen.get(k, {}).get("test") for k in keys) else ""
+                missing.append(f"{'/'.join(m for m in r['methods'] if m in MUTATING)} "
+                               f"{r['rule']} ({r['endpoint']}): named by id in "
+                               f"{', '.join(r['by_id'])}, never sent by a page in the e2e "
+                               f"run{how}")
+    record = load_observed(BASE_DIR) if record is None else record
+    stale = [f"{k}: {OBSERVED_RELPATH} says a page sent it; this run did not see it"
+             for k, v in sorted(record.items())
+             if v.get("page") and k.split(" ", 1)[0] in MUTATING
+             and not seen.get(k, {}).get("page")]
+    prefixes = _audited_prefixes(report)
+    stray = [f"{u}: a request under an audited route that matches no route"
+             for u in sorted(unmatched)
+             if any(u.split(" ", 1)[-1] == p or u.split(" ", 1)[-1].startswith(p + "/")
+                    for p in prefixes)]
+    return {"ok": not (missing or stale or stray), "writes": writes, "seen": len(seen),
+            "missing": sorted(missing), "stale_record": stale, "unmatched": stray}
 
 
 def load_snapshot(root: Optional[Path] = None) -> dict[str, Any]:
@@ -1053,7 +1249,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--census", action="store_true", help="rewrite the gap census")
     parser.add_argument("--check", action="store_true",
                         help="exit 1 on a stale doc, snapshot, reason or census")
+    parser.add_argument("--e2e-gate", nargs="+", type=Path, metavar="FILE",
+                        help="exit 1 unless the e2e run's observed calls (one file per shard) "
+                             "include every write the committed snapshot credits to a page")
     args = parser.parse_args(argv)
+    if args.e2e_gate:
+        try:
+            gate = e2e_gate(load_snapshot(), args.e2e_gate)
+        except (AuditError, OSError, ValueError) as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}), file=sys.stderr)
+            return 2
+        print(json.dumps(gate, indent=2, sort_keys=True))
+        return 0 if gate["ok"] else 1
     try:
         cfg = load_config()
         report = audit(config=cfg)

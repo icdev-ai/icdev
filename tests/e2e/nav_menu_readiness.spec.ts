@@ -31,7 +31,8 @@
 // too), keeping the whole sweep well under the 5-minute budget. Soft assertions
 // collect every failing link per menu instead of aborting on the first.
 
-import { test, expect, type APIRequestContext } from '@playwright/test';
+import type { APIRequestContext } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

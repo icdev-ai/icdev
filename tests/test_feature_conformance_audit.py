@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import copy
 import importlib
+import json
 import random
 import textwrap
 from pathlib import Path
@@ -30,6 +31,7 @@ import pytest
 import yaml
 
 fa = importlib.import_module("tools.conformance.feature_audit")
+routes_gen = importlib.import_module("tools.dashboard.routes_gen")
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -106,10 +108,10 @@ def demo(tmp_path: Path) -> dict:
     ]}))
     _write(root, "tools/dashboard/templates/base.html", '<a href="/home">Home</a>\n')
     _write(root, "tools/dashboard/templates/demo/index.html", textwrap.dedent('''\
-        <a href="/demo/details">details</a>
+        <a href="{{ url_for('demo.details') }}">details</a>
         <script>
-          fetch('/demo/api/launch', {method: 'POST'});
-          fetch('/demo/api/tweak', {method: 'POST'});
+          icdevFetch('demo.api_launch', {}, {method: 'POST'});
+          fetch(icdevRoute('demo.api_tweak'), {method: 'POST'});
         </script>
         '''))
     _write(root, "tools/dashboard/templates/demo/details.html", "<p>details</p>\n")
@@ -153,6 +155,7 @@ def demo(tmp_path: Path) -> dict:
         _rule("/demo/api/launch", "demo.api_launch", ["POST"]),
         _rule("/demo/api/tweak", "demo.api_tweak", ["POST"]),
     ]
+    routes_gen.write(rules, root)
     mcp = {
         "demo_read": {"registered": True, "read_only": True, "tier": "read"},
         "demo_launch": {"registered": True, "read_only": False, "tier": "write"},
@@ -203,7 +206,8 @@ def test_two_runs_and_a_shuffled_url_map_are_byte_identical(demo):
 
 def test_gui_an_uncalled_mutating_route_is_a_gap(demo):
     _write(demo["root"], "tools/dashboard/templates/demo/index.html",
-           "<a href=\"/demo/details\">d</a><script>fetch('/demo/api/launch')</script>\n")
+           "<a href=\"{{ url_for('demo.details') }}\">d</a>"
+           "<script>icdevFetch('demo.api_launch', {}, {method: 'POST'})</script>\n")
     report = run(demo)
     assert gaps(report, "gui") == ["gui:uncalled:demo.api_tweak"]
     assert gaps(report, "workflow") == []
@@ -229,7 +233,7 @@ def test_workflow_a_hitl_gate_in_the_source_makes_a_decision(demo):
     demo["config"]["features"][0]["endpoints"].append("demo.api_store")
     demo["rules"].append(_rule("/demo/api/store", "demo.api_store", ["POST"]))
     _write(demo["root"], "tools/dashboard/templates/demo/store.html",
-           "<script>fetch('/demo/api/store')</script>\n")
+           "<script>icdevFetch('demo.api_store', {}, {method: 'POST'})</script>\n")
     assert gaps(run(demo), "workflow") == ["workflow:undeclared:demo.api_store"]
 
 
@@ -391,6 +395,135 @@ def test_every_endpoint_of_an_owned_blueprint_needs_a_feature(demo):
 def test_an_mcp_tool_under_an_owned_prefix_needs_a_feature(demo):
     demo["mcp"]["demo_extra"] = {"registered": True, "read_only": True, "tier": "read"}
     assert "demo: MCP tool demo_extra is owned by no feature" in run(demo)["config_errors"]
+
+
+# ── route ids: exact evidence (icx-cnf-08) ───────────────────────────────────
+
+
+def test_a_page_that_builds_a_path_for_a_route_is_not_credited(demo):
+    """The old matcher credited ``'/demo/api/' + verb`` with every route of that
+    shape. Now only a literal endpoint id names a route: a built path, a variable
+    id and a commented-out call name nothing, so the write is a gap."""
+    _write(demo["root"], "tools/dashboard/templates/demo/index.html", textwrap.dedent("""\
+        <a href="{{ url_for('demo.details') }}">details</a>
+        <script>
+          icdevFetch('demo.api_launch', {}, {method: 'POST'});
+          var verb = 'tweak';
+          fetch('/demo/api/' + verb, {method: 'POST'});
+          var ep = 'demo.api_tweak'; icdevFetch(ep, {}, {method: 'POST'});
+          // icdevFetch('demo.api_tweak', {}, {method: 'POST'});
+          {# icdevRoute('demo.api_tweak') #}
+        </script>
+        """))
+    report = run(demo)
+    assert gaps(report, "gui") == ["gui:uncalled:demo.api_tweak"]
+    rows = {r["endpoint"]: r for r in cell(report, "gui")["routes"]}
+    assert rows["demo.api_tweak"]["by_id"] == []
+    assert rows["demo.api_launch"]["by_id"] == ["tools/dashboard/templates/demo/index.html"]
+
+
+def test_a_page_linked_by_a_literal_href_is_not_reached(demo):
+    _write(demo["root"], "tools/dashboard/templates/demo/index.html", textwrap.dedent("""\
+        <a href="/demo/details">details</a>
+        <script>icdevFetch('demo.api_launch', {}, {method: 'POST'});
+        fetch(icdevRoute('demo.api_tweak'), {method: 'POST'});</script>
+        """))
+    assert "gui:orphan-page:demo.details" in gaps(run(demo), "gui")
+
+
+def test_a_hand_written_api_path_in_an_audited_file_fails_check(demo):
+    root, cfg = demo["root"], demo["config"]
+    _write(root, "tools/dashboard/templates/demo/details.html",
+           "<p>details</p><script>fetch('/demo/api/launch', {method: 'POST'})</script>\n")
+    report = run(demo)
+    assert "tools/dashboard/templates/demo/details.html" in report["route_ids"]["audited_files"]
+    problems = fa.check(report, root, cfg)
+    assert any(p.startswith("hand-written /api/ path in an audited file")
+               and "demo/details.html:1" in p for p in problems), problems
+
+
+def test_a_file_outside_the_audit_may_keep_its_paths(demo):
+    _write(demo["root"], "tools/dashboard/templates/other/page.html",
+           "<script>fetch('/other/api/thing')</script>\n")
+    report = run(demo)
+    assert "tools/dashboard/templates/other/page.html" not in report["route_ids"]["audited_files"]
+    assert report["route_ids"]["hand_written"] == []
+
+
+def test_a_stale_route_table_or_an_unknown_id_fails_check(demo):
+    root, cfg = demo["root"], demo["config"]
+    demo["rules"].append(_rule("/demo/api/store", "demo.api_store", ["POST"]))
+    demo["config"]["features"][0]["endpoints"].append("demo.api_store")
+    _write(root, "tools/dashboard/templates/demo/details.html",
+           "<script>icdevFetch('demo.api_gone', {}, {method: 'POST'})</script>\n")
+    problems = fa.check(run(demo), root, cfg)
+    assert any("routes.gen.js is stale" in p for p in problems)
+    assert any("names an endpoint id no route has: demo.api_gone" in p for p in problems)
+    routes_gen.write(demo["rules"], root)
+    assert not any("routes.gen.js is stale" in p for p in fa.check(run(demo), root, cfg))
+
+
+def test_the_route_table_is_deterministic_and_complete(demo):
+    first = routes_gen.render(demo["rules"])
+    assert routes_gen.render(list(reversed(demo["rules"]))) == first
+    table = routes_gen.table(demo["rules"] + [{"endpoint": "static", "rule": "/static/<path:f>",
+                                               "methods": ["GET"]}])
+    assert table["demo.api_launch"] == [["/demo/api/launch", ["POST"]]]
+    assert "static" not in table
+    assert routes_gen.current(demo["rules"], demo["root"])
+
+
+def _observed(tmp: Path, name: str, routes: dict, unmatched: list | None = None) -> Path:
+    path = tmp / name
+    path.write_text(json.dumps({"schema": "icdev-observed-calls/v1", "routes": routes,
+                                "unmatched": unmatched or []}), encoding="utf-8")
+    return path
+
+
+def test_the_e2e_gate_fails_on_a_named_write_no_page_sent(demo, tmp_path):
+    """A route id a page names whose button never fires in e2e fails the gate,
+    and a test's own request (page.evaluate, page.request) does not count."""
+    report = run(demo)
+    both = {"POST demo.api_launch": {"page": True}, "POST demo.api_tweak": {"page": True}}
+    assert fa.e2e_gate(report, [_observed(tmp_path, "a.json", both)], record={})["ok"]
+    one = _observed(tmp_path, "b.json", {"POST demo.api_launch": {"page": True},
+                                         "POST demo.api_tweak": {"test": True}})
+    gate = fa.e2e_gate(report, [one], record={})
+    assert not gate["ok"]
+    assert gate["missing"] == [
+        "POST /demo/api/tweak (demo.api_tweak): named by id in "
+        "tools/dashboard/templates/demo/index.html, never sent by a page in the e2e run "
+        "(only a test's own request)"]
+    # Shards merge: what one shard did not send, another may have.
+    other = _observed(tmp_path, "c.json", {"POST demo.api_tweak": {"page": True}})
+    assert fa.e2e_gate(report, [one, other], record={})["ok"]
+
+
+def test_the_e2e_gate_fails_on_an_overclaiming_record_or_a_stray_request(demo, tmp_path):
+    report = run(demo)
+    both = _observed(tmp_path, "a.json", {"POST demo.api_launch": {"page": True},
+                                          "POST demo.api_tweak": {"page": True}},
+                     unmatched=["POST /demo/api/nope", "GET /elsewhere/x"])
+    gate = fa.e2e_gate(report, [both], record={"POST demo.api_gone": {"page": True}})
+    assert gate["stale_record"] == [
+        "POST demo.api_gone: tests/e2e/observed-calls.json says a page sent it; "
+        "this run did not see it"]
+    assert gate["unmatched"] == [
+        "POST /demo/api/nope: a request under an audited route that matches no route"]
+    assert not gate["ok"]
+
+
+def test_the_doc_shows_each_route_by_id_and_seen_in_e2e(demo):
+    _write(demo["root"], fa.OBSERVED_RELPATH, json.dumps(
+        {"routes": {"POST demo.api_launch": {"page": True}}}))
+    report = run(demo)
+    rows = {r["endpoint"]: r for r in cell(report, "gui")["routes"]}
+    assert rows["demo.api_launch"]["observed"] and not rows["demo.api_tweak"]["observed"]
+    assert report["summary"]["writes_by_id"] == 2
+    assert report["summary"]["writes_observed"] == 1
+    md = fa.render_markdown(report)
+    assert ("| `demo.core` | `POST /demo/api/launch` | `demo.api_launch` | "
+            "tools/dashboard/templates/demo/index.html | ✓ |") in md
 
 
 # ── census, doc and snapshot ─────────────────────────────────────────────────

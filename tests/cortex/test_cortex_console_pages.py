@@ -140,16 +140,24 @@ def test_service_keys_are_for_admin_and_isso_only(db):
 
 def test_the_verbs_page_calls_the_five_governed_verbs():
     text = (TEMPLATES / "cortex" / "verbs.html").read_text(encoding="utf-8")
+    from tools.dashboard.routes_gen import rule_of
+
     for verb in ("resolve", "complete", "reason", "classify", "extract"):
-        assert f"'/cortex/api/v1/{verb}'" in text
+        # By endpoint id (icx-cnf-08); the id's rule is the verb's REST path.
+        assert f"icdevRoute('cortex.api_v1_{verb}')" in text
+        assert rule_of(f"cortex.api_v1_{verb}") == f"/cortex/api/v1/{verb}"
 
 
 def test_the_pmo_page_never_takes_a_decision():
     from tools.cortex.console import PMO_VERBS
 
     text = (TEMPLATES / "cortex" / "pmo.html").read_text(encoding="utf-8")
+    from tools.dashboard.routes_gen import rule_of
+
     for verb in PMO_VERBS:
-        assert f"'{verb['path']}'" in text, verb["verb"]
+        endpoint = f"cortex.api_v1_{verb['verb']}"
+        assert f"icdevRoute('{endpoint}')" in text, verb["verb"]
+        assert rule_of(endpoint) == verb["path"], verb["verb"]
     # Award is called (icx-cnf-07), but only PROPOSED: the acceptance is a
     # different person's step at /decisions, never taken on this page.
     award = text[text.index("function pmoAward"):]
@@ -163,11 +171,12 @@ def test_the_pmo_page_never_takes_a_decision():
 
 def test_the_intake_and_govern_pages_call_their_routes():
     intake = (TEMPLATES / "cortex" / "intake.html").read_text(encoding="utf-8")
-    assert "'/cortex/api/v1/intake/session'" in intake
-    assert "'/cortex/api/v1/intake/turn'" in intake
+    # By endpoint id (icx-cnf-08).
+    assert "icdevRoute('cortex.api_v1_intake_session_create')" in intake
+    assert "icdevRoute('cortex.api_v1_intake_turn')" in intake
     govern = (TEMPLATES / "cortex" / "govern.html").read_text(encoding="utf-8")
-    assert "'/cortex/api/v1/govern'" in govern
-    assert "'/cortex/api/agent-launches'" in govern
+    assert "icdevRoute('cortex.api_v1_govern')" in govern
+    assert "icdevRoute('cortex.api_agent_launches')" in govern
 
 
 # ── JSON reads ───────────────────────────────────────────────────────────────
@@ -278,6 +287,6 @@ def test_ace_chat_has_a_page_and_events_emit_is_retired():
     assert "/api/ace/events/emit" not in rules
     assert "ace_api" in app.blueprints and ace_api_bp.name == "ace_api"
     chat = (TEMPLATES / "ace" / "chat.html").read_text(encoding="utf-8")
-    assert "fetch('/api/ace/chat'" in chat
+    assert "fetch(icdevRoute('ace_api.api_ace_chat')" in chat
     sessions = (TEMPLATES / "ace" / "sessions.html").read_text(encoding="utf-8")
-    assert 'href="/coworker/chat"' in sessions
+    assert "url_for('ace.chat_page')" in sessions  # by endpoint id (icx-cnf-08)

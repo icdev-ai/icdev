@@ -32,7 +32,8 @@
 // — the repo convention — which is NOT the output dir, so they survive without a
 // copy step. Paths are resolved from __dirname so cwd changes cannot move them.
 
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 
 import fs from 'fs';

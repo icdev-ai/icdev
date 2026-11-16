@@ -2,7 +2,7 @@
 // E2E Test: Chat Use Cases — Catalog, Activation, Quick Action URL Validation
 // Covers: use case sidebar, activation flow, all quick_action URLs from args/use_cases.yaml
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import * as path from 'path';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';

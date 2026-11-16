@@ -2,7 +2,7 @@
 // E2E: gcpl-cor-* — CPMP-COR Epic
 // COR Portal: government read-only access, email filtering, hidden fields, NIST AU-2 audit
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import { BASE, SS, CUI, seedOpportunity, seedContract } from './fixtures/govcon_cpmp';
 
 const COR_EMAIL = 'cor-gcpl-test@agency.gov';

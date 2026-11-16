@@ -3,7 +3,7 @@
 // Verifies /coworker pages load, team launch works, instance lifecycle completes,
 // and edge cases are handled gracefully. Covers Orchestrator integration via /agents.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import path from 'path';
 import fs from 'fs';
 

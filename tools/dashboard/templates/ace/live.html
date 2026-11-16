@@ -93,9 +93,9 @@
   <div class="breadcrumbs">
     <a href="/">Home</a>
     <span class="separator">/</span>
-    <a href="/coworker">Co-Worker Engine</a>
+    <a href="{{ url_for('ace.index') }}">Co-Worker Engine</a>
     <span class="separator">/</span>
-    <a href="/coworker/{{ instance_id }}">{{ instance_id[:12] }}</a>
+    <a href="{{ url_for('ace.instance_detail', instance_id=instance_id) }}">{{ instance_id[:12] }}</a>
     <span class="separator">/</span>
     <span>Live</span>
   </div>
@@ -140,8 +140,8 @@
   </div>
 
   <div class="actions">
-    <a href="/coworker/{{ instance_id }}" class="btn btn-secondary">← Instance Detail</a>
-    <a href="/coworker/sessions" class="btn btn-secondary">Sessions</a>
+    <a href="{{ url_for('ace.instance_detail', instance_id=instance_id) }}" class="btn btn-secondary">← Instance Detail</a>
+    <a href="{{ url_for('ace.sessions_list') }}" class="btn btn-secondary">Sessions</a>
   </div>
 </div>
 
@@ -221,7 +221,7 @@ function handleEvent(evt) {
 
 function startStream() {
   setStatus('connecting', 'Connecting…');
-  var url = '/api/ace/' + INSTANCE_ID + '/stream';
+  var url = icdevRoute('ace_api.api_stream', {instance_id: INSTANCE_ID});
   es = new EventSource(url);
 
   es.onmessage = function(e) {

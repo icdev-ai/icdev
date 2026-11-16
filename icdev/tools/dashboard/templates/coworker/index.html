@@ -59,9 +59,9 @@
       </p>
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
-      <a href="/coworker/roles" class="btn btn-secondary" style="font-size:12px;">Role Catalog →</a>
-      <a href="/coworker/trust" class="btn btn-secondary" style="font-size:12px;">Trust Leaderboard →</a>
-      <a href="/coworker/sessions" class="btn btn-secondary" style="font-size:12px;">Sessions →</a>
+      <a href="{{ url_for('ace.roles') }}" class="btn btn-secondary" style="font-size:12px;">Role Catalog →</a>
+      <a href="{{ url_for('ace.trust_leaderboard') }}" class="btn btn-secondary" style="font-size:12px;">Trust Leaderboard →</a>
+      <a href="{{ url_for('ace.sessions_list') }}" class="btn btn-secondary" style="font-size:12px;">Sessions →</a>
     </div>
   </div>
 
@@ -93,7 +93,7 @@
 
   <!-- ── IQE widget ─────────────────────────────────────────────── -->
   {% set iqe_canvas = "ace" %}
-  {% set iqe_api_route = "/api/ace/iqe-query" %}
+  {% set iqe_api_route = url_for('ace_api.api_iqe_query') %}
   {% set iqe_title = "Ask the Co-Worker Engine" %}
   {% set iqe_examples = [
        {"label": "Active teams", "query": "show active co-worker teams"},
@@ -109,7 +109,7 @@
   {% if active %}
   <div class="team-grid">
     {% for inst in active %}
-    <a class="team-card" href="/coworker/{{ inst.id }}">
+    <a class="team-card" href="{{ url_for('ace.instance_detail', instance_id=inst.id) }}">
       <div>
         <div class="tc-title">{{ inst.name or inst.id }}</div>
         <div class="tc-id">{{ inst.id }}</div>
@@ -137,7 +137,7 @@
   </h2>
   <div class="team-grid">
     {% for inst in recent %}
-    <a class="team-card" href="/coworker/{{ inst.id }}">
+    <a class="team-card" href="{{ url_for('ace.instance_detail', instance_id=inst.id) }}">
       <div>
         <div class="tc-title">{{ inst.name or inst.id }}</div>
         <div class="tc-id">{{ inst.id }}</div>
@@ -193,7 +193,7 @@
     var payload = { problem_text: problem, trigger_source: "dashboard" };
     var attached = localStorage.getItem("dic_attached_collection");
     if (attached) { payload.dic_collection_ids = [attached]; }
-    fetch("/api/ace/launch", {
+    fetch(icdevRoute('ace_api.api_launch'), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -202,7 +202,7 @@
       .then(function (data) {
         if (data.instance_id) {
           st.textContent = "Launched " + data.instance_id + " — redirecting…";
-          window.location.href = "/coworker/" + data.instance_id;
+          window.location.href = icdevRoute('ace.instance_detail', {instance_id: data.instance_id});
         } else {
           st.textContent = "Error: " + (data.error || "unknown");
           btn.disabled = false;

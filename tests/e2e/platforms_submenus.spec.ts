@@ -1,7 +1,7 @@
 // CUI // SP-CTI
 // E2E Test: Platforms Menu — GeoSIGINT, Info Ops, GovCon, Training, More
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

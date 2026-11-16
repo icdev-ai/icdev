@@ -2,7 +2,7 @@
 // E2E Test: File Sync Dashboard
 // Verifies the File Sync dashboard renders correctly with stat grid, job table, activity log, and create modal.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 

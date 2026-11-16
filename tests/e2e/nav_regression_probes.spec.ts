@@ -12,7 +12,7 @@
 //     add a cheap browser guard that no dialog fires when a real post is present,
 //     and skip when the fresh CI DB has no seeded post (no cheap seed path).
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 

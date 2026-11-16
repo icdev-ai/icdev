@@ -5,7 +5,7 @@
 // rule-based proposals, approve/reject/skip, apply to target config, generate
 // and preview the converted target config, and download it.
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/observed_calls';
 import { archiveNetSessions } from './fixtures/migration_cleanup';
 
 const CUI_BANNER = 'CUI // SP-CTI';

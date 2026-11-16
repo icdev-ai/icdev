@@ -237,9 +237,9 @@
     <h2 id="success-title">Profile Created</h2>
     <p id="success-body"></p>
     <div class="links">
-      <a href="/coworker/roles">View All Profiles</a>
-      <a href="/coworker/profiles/new">Create Another</a>
-      <a href="/coworker">Launch a Session</a>
+      <a href="{{ url_for('ace.roles') }}">View All Profiles</a>
+      <a href="{{ url_for('ace.profiles_new') }}">Create Another</a>
+      <a href="{{ url_for('ace.index') }}">Launch a Session</a>
     </div>
   </div>
 </div>
@@ -257,7 +257,7 @@ async function suggestNames() {
   panel.style.display = 'block';
 
   try {
-    const res = await fetch('/api/ace/profiles/suggest-name', {
+    const res = await fetch(icdevRoute('ace_api.api_profiles_suggest_name'), {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({description: desc})
@@ -303,7 +303,7 @@ async function runAssist() {
   showStatus('info', 'AI is generating your profile…');
 
   try {
-    const res = await fetch('/api/ace/profiles/preview', {
+    const res = await fetch(icdevRoute('ace_api.api_profiles_preview'), {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({name, description: desc})
@@ -339,7 +339,7 @@ async function saveProfile() {
   showStatus('info', 'Saving profile…');
 
   try {
-    const res = await fetch('/api/ace/profiles/generate', {
+    const res = await fetch(icdevRoute('ace_api.api_profiles_generate'), {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({name, description: '', spec: _currentSpec})

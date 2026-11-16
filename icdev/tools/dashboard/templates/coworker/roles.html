@@ -184,7 +184,7 @@
   <div class="breadcrumbs">
     <a href="/">Home</a>
     <span class="separator">/</span>
-    <a href="/coworker/">Co-Worker Teams</a>
+    <a href="{{ url_for('ace.index') }}">Co-Worker Teams</a>
     <span class="separator">/</span>
     <span>Roles</span>
   </div>
@@ -198,7 +198,7 @@
         Definitions hot-reload from YAML every 60 s in dev.
       </p>
     </div>
-    <a href="/coworker/" class="btn btn-secondary" style="font-size:12px;">← Teams</a>
+    <a href="{{ url_for('ace.index') }}" class="btn btn-secondary" style="font-size:12px;">← Teams</a>
   </div>
 
   <!-- ── Stats strip ────────────────────────────────────────────── -->
@@ -314,7 +314,7 @@
       Generated profiles
     </h2>
     <p style="font-size:12px; color:var(--text-secondary,#7a8cb0); margin:0 0 12px; line-height:1.6;">
-      Profiles made with <a href="/coworker/profiles/new">New profile</a>. Deleting one cannot be undone, so it is
+      Profiles made with <a href="{{ url_for('ace.profiles_new') }}">New profile</a>. Deleting one cannot be undone, so it is
       a person's decision, recorded through the declared workflow <code>{{ delete_template }}</code>
       (held by {{ delete_holders | join(', ') }}). Built-in roles cannot be deleted.
     </p>
@@ -359,7 +359,7 @@
     if (!window.confirm('Delete the generated profile "' + id + '"? This cannot be undone.')) { return; }
     btn.disabled = true;
     result.textContent = 'Deleting…';
-    fetch('/api/ace/profiles/' + encodeURIComponent(id), { method: 'DELETE' })
+    icdevFetch('ace_api.api_profiles_delete', {role_id: id}, { method: 'DELETE' })
       .then(function (r) {
         return r.json().catch(function () { return {error: 'non-JSON reply'}; })
           .then(function (d) { return {ok: r.ok, d: d}; });

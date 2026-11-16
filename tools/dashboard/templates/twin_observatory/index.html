@@ -14,7 +14,7 @@
     {% if generated_at %}<span style="font-size:0.8rem;">Generated {{ generated_at }}.</span>{% endif %}
   </p>
   <p style="margin:0 0 1rem 0;">
-    <a href="/twin-observatory/conformance" style="color:#5aa9e6;font-size:0.85rem;">Feature conformance</a>
+    <a href="{{ url_for('twin_observatory.conformance_page') }}" style="color:#5aa9e6;font-size:0.85rem;">Feature conformance</a>
     <span style="color:#7a8cb0;font-size:0.8rem;">&mdash; each feature against the five rules (GUI, workflow, twin, architecture, AI-native).</span>
     <br><a href="/twin-observatory/governance" style="color:#5aa9e6;font-size:0.85rem;">Governance twins</a>
     <span style="color:#7a8cb0;font-size:0.8rem;">&mdash; Cortex, ACE, Co-Workers and the conformance audit: findings with their thread, and a replay.</span>
@@ -126,7 +126,7 @@
   <!-- IQE natural-language query widget -->
   <div style="margin-top:1.5rem;">
     {% set iqe_canvas = "twin_observatory" %}
-    {% set iqe_api_route = "/twin-observatory/api/iqe-query" %}
+    {% set iqe_api_route = url_for('twin_observatory.api_iqe_query') %}
     {% set iqe_title = "Ask Twin Observatory" %}
     {% set iqe_examples = [
       {"label": "All twins", "query": "foreach t in twin_observatory.twins select t.canvas, t.latest_verdict, t.stale"},
