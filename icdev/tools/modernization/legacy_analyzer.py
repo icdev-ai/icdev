@@ -213,7 +213,7 @@ def _count_lines(file_path):
 # ---------------------------------------------------------------------------
 
 
-def register_application(project_id, name, source_path, description=None):
+def register_application(project_id, name, source_path, description=None, app_id=None):
     """Register a legacy application in the ICDEV™ database.
 
     Walks the source_path directory tree, counts files by extension, computes
@@ -225,6 +225,8 @@ def register_application(project_id, name, source_path, description=None):
         name: Human-readable name for the legacy application.
         source_path: Absolute path to the application source root.
         description: Optional description text.
+        app_id: Optional id to register it under (``lapp-`` and 12 hex digits), so a rerun of the same sample on a
+            new scratch database keeps the id ICDEV[OS] already knows it by (osx-mdz-09); default a new random one.
 
     Returns:
         dict with the registered application record.
@@ -233,7 +235,9 @@ def register_application(project_id, name, source_path, description=None):
     if not source_path.is_dir():
         raise FileNotFoundError(f"Source path does not exist or is not a directory: {source_path}")
 
-    app_id = f"lapp-{uuid.uuid4().hex[:12]}"
+    if app_id is not None and not re.fullmatch(r"lapp-[0-9a-f]{12}", str(app_id)):
+        raise ValueError(f"--app-id {app_id!r} is not a legacy application id (lapp- and 12 hex digits)")
+    app_id = app_id or f"lapp-{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
 
     # Walk source tree and aggregate stats
@@ -2338,7 +2342,8 @@ Classification: CUI // SP-CTI
 
     parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--name", help="Application name (required for --register)")
-    parser.add_argument("--app-id", help="Legacy application ID (required for --analyze)")
+    parser.add_argument("--app-id", help="Legacy application ID (required for --analyze; with --register, the id to "
+                                         "register under -- default a new one)")
     parser.add_argument("--source-path", help="Path to source code root")
     parser.add_argument("--description", help="Application description (for --register)")
     parser.add_argument("--json", action="store_true", dest="json_output", help="Output results as JSON")
@@ -2357,6 +2362,7 @@ Classification: CUI // SP-CTI
                 name=args.name,
                 source_path=args.source_path,
                 description=args.description,
+                app_id=args.app_id,
             )
 
             if args.json_output:

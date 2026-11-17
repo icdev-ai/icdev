@@ -251,6 +251,25 @@ def test_the_capacity_file_reaches_the_wave_planner_and_is_kept_for_resume(tmp_p
     assert "--capacity" not in next(args for step, args in seen if step == "waves")
 
 
+def test_a_rerun_can_keep_the_legacy_id_and_a_malformed_one_is_refused(tmp_path, monkeypatch):
+    """osx-mdz-09: --legacy-id registers a rerun under the id ICDEV[OS] already knows (legacy_analyzer --register
+    --app-id); an id that is not lapp- and 12 hex digits is refused before anything is written."""
+    from tools.modernization import legacy_analyzer as la
+    from tools.modernization import sample_pipeline as sp
+
+    (tmp_path / "src").mkdir()
+    with pytest.raises(ValueError, match="not a legacy application id"):
+        la.register_application("proj-1", "x", str(tmp_path / "src"), app_id="lapp-NOPE")
+    seen = {}
+    monkeypatch.setattr(sp, "pipeline", lambda *a, **kw: seen.update(kw) or {
+        "application": "x", "bundle": "x.apptwin.json", "bundle_sha256": "0", "produced": [], "gaps": {}})
+    assert sp.main(["--source", str(tmp_path / "src"), "--name", "x", "--scratch-db", str(tmp_path / "x.db"),
+                    "--out", str(tmp_path / "out"), "--legacy-id", "lapp-0123456789ab"]) == 0
+    assert seen["legacy_id"] == "lapp-0123456789ab"
+    src = (ROOT / "tools/modernization/sample_pipeline.py").read_text(encoding="utf-8")
+    assert '*(["--app-id", legacy_id] if legacy_id else [])' in src, "the id reaches legacy_analyzer --register"
+
+
 def test_aiify_export_carries_the_enum_relative_paths_and_disqualifiers(tmp_path):
     scan = {"overall_verdict": "Partially AI-ready", "overall_ai_readiness": "partial", "opportunities": [
         {"opportunity_id": 1, "pattern_type": "nested_conditionals", "module_path": str(tmp_path / "src/A.java"),

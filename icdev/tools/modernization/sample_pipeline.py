@@ -297,7 +297,7 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
              at: str | None = None, no_model: bool = False, targets: dict | None = None,
              icos_decisions: Path | None = None, icos_jwks: Path | None = None, observed: Path | None = None,
              observed_processes: list[Path] | None = None, environments: Path | None = None,
-             capacity: Path | None = None) -> dict:
+             capacity: Path | None = None, legacy_id: str | None = None) -> dict:
     source, out = source.resolve(), out.resolve()
     if not source.is_dir():
         raise PipelineError(f"no source directory {source}")
@@ -321,7 +321,8 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
     r.note("project", True, project_id=project)
 
     rc, so, se = r.tool("register", "tools/modernization/legacy_analyzer.py", "--register", "--project-id", project,
-                        "--name", name, "--source-path", str(source), "--json")
+                        "--name", name, "--source-path", str(source), "--json",
+                        *(["--app-id", legacy_id] if legacy_id else []))
     c = sqlite3.connect(scratch_db)   # the scratch file itself, never through storage: sqlite3's own ? placeholders
     try:
         row = c.execute("SELECT id FROM legacy_applications WHERE name = ?", (name,)).fetchone()
@@ -518,6 +519,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--capacity",
                     help="a declared team capacity file (args/modernisation_capacity.yaml's shape, osx-mdz-09): the "
                          "waves are dated only from an entry a person reviewed at its digest (default: that file)")
+    ap.add_argument("--legacy-id",
+                    help="register the application under this id (lapp- and 12 hex digits), so a rerun on a new scratch "
+                         "database keeps the id ICDEV[OS] already knows it by (osx-mdz-09); default a new one")
     ap.add_argument("--resume", action="store_true",
                     help="plan the application a first run in --out assessed, once ICDEV[OS] decided "
                          "(needs --icos-decisions and --icos-jwks)")
@@ -540,7 +544,7 @@ def main(argv: list[str] | None = None) -> int:
                            observed=Path(a.observed) if a.observed else None,
                            observed_processes=[Path(p) for p in a.observed_process],
                            environments=Path(a.environments) if a.environments else None,
-                           capacity=Path(a.capacity) if a.capacity else None)
+                           capacity=Path(a.capacity) if a.capacity else None, legacy_id=a.legacy_id)
     except (PipelineError, subprocess.TimeoutExpired) as e:
         print(json.dumps({"status": "error", "error": str(e)}))
         return 1
