@@ -19,7 +19,11 @@ the product uses, never a hand-written INSERT of derived state:
   writing nothing but its audit row, so /migration lists the refusal;
 * (icx-mdz-05) a team capacity declared for the application in the e2e capacity file the
   server reads (``ICDEV_MODERNISATION_CAPACITY_E2E``, honoured only under ``tests/``), so
-  the Modernisation page offers Approve capacity / Reject.
+  the Modernisation page offers Approve capacity / Reject;
+* (icx-mdz-06) a second application, the consolidation SURVIVOR, registered over the same
+  source with its own cloud-native jobs and ICDEV's IV&V run over their outputs
+  (``survivor_ivv.run``). No one took a decision on it, so the e2e person is independent of
+  its plan and the Modernisation page offers Sign off / Refuse.
 
 The 7R assessment itself is NOT seeded: the test presses Assess on /migration.
 Everything is named ``mdz01-e2e-*`` so it cannot be mistaken for real data. Synthetic.
@@ -91,6 +95,19 @@ def seed_capacity(app_name: str) -> dict:
     return {"application": app_name, "file": str(CAPACITY)}
 
 
+def seed_survivor(project_id: str, run: str) -> dict:
+    """icx-mdz-06: a survivor application with modernisation outputs and its recorded IV&V result (synthetic)."""
+    from tools.modernization import cloud_native_jobs, legacy_analyzer, survivor_ivv
+
+    app = legacy_analyzer.register_application(project_id, f"mdz06-e2e-survivor-{run}", str(SOURCE),
+                                               description="icx-mdz-06 e2e fixture: a consolidation survivor (synthetic)")
+    app_id = app.get("app_id") or app.get("id")
+    legacy_analyzer.analyze_python(app_id, str(SOURCE))
+    cloud_native_jobs.run(app_id)
+    result = survivor_ivv.run(app_id)
+    return {"app_id": app_id, "digest": result["digest"], "recommendation": result["recommendation"]}
+
+
 def seed_refused_plan(project_id: str, app_id: str) -> dict:
     import os
 
@@ -111,7 +128,8 @@ def main() -> int:
     out = {**app, "source": str(SOURCE), "cloud_native": seed_cloud_native(app["app_id"]),
            "capacity": seed_capacity(f"mdz01-e2e-shop-{run}"),
            "observed_workflow_id": seed_observed_draft(run),
-           "refused_plan": seed_refused_plan(app["project_id"], app["app_id"])}
+           "refused_plan": seed_refused_plan(app["project_id"], app["app_id"]),
+           "survivor": seed_survivor(app["project_id"], run)}
     print(json.dumps(out, default=str))
     return 0
 

@@ -1,0 +1,7 @@
+# icx-mdz-06: ICDEV's own IV&V over a consolidation survivor's modernisation outputs, per area
+# pass/fail/unverified (never pass unless verified), recorded and bound by one digest; signed off by
+# a person separate from whoever built or approved the plan (decl-wft-mdz-survivor-ivv-signoff),
+# at the digest, once; a newer result leaves it stale; the bundle carries only a signed, current
+# result and validates; the page, the twin and the MCP tool; and the record read back on PG.
+tests/test_icx_mdz_06_survivor_ivv.py
+tests/test_icx_mdz_06_ambient.py

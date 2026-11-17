@@ -1,4 +1,4 @@
-<!-- CUI // SP-CTI — Modernisation: an application's waves, CAM jobs, cloud-native output, features and processes, and ICDEV[OS] bundle (icx-mdz-01, icx-mdz-03, icx-mdz-04; icx-mdz-05: wave estimates and dates from a reviewed team capacity) -->
+<!-- CUI // SP-CTI — Modernisation: an application's waves, CAM jobs, cloud-native output, features and processes, and ICDEV[OS] bundle (icx-mdz-01, icx-mdz-03, icx-mdz-04; icx-mdz-05: wave estimates and dates from a reviewed team capacity; icx-mdz-06: the survivor IV&V and its independent sign-off) -->
 {% extends "base.html" %}
 {% block title %}Modernisation — ICDEV{% endblock %}
 {% block content %}
@@ -78,6 +78,13 @@
     <div id="mdz-bundle-derived" class="mdz-muted"></div>
   </div>
 
+  <div class="mdz-card" id="mdz-ivv">
+    <h2>Survivor IV&amp;V</h2>
+    <p class="mdz-help">ICDEV[OS] endorses retiring an application into another only when the survivor carries an IV&amp;V that counts. <code>survivor_ivv.py</code> runs ICDEV's own IV&amp;V (<code>ivv_assessor</code>, IEEE 1012) over this application's modernisation outputs and records the result: each process area <b>pass</b>, <b>fail</b> or <b>unverified</b> (not assessed, manual, or semi-automated: <b>never a pass</b>), its findings, each requirement's evidence digest, the tool and its version, and the date, bound by one digest. A machine result is not independent: a person who did not build or approve this application's plan signs it off or refuses it, with a reason: your step of <code>decl-wft-mdz-survivor-ivv-signoff</code>, bound to the result's digest and taken once. The bundle carries the IV&amp;V only while it is signed at the current digest; a newer run needs a new sign-off.</p>
+    <div id="mdz-ivv-body" class="mdz-muted">Pick an application.</div>
+    <div id="mdz-ivv-msg" class="mdz-muted"></div>
+  </div>
+
   <div class="mdz-card" id="mdz-icos">
     <h2>ICDEV[OS] decisions</h2>
     <p class="mdz-help">Paste the signed portfolio-decisions export ICDEV[OS] returned (<code>icos-portfolio-decisions/v1</code>). It is verified against the JWKS you pinned
@@ -126,7 +133,7 @@
     var id = appSel.value;
     if (!id) return;
     document.getElementById('mdz-app-meta').textContent = 'id ' + id;
-    loadWaves(id); loadJobs(id); loadCloud(id); loadFeatures(id); loadBundle(id);
+    loadWaves(id); loadJobs(id); loadCloud(id); loadFeatures(id); loadBundle(id); loadIvv(id);
   }
   appSel.addEventListener('change', showApp);
 
@@ -313,6 +320,63 @@
         esc(d.processes_unreviewed || 0) + ' not reviewed</div><div class="mdz-muted">Write it: <code>' + esc(d.write_with) + '</code></div>';
     });
   }
+
+  /* icx-mdz-06: the survivor IV&V result per area (unverified is never pass), its sign-off, and what the bundle carries */
+  function ivvTag(st) {
+    return '<span class="mdz-tag ' + (st === 'pass' || st === 'signed' ? 'ok' : st === 'fail' || st === 'refused' ? 'no' : '') + '">' + esc(st) + '</span>';
+  }
+  function loadIvv(id) {
+    var box = document.getElementById('mdz-ivv-body');
+    box.textContent = 'Loading…';
+    getJson(icdevFetch('migration_canvas.api_modernisation_survivor_ivv', {app_id: id})).then(function (res) {
+      var d = res.j;
+      if (!res.ok) { box.innerHTML = '<span class="mdz-err">' + esc(d.error) + '</span>'; return; }
+      var b = d.bundle || {};
+      var carried = '<div id="mdz-ivv-bundle">Bundle: ' + (b.section ? '<span class="mdz-tag ok">carried</span> ' : '<span class="mdz-tag no">not carried</span> ') + esc(b.reason) + '</div>';
+      var r = d.result;
+      if (!r) { box.innerHTML = '<div>No survivor IV&amp;V has run. Run it: <code>' + esc(d.run_with) + '</code></div>' + carried; return; }
+      var t = r.target || {};
+      var so = d.signoff || {state: 'unsigned'};
+      var sep = Object.keys(d.separate_from || {});
+      box.innerHTML = '<div>' + ivvTag(r.recommendation) + ' overall ' + esc(r.overall_score) + '%, ' + esc(r.critical_findings) + ' critical finding(s); assessed ' + esc(r.assessed_at) +
+        ' by <code>' + esc(r.tool) + '</code> ' + esc(r.tool_version) + ' (' + esc(r.standard) + '); result digest <code id="mdz-ivv-digest">' + esc(String(r.digest).slice(0, 16)) + '</code></div>' +
+        '<div class="mdz-muted">Checked: ' + (t.path ? esc(t.basis) + ' <code>' + esc(t.path) + '</code>, ' + esc(t.files) + ' file(s), manifest <code>' + esc(String(t.digest).slice(0, 12)) + '</code>' : esc(t.why)) +
+        (r.subject ? '; inventory digest <code>' + esc(String(r.subject.inventory_digest).slice(0, 12)) + '</code>' : '; unbound: ' + esc(r.subject_why || 'no inventory digest')) + '</div>' +
+        '<table id="mdz-ivv-areas"><tr><th>Area</th><th>Status</th><th>Score</th><th>Why</th><th>Requirements (evidence digest)</th><th>Findings</th></tr>' +
+        r.areas.map(function (a) {
+          return '<tr data-ivv-area="' + esc(a.code) + '"><td>' + esc(a.code) + ' ' + esc(a.name) + '</td><td>' + ivvTag(a.status) + '</td><td>' + (a.score == null ? '—' : esc(a.score) + '%') +
+            '</td><td>' + esc(a.why) + '</td><td>' + a.requirements.map(function (q) {
+              return esc(q.id) + ' ' + esc(q.status) + ' <span class="mdz-muted">' + esc(q.automation) + ' <code>' + esc(String(q.evidence_digest).slice(0, 12)) + '</code></span>';
+            }).join('<br>') + '</td><td>' + (a.findings.length ? a.findings.map(esc).join('<br>') : '—') + '</td></tr>';
+        }).join('') + '</table>' +
+        ((r.findings || []).length ? '<div class="mdz-muted">Findings: ' + r.findings.map(function (f) { return '<b>' + esc(f.severity) + '</b> ' + esc(f.finding_id) + ' ' + esc(f.title); }).join('; ') + '</div>' : '') +
+        '<div id="mdz-ivv-signoff">Sign-off: ' + ivvTag(so.state) + (so.by ? ' by ' + esc(so.by) + ': ' + esc(so.reason) + ' (step ' + esc(so.step_id) + ')' : '') +
+        (so.state === 'stale' ? ' <span class="mdz-err">of an earlier result (' + esc(String(so.result_digest).slice(0, 12)) + ')</span>' : '') + '</div>' +
+        '<div class="mdz-muted">May not sign (built or approved its plan): ' + (sep.length ? sep.map(function (k) { return esc(k) + ' (' + esc(d.separate_from[k]) + ')'; }).join('; ') : 'no one recorded') + '</div>' +
+        (so.state === 'signed' || so.state === 'refused' ? '' :
+          '<div><input class="mdz-reason" id="mdz-ivv-reason" placeholder="reason (required)" /> ' +
+          '<button type="button" class="mdz-btn" data-sign-ivv="' + esc(r.digest) + '">Sign off</button> ' +
+          '<button type="button" class="mdz-btn reject" data-refuse-ivv="' + esc(r.digest) + '">Refuse</button></div>') + carried;
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var digest = t.getAttribute && (t.getAttribute('data-sign-ivv') || t.getAttribute('data-refuse-ivv'));
+    if (!digest) return;
+    var decision = t.hasAttribute('data-sign-ivv') ? 'sign' : 'refuse';
+    var reason = (document.getElementById('mdz-ivv-reason') || {}).value || '';
+    var msg = document.getElementById('mdz-ivv-msg');
+    if (!reason.trim()) { msg.textContent = 'A reason is required.'; return; }
+    icdevFetch('migration_canvas.api_modernisation_ivv_signoff', {app_id: appSel.value}, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({decision: decision, reason: reason.trim(), digest: digest})
+    }).then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); }).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not recorded: ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Recorded IV&V ' + res.j.signoff.state + ' by ' + res.j.signoff.by + ' (step ' + res.j.decision_step.step_id + ').';
+      loadIvv(appSel.value); loadBundle(appSel.value);
+    });
+  });
 
   document.addEventListener('click', function (ev) {
     var t = ev.target;

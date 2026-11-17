@@ -3,7 +3,8 @@
 # evidence, one 7R engine, may-plan enforced; icx-mdz-03: features and processes
 # without a model, every bundle part present or missing; icx-mdz-04: the bundle
 # carries what ICDEV[OS] contract 1.189.0 accepts, inline; icx-mdz-05: each wave's
-# estimate and, only from a declared team capacity a person reviewed, its dates) -- the 7R assessment,
+# estimate and, only from a declared team capacity a person reviewed, its dates; icx-mdz-06: IV&V for survivor
+# assurance, signed off by a person independent of the plan) -- the 7R assessment,
 # AI-Ify, Process-Ify, an application's waves and CAM refactor jobs, cloud-native
 # targets, and the ICDEV[OS] apptwin exporter and decision import.
 #
@@ -171,6 +172,24 @@ elements:
       - args/modernisation_capacity.yaml
       - args/workflow_hitl_templates/mdz-capacity-review.yaml
 
+  - id: mdz.survivor_ivv
+    type: sysml_element
+    kind: block
+    name: ICDEV's own IV&V over a consolidation survivor's modernisation outputs, signed off by an independent person
+    features: [mdz.exporter]
+    code:
+      - tools/modernization/survivor_ivv.py::assess
+      - tools/modernization/survivor_ivv.py::run
+      - tools/modernization/survivor_ivv.py::latest
+      - tools/modernization/survivor_ivv.py::builders
+      - tools/modernization/survivor_ivv.py::signoff
+      - tools/modernization/survivor_ivv.py::for_bundle
+      - tools/compliance/ivv_assessor.py::evaluate
+      - tools/workflow_hitl/declared.py::take_step
+      - tools/modernization/apptwin_export.py::build
+      - tools/migration_canvas/modernisation.py::register_modernisation_routes
+      - args/workflow_hitl_templates/mdz-survivor-ivv-signoff.yaml
+
   - id: mdz.twin
     type: sysml_element
     kind: block
@@ -207,6 +226,7 @@ interfaces:
       - tools/mcp/gap_handlers.py::handle_modernisation_bundle
       - tools/mcp/gap_handlers.py::handle_modernisation_features
       - tools/mcp/gap_handlers.py::handle_modernisation_wave_schedule
+      - tools/mcp/gap_handlers.py::handle_modernisation_survivor_ivv
 
 requirements:
   - id: PM-MDZ-01
@@ -638,3 +658,62 @@ requirements:
       - tests/test_icx_mdz_05_wave_dates.py::test_the_twin_observes_undated_waves_with_a_thread_and_replays
       - tests/test_icx_mdz_05_wave_dates.py::test_the_mcp_wave_schedule_tool_is_read_only_and_says_why
       - tests/test_icx_mdz_05_wave_dates.py::test_the_e2e_capacity_file_is_honoured_only_under_tests
+
+  - id: PM-MDZ-22
+    title: A survivor's IV&V is ICDEV's own, per area, and unverified is never pass
+    text: >-
+      survivor_ivv runs ivv_assessor's requirements, checks and scores (IEEE
+      1012) over the application's modernisation outputs (its CAM jobs' output,
+      or a directory named) and records the result append-only: each process
+      area pass only when every requirement there passed an automated check,
+      fail when one failed, and otherwise unverified (not assessed, manual,
+      semi-automated, or no outputs at all); its findings, each requirement's
+      evidence digest, the outputs' manifest digest, the tool and its version,
+      the date and the bundle's inventory digest, bound by one digest. CERTIFY
+      only when every area passed, DENY on a critical finding. A record that
+      does not match its own digest is refused.
+    type: functional
+    priority: high
+    features: [mdz.exporter]
+    elements: [mdz.survivor_ivv, mdz.bundle_contract]
+    controls: [SA-11, CA-2, AU-10]
+    tests:
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_an_unverified_area_never_passes
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_run_is_ivv_assessor_over_the_outputs_and_names_everything
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_a_tampered_record_is_refused
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_with_no_outputs_every_area_is_unverified_and_nothing_is_certified
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_certify_only_when_every_area_passed_and_deny_on_a_critical_finding
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_cli_runs_and_shows
+      - tests/test_icx_mdz_06_ambient.py::test_the_result_and_its_signoff_are_read_back_and_the_bundle_carries_it
+
+  - id: PM-MDZ-23
+    title: Independence is a person separate from the plan, signing at the result's digest; only a signed result is carried
+    text: >-
+      An independent person signs off or refuses the result, with a reason, on
+      the Modernisation page (decl-wft-mdz-survivor-ivv-signoff, separate_from
+      builders): refused to anyone who recorded the application's 7R strategy,
+      reviewed a CAM job, its capacity or a process, or whom ICDEV[OS] named
+      accepting, endorsing or approving its plan; a step whose caller names no
+      builders is refused. Bound to the result's digest and taken once; a newer
+      result leaves it stale. The bundle carries the IV&V in ICDEV[OS]
+      1.189.0's own ivv section (kind independent, the signer as assessor, only
+      measured areas scored) only while it is signed at the current digest, and
+      otherwise says why; it validates either way. The twin flags an unsigned,
+      stale or refused result and areas not passed, threaded to the result's
+      audit row, and replays; the MCP tool is read-only.
+    type: non_functional
+    priority: high
+    features: [mdz.exporter]
+    elements: [mdz.survivor_ivv, mdz.twin, if.mdz.console, if.mdz.mcp]
+    controls: [AC-5, CA-7, AU-10]
+    tests:
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_signoff_by_the_plans_own_approver_is_refused
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_7r_record_cam_review_and_process_review_make_a_builder
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_signoff_is_a_declared_step_bound_to_the_digest_and_taken_once
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_template_is_declared_with_separation_from_builders
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_bundle_carries_only_a_signed_current_result_and_always_validates
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_a_newer_result_after_the_signoff_leaves_it_stale_and_uncarried
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_page_shows_the_result_per_area_and_offers_sign_and_refuse
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_twin_flags_unsigned_refused_and_unpassed_areas_with_a_thread
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_twin_observes_an_unsigned_result_with_a_thread_and_replays
+      - tests/test_icx_mdz_06_survivor_ivv.py::test_the_mcp_survivor_ivv_tool_is_read_only_and_says_why

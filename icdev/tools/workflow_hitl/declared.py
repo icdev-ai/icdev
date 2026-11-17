@@ -16,6 +16,10 @@ the engine ignores and this module enforces:
 ``decisions``        each allowed decision, ``affirm`` or ``deny``.
 ``reason_required``  the decisions that need a reason.
 ``separate_from``    ``proposer``: the person who proposed may not decide.
+                     ``builders`` (icx-mdz-06): no one who built or approved the
+                     subject may decide. The route names them (``take_step``'s
+                     ``separated_from``, each with why); a step taken with none
+                     named is refused, since independence cannot be judged.
 
 One template-level field: ``service_keys: proceed`` says a service key's call is
 not a person's decision at all, so it runs on the key's scope with no step
@@ -140,8 +144,8 @@ def validate_template(tmpl: dict) -> list[str]:
     for name in stage.get("reason_required") or []:
         if name not in decisions:
             errors.append(f"{tid}: reason_required names unknown decision {name!r}")
-    if stage.get("separate_from") not in (None, "proposer"):
-        errors.append(f"{tid}: separate_from may only be 'proposer'")
+    if stage.get("separate_from") not in (None, "proposer", "builders"):
+        errors.append(f"{tid}: separate_from may only be 'proposer' or 'builders'")
     if tmpl.get("service_keys") not in (None, "propose", "proceed"):
         errors.append(f"{tid}: service_keys may only be 'propose' or 'proceed'")
     return errors
@@ -253,7 +257,7 @@ def _template(template_id: str) -> dict:
 
 
 def _check(tmpl: dict, surface: str, actor: dict | None, decision: str, reason: str,
-           proposed_by: str = "") -> tuple[dict, bool]:
+           proposed_by: str = "", separated_from: dict | None = None) -> tuple[dict, bool]:
     if surface not in (tmpl.get("decides") or []):
         raise StepRefused(500, "undeclared",
                           f"{tmpl['id']} does not decide {surface}")
@@ -276,6 +280,15 @@ def _check(tmpl: dict, surface: str, actor: dict | None, decision: str, reason: 
     if stage.get("separate_from") == "proposer" and proposed_by and proposed_by == actor["id"]:
         raise StepRefused(403, "separation",
                           "the person who proposed this may not decide it")
+    if stage.get("separate_from") == "builders":
+        if separated_from is None:
+            raise StepRefused(500, "undeclared", (
+                f"{tmpl['id']} must be decided by someone independent of who built the subject, "
+                "and the caller named no one: independence cannot be judged"))
+        if actor["id"] in separated_from:
+            raise StepRefused(403, "separation", (
+                f"you {separated_from[actor['id']]}: this step must be taken by someone "
+                "independent of that"))
     return stage, decisions[decision] == "affirm"
 
 
@@ -374,11 +387,17 @@ def _record_decision(tmpl: dict, *, step_id: str, surface: str, subject: str, ac
 
 
 def take_step(template_id: str, *, surface: str, decision: str, subject: str = "",
-              reason: str = "", actor: dict | None = None, payload: Any = None) -> dict:
-    """A person takes the manual step in the request itself. Raises StepRefused."""
+              reason: str = "", actor: dict | None = None, payload: Any = None,
+              separated_from: dict | None = None) -> dict:
+    """A person takes the manual step in the request itself. Raises StepRefused.
+
+    ``separated_from`` ``{person id: why}``: for a template whose step is
+    ``separate_from: builders``, who built or approved the subject.
+    """
     tmpl = _template(template_id)
     actor = actor if actor is not None else current_actor()
-    _, affirmative = _check(tmpl, surface, actor, decision, reason)
+    _, affirmative = _check(tmpl, surface, actor, decision, reason,
+                            separated_from=separated_from)
     try:
         return _record_decision(tmpl, step_id=f"step-{uuid.uuid4().hex[:16]}",
                                 surface=surface, subject=subject, actor=actor,

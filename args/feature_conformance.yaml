@@ -489,15 +489,25 @@ features:
       - migration_canvas.api_modernisation_icos_check
       - migration_canvas.api_modernisation_features
       - migration_canvas.api_modernisation_process_review
-    mcp_tools: [modernisation_bundle, modernisation_features]
+      - migration_canvas.api_modernisation_survivor_ivv
+      - migration_canvas.api_modernisation_ivv_signoff
+    mcp_tools: [modernisation_bundle, modernisation_features, modernisation_survivor_ivv]
     # icx-mdz-03: a person confirms or rejects an extracted process at its step-
     # signature digest (decl-wft-mdz-process-review); the exporter reads it.
+    # icx-mdz-06: an independent person signs off or refuses a survivor IV&V
+    # result at its digest (decl-wft-mdz-survivor-ivv-signoff, separate from
+    # whoever built or approved the plan); the exporter carries only a signed one.
     declared_decisions:
       - id: mdz.exporter.process_review
         endpoint: migration_canvas.api_modernisation_process_review
         evidence:
           file: tools/migration_canvas/modernisation.py
           text: "A person confirms or rejects one extracted process"
+      - id: mdz.exporter.survivor_ivv_signoff
+        endpoint: migration_canvas.api_modernisation_ivv_signoff
+        evidence:
+          file: tools/migration_canvas/modernisation.py
+          text: "An independent person signs off or refuses the application's survivor IV&V result"
     served_by:
       - endpoint: migration_canvas.modernisation_page
         evidence:

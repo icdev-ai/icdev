@@ -1552,6 +1552,17 @@ def _ivv_assess_req(req, project_dir, can_auto_check):
         f"This requirement must be verified manually. Evidence needed: {evidence_hint}"
 
 
+def _ivv_result_entry(req, ivv_status, evidence, details, notes):
+    return {
+        "requirement_id": req["id"], "process_area": req["process_area"],
+        "process_area_code": req.get("process_area_code", ""), "title": req["title"],
+        "description": req["description"], "verification_type": req.get("verification_type", "verification"),
+        "priority": req.get("priority", "medium"), "automation_level": req.get("automation_level", "manual"),
+        "nist_controls": req.get("nist_controls", []), "status": ivv_status,
+        "evidence": evidence, "details": details, "notes": notes,
+    }
+
+
 def _ivv_upsert_assessment(conn, project_id, req, now, ivv_status, evidence, details, notes):
     automation_level = req.get("automation_level", "manual")
     req_id = req["id"]
@@ -1833,15 +1844,7 @@ def run_ivv_assessment(
         results, findings = [], []
         for req in requirements:
             ivv_status, evidence, details, notes = _ivv_assess_req(req, project_dir, can_auto_check)
-            result_entry = {
-                "requirement_id": req["id"], "process_area": req["process_area"],
-                "process_area_code": req.get("process_area_code", ""), "title": req["title"],
-                "description": req["description"], "verification_type": req.get("verification_type", "verification"),
-                "priority": req.get("priority", "medium"), "automation_level": req.get("automation_level", "manual"),
-                "nist_controls": req.get("nist_controls", []), "status": ivv_status,
-                "evidence": evidence, "details": details, "notes": notes,
-            }
-            results.append(result_entry)
+            results.append(_ivv_result_entry(req, ivv_status, evidence, details, notes))
             _ivv_upsert_assessment(conn, project_id, req, now, ivv_status, evidence, details, notes)
             finding = _ivv_gen_finding(project_id, req, now, ivv_status, evidence)
             if finding:
@@ -1877,6 +1880,33 @@ def run_ivv_assessment(
                 "gate_result": gate_result, "certification_status": cert_status}
     finally:
         conn.close()
+
+
+def evaluate(project_id, project_dir=None, *, process_area="all", now=None):
+    """The IV&V checks and scores over one directory, with no database, report or audit write (icx-mdz-06).
+
+    The same requirements, automated checks, findings, area scores and gate as ``run_ivv_assessment``; a caller that
+    keeps its own record (``tools/modernization/survivor_ivv.py``) uses this. ``project_dir`` None or not a directory:
+    nothing can be checked automatically, so every requirement is ``not_assessed``. Never falls back to another
+    directory."""
+    requirements = _load_ivv_requirements().get("requirements", [])
+    if process_area != "all":
+        requirements = [r for r in requirements if r["process_area"] == process_area]
+    can_auto_check = bool(project_dir) and Path(project_dir).is_dir()
+    now = now or datetime.now(timezone.utc)
+    results, findings = [], []
+    for req in requirements:
+        ivv_status, evidence, details, notes = _ivv_assess_req(req, project_dir, can_auto_check)
+        results.append(_ivv_result_entry(req, ivv_status, evidence, details, notes))
+        finding = _ivv_gen_finding(project_id, req, now, ivv_status, evidence)
+        if finding:
+            findings.append(finding)
+    summary = _ivv_build_summary(results)
+    area_scores, v_score, d_score, overall_score = _ivv_calculate_scores(summary)
+    return {"results": results, "findings": findings, "summary": summary,
+            "scores": {"area_scores": area_scores, "verification_score": v_score,
+                       "validation_score": d_score, "overall_score": overall_score},
+            "gate_result": _ivv_evaluate_gate(findings, True)}
 
 
 # -----------------------------------------------------------------
