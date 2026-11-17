@@ -78,13 +78,15 @@ _BASE = repo_root(__file__)
 
 SCHEMA = "icos-apptwin/v1"
 SCHEMA_PATH = _BASE / "context" / "icos" / "apptwin.schema.json"
-#: The digest of the vendored ICDEV[OS] contract (1.189.0, icx-mdz-04: a feature's ``provenance: both`` and capability
-#: hints, a process's source, step signature and review, a step's verb and object, the ``sections`` map, ``derived_waves``,
-#: a strategy's confidence and unmeasured criteria, a wave's ``estimated_hours``; ICDEV[OS] osx-mdz-01..04). A changed
-#: file is refused, never silently used.
-SCHEMA_SHA256 = "8f49b5285e9b6180275c89897ae77c205c6770f4a5a78618db1bae1c76f79b2f"
+#: The digest of the vendored ICDEV[OS] contract (1.192.0, osx-mdz-09; 1.189.0, icx-mdz-04: a feature's ``provenance:
+#: both`` and capability hints, a process's source, step signature and review, a step's verb and object, the ``sections``
+#: map, ``derived_waves``, a strategy's confidence and unmeasured criteria, a wave's ``estimated_hours``; ICDEV[OS]
+#: osx-mdz-01..04; 1.190.0, osx-mdz-06: a plan's ``schedule``, a wave's ``depends_on`` and ``undated_reason``, an IV&V's
+#: ``area_status``, ``findings``, ``evidence``, ``tool_version`` and ``signoff``). A changed file is refused, never
+#: silently used.
+SCHEMA_SHA256 = "e30b9e42e8d02c8d1137c65bc22b4a7cc009e28f5665fa889e5de1a87c49ce5e"
 #: The contract version that digest is (context/icos/README.md).
-CONTRACT_VERSION = "1.189.0"
+CONTRACT_VERSION = "1.192.0"
 PRODUCER = "icdev-it/apptwin_export"
 PASSTHROUGH = ("ivv", "sbd", "rtm", "coherence", "readiness")
 #: Every section a bundle may report (ICDEV[OS] icdev_os/twin/apptwin.py SECTIONS), and the parts of a section its
@@ -605,7 +607,10 @@ def waves_out(waves, *, estimates: dict | None = None) -> list[dict]:
                     **({"components": [str(c) for c in w["components"]]} if w.get("components") else {}),
                     **({"backout": str(w["backout"])} if w.get("backout") else {}),
                     **({"starts": str(starts)} if starts else {}), **({"ends": str(ends)} if ends else {}),
-                    **({"estimated_hours": round(float(est), 2)} if est is not None else {})})
+                    **({"estimated_hours": round(float(est), 2)} if est is not None else {}),
+                    # osx-mdz-09 (ICDEV[OS] 1.190.0): the waves it starts after, and why it has no dates, in their own fields
+                    **({"depends_on": sorted(int(d) for d in w["depends_on"])} if w.get("depends_on") else {}),
+                    **({"undated_reason": str(w["undated"])} if w.get("undated") and not (starts and ends) else {})})
     return out
 
 
@@ -632,15 +637,35 @@ def derived_waves(waves, *, at: str) -> dict | None:
     if schedule_reason(waves):          # icx-mdz-05: why they are not dated, said in the contract's own field
         basis += f"; {schedule_reason(waves)}"
     return {"tool": str(rep.get("tool") or "icdev-it/app_wave_planner"), "assessed_at": at, "basis": basis,
-            "waves": waves_out(waves)}
+            "waves": waves_out(waves), **({"schedule": schedule_out(waves)} if schedule_out(waves) else {})}
 
 
 def schedule_reason(waves) -> str | None:
     """The wave planner's word on its dates (icx-mdz-05, ``wave_schedule``): dated from which declared capacity (its
-    digest), or why not. ICDEV[OS] 1.189.0 has no field for it, so it rides in ``sections["migration.waves"].reason``
-    and ``derived_waves.basis``; None for a report from before it (or the migration canvas's own list)."""
+    digest), or why not. It rides in ``sections["migration.waves"].reason`` and ``derived_waves.basis`` as before, and
+    since 1.190.0 also in the plan's own ``schedule`` (``schedule_out``); None for a report from before it (or the
+    migration canvas's own list)."""
     sch = waves.get("schedule") if isinstance(waves, dict) else None
     return str(sch["reason"]) if isinstance(sch, dict) and sch.get("reason") else None
+
+
+def schedule_out(waves) -> dict | None:
+    """The wave planner's schedule in ICDEV[OS] 1.190.0's own ``schedule`` field (osx-mdz-09): dated or not, why, how,
+    and -- only from a capacity a person reviewed -- its digest, hours per week, start and the review step. None for a
+    report from before icx-mdz-05 (or the migration canvas's own list): nothing is said that the planner did not say."""
+    sch = waves.get("schedule") if isinstance(waves, dict) else None
+    if not isinstance(sch, dict) or not sch.get("reason") or not sch.get("method"):
+        return None
+    cap = sch.get("capacity") if isinstance(sch.get("capacity"), dict) else {}
+    review = cap.get("review") if isinstance(cap.get("review"), dict) else {}
+    reviewed = review.get("state") == "reviewed"
+    out = {"dated": bool(sch.get("dated")), "reason": str(sch["reason"]), "method": str(sch["method"])}
+    if cap.get("digest"):
+        out["capacity_digest"] = str(cap["digest"])
+    if reviewed:
+        out.update(hours_per_week=float(cap["hours_per_week"]), start=str(cap["start"]),
+                   **({"review_step": str(review["step_id"])} if review.get("step_id") else {}))
+    return out
 
 
 def migration_from_plan(app_id: str, conn, *, at: str, waves: list | None = None, strangler: list | None = None) -> dict | None:
@@ -669,6 +694,8 @@ def migration_from_plan(app_id: str, conn, *, at: str, waves: list | None = None
     if p.get("target_architecture"):
         out["target_architecture"] = p["target_architecture"]
     out["waves"] = waves_out(waves, estimates=wave_estimates(waves, tasks, names))
+    if schedule_out(waves):                 # osx-mdz-09: how the waves were dated, or why not (ICDEV[OS] 1.190.0)
+        out["schedule"] = schedule_out(waves)
     out["strangler"] = [{"component": _slug(str(s["component"])), "status": s["status"],
                          **({"routed_pct": float(s["routed_pct"])} if s.get("routed_pct") is not None else {})}
                         for s in strangler or [] if s.get("status") in ("legacy", "routing", "migrated")]

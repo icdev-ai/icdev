@@ -525,10 +525,10 @@ requirements:
       - tests/test_icx_mdz_03_bundle_features.py::test_the_mcp_features_tool_is_read_only
 
   - id: PM-MDZ-17
-    title: The bundle carries what ICDEV[OS] 1.189.0 accepts, inline, and is held to that contract
+    title: The bundle carries what ICDEV[OS] accepts, inline, and is held to the pinned contract
     text: >-
-      The vendored icos-apptwin/v1 schema is ICDEV[OS]'s 1.189.0, pinned by
-      SHA-256. A feature read from source and seen running is provenance
+      The vendored icos-apptwin/v1 schema is ICDEV[OS]'s 1.192.0 (osx-mdz-09;
+      1.189.0 before), pinned by SHA-256. A feature read from source and seen running is provenance
       both (basis source), with its capability hints; a process carries its
       source, feature, order, derivation, step signature and review, and
       each step its verb, object, signature, evidence and APIs; sections is
@@ -543,7 +543,7 @@ requirements:
     elements: [mdz.bundle_contract, mdz.exporter, mdz.bundle_features]
     controls: [SI-7, SI-10, CM-8]
     tests:
-      - tests/test_icx_mdz_04_bundle_fields.py::test_the_vendored_contract_is_icos_1_189_0_pinned_by_digest
+      - tests/test_icx_mdz_04_bundle_fields.py::test_the_vendored_contract_is_icos_1_192_0_pinned_by_digest
       - tests/test_icx_mdz_04_bundle_fields.py::test_a_feature_seen_both_ways_is_both_with_its_hints_inline
       - tests/test_icx_mdz_04_bundle_fields.py::test_processes_carry_source_signature_review_and_step_fields
       - tests/test_icx_mdz_04_bundle_fields.py::test_a_reviewed_process_is_exported_reviewed_at_its_digest
@@ -616,7 +616,9 @@ requirements:
       rejected or changed one, no estimate, or an earlier undated wave: no date,
       and the planner and the bundle say why (unmeasured). Each date carries the
       capacity digest; the bundle carries them in the contract's own fields and
-      still validates.
+      still validates. Since ICDEV[OS] 1.190.0 (osx-mdz-09) the plan's schedule
+      (dated or why not, the capacity digest, hours, start and review step), a
+      wave's depends_on and its undated_reason are fields too.
     type: functional
     priority: high
     features: [mdz.waves_cam, mdz.exporter]
@@ -695,10 +697,12 @@ requirements:
       reviewed a CAM job, its capacity or a process, or whom ICDEV[OS] named
       accepting, endorsing or approving its plan; a step whose caller names no
       builders is refused. Bound to the result's digest and taken once; a newer
-      result leaves it stale. The bundle carries the IV&V in ICDEV[OS]
-      1.189.0's own ivv section (kind independent, the signer as assessor, only
-      measured areas scored) only while it is signed at the current digest, and
-      otherwise says why; it validates either way. The twin flags an unsigned,
+      result leaves it stale. The bundle carries the IV&V in ICDEV[OS]'s own
+      ivv section (kind independent, the signer as assessor, only measured areas
+      scored; since 1.190.0, osx-mdz-09, also each area's status, the findings,
+      the evidence digests, the tool version and the sign-off as fields) only
+      while it is signed at the current digest, and otherwise says why; it
+      validates either way. The twin flags an unsigned,
       stale or refused result and areas not passed, threaded to the result's
       audit row, and replays; the MCP tool is read-only.
     type: non_functional

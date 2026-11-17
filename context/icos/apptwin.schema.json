@@ -757,6 +757,17 @@
           "title": "Basis",
           "type": "string"
         },
+        "schedule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Schedule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "tool": {
           "title": "Tool",
           "type": "string"
@@ -1210,8 +1221,15 @@
     },
     "Ivv": {
       "additionalProperties": false,
-      "description": "IEEE 1012 IV&V. ``kind`` says whether it verified process automatically or a person independent of the developer assessed.",
+      "description": "IEEE 1012 IV&V. ``kind`` says whether it verified process automatically or a person independent of the developer assessed.\n\nosx-mdz-06: each area's status, the findings, the evidence digests, the tool's version and the sign-off. A result with\nno ``signoff`` is a machine result nobody signed: carried and shown, never assured. A sign-off is a person independent\nof the builder (``kind: independent``, that person the ``assessor``).",
       "properties": {
+        "area_status": {
+          "additionalProperties": {
+            "$ref": "#/$defs/IvvArea"
+          },
+          "title": "Area Status",
+          "type": "object"
+        },
         "areas": {
           "additionalProperties": {
             "type": "number"
@@ -1241,10 +1259,28 @@
           "title": "Critical Findings",
           "type": "integer"
         },
+        "evidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IvvEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "expires_at": {
           "format": "date-time",
           "title": "Expires At",
           "type": "string"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/IvvFinding"
+          },
+          "title": "Findings",
+          "type": "array"
         },
         "kind": {
           "enum": [
@@ -1267,6 +1303,17 @@
           "title": "Recommendation",
           "type": "string"
         },
+        "signoff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IvvSignoff"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "subject": {
           "anyOf": [
             {
@@ -1281,6 +1328,18 @@
         "tool": {
           "title": "Tool",
           "type": "string"
+        },
+        "tool_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Version"
         }
       },
       "required": [
@@ -1293,6 +1352,178 @@
         "expires_at"
       ],
       "title": "Ivv",
+      "type": "object"
+    },
+    "IvvArea": {
+      "additionalProperties": false,
+      "description": "One process area's status (osx-mdz-06): ``pass`` only when every requirement there passed an automated check;\n``fail`` when one failed; otherwise ``unverified`` (not assessed, manual, or a person must still review it).",
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "unverified"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "why": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Why"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "IvvArea",
+      "type": "object"
+    },
+    "IvvEvidence": {
+      "additionalProperties": false,
+      "description": "What the result is bound to: its own digest, the digest of the outputs' file list it checked, and each requirement's\nevidence digest. ICOS cannot recompute them; it holds a sign-off to ``result_digest``.",
+      "properties": {
+        "outputs_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outputs Digest"
+        },
+        "outputs_files": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outputs Files"
+        },
+        "requirements": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Requirements",
+          "type": "object"
+        },
+        "result_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Result Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "result_digest"
+      ],
+      "title": "IvvEvidence",
+      "type": "object"
+    },
+    "IvvFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "minLength": 1,
+          "title": "Area",
+          "type": "string"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "severity": {
+          "minLength": 1,
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "severity",
+        "area",
+        "title"
+      ],
+      "title": "IvvFinding",
+      "type": "object"
+    },
+    "IvvSignoff": {
+      "additionalProperties": false,
+      "description": "An independent person's sign-off of the result, taken in ICDEV[IT]'s declared step, bound to the result's digest.",
+      "properties": {
+        "decided_at": {
+          "format": "date-time",
+          "title": "Decided At",
+          "type": "string"
+        },
+        "result_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Result Digest",
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "signed_by": {
+          "minLength": 1,
+          "title": "Signed By",
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signed_by",
+        "step_id",
+        "decided_at",
+        "result_digest"
+      ],
+      "title": "IvvSignoff",
       "type": "object"
     },
     "Migration": {
@@ -1318,6 +1549,17 @@
         "plan_id": {
           "title": "Plan Id",
           "type": "string"
+        },
+        "schedule": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Schedule"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "status": {
           "title": "Status",
@@ -2166,6 +2408,84 @@
       "title": "Sbd",
       "type": "object"
     },
+    "Schedule": {
+      "additionalProperties": false,
+      "description": "How ICDEV[IT] dated a plan's waves (osx-mdz-06): only from a team capacity a person declared and reviewed at its\ndigest. ``dated`` is true only when every wave carries its dates; otherwise ``reason`` says why not. ICOS holds a\nwave to its dates (overdue, late to start) only when the schedule is dated: a date nobody can trace is never held to.",
+      "properties": {
+        "capacity_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capacity Digest"
+        },
+        "dated": {
+          "title": "Dated",
+          "type": "boolean"
+        },
+        "hours_per_week": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hours Per Week"
+        },
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "review_step": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review Step"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        }
+      },
+      "required": [
+        "dated",
+        "reason",
+        "method"
+      ],
+      "title": "Schedule",
+      "type": "object"
+    },
     "SectionState": {
       "additionalProperties": false,
       "description": "What the producer says it carries for a section or a part (osx-mdz-01): ``present`` (with a count where it is a\nlist) or ``missing`` with its own reason. ``derived``: waves the planner derived but no plan carries.",
@@ -2799,6 +3119,13 @@
           "title": "Components",
           "type": "array"
         },
+        "depends_on": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Depends On",
+          "type": "array"
+        },
         "ends": {
           "anyOf": [
             {
@@ -2858,6 +3185,18 @@
         "title": {
           "title": "Title",
           "type": "string"
+        },
+        "undated_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Undated Reason"
         }
       },
       "required": [
@@ -3151,6 +3490,6 @@
   ],
   "title": "AppTwin",
   "type": "object",
-  "x-icos-contract": "1.189.0",
+  "x-icos-contract": "1.192.0",
   "x-license": "Apache-2.0"
 }

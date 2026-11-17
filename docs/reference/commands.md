@@ -4778,6 +4778,8 @@ python tools/modernization/refactor_jobs.py --app-id "app-1" --strategy rehost -
 python tools/modernization/refactor_jobs.py --app-id "app-1" --icos-decisions decisions.json --icos-jwks icos_jwks.json  # icx-mdz-02: runs only on ICDEV[OS]'s signed may-plan (else exit 3, nothing written)
 python tools/modernization/monolith_decomposer.py --app-id "app-1" --create-plan --project-id "proj-123" --strategy rehost --icos-decisions decisions.json --icos-jwks icos_jwks.json --json  # Plan only on may-plan
 python tools/modernization/sample_pipeline.py --resume --scratch-db /tmp/x/icdev.db --out /tmp/x/app --icos-decisions decisions.json --icos-jwks icos_jwks.json  # Plan a sample once ICDEV[OS] decided
+python tools/modernization/sample_pipeline.py --resume --scratch-db /tmp/x/icdev.db --out /tmp/x/app --icos-decisions decisions.json --icos-jwks icos_jwks.json --capacity capacity.yaml  # osx-mdz-09: the waves dated only from a reviewed entry of that capacity file (kept in the run for later resumes)
+python tools/modernization/sample_pipeline.py --source DIR --name app --scratch-db /tmp/x/icdev.db --out /tmp/x/app --no-model --legacy-id lapp-0123456789ab  # osx-mdz-09: rerun a sample under the legacy id ICDEV[OS] already knows it by (legacy_analyzer --register --app-id)
 python tools/modernization/cloud_native_jobs.py --app-id "app-1" --target-cloud containerised --out cloud_native.json  # The cloud-native target as CAM jobs (generated, unreviewed)
 python tools/modernization/compliance_bridge.py --plan-id "plan-1" --validate --json                                   # ATO compliance bridge
 python tools/modernization/migration_code_generator.py --plan-id "plan-1" --generate-all --output /path                # Generate migration code

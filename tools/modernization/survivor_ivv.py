@@ -23,11 +23,12 @@ not write a second IV&V:
   whoever built or approved the application's plan (``builders``): anyone who recorded its 7R strategy, reviewed a CAM
   job's output, reviewed its team capacity or a process, or (as ICDEV[OS] names them in a may-plan it allowed) accepted,
   endorsed or approved its plan. A newer result leaves the sign-off ``stale``.
-* **The bundle** (``for_bundle``): only a result signed at its current digest is carried, in ICDEV[OS] 1.189.0's own
-  ``ivv`` section (``kind: independent``, the signer as ``assessor``; areas with a score are only those measured, pass
-  or fail). An unsigned, stale or refused result is not carried: ``sections["ivv"]`` is missing and says why, so ICDEV[OS]
-  reads it as unverified and its survivor gate does not pass. 1.189.0 has no field for an area's status, the findings or
-  the sign-off itself; ``sections["ivv"].reason`` says them in words.
+* **The bundle** (``for_bundle``): only a result signed at its current digest is carried, in ICDEV[OS]'s own ``ivv``
+  section (``kind: independent``, the signer as ``assessor``; areas with a score are only those measured, pass or fail).
+  An unsigned, stale or refused result is not carried: ``sections["ivv"]`` is missing and says why, so ICDEV[OS] reads it
+  as unverified and its survivor gate does not pass. Since ICDEV[OS] 1.190.0 (osx-mdz-09) the section also carries each
+  area's status, the findings, the evidence digests, the tool version and the sign-off itself in their own fields;
+  ``sections["ivv"].reason`` still says them in words.
 
 The real IV&V sign-off is a person's; this module never signs. Library and CLI:
 
@@ -344,6 +345,33 @@ def _areas(result: dict) -> str:
     return ", ".join(f"{a['code']} {a['status']}" for a in result["areas"])
 
 
+def _utc(at: Any) -> str:
+    """A ledger timestamp (ISO text, or a datetime from PostgreSQL) as an aware UTC ISO 8601 string."""
+    dt = at if isinstance(at, datetime) else datetime.fromisoformat(str(at).replace("Z", "+00:00"))
+    return _iso(dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
+
+
+def _contract_fields(result: dict, so: dict) -> dict:
+    """What ICDEV[OS] 1.190.0 carries beside the scores: ``area_status`` (every area, ``unverified`` never a pass), the
+    ``findings`` (by area code), the ``evidence`` digests, the ``tool_version`` and the person's ``signoff`` over the
+    result's digest. Only for a result signed at its current digest (``for_bundle``)."""
+    code = {a["name"]: a["code"] for a in result["areas"]}
+    target = result.get("target") or {}
+    return {"area_status": {a["code"]: {"status": a["status"], "name": a["name"], "why": a["why"]}
+                            for a in result["areas"]},
+            "findings": [{"id": f["finding_id"], "severity": f["severity"],
+                          "area": code.get(f["process_area"], f["process_area"]), "title": f["title"]}
+                         for f in result.get("findings") or []],
+            "evidence": {"result_digest": result["digest"],
+                         **({"outputs_digest": target["digest"], "outputs_files": int(target.get("files") or 0)}
+                            if target.get("digest") else {}),
+                         "requirements": {q["id"]: q["evidence_digest"] for a in result["areas"]
+                                          for q in a["requirements"]}},
+            "tool_version": result["tool_version"],
+            "signoff": {"signed_by": so["by"], "step_id": so["step_id"], "decided_at": _utc(so["at"]),
+                        "result_digest": so["result_digest"], **({"role": so["role"]} if so.get("role") else {})}}
+
+
 def for_bundle(app_id: str, conn: Any = None) -> dict:
     """``{section, reason}`` for the bundle: the ``ivv`` section (contract 1.189.0) only when an independent person
     signed the current result at its digest; else None and why."""
@@ -365,7 +393,10 @@ def for_bundle(app_id: str, conn: Any = None) -> dict:
                "recommendation": result["recommendation"], "overall_score": float(result["overall_score"]),
                "critical_findings": int(result["critical_findings"]),
                "areas": {a["code"]: float(a["score"]) for a in result["areas"] if a["score"] is not None},
-               "kind": "independent", "assessor": so["by"], "expires_at": result["expires_at"]}
+               "kind": "independent", "assessor": so["by"], "expires_at": result["expires_at"],
+               # osx-mdz-09 (ICDEV[OS] 1.190.0): each area's status, the findings, the evidence, the tool and the
+               # sign-off, in the contract's own fields, so ICDEV[OS]'s survivor gate reads them rather than words
+               **_contract_fields(result, so)}
     if result.get("subject"):
         section["subject"] = result["subject"]
     unv = [a["code"] for a in result["areas"] if a["status"] == "unverified"]

@@ -167,9 +167,9 @@ test.describe('Every credited modernisation write is sent by its page (icx-mdz-0
     await page.goto(`/migration-canvas/modernisation?app=${encodeURIComponent(s.app_id)}`);
     await expect(page.locator('#mdz-waves-body table')).toBeVisible({ timeout: T });
     await expect(page.locator('#mdz-bundle-body')).toContainText('icos-apptwin/v1', { timeout: T });
-    // icx-mdz-04: contract 1.189.0, the security domain (none declared for a synthetic app, and why), the 7R's
+    // icx-mdz-04: the pinned contract (1.192.0 since osx-mdz-09), the security domain (none declared for a synthetic app, and why), the 7R's
     // confidence and unmeasured criteria, and the waves derived before any plan (the seeded plan was refused)
-    await expect(page.locator('#mdz-bundle-body')).toContainText('contract 1.189.0', { timeout: T });
+    await expect(page.locator('#mdz-bundle-body')).toContainText('contract 1.192.0', { timeout: T });
     await expect(page.locator('#mdz-security-domain')).toContainText('No security domain', { timeout: T });
     await expect(page.locator('#mdz-security-domain')).toContainText('never guessed');
     await expect(page.locator('#mdz-bundle-7r')).toContainText(/7R strategy|No 7R assessment/, { timeout: T });

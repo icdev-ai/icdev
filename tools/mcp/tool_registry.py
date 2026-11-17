@@ -9057,7 +9057,7 @@ RESOURCE_REGISTRY = {
         "category": "modernization",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_modernisation_bundle",
-        "description": "Preview the icos-apptwin/v1 bundle apptwin_export.py would assemble for one legacy application from what this database holds: whether it meets the vendored contract (1.189.0) and the rules ICDEV[OS]'s importer adds (every error listed in schema_errors), its inventory digest, which sections are null (ICDEV[OS] reads null as unverified) and every section's present/missing state with why; the 7R's per-strategy confidence and unmeasured criteria; the waves derived before any plan and each planned wave's estimate; and the application's declared security domain and environment, or why it has none (never guessed). Read-only: writes no bundle.",
+        "description": "Preview the icos-apptwin/v1 bundle apptwin_export.py would assemble for one legacy application from what this database holds: whether it meets the vendored contract (1.192.0) and the rules ICDEV[OS]'s importer adds (every error listed in schema_errors), its inventory digest, which sections are null (ICDEV[OS] reads null as unverified) and every section's present/missing state with why; the 7R's per-strategy confidence and unmeasured criteria; the waves derived before any plan and each planned wave's estimate; and the application's declared security domain and environment, or why it has none (never guessed). Read-only: writes no bundle.",
         "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
     },
     "modernisation_wave_schedule": {

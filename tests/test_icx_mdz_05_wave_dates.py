@@ -260,11 +260,28 @@ def test_the_planner_dates_the_waves_only_once_the_capacity_is_approved_and_the_
     assert carried == {w["id"]: (w["starts"], w["ends"], w["estimated_hours"]) for w in rep["waves"]}
     st = b["sections"]["migration.waves"]
     assert st["state"] == "present" and "dated from" in st["reason"] and cap["digest"][:12] in st["reason"]
+    # osx-mdz-09 (ICDEV[OS] 1.190.0): the schedule and each wave's dependencies in the contract's own fields; a dated
+    # schedule names the capacity's digest, hours, start and the review step, as ICDEV[OS] requires of one
+    step = rep["schedule"]["capacity"]["review"]["step_id"]
+    assert b["migration"]["schedule"] == {"dated": True, "reason": rep["schedule"]["reason"],
+                                          "method": rep["schedule"]["method"], "capacity_digest": cap["digest"],
+                                          "hours_per_week": 40.0, "start": "2027-01-04", "review_step": step}
+    assert {w["id"]: w.get("depends_on", []) for w in b["migration"]["waves"]} == \
+        {w["id"]: sorted(w.get("depends_on") or []) for w in rep["waves"]}
+    assert not any("undated_reason" in w for w in b["migration"]["waves"])
     # the entry changes: the review is stale, and nothing is dated
     f.write_text(CAPACITY.replace("40", "30"), encoding="utf-8")
     rep = _waves_report()
     assert rep["schedule"]["capacity"]["review"]["state"] == "stale" and rep["schedule"]["dated"] is False
     assert all("starts" not in w for w in rep["waves"])
+    conn = _conn()
+    try:
+        b = ax.build("app-1", conn, at=AT, extract=_report(), waves=rep)
+    finally:
+        conn.close()
+    assert ax.validate(b) == [] and b["migration"]["schedule"]["dated"] is False
+    assert "hours_per_week" not in b["migration"]["schedule"], "only a reviewed capacity is named as the basis"
+    assert all("not reviewed" in w["undated_reason"] for w in b["migration"]["waves"])
     assert ws.declared()["Shop"]["hours_per_week"] == 30.0
 
 
@@ -281,6 +298,9 @@ def test_without_a_capacity_the_bundle_says_why_and_still_validates(shop):
     assert ax.validate(b) == []
     assert all("starts" not in w and "ends" not in w for w in b["migration"]["waves"])
     assert "no team capacity is declared" in b["sections"]["migration.waves"]["reason"]
+    sch = b["migration"]["schedule"]                    # osx-mdz-09: said in the contract's own field too
+    assert sch["dated"] is False and "no team capacity is declared" in sch["reason"] and "capacity_digest" not in sch
+    assert all("no team capacity is declared" in w["undated_reason"] for w in b["migration"]["waves"])
     _drop_plan(shop)
     conn = _conn()
     try:
@@ -288,6 +308,8 @@ def test_without_a_capacity_the_bundle_says_why_and_still_validates(shop):
     finally:
         conn.close()
     assert "no migration plan yet" in derived["derived_waves"]["basis"], "derived waves say why they are not dated"
+    assert "no migration plan yet" in derived["derived_waves"]["schedule"]["reason"]
+    assert derived["derived_waves"]["schedule"]["dated"] is False
     assert ax.validate(derived) == []
 
 
