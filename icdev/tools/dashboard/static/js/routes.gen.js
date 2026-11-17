@@ -2106,6 +2106,7 @@
     "migration_api_v1.trigger_assessment": [["/api/v1/migration/assess",["POST"]]],
     "migration_canvas.api_modernisation_apps": [["/migration-canvas/api/modernisation/apps",["GET"]]],
     "migration_canvas.api_modernisation_bundle": [["/migration-canvas/api/modernisation/apps/<app_id>/bundle",["GET"]]],
+    "migration_canvas.api_modernisation_capacity_review": [["/migration-canvas/api/modernisation/apps/<app_id>/capacity/review",["POST"]]],
     "migration_canvas.api_modernisation_cloud_native": [["/migration-canvas/api/modernisation/apps/<app_id>/cloud-native",["GET"]]],
     "migration_canvas.api_modernisation_features": [["/migration-canvas/api/modernisation/apps/<app_id>/features",["GET"]]],
     "migration_canvas.api_modernisation_icos_check": [["/migration-canvas/api/modernisation/icos-decisions/check",["POST"]]],

@@ -2,7 +2,7 @@
 """The decisions a person takes on modernisation work, read back from the ledger (icx-mdz-01).
 
 Every modernisation decision runs through a declared template under ``args/workflow_hitl_templates/``
-(``tools/workflow_hitl/declared.py``). For three of them the decided step IS the record, so there is no second table to
+(``tools/workflow_hitl/declared.py``). For four of them the decided step IS the record, so there is no second table to
 drift from it:
 
     decl-wft-mdz-7r-strategy             the 7R strategy ICDEV proposes for an application (subject: the assessment id).
@@ -12,6 +12,9 @@ drift from it:
     decl-wft-mdz-cam-refactor-approve    a person's review of one CAM job's generated output (subject: the job id).
     decl-wft-mdz-process-review          (icx-mdz-03) a person's review of one extracted process at its step-signature
                                          digest (subject: "<app id>:<process id>"); the exporter reads it.
+    decl-wft-mdz-capacity-review         (icx-mdz-05) a person's review of one declared team capacity at its digest
+                                         (subject: "capacity:<application name or legacy id>"); wave_schedule dates
+                                         the application's waves only from an approved one.
 
 The other three (AI-Ify promotion and scan deletion, Process-Ify observed-draft review) gate an effect their own
 stores keep; their steps are read here only to show who took them.
@@ -29,6 +32,7 @@ TEMPLATE_AIIFY_PROMOTE = "decl-wft-mdz-aiify-promote"
 TEMPLATE_AIIFY_DELETE = "decl-wft-mdz-aiify-scan-delete"
 TEMPLATE_OBSERVED = "decl-wft-mdz-processify-observed-approve"
 TEMPLATE_PROCESS = "decl-wft-mdz-process-review"
+TEMPLATE_CAPACITY = "decl-wft-mdz-capacity-review"
 
 STRATEGIES = ("rehost", "replatform", "refactor", "rearchitect", "repurchase", "retire", "retain")
 

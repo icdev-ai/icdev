@@ -459,7 +459,16 @@ features:
       - migration_canvas.api_modernisation_waves
       - migration_canvas.api_modernisation_refactor_jobs
       - migration_canvas.api_refactor_job_approve
-    mcp_tools: [modernisation_waves_jobs]
+      - migration_canvas.api_modernisation_capacity_review
+    mcp_tools: [modernisation_waves_jobs, modernisation_wave_schedule]
+    # icx-mdz-05: the waves are dated only from a team capacity a person approved
+    # at its digest (decl-wft-mdz-capacity-review); the planner reads the review.
+    declared_decisions:
+      - id: mdz.waves_cam.capacity_review
+        endpoint: migration_canvas.api_modernisation_capacity_review
+        evidence:
+          file: tools/migration_canvas/modernisation.py
+          text: "A person approves or rejects the team capacity declared for one application"
 
   - key: mdz.cloud_native
     component: mdc

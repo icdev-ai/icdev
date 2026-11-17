@@ -127,3 +127,6 @@ tests/test_icx_mdz_03_ambient.py
 # icx-mdz-04: a planned wave's estimate summed from migration_tasks (estimated_hours real) over
 # legacy_components, and the bundle preview's latest migration_assessments row, on the ambient PG.
 tests/test_icx_mdz_04_ambient.py
+# icx-mdz-05: a wave's estimate summed from migration_tasks and its dates only once a person's
+# decl-wft-mdz-capacity-review step is read back from wf_decision_steps, on the ambient PG.
+tests/test_icx_mdz_05_ambient.py

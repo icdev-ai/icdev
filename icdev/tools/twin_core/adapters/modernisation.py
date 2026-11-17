@@ -26,6 +26,10 @@ drafts, and the vendored bundle contract, so that is what it reads:
   (icx-mdz-04) A bundle that fails the pinned contract (1.189.0) or ICDEV[OS]'s agreement rules -- ICDEV[OS] would
   refuse it whole -- and one whose application has no declared security domain (``args/modernisation_environments.yaml``),
   so ICDEV[OS] can only class its overlaps unverified.
+  (icx-mdz-05) A team capacity declared for an application (``args/modernisation_capacity.yaml``) that no person has
+  approved at its digest (``decl-wft-mdz-capacity-review``): it dates nothing until then; and a migration plan whose
+  waves carry no dates, with the planner's reason (no capacity, unreviewed, a wave with no estimate). ICDEV[OS]'s
+  twin can only read their overdue and late-start checks as unverified.
 
 A source that cannot be read is an unverified check, never a pass. Threads: ``mdz_assessment:<id>``,
 ``migration_plan:<id>``, ``audit_trail:<id>``, ``aiify_decision:<id>``, ``studio_workflow:<id>``, ``mc_refactor_job:<id>``,
@@ -87,6 +91,8 @@ def _bundles(limit: int) -> list[dict]:
             out.append({"app": app, "name": str(a["name"]), "error": str(exc)})
             continue
         schema_errors = list(pre.get("schema_errors") or [])
+        sch = pre.get("schedule") or {}
+        cap = sch.get("capacity") or {}
         out.append({"app": app, "name": str(a["name"]), "valid": bool(pre.get("valid")),
                     "error": None if pre.get("valid") or schema_errors else pre.get("error"),
                     # icx-mdz-04: what the pinned contract refuses, and the security domain (None: undeclared)
@@ -97,7 +103,12 @@ def _bundles(limit: int) -> list[dict]:
                     "processes": sorted(({"id": p["id"], "state": (p.get("review") or {}).get("state") or "unreviewed",
                                           "digest": p["signature"]["digest"]} for p in rep.get("processes") or []),
                                         key=lambda p: p["id"]),
-                    "missing": dict(sorted((pre.get("missing") or {}).items()))})
+                    "missing": dict(sorted((pre.get("missing") or {}).items())),
+                    # icx-mdz-05: the waves' dates, from a reviewed team capacity, or why none
+                    "schedule": {"planned_waves": int(pre.get("waves") or 0), "dated": bool(sch.get("dated")),
+                                 "reason": sch.get("reason"),
+                                 "capacity": {"application": cap.get("application"), "digest": cap.get("digest"),
+                                              "review": (cap.get("review") or {}).get("state")} if cap else None}})
     return out
 
 
@@ -438,6 +449,25 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
                         detail=", ".join(f"{p['id']} ({p['state']})" for p in open_[:10]),
                         recommendation="Confirm or reject each on /migration-canvas/modernisation "
                                        "(decl-wft-mdz-process-review)."))
+                sch = b.get("schedule")
+                cap = (sch or {}).get("capacity")
+                if cap and cap.get("review") != "reviewed":
+                    findings.append(finding(
+                        "mdz.waves.capacity_unreviewed", "medium",
+                        f"{b['name']}: the declared team capacity is {cap.get('review') or 'unreviewed'}, so it dates "
+                        "no wave", thread_id=thread,
+                        detail=f"{cap.get('application')} sha256 {str(cap.get('digest') or '')[:12]}: "
+                               f"{sch.get('reason') or ''}"[:600],
+                        recommendation="Approve or reject the capacity on /migration-canvas/modernisation "
+                                       "(decl-wft-mdz-capacity-review); a changed entry is reviewed again."))
+                if sch and sch.get("planned_waves") and not sch.get("dated"):
+                    findings.append(finding(
+                        "mdz.waves.undated", "low",
+                        f"{b['name']}: the plan's {sch['planned_waves']} wave(s) carry no dates", thread_id=thread,
+                        detail=str(sch.get("reason") or "no reason given")[:600],
+                        recommendation="Declare the team's capacity, with its source, in "
+                                       "args/modernisation_capacity.yaml and have it reviewed, and give every task an "
+                                       "estimate; ICDEV[OS] reads the waves' overdue checks as unverified until then."))
                 gone = [k for k in required if k in b["missing"]]
                 if gone:
                     findings.append(finding(
@@ -454,6 +484,9 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
             "bundles_failing_contract": sum(1 for b in evidence.get("bundles") or [] if b.get("schema_errors")),
             "bundles_without_security_domain": sum(1 for b in evidence.get("bundles") or []
                                                    if "security_domain" in b and not b["security_domain"]),
+            "plans_with_undated_waves": sum(1 for b in evidence.get("bundles") or []
+                                            if (b.get("schedule") or {}).get("planned_waves")
+                                            and not b["schedule"].get("dated")),
             "applications_assessed": len(evidence.get("assessments") or []),
             "applications_without_recommendation": sum(1 for a in evidence.get("assessments") or []
                                                        if not a["recommended"]),

@@ -936,6 +936,15 @@
     "7R: assess an application, then record the strategy it proposes"
    ]
   },
+  "POST migration_canvas.api_modernisation_capacity_review": {
+   "endpoint": "migration_canvas.api_modernisation_capacity_review",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
+   ]
+  },
   "POST migration_canvas.api_modernisation_icos_check": {
    "endpoint": "migration_canvas.api_modernisation_icos_check",
    "method": "POST",

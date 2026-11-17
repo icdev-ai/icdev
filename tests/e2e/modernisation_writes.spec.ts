@@ -1,7 +1,8 @@
 // CUI // SP-CTI
 // E2E: every modernisation write the feature-conformance audit credits to a page is SENT
 // BY THAT PAGE, as a person would send it (icx-mdz-01; icx-mdz-03: the process review; icx-mdz-04: the
-// bundle's contract, security domain, 7R confidence and derived waves, shown).
+// bundle's contract, security domain, 7R confidence and derived waves, shown; icx-mdz-05: the waves not dated
+// and why, and the capacity review).
 //
 // The audit (tools/conformance/feature_audit.py) now judges six modernisation features:
 // the 7R assessment, AI-Ify, Process-Ify, an application's waves and CAM jobs,
@@ -34,6 +35,7 @@ type Seeded = {
   project_id: string; app_id: string; source: string; observed_workflow_id: string;
   refused_plan: { status: string; audit_id: number | null };
   cloud_native: { jobs: { id: string; scaffold: string; status: string }[] };
+  capacity: { application: string; file: string };
 };
 
 function seed(): Seeded {
@@ -171,6 +173,16 @@ test.describe('Every credited modernisation write is sent by its page (icx-mdz-0
     await expect(page.locator('#mdz-security-domain')).toContainText('never guessed');
     await expect(page.locator('#mdz-bundle-7r')).toContainText(/7R strategy|No 7R assessment/, { timeout: T });
     await expect(page.locator('#mdz-derived-waves')).toContainText('derived before any plan', { timeout: T });
+    // icx-mdz-05: no plan (it was refused), so no estimate and no date, and the page says why; a person reviews the
+    // team capacity the seed declared, at its digest
+    await expect(page.locator('#mdz-schedule-reason')).toContainText('no migration plan yet', { timeout: T });
+    await expect(page.locator('#mdz-waves-body')).toContainText('not dated');
+    await expect(page.locator('#mdz-capacity')).toContainText(s.capacity.application, { timeout: T });
+    await page.fill('#mdz-capacity-reason', 'mdz05 e2e: the capacity, reviewed for the test');
+    await sends(page, 'POST', new RegExp(`^/migration-canvas/api/modernisation/apps/${s.app_id}/capacity/review$`),
+      () => page.locator('[data-approve-capacity]').click());
+    await expect(page.locator('#mdz-capacity-msg')).toContainText('Recorded capacity reviewed', { timeout: T });
+    await expect(page.locator('#mdz-capacity')).toContainText('reviewed', { timeout: T });
     const job = s.cloud_native.jobs.find(j => j.status === 'completed');
     expect(job, 'a completed cloud-native job was seeded').toBeTruthy();
     const row = page.locator(`#mdz-cloud-body tr[data-job-id="${job!.id}"]`);

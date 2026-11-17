@@ -361,3 +361,6 @@ data/rag/*.db-wal
 # by every other host's dispatch (omx-host-06: PR #2471 committed the laptop's).
 .opencode/plugin/icdev-guard.ts
 .pi/extensions/icdev-guard.ts
+
+# icx-mdz-05: the team capacity the e2e modernisation seed writes for its synthetic app
+tests/e2e/fixtures/.mdz05_capacity.yaml

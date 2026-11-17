@@ -1,4 +1,4 @@
-<!-- CUI // SP-CTI — Modernisation: an application's waves, CAM jobs, cloud-native output, features and processes, and ICDEV[OS] bundle (icx-mdz-01, icx-mdz-03, icx-mdz-04) -->
+<!-- CUI // SP-CTI — Modernisation: an application's waves, CAM jobs, cloud-native output, features and processes, and ICDEV[OS] bundle (icx-mdz-01, icx-mdz-03, icx-mdz-04; icx-mdz-05: wave estimates and dates from a reviewed team capacity) -->
 {% extends "base.html" %}
 {% block title %}Modernisation — ICDEV{% endblock %}
 {% block content %}
@@ -41,8 +41,11 @@
 
   <div class="mdz-card" id="mdz-waves">
     <h2>Waves</h2>
-    <p class="mdz-help">Derived by <code>app_wave_planner</code> in strangler order: leaves first, a dependency cycle moved together, each wave depending only on earlier ones. Planned, never scheduled; each wave carries its backout.</p>
+    <p class="mdz-help">Derived by <code>app_wave_planner</code> in strangler order: leaves first, a dependency cycle moved together, each wave depending only on earlier ones; each wave carries its backout. A wave's <b>estimate</b> is the sum of its migration tasks' own estimated hours (none, never 0, where a task has none). Its <b>dates</b> come only from a team capacity declared in <code>args/modernisation_capacity.yaml</code> (hours a week, a start date, its source) that a person approved at its digest: one wave at a time, in dependency order, over Monday to Friday. Until then no wave is dated, and the page says why: no date is made up. Approve or reject the declared capacity below, with a reason: your step of <code>decl-wft-mdz-capacity-review</code>, bound to the entry's digest; a changed entry is reviewed again.</p>
     <div id="mdz-waves-body" class="mdz-muted">Pick an application.</div>
+    <div id="mdz-schedule" class="mdz-muted"></div>
+    <div id="mdz-capacity" class="mdz-muted"></div>
+    <div id="mdz-capacity-msg" class="mdz-muted"></div>
   </div>
 
   <div class="mdz-card" id="mdz-jobs">
@@ -133,12 +136,39 @@
     getJson(icdevFetch('migration_canvas.api_modernisation_waves', {app_id: id})).then(function (res) {
       if (!res.ok) { box.innerHTML = '<span class="mdz-err">' + esc(res.j.error) + '</span>'; return; }
       var w = res.j.waves || [];
-      box.innerHTML = '<div class="mdz-muted">' + esc(res.j.basis) + '</div>' + (w.length ? '<table><tr><th>Wave</th><th>Components</th><th>Depends on</th><th>Backout</th></tr>' +
+      box.innerHTML = '<div class="mdz-muted">' + esc(res.j.basis) + '</div>' + (w.length ? '<table><tr><th>Wave</th><th>Components</th><th>Depends on</th><th>Estimate</th><th>Starts</th><th>Ends</th><th>Backout</th></tr>' +
         w.map(function (x) {
-          return '<tr><td>' + esc(x.name) + '</td><td>' + esc((x.components || []).join(', ')) + '</td><td>' +
-            esc((x.depends_on || []).join(', ') || '—') + '</td><td>' + esc(x.backout) + '</td></tr>';
+          var dates = x.starts ? '<td class="mdz-wave-starts">' + esc(x.starts) + '</td><td class="mdz-wave-ends">' + esc(x.ends) + '</td>'
+            : '<td colspan="2" class="mdz-muted" title="' + esc(x.undated) + '">not dated</td>';
+          return '<tr data-wave-id="' + esc(x.id) + '"><td>' + esc(x.name) + '</td><td>' + esc((x.components || []).join(', ')) + '</td><td>' +
+            esc((x.depends_on || []).join(', ') || '—') + '</td><td class="mdz-wave-hours">' + (x.estimated_hours == null ? '—' : esc(x.estimated_hours) + ' h') +
+            '</td>' + dates + '<td>' + esc(x.backout) + '</td></tr>';
         }).join('') + '</table>' : '<div class="mdz-muted">No components recorded for this application.</div>');
+      showSchedule(res.j.schedule || {});
     });
+  }
+
+  /* icx-mdz-05: dated from a reviewed capacity (its digest), or why not; the declared capacity and its review */
+  function showSchedule(sch) {
+    document.getElementById('mdz-schedule').innerHTML = '<span class="mdz-tag ' + (sch.dated ? 'ok' : '') + '">' +
+      (sch.dated ? 'dated' : 'not dated') + '</span> <span id="mdz-schedule-reason">' + esc(sch.reason) + '</span>' +
+      (sch.capacity_error ? ' <span class="mdz-err">' + esc(sch.capacity_error) + '</span>' : '');
+    var cap = sch.capacity, box = document.getElementById('mdz-capacity');
+    if (!cap) {
+      box.innerHTML = 'No team capacity is declared for this application: declare one, with its source, in <code>args/modernisation_capacity.yaml</code>.';
+      return;
+    }
+    var r = cap.review || {state: 'unreviewed'};
+    var head = 'Declared capacity for <b>' + esc(cap.application) + '</b>: ' + esc(cap.hours_per_week) + ' h/week from ' + esc(cap.start) +
+      ' (source: ' + esc(cap.source) + '), digest <code class="mdz-digest">' + esc(String(cap.digest).slice(0, 16)) + '</code> ';
+    if (r.state === 'reviewed' || r.state === 'rejected') {
+      box.innerHTML = head + '<span class="mdz-tag ' + (r.state === 'reviewed' ? 'ok' : 'no') + '">' + esc(r.state) + '</span> by ' + esc(r.by) + ': ' + esc(r.reason);
+      return;
+    }
+    box.innerHTML = head + '<span class="mdz-tag">' + esc(r.state) + '</span>' + (r.why ? ' <span class="mdz-err">' + esc(r.why) + '</span>' : '') +
+      ' <input class="mdz-reason" id="mdz-capacity-reason" placeholder="reason (required)" /> ' +
+      '<button type="button" class="mdz-btn" data-approve-capacity="' + esc(cap.digest) + '">Approve capacity</button> ' +
+      '<button type="button" class="mdz-btn reject" data-reject-capacity="' + esc(cap.digest) + '">Reject</button>';
   }
 
   function reviewCell(j) {
@@ -260,8 +290,9 @@
         dw.waves.map(function (w) { return esc(w.id) + ' ' + esc(w.components) + ' component(s)' + (w.estimated_hours == null ? '' : ', ' + num(w.estimated_hours) + ' h'); }).join('; ') +
         ' <span class="mdz-muted">' + esc(dw.means) + '</span></div>'
       : (d.planned_waves || []).length ? '<div>Planned waves: ' + d.planned_waves.map(function (w) {
-          return esc(w.id) + ' ' + (w.estimated_hours == null ? 'no estimate' : num(w.estimated_hours) + ' h');
-        }).join('; ') + '</div>' : '';
+          return esc(w.id) + ' ' + (w.estimated_hours == null ? 'no estimate' : num(w.estimated_hours) + ' h') +
+            (w.starts ? ', ' + esc(w.starts) + ' to ' + esc(w.ends) : ', not dated');
+        }).join('; ') + (d.schedule ? ' <span class="mdz-muted">(' + esc(d.schedule.reason) + ')</span>' : '') + '</div>' : '';
   }
 
   function loadBundle(id) {
@@ -317,6 +348,24 @@
       if (!res.ok) { msg.textContent = 'Not recorded: ' + (res.j.error || 'refused'); return; }
       msg.textContent = 'Recorded ' + res.j.review.state + ' by ' + res.j.review.by + ' (step ' + res.j.decision_step.step_id + ').';
       loadFeatures(appSel.value); loadBundle(appSel.value);
+    });
+  });
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var digest = t.getAttribute && (t.getAttribute('data-approve-capacity') || t.getAttribute('data-reject-capacity'));
+    if (!digest) return;
+    var decision = t.hasAttribute('data-approve-capacity') ? 'approve' : 'reject';
+    var reason = (document.getElementById('mdz-capacity-reason') || {}).value || '';
+    var msg = document.getElementById('mdz-capacity-msg');
+    if (!reason.trim()) { msg.textContent = 'A reason is required.'; return; }
+    icdevFetch('migration_canvas.api_modernisation_capacity_review', {app_id: appSel.value}, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({decision: decision, reason: reason.trim(), digest: digest})
+    }).then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); }).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not recorded: ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Recorded capacity ' + res.j.review.state + ' by ' + res.j.review.by + ' (step ' + res.j.decision_step.step_id + ').';
+      loadWaves(appSel.value); loadBundle(appSel.value);
     });
   });
 

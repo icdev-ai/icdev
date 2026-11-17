@@ -1,0 +1,33 @@
+# CUI // SP-CTI
+# Each legacy application's team capacity, AS A PERSON DECLARES IT (icx-mdz-05).
+#
+# tools/modernization/app_wave_planner.py dates an application's waves from this
+# (tools/modernization/wave_schedule.py): one wave at a time, in dependency order,
+# each taking the sum of its migration tasks' own estimated hours at
+# hours_per_week spread over Monday to Friday from `start`. The dates reach the
+# icos-apptwin/v1 bundle's waves as `starts` / `ends`, where ICDEV[OS]'s twin
+# watches them (overdue, late to start).
+#
+# A REVIEWED CONFIG. An entry counts only once a person approved it at its digest
+# on the Modernisation page (/migration-canvas/modernisation, the declared step
+# decl-wft-mdz-capacity-review). A changed entry is a new one and is reviewed
+# again. Until then, and for an application with no entry, no wave is dated and
+# the planner, the page and the bundle say why (unmeasured): no date is made up.
+#
+# Declare only what the team will really spend, and name where it is decided in
+# `source` (a staffing plan, a PMO record). An entry without a source, with a
+# field not listed here, hours that are not a positive number, or a start that is
+# not a date is refused.
+#
+# Key: the application's name as legacy_analyzer registered it (or its legacy id).
+#
+#   applications:
+#     payroll:
+#       hours_per_week: 60             # the team's hours a week on this application
+#       start: "2027-01-04"            # the first day the first wave may start
+#       source: "PMO staffing plan FY27, team Alpha (2 engineers x 30 h)"
+#
+# Real team capacity is the owner's to declare: nothing is declared here, so no
+# application's waves are dated.
+version: 1
+applications: {}

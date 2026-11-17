@@ -9060,6 +9060,13 @@ RESOURCE_REGISTRY = {
         "description": "Preview the icos-apptwin/v1 bundle apptwin_export.py would assemble for one legacy application from what this database holds: whether it meets the vendored contract (1.189.0) and the rules ICDEV[OS]'s importer adds (every error listed in schema_errors), its inventory digest, which sections are null (ICDEV[OS] reads null as unverified) and every section's present/missing state with why; the 7R's per-strategy confidence and unmeasured criteria; the waves derived before any plan and each planned wave's estimate; and the application's declared security domain and environment, or why it has none (never guessed). Read-only: writes no bundle.",
         "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
     },
+    "modernisation_wave_schedule": {
+        "category": "modernization",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_modernisation_wave_schedule",
+        "description": "Read one legacy application's waves with each wave's estimated hours (the sum of its migration tasks' own estimates; none, never 0, where unknown) and, ONLY from a team capacity a person declared in args/modernisation_capacity.yaml and approved at its digest (decl-wft-mdz-capacity-review), its planned start and end dates (one wave at a time, in dependency order, deterministic). Otherwise every wave says why it is undated (no capacity declared, unreviewed, no estimate): no date is ever made up. Each date carries the declared capacity's digest. Read-only: reviews nothing, dates nothing, writes nothing.",
+        "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
+    },
     "modernisation_features": {
         "category": "modernization",
         "module": "tools.mcp.gap_handlers",
@@ -9788,6 +9795,7 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "modernisation_cloud_native":               True,
     "modernisation_bundle":                     True,
     "modernisation_features":                   True,
+    "modernisation_wave_schedule":              True,
 })
 
 

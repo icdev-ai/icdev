@@ -4762,6 +4762,33 @@ def handle_modernisation_waves_jobs(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_modernisation_wave_schedule(args: dict) -> dict:
+    """MCP (icx-mdz-05): one application's waves with their estimates and, only from a team capacity a person declared
+    and reviewed at its digest, their dates; else why none (unmeasured). Read-only: reviews nothing, dates nothing."""
+    app_id = _app_id(args)
+    if not app_id:
+        return {"error": "app_id is required"}
+    try:
+        from tools.db.storage import get_connection
+        from tools.modernization import app_wave_planner
+
+        conn = get_connection()
+        try:
+            rep = app_wave_planner.report(app_id, conn)
+        finally:
+            conn.close()
+        return {"classification": CORTEX_CLASSIFICATION, "app_id": app_id, "schedule": rep["schedule"],
+                "waves": [{k: w.get(k) for k in ("id", "wave_number", "name", "depends_on", "estimated_hours",
+                                                 "starts", "ends", "undated") if w.get(k) is not None}
+                          for w in rep["waves"]],
+                "decide_at": "/migration-canvas/modernisation (decl-wft-mdz-capacity-review)"}
+    except ValueError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_modernisation_wave_schedule: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_modernisation_cloud_native(args: dict) -> dict:
     """MCP: one application's cloud-native jobs and the cloud_native section the exporter would carry."""
     app_id = _app_id(args)

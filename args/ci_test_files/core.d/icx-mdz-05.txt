@@ -1,0 +1,7 @@
+# icx-mdz-05: each wave's estimated hours (the sum of its tasks' own estimates) and, only from
+# a team capacity declared in args/modernisation_capacity.yaml and approved at its digest
+# (decl-wft-mdz-capacity-review), its planned dates (one wave at a time, dependency order,
+# deterministic), else why none; the bundle carries them in the 1.189.0 contract's fields; the
+# page, the twin and the MCP tool; and the dated waves read back on PG.
+tests/test_icx_mdz_05_wave_dates.py
+tests/test_icx_mdz_05_ambient.py

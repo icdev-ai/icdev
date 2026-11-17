@@ -2426,7 +2426,8 @@
             "PM-MDZ-16 -> mdz.bundle_features, mdz.twin, if.mdz.console, if.mdz.mcp -> tests/test_icx_mdz_03_bundle_features.py::test_reviewing_a_process_is_a_persons_step_bound_to_its_digest, tests/test_icx_mdz_03_bundle_features.py::test_the_page_shows_features_processes_and_calls_routes_by_id, tests/test_icx_mdz_03_bundle_features.py::test_the_twin_flags_no_features_unreviewed_processes_and_missing_parts, tests/test_icx_mdz_03_bundle_features.py::test_the_twin_observes_a_bundle_resolves_its_thread_and_replays, tests/test_icx_mdz_03_bundle_features.py::test_the_mcp_features_tool_is_read_only",
             "PM-MDZ-17 -> mdz.bundle_contract, mdz.exporter, mdz.bundle_features -> tests/test_icx_mdz_04_bundle_fields.py::test_the_vendored_contract_is_icos_1_189_0_pinned_by_digest, tests/test_icx_mdz_04_bundle_fields.py::test_a_feature_seen_both_ways_is_both_with_its_hints_inline, tests/test_icx_mdz_04_bundle_fields.py::test_processes_carry_source_signature_review_and_step_fields, tests/test_icx_mdz_04_bundle_fields.py::test_a_reviewed_process_is_exported_reviewed_at_its_digest, tests/test_icx_mdz_04_bundle_fields.py::test_the_sections_map_is_inline_and_agrees_with_what_is_carried, tests/test_icx_mdz_04_bundle_fields.py::test_icos_agreement_rules_refuse_what_the_importer_would, tests/test_icx_mdz_04_bundle_fields.py::test_the_real_bundles_meet_the_pinned_contract_inline_with_no_side_file",
             "PM-MDZ-18 -> mdz.bundle_contract, mdz.seven_r, mdz.plan_gate -> tests/test_icx_mdz_04_bundle_fields.py::test_the_7r_carries_confidence_unmeasured_and_assessable_as_fields, tests/test_icx_mdz_04_bundle_fields.py::test_waves_before_a_plan_are_derived_and_carry_no_estimate, tests/test_icx_mdz_04_bundle_fields.py::test_a_planned_wave_carries_the_sum_of_its_tasks_estimates_and_none_is_never_zero, tests/test_icx_retire_fitness.py::test_retire_reads_icos_measured_redundancy_only_from_the_signed_export, tests/test_icx_retire_fitness.py::test_the_assessment_reads_the_configured_export_and_records_what_it_read, tests/test_icx_retire_fitness.py::test_the_mcp_tool_passes_the_signed_redundancy_through, tests/test_icx_modsamples_pipeline.py::test_the_bundle_carries_the_1_189_fields_and_the_resumed_7r_reads_the_signed_redundancy, tests/test_icx_mdz_04_ambient.py::test_a_planned_waves_estimate_is_read_from_its_tasks",
-            "PM-MDZ-19 -> mdz.bundle_contract, mdz.twin, if.mdz.console, if.mdz.mcp -> tests/test_icx_mdz_04_bundle_fields.py::test_the_environment_comes_only_from_the_declared_file_with_its_source, tests/test_icx_mdz_04_bundle_fields.py::test_the_page_shows_confidence_unmeasured_security_domain_and_derived_waves, tests/test_icx_mdz_04_bundle_fields.py::test_the_bundle_preview_and_mcp_tool_carry_the_new_fields, tests/test_icx_mdz_04_bundle_fields.py::test_the_twin_flags_a_bundle_failing_the_contract_or_without_a_security_domain, tests/test_icx_mdz_04_bundle_fields.py::test_the_twin_observes_no_security_domain_with_a_thread_and_replays, tests/test_icx_mdz_04_ambient.py::test_the_bundle_preview_carries_the_7r_confidence_and_the_unreported_domain"
+            "PM-MDZ-19 -> mdz.bundle_contract, mdz.twin, if.mdz.console, if.mdz.mcp -> tests/test_icx_mdz_04_bundle_fields.py::test_the_environment_comes_only_from_the_declared_file_with_its_source, tests/test_icx_mdz_04_bundle_fields.py::test_the_page_shows_confidence_unmeasured_security_domain_and_derived_waves, tests/test_icx_mdz_04_bundle_fields.py::test_the_bundle_preview_and_mcp_tool_carry_the_new_fields, tests/test_icx_mdz_04_bundle_fields.py::test_the_twin_flags_a_bundle_failing_the_contract_or_without_a_security_domain, tests/test_icx_mdz_04_bundle_fields.py::test_the_twin_observes_no_security_domain_with_a_thread_and_replays, tests/test_icx_mdz_04_ambient.py::test_the_bundle_preview_carries_the_7r_confidence_and_the_unreported_domain",
+            "PM-MDZ-20 -> mdz.wave_schedule, mdz.bundle_contract -> tests/test_icx_mdz_05_wave_dates.py::test_no_capacity_declared_dates_nothing_and_says_why, tests/test_icx_mdz_05_wave_dates.py::test_a_capacity_no_person_approved_at_its_digest_dates_nothing, tests/test_icx_mdz_05_wave_dates.py::test_a_reviewed_capacity_gives_exact_dates, tests/test_icx_mdz_05_wave_dates.py::test_dependency_order_is_respected_whatever_the_listing_order, tests/test_icx_mdz_05_wave_dates.py::test_a_wave_with_no_estimate_is_undated_and_so_is_every_wave_after_it, tests/test_icx_mdz_05_wave_dates.py::test_the_capacity_file_ships_empty_and_refuses_what_it_cannot_read, tests/test_icx_mdz_05_wave_dates.py::test_estimated_hours_is_the_sum_of_the_plans_own_task_estimates, tests/test_icx_mdz_05_wave_dates.py::test_before_a_plan_no_estimate_and_no_date_and_the_report_says_why, tests/test_icx_mdz_05_wave_dates.py::test_the_planner_dates_the_waves_only_once_the_capacity_is_approved_and_the_bundle_carries_them, tests/test_icx_mdz_05_wave_dates.py::test_without_a_capacity_the_bundle_says_why_and_still_validates, tests/test_icx_mdz_05_ambient.py::test_the_waves_are_dated_only_after_the_capacity_review_is_read_back"
           ],
           "gaps": [],
           "status": "pass"
@@ -2764,6 +2765,7 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "modernisation_wave_schedule read-only, tool_authorization tier 'read'",
             "modernisation_waves_jobs read-only, tool_authorization tier 'read'"
           ],
           "gaps": [],
@@ -2773,13 +2775,16 @@
           "evidence": [
             "PM-MDZ-04 -> mdz.waves_cam, if.mdz.console -> tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_page_reads_apps_waves_and_the_bundle, tests/test_icx_mdz_01_modernisation.py::test_approving_a_cam_jobs_output_binds_its_files_and_is_taken_once",
             "PM-MDZ-07 -> mdz.twin, if.mdz.mcp -> tests/test_icx_mdz_01_modernisation.py::test_the_twin_finds_each_gap_with_its_thread, tests/test_icx_mdz_01_modernisation.py::test_an_unreadable_source_is_unverified_never_a_pass, tests/test_icx_mdz_01_modernisation.py::test_the_twin_observes_records_and_replays, tests/test_icx_mdz_01_modernisation.py::test_the_modernisation_mcp_tools_are_registered_read_only, tests/test_icx_mdz_01_modernisation.py::test_the_pages_call_their_routes_by_endpoint_id",
-            "PM-MDZ-11 -> mdz.plan_gate, if.mdz.console -> tests/test_icx_mdz_02_seven_r_evidence.py::test_may_plan_refused_or_missing_writes_no_plan, tests/test_icx_mdz_02_seven_r_evidence.py::test_the_planner_cli_and_the_mcp_tool_say_refused, tests/test_icx_mdz_02_seven_r_evidence.py::test_refactor_jobs_write_nothing_without_may_plan, tests/test_icx_mdz_02_seven_r_evidence.py::test_the_7r_page_shows_confidence_unmeasured_and_the_refusal, tests/test_icx_modsamples_pipeline.py::test_the_first_run_plans_nothing_without_icdev_os_may_plan"
+            "PM-MDZ-11 -> mdz.plan_gate, if.mdz.console -> tests/test_icx_mdz_02_seven_r_evidence.py::test_may_plan_refused_or_missing_writes_no_plan, tests/test_icx_mdz_02_seven_r_evidence.py::test_the_planner_cli_and_the_mcp_tool_say_refused, tests/test_icx_mdz_02_seven_r_evidence.py::test_refactor_jobs_write_nothing_without_may_plan, tests/test_icx_mdz_02_seven_r_evidence.py::test_the_7r_page_shows_confidence_unmeasured_and_the_refusal, tests/test_icx_modsamples_pipeline.py::test_the_first_run_plans_nothing_without_icdev_os_may_plan",
+            "PM-MDZ-20 -> mdz.wave_schedule, mdz.bundle_contract -> tests/test_icx_mdz_05_wave_dates.py::test_no_capacity_declared_dates_nothing_and_says_why, tests/test_icx_mdz_05_wave_dates.py::test_a_capacity_no_person_approved_at_its_digest_dates_nothing, tests/test_icx_mdz_05_wave_dates.py::test_a_reviewed_capacity_gives_exact_dates, tests/test_icx_mdz_05_wave_dates.py::test_dependency_order_is_respected_whatever_the_listing_order, tests/test_icx_mdz_05_wave_dates.py::test_a_wave_with_no_estimate_is_undated_and_so_is_every_wave_after_it, tests/test_icx_mdz_05_wave_dates.py::test_the_capacity_file_ships_empty_and_refuses_what_it_cannot_read, tests/test_icx_mdz_05_wave_dates.py::test_estimated_hours_is_the_sum_of_the_plans_own_task_estimates, tests/test_icx_mdz_05_wave_dates.py::test_before_a_plan_no_estimate_and_no_date_and_the_report_says_why, tests/test_icx_mdz_05_wave_dates.py::test_the_planner_dates_the_waves_only_once_the_capacity_is_approved_and_the_bundle_carries_them, tests/test_icx_mdz_05_wave_dates.py::test_without_a_capacity_the_bundle_says_why_and_still_validates, tests/test_icx_mdz_05_ambient.py::test_the_waves_are_dated_only_after_the_capacity_review_is_read_back",
+            "PM-MDZ-21 -> mdz.wave_schedule, mdz.twin, if.mdz.console, if.mdz.mcp -> tests/test_icx_mdz_05_wave_dates.py::test_reviewing_the_capacity_is_a_persons_step_bound_to_its_digest, tests/test_icx_mdz_05_wave_dates.py::test_the_page_shows_estimates_dates_why_and_the_capacity_review, tests/test_icx_mdz_05_wave_dates.py::test_the_twin_flags_an_unreviewed_capacity_and_undated_waves, tests/test_icx_mdz_05_wave_dates.py::test_the_twin_observes_undated_waves_with_a_thread_and_replays, tests/test_icx_mdz_05_wave_dates.py::test_the_mcp_wave_schedule_tool_is_read_only_and_says_why, tests/test_icx_mdz_05_wave_dates.py::test_the_e2e_capacity_file_is_honoured_only_under_tests"
           ],
           "gaps": [],
           "status": "pass"
         },
         "gui": {
           "evidence": [
+            "migration_canvas.api_modernisation_capacity_review called from tools/dashboard/templates/migration_canvas/modernisation.html",
             "migration_canvas.api_refactor_job_approve called from tools/dashboard/templates/migration_canvas/modernisation.html",
             "nav links /migration-canvas/modernisation",
             "page /migration-canvas/modernisation renders migration_canvas/modernisation.html",
@@ -2798,6 +2803,18 @@
               "observed": true,
               "rule": "/migration-canvas/api/modernisation/apps",
               "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/migration_canvas/modernisation.html"
+              ],
+              "endpoint": "migration_canvas.api_modernisation_capacity_review",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/migration-canvas/api/modernisation/apps/<app_id>/capacity/review",
+              "write": true
             },
             {
               "by_id": [
@@ -2859,6 +2876,7 @@
         },
         "workflow": {
           "evidence": [
+            "migration_canvas.api_modernisation_capacity_review (declared (tools/migration_canvas/modernisation.py: \"A person approves or rejects the team capacity declared for one application\")) -> template decl-wft-mdz-capacity-review (args/workflow_hitl_templates/mdz-capacity-review.yaml)",
             "migration_canvas.api_refactor_job_approve (name carries 'approve') -> template decl-wft-mdz-cam-refactor-approve (args/workflow_hitl_templates/mdz-cam-refactor-approve.yaml)"
           ],
           "gaps": [],
@@ -3097,11 +3115,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 137,
-    "routes_by_id": 113,
-    "routes_observed": 97,
-    "writes_by_id": 53,
-    "writes_observed": 53
+    "routes": 138,
+    "routes_by_id": 114,
+    "routes_observed": 98,
+    "writes_by_id": 54,
+    "writes_observed": 54
   },
   "tool": "feature_audit",
   "version": 1

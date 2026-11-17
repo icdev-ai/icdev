@@ -586,7 +586,8 @@ def waves_out(waves, *, estimates: dict | None = None) -> list[dict]:
     """Waves in the contract's shape: id, title, order, status, components, backout, and -- only where the planner or
     the plan has them -- planned dates as given and the wave's ``estimated_hours`` (``estimates``: the sum of its
     tasks' estimates, ``wave_estimates``; else the planner's own). Absent when unknown: never 0, never a date made
-    up here."""
+    up here. icx-mdz-05: ``app_wave_planner`` gives ``starts``/``ends`` only from a reviewed team capacity
+    (``wave_schedule``), and they are carried as given."""
     out = []
     for i, w in enumerate(_wave_rows(waves)):
         wid = str(w.get("id") or f"w{w.get('wave_number')}")
@@ -623,9 +624,19 @@ def derived_waves(waves, *, at: str) -> dict | None:
     if not _wave_rows(waves):
         return None
     rep = waves if isinstance(waves, dict) else {}
-    return {"tool": str(rep.get("tool") or "icdev-it/app_wave_planner"), "assessed_at": at,
-            "basis": str(rep.get("basis") or "the wave planner's order over the application's own dependencies"),
+    basis = str(rep.get("basis") or "the wave planner's order over the application's own dependencies")
+    if schedule_reason(waves):          # icx-mdz-05: why they are not dated, said in the contract's own field
+        basis += f"; {schedule_reason(waves)}"
+    return {"tool": str(rep.get("tool") or "icdev-it/app_wave_planner"), "assessed_at": at, "basis": basis,
             "waves": waves_out(waves)}
+
+
+def schedule_reason(waves) -> str | None:
+    """The wave planner's word on its dates (icx-mdz-05, ``wave_schedule``): dated from which declared capacity (its
+    digest), or why not. ICDEV[OS] 1.189.0 has no field for it, so it rides in ``sections["migration.waves"].reason``
+    and ``derived_waves.basis``; None for a report from before it (or the migration canvas's own list)."""
+    sch = waves.get("schedule") if isinstance(waves, dict) else None
+    return str(sch["reason"]) if isinstance(sch, dict) and sch.get("reason") else None
 
 
 def migration_from_plan(app_id: str, conn, *, at: str, waves: list | None = None, strangler: list | None = None) -> dict | None:
@@ -903,10 +914,12 @@ def section_states(bundle: dict, *, waves: list | dict | None = None, reasons: d
         v = bundle.get(k)
         out[k] = ({"state": "present", **({"count": count(v)} if count(v) is not None else {})}
                   if v not in (None, [], {}) else {"state": "missing", "reason": why(k, "no step produced it")})
-    waves = _wave_rows(waves)
     carried = ((bundle.get("migration") or {}).get("waves")) or []
     derived = "carried in derived_waves, " if bundle.get("derived_waves") else ""
-    out["migration.waves"] = ({"state": "present", "count": len(carried)} if carried else
+    dates = schedule_reason(waves)        # icx-mdz-05: dated from a reviewed capacity, or why not
+    waves = _wave_rows(waves)
+    out["migration.waves"] = ({"state": "present", "count": len(carried), **({"reason": dates} if dates else {})}
+                              if carried else
                               {"state": "missing", **({"derived": len(waves)} if waves else {}),
                                "reason": why("migration.waves", f"derived before any plan ({derived}never approved): no "
                                              "migration plan carries them, so ICDEV[OS]'s migration-plan gate will block"
