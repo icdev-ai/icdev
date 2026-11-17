@@ -1,0 +1,31 @@
+# CUI // SP-CTI
+id: decl-wft-coe-standard-adopt
+name: "Engineering standards: a steward signs a reviewed standard into force (review -> adopt)"
+description: >-
+  A reviewed standard is adopted only when a steward who is not its author signs
+  it on /idp/standards, with a reason, at the entry digest the steward read. A
+  standard without a check is a wish: before the step is offered, the register
+  refuses an entry that names neither an existing IDP scorecard rule nor a
+  named manual evidence step. Nothing advances on its own: a reviewed standard
+  waits for this step, however long.
+decides: [idp.idp_api_standard_adopt]
+effect: >-
+  The decided step in wf_decision_steps is the signature (subject:
+  "standard:<id>@<version>"; payload: the id, version, entry digest and the
+  resolved check). The register appends an adopted or refused event to
+  coe_standard_events, bound to that step; an adopted version supersedes the
+  version in force before it.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: review
+    step_type: automated
+    description: A steward endorsed the draft (decl-wft-coe-standard-review); its check resolved.
+  - name: adopt
+    step_type: manual
+    role: standards_steward
+    holders: [admin, isso, reviewer]
+    # The author is never the signer.
+    separate_from: builders
+    decisions: {sign: affirm, refuse: deny}
+    reason_required: [sign, refuse]

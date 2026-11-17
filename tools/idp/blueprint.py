@@ -32,6 +32,16 @@ Routes:
   GET  /idp/api/component/<key>     JSON component detail
   GET  /idp/api/evidence            JSON rule evidence
   POST /idp/api/iqe-query           IQE natural-language query over idp.components
+
+Engineering standards register (icx-coe-01, tools/idp/standards.py):
+  GET  /idp/standards                            The register: browse, lifecycle, take a step
+  GET  /idp/api/standards                        JSON register (every standard, its state)
+  GET  /idp/api/standards/<standard_id>          One standard: versions, history, checks, sources
+  POST /idp/api/standards/propose                A draft (anyone; decides nothing)
+  POST /idp/api/standards/<standard_id>/review   A steward endorses or returns (declared step)
+  POST /idp/api/standards/<standard_id>/adopt    A steward signs it into force (declared step)
+  POST /idp/api/standards/<standard_id>/deprecate  A steward retires it (declared step)
+  GET  /idp/api/standards-twin                   The register's twin observation, live, with threads
 """
 from __future__ import annotations
 
@@ -264,3 +274,170 @@ def idp_api_iqe_query():
     except Exception as exc:  # noqa: BLE001
         logger.warning("IDP IQE query error: %s", exc)
         return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
+# ---------------------------------------------------------------------------
+# Engineering standards register (icx-coe-01)
+# ---------------------------------------------------------------------------
+#
+# Who decides: a standard is PROPOSED by anyone (or an agent, as a draft) and
+# decided only through the declared steps decl-wft-coe-standard-review / -adopt /
+# -deprecate, each held by a steward and refused to the version's author. The
+# routes below call tools/idp/standards.py, which takes the step through
+# tools/workflow_hitl/declared.py before the ledger changes.
+
+
+def _standards_refused(exc):
+    return jsonify(exc.to_dict()), exc.status
+
+
+def _step_body() -> dict:
+    return flask_request.get_json(force=True, silent=True) or {}
+
+
+@bp.route("/standards")
+def idp_standards_page():
+    """The engineering standards register: browse, see the lifecycle, take a step."""
+    from tools.idp import standards
+
+    try:
+        view = standards.register_view()
+        error = ""
+    except Exception as exc:  # noqa: BLE001 — an unreadable ledger is said, not hidden
+        logger.warning("idp standards: register unreadable: %s", exc)
+        view = {"standards": [], "counts": {}, "unseeded": [], "chain": {}, "register": {}}
+        error = str(exc)
+    return render_template(
+        "idp/standards.html",
+        view=view,
+        error=error,
+        templates=dict(standards.TEMPLATES),
+    )
+
+
+@bp.route("/api/standards")
+def idp_api_standards():
+    """JSON register: every standard with its lifecycle state, and seeds not yet recorded."""
+    from tools.idp import standards
+
+    try:
+        return jsonify(standards.register_view())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"the register could not be read: {exc}"}), 503
+
+
+@bp.route("/api/standards/<standard_id>")
+def idp_api_standard(standard_id: str):
+    """One standard: every version, the full history, its check and its sources."""
+    from tools.idp import standards
+
+    try:
+        return jsonify(standards.standard_view(standard_id))
+    except standards.StandardRefused as exc:
+        return _standards_refused(exc)
+
+
+@bp.route("/api/standards/propose", methods=["POST"])
+def idp_api_standard_propose():
+    """Propose a standard as a draft. Anyone signed in; proposing decides nothing.
+
+    Body: ``{id, title, version, owner, scope, sources, check_kind, scorecard,
+    rule, evidence_name, evidence_procedure, produced_by, note}``. A service key
+    is recorded as an agent. A draft without a check is accepted and shown;
+    adoption refuses it.
+    """
+    from tools.idp import standards
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = standards.propose(standards.entry_from_form(data), current_actor(),
+                                note=str(data.get("note") or ""))
+    except standards.StandardRefused as exc:
+        return _standards_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/standards/<standard_id>/review", methods=["POST"])
+def idp_api_standard_review(standard_id: str):
+    """A steward, never the author, endorses a proposed standard or returns it.
+
+    Body: ``{version, decision: endorse|return, reason, digest}``. The person's
+    step of decl-wft-coe-standard-review, bound to the entry digest read.
+    """
+    from tools.idp import standards
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = standards.review(standard_id, str(data.get("version") or ""),
+                               decision=str(data.get("decision") or ""),
+                               reason=str(data.get("reason") or ""),
+                               read_digest=str(data.get("digest") or ""), actor=current_actor())
+    except standards.StandardRefused as exc:
+        return _standards_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/standards/<standard_id>/adopt", methods=["POST"])
+def idp_api_standard_adopt(standard_id: str):
+    """A steward, never the author, signs a reviewed standard into force, or refuses it.
+
+    Body: ``{version, decision: sign|refuse, reason, digest}``. The person's step
+    of decl-wft-coe-standard-adopt, bound to the entry digest read. A standard
+    without a check is a wish: an entry naming no scorecard rule and no manual
+    evidence step is refused before any step is taken.
+    """
+    from tools.idp import standards
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = standards.adopt(standard_id, str(data.get("version") or ""),
+                              decision=str(data.get("decision") or ""),
+                              reason=str(data.get("reason") or ""),
+                              read_digest=str(data.get("digest") or ""), actor=current_actor())
+    except standards.StandardRefused as exc:
+        return _standards_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/standards/<standard_id>/deprecate", methods=["POST"])
+def idp_api_standard_deprecate(standard_id: str):
+    """A steward, never the author, retires the standard in force, with a reason.
+
+    Body: ``{version, reason, digest, superseded_by}``. The person's step of
+    decl-wft-coe-standard-deprecate.
+    """
+    from tools.idp import standards
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = standards.deprecate(standard_id, str(data.get("version") or ""),
+                                  reason=str(data.get("reason") or ""),
+                                  read_digest=str(data.get("digest") or ""),
+                                  superseded_by=str(data.get("superseded_by") or ""),
+                                  actor=current_actor())
+    except standards.StandardRefused as exc:
+        return _standards_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/standards-twin")
+def idp_api_standards_twin():
+    """The register's governance twin, observed now (not recorded), with each finding's thread.
+
+    ``?thread=<id>`` resolves one finding's thread to the ledger row it rests on.
+    """
+    from tools.twin_core import governance
+
+    thread = (flask_request.args.get("thread") or "").strip()
+    try:
+        if thread:
+            return jsonify(governance.resolve_thread(thread))
+        import tools.twin_core.adapters.coe_standards  # noqa: F401  (registers the twin)
+
+        return jsonify(governance.observe(governance.adapter_for("idp"), record=False))
+    except Exception as exc:  # noqa: BLE001 — a twin that cannot observe says so
+        return jsonify({"error": f"the standards twin could not observe: {exc}"}), 503

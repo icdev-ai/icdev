@@ -954,6 +954,157 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "coe_standard_propose mutating, approval tier 'unknown' (default_tier) halts",
+            "coe_standards read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-COE-01 -> coe.register -> tests/test_icx_coe_01_standards.py::test_the_register_validates_and_seeds_by_reference, tests/test_icx_coe_01_standards.py::test_every_owner_role_is_a_dashboard_role, tests/test_icx_coe_01_standards.py::test_the_citation_catalog_is_untouched_and_its_reader_still_validates, tests/test_icx_coe_01_standards.py::test_a_malformed_draft_is_refused",
+            "PM-COE-02 -> coe.check, coe.lifecycle -> tests/test_icx_coe_01_standards.py::test_a_check_resolves_only_when_it_exists, tests/test_icx_coe_01_standards.py::test_adoption_refuses_a_standard_without_a_check, tests/test_icx_coe_01_standards.py::test_a_seed_without_a_check_cannot_enter_adopted",
+            "PM-COE-03 -> coe.lifecycle -> tests/test_icx_coe_01_standards.py::test_propose_review_adopt_deprecate_with_history, tests/test_icx_coe_01_standards.py::test_the_author_is_never_the_reviewer_or_the_signer, tests/test_icx_coe_01_standards.py::test_a_steward_role_is_needed_and_a_reason, tests/test_icx_coe_01_standards.py::test_nothing_advances_out_of_order_and_a_step_is_bound_to_the_digest, tests/test_icx_coe_01_standards.py::test_an_agent_only_drafts, tests/test_icx_coe_01_standards.py::test_a_new_version_supersedes_the_one_in_force, tests/test_icx_coe_01_ambient.py::test_the_lifecycle_on_the_platform_database",
+            "PM-COE-04 -> coe.lifecycle, coe.register -> tests/test_icx_coe_01_standards.py::test_the_ledger_is_append_only_and_a_forged_row_breaks_the_chain, tests/test_icx_coe_01_standards.py::test_two_events_cannot_follow_the_same_one, tests/test_icx_coe_01_standards.py::test_seeds_are_recorded_by_the_bootstrap_identity_never_a_person, tests/test_icx_coe_01_ambient.py::test_the_lifecycle_on_the_platform_database",
+            "PM-COE-05 -> if.coe.console, coe.twin, if.coe.mcp -> tests/test_icx_coe_01_standards.py::test_the_routes_take_the_lifecycle_and_refuse_what_they_must, tests/test_icx_coe_01_standards.py::test_the_page_renders_the_register_and_its_controls, tests/test_icx_coe_01_standards.py::test_the_twin_observes_with_threads_that_resolve_and_replays, tests/test_icx_coe_01_standards.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read, tests/test_icx_coe_01_standards.py::test_the_mcp_tools_read_and_only_draft, tests/test_icx_coe_01_standards.py::test_the_cli_validates_and_lists"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "idp.idp_api_standard_adopt called from tools/dashboard/templates/idp/standards.html",
+            "idp.idp_api_standard_deprecate called from tools/dashboard/templates/idp/standards.html",
+            "idp.idp_api_standard_propose called from tools/dashboard/templates/idp/standards.html",
+            "idp.idp_api_standard_review called from tools/dashboard/templates/idp/standards.html",
+            "nav links /idp/standards",
+            "page /idp/standards renders idp/standards.html",
+            "registry entry 'idp'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_api_standards",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/standards",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_api_standards_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/standards-twin",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_api_standard",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/standards/<standard_id>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_api_standard_adopt",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/standards/<standard_id>/adopt",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_api_standard_deprecate",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/standards/<standard_id>/deprecate",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_api_standard_review",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/standards/<standard_id>/review",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_api_standard_propose",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/standards/propose",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "idp.idp_standards_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/standards",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "idp.idp_api_standard_adopt (declared (tools/idp/blueprint.py: \"A steward, never the author, signs a reviewed standard into force, or refuses it.\")) -> template decl-wft-coe-standard-adopt (args/workflow_hitl_templates/coe-standard-adopt.yaml)",
+            "idp.idp_api_standard_deprecate (declared (tools/idp/blueprint.py: \"A steward, never the author, retires the standard in force, with a reason.\")) -> template decl-wft-coe-standard-deprecate (args/workflow_hitl_templates/coe-standard-deprecate.yaml)",
+            "idp.idp_api_standard_review (declared (tools/idp/blueprint.py: \"A steward, never the author, endorses a proposed standard or returns it.\")) -> template decl-wft-coe-standard-review (args/workflow_hitl_templates/coe-standard-review.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "idp",
+      "key": "coe.standards",
+      "label": "Engineering CoE: standards register with a lifecycle"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
             "feature_conformance read-only, tool_authorization tier 'read'"
           ],
           "gaps": [],
@@ -2946,6 +3097,7 @@
       "tools/dashboard/templates/coworker/trust.html",
       "tools/dashboard/templates/coworkers/index.html",
       "tools/dashboard/templates/document_intelligence/explorer.html",
+      "tools/dashboard/templates/idp/standards.html",
       "tools/dashboard/templates/includes/_chat_action_card.html",
       "tools/dashboard/templates/includes/classification_macros.html",
       "tools/dashboard/templates/includes/iqe_query_widget.html",
@@ -2971,8 +3123,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 23,
-    "features_conforming": 23,
+    "features": 24,
+    "features_conforming": 24,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3003,6 +3155,13 @@
         "workflow": 0
       },
       "ace.trust_sessions": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "coe.standards": {
         "ai_native": 0,
         "architecture": 0,
         "gui": 0,
@@ -3144,11 +3303,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 140,
-    "routes_by_id": 116,
-    "routes_observed": 100,
-    "writes_by_id": 55,
-    "writes_observed": 55
+    "routes": 148,
+    "routes_by_id": 123,
+    "routes_observed": 108,
+    "writes_by_id": 59,
+    "writes_observed": 59
   },
   "tool": "feature_audit",
   "version": 1

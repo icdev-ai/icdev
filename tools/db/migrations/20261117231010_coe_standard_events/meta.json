@@ -1,0 +1,7 @@
+{
+  "description": "engineering standards register lifecycle ledger, append-only and hash-chained (icx-coe-01)",
+  "date": "2026-11-17",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

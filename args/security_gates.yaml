@@ -2291,3 +2291,29 @@ ace_auto_dispatch:
   note: >
     Revoke and stop-all are stops: immediate, with a stated reason, no approval.
     Lifting stop-all is the holder's step. A grant suspends itself when trust falls.
+
+
+# Engineering standards register gate (icx-coe-01)
+#
+# One entry per standard (args/engineering_standards.yaml seeds; status is the
+# replay of coe_standard_events). Enforced by tools/idp/standards.py and its
+# declared templates (args/workflow_hitl_templates/coe-standard-*.yaml); tested
+# in tests/test_icx_coe_01_standards.py (gated: core.d/icx-coe-01.txt).
+engineering_standards:
+  blocking:
+    - adopt_without_check            # no existing scorecard rule and no named manual evidence step: a wish
+    - author_takes_own_step          # review, adopt or deprecate by the version's author (separate_from: builders)
+    - step_by_non_person             # a service key or agent cannot review, adopt or deprecate; it drafts
+    - step_out_of_order              # adopt needs reviewed, deprecate needs in force: nothing advances by itself
+    - step_on_stale_digest           # the entry changed since the steward read it
+    - seed_adopted_without_check     # a seed enters adopted only when its check resolves
+    - chain_broken                   # a ledger row that does not verify blocks any change to that standard
+  warning:
+    - in_force_check_unresolved      # twin: coe.in_force.check_unresolved
+    - in_force_source_drifted        # twin: coe.in_force.source_drifted
+    - in_force_bootstrap_only        # twin: coe.in_force.bootstrap_only (seeded, no person signed)
+    - draft_waiting                  # twin: coe.draft.waiting
+  note: >
+    Seeds are recorded by the labelled bootstrap identity in seed_identity, never
+    as a person's signature. args/standards_registry.yaml (the WG 22 citation
+    catalog) is a different file and is cited, not changed.

@@ -4919,6 +4919,32 @@ CREATE TABLE IF NOT EXISTS twin_governance_observations (
 );
 CREATE INDEX IF NOT EXISTS idx_twin_gov_obs_canvas
     ON twin_governance_observations(canvas, observed_at);
+
+-- icx-coe-01: the engineering standards register's lifecycle ledger (migration
+-- 20261117231010). Same DDL; append-only, hash-chained per standard.
+CREATE TABLE IF NOT EXISTS coe_standard_events (
+    event_id        TEXT PRIMARY KEY,
+    standard_id     TEXT NOT NULL,
+    version         TEXT NOT NULL,
+    event           TEXT NOT NULL
+        CHECK(event IN ('seeded','proposed','reviewed','returned','adopted','refused','deprecated')),
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent','bootstrap')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    entry_digest    TEXT NOT NULL,
+    entry_json      TEXT NOT NULL,
+    detail_json     TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(standard_id, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_coe_standard_events_standard
+    ON coe_standard_events (standard_id, created_at);
+CREATE TRIGGER IF NOT EXISTS coe_standard_events_no_update BEFORE UPDATE ON coe_standard_events BEGIN SELECT RAISE(ABORT, 'coe_standard_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS coe_standard_events_no_delete BEFORE DELETE ON coe_standard_events BEGIN SELECT RAISE(ABORT, 'coe_standard_events is append-only'); END;
 """
 
 

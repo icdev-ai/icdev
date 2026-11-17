@@ -7704,6 +7704,28 @@ python tools/idp/scorecard.py --scorecard component-readiness --component ndc
 python tools/idp/scorecard.py --dir /path/to/scorecards --json
 ```
 
+### Engineering Standards Register (icx-coe-01)
+
+One entry per engineering standard, with a lifecycle (propose -> review -> adopt ->
+deprecate) through declared steps; the author is never the signer, and a standard
+without a check is a wish (adoption refuses it). Console: `/idp/standards`.
+Run against a scratch database only.
+
+```bash
+# Validate args/engineering_standards.yaml (no database)
+python tools/idp/standards.py --validate --json
+
+# Record the declared seeds not yet in the ledger (labelled bootstrap identity, idempotent)
+python tools/idp/standards.py --seed --json
+
+# The register, and one standard with its full hash-chained history
+python tools/idp/standards.py --list
+python tools/idp/standards.py --show ENG-RED-FIRST --json
+
+# The register's governance twin (canvas idp): observe, then replay
+python -m tools.twin_core.governance --observe --canvas idp --json
+```
+
 ### Component Scorer (idp-score-01)
 
 The complement to the scorecard above: where `tools/idp/scorecard.py` grades a

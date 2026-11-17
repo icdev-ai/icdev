@@ -63,3 +63,9 @@ modernisation:
                     cloud_native.containerisation, cloud_native.config, cloud_native.events]
   # Newest rows read per table.
   scan_limit: 500
+
+# icx-coe-01: the engineering standards register (tools/idp/standards.py), canvas
+# key idp. A draft (proposed or reviewed) still waiting on a steward after this
+# many days is a finding; every other finding is a fact about the ledger.
+engineering_standards:
+  draft_waiting_warn_days: 14

@@ -1,0 +1,31 @@
+# CUI // SP-CTI
+id: decl-wft-coe-standard-review
+name: "Engineering standards: a steward reviews a proposed standard (propose -> review)"
+description: >-
+  The first person step in an engineering standard's life (propose -> review ->
+  adopt -> deprecate; tools/idp/standards.py). Anyone, or an agent through MCP,
+  may propose a standard as a draft: proposing decides nothing. A steward who is
+  not its author reads the draft on /idp/standards and endorses it for
+  adoption or returns it to the author, with a reason. Endorsing adopts
+  nothing: adoption is its own signed step (decl-wft-coe-standard-adopt).
+decides: [idp.idp_api_standard_review]
+effect: >-
+  The decided step in wf_decision_steps is the review (subject:
+  "standard:<id>@<version>"; payload: the id, version and entry digest the
+  steward read). The register appends a reviewed or returned event to
+  coe_standard_events, bound to that step. Nothing else changes.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: A person or an agent proposed the standard as a draft (a proposed event in coe_standard_events).
+  - name: review
+    step_type: manual
+    role: standards_steward
+    holders: [admin, isso, reviewer]
+    # Separation of duties: the person who authored this version never reviews
+    # it (standards.builders names them; the route passes them).
+    separate_from: builders
+    decisions: {endorse: affirm, return: deny}
+    reason_required: [endorse, return]

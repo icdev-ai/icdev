@@ -656,6 +656,10 @@ _THREAD_TABLES = {
     # icx-mdz-02: a plan refused for want of ICDEV[OS]'s may-plan (tools/modernization/plan_gate.py).
     "audit_trail": ("core", "audit_trail", "id",
                     ("id", "event_type", "actor", "action", "details", "created_at", "hash")),
+    # icx-coe-01: one event in an engineering standard's life (tools/idp/standards.py).
+    "coe_standard": ("core", "coe_standard_events", "event_id",
+                     ("event_id", "standard_id", "version", "event", "actor", "actor_kind",
+                      "step_id", "reason", "entry_digest", "row_hash", "created_at")),
 }
 #: Thread kinds whose ref is an integer row id.
 _INT_REFS = ("ace_audit", "ace_event", "aiify_decision", "audit_trail")
