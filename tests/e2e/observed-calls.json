@@ -487,6 +487,16 @@
     "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
    ]
   },
+  "GET migration_canvas.api_modernisation_survivor_ivv": {
+   "endpoint": "migration_canvas.api_modernisation_survivor_ivv",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: a survivor IV&V result per area, signed off by an independent person",
+    "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
+   ]
+  },
   "GET migration_canvas.api_modernisation_waves": {
    "endpoint": "migration_canvas.api_modernisation_waves",
    "method": "GET",
@@ -952,6 +962,15 @@
    "test": false,
    "tests": [
     "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
+   ]
+  },
+  "POST migration_canvas.api_modernisation_ivv_signoff": {
+   "endpoint": "migration_canvas.api_modernisation_ivv_signoff",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "Modernisation: a survivor IV&V result per area, signed off by an independent person"
    ]
   },
   "POST migration_canvas.api_modernisation_process_review": {

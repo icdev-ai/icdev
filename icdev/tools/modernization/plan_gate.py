@@ -119,8 +119,11 @@ def _record(ans: dict, *, tool: str, project_id: Optional[str]) -> Optional[int]
         from tools.audit.audit_logger import log_event
 
         allowed = bool(ans.get("allowed"))
+        # icx-mdz-06: who in ICDEV[OS] accepted, endorsed or approved the plan, so its IV&V sign-off can be refused
+        # to them (survivor_ivv.builders)
         details = {k: ans.get(k) for k in ("application", "strategy_asked", "status", "reason", "role", "strategy",
-                                           "baseline", "baseline_digest", "item", "change", "decisions", "issuer")
+                                           "baseline", "baseline_digest", "item", "change", "decisions", "issuer",
+                                           "accepted_by", "endorsed_by", "approved_by")
                    if ans.get(k) is not None}
         details.update(tool=tool, project_id=project_id)
         entry = log_event("approval_granted" if allowed else "approval_denied", actor=tool,

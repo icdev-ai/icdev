@@ -1,0 +1,38 @@
+# CUI // SP-CTI
+id: decl-wft-mdz-survivor-ivv-signoff
+name: "Modernisation: an independent person signs off a consolidation survivor's IV&V result"
+description: >-
+  ICDEV[OS] endorses a portfolio change only when the application that survives
+  it carries an IV&V that counts. tools/modernization/survivor_ivv.py runs
+  ICDEV's own IV&V (ivv_assessor, IEEE 1012) over the application's
+  modernisation outputs and records a result: each process area pass, fail or
+  unverified (never pass unless verified), its findings, the evidence digests,
+  the tool and its version, and the date, bound by one digest. A machine result
+  is not independent. A person who did not build or approve the application's
+  plan reads it on the Modernisation page and signs it off or refuses it, with
+  a reason. The step is bound to the result's digest and taken once; a newer
+  result needs a new sign-off.
+decides: [migration_canvas.api_modernisation_ivv_signoff]
+effect: >-
+  The decided step in wf_decision_steps is the sign-off (subject:
+  "ivv:<legacy app id>"; payload: the result's digest, date, tool version,
+  recommendation and each area's status). The exporter carries the result in
+  the bundle's ivv section (kind independent, the signer as assessor) only
+  while the step is a sign-off at the current result's digest; unsigned, stale
+  or refused, the section is missing and says why. The result is not changed.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: assess
+    step_type: automated
+    description: survivor_ivv ran ICDEV's IV&V over the application's modernisation outputs and recorded the result with its digest.
+  - name: signoff
+    step_type: manual
+    role: ivv_assessor
+    holders: [admin, isso, reviewer]
+    # Independence (IEEE 1012): no one who recorded the application's 7R
+    # strategy, reviewed a CAM job's output, its team capacity or a process, or
+    # accepted, endorsed or approved its plan in ICDEV[OS] (survivor_ivv.builders).
+    separate_from: builders
+    decisions: {sign: affirm, refuse: deny}
+    reason_required: [sign, refuse]

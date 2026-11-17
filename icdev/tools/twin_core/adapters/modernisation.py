@@ -30,6 +30,10 @@ drafts, and the vendored bundle contract, so that is what it reads:
   approved at its digest (``decl-wft-mdz-capacity-review``): it dates nothing until then; and a migration plan whose
   waves carry no dates, with the planner's reason (no capacity, unreviewed, a wave with no estimate). ICDEV[OS]'s
   twin can only read their overdue and late-start checks as unverified.
+  (icx-mdz-06) An application's survivor IV&V result (``survivor_ivv.py``) that no independent person has signed off at
+  its digest (``decl-wft-mdz-survivor-ivv-signoff``; a sign-off of an earlier result is stale), or that one refused:
+  the bundle does not carry it, so ICDEV[OS]'s survivor gate does not pass; and a result whose areas are not all
+  passed (failed, or unverified -- never a pass), each threaded to the result's audit row.
 
 A source that cannot be read is an unverified check, never a pass. Threads: ``mdz_assessment:<id>``,
 ``migration_plan:<id>``, ``audit_trail:<id>``, ``aiify_decision:<id>``, ``studio_workflow:<id>``, ``mc_refactor_job:<id>``,
@@ -69,6 +73,19 @@ def _decided(template_id: str) -> list[dict]:
                    for s, r in decisions.decided(template_id).items()), key=lambda r: r["subject"])
 
 
+def _ivv(app: str) -> dict | None:
+    """The application's latest survivor IV&V result and its sign-off, or None when none has run."""
+    from tools.modernization import survivor_ivv
+
+    r = survivor_ivv.latest(app)
+    if r is None:
+        return None
+    so = survivor_ivv.signoff(app, r)
+    return {"audit_id": r.get("audit_id"), "digest": r["digest"], "assessed_at": r["assessed_at"],
+            "recommendation": r["recommendation"], "areas": {a["code"]: a["status"] for a in r["areas"]},
+            "signoff": {k: so.get(k) for k in ("state", "by", "step_id") if so.get(k) is not None}}
+
+
 def _bundles(limit: int) -> list[dict]:
     """Each legacy application's bundle as the exporter would write it now: features, processes and their review
     states, and what it would not carry (with the exporter's reason). An application whose preview fails says so."""
@@ -90,6 +107,10 @@ def _bundles(limit: int) -> list[dict]:
         except Exception as exc:  # noqa: BLE001 — one application unreadable is said, never skipped
             out.append({"app": app, "name": str(a["name"]), "error": str(exc)})
             continue
+        try:
+            ivv = _ivv(app)
+        except Exception as exc:  # noqa: BLE001 — unreadable is said, never "unsigned"
+            ivv = {"error": str(exc)}
         schema_errors = list(pre.get("schema_errors") or [])
         sch = pre.get("schedule") or {}
         cap = sch.get("capacity") or {}
@@ -108,7 +129,9 @@ def _bundles(limit: int) -> list[dict]:
                     "schedule": {"planned_waves": int(pre.get("waves") or 0), "dated": bool(sch.get("dated")),
                                  "reason": sch.get("reason"),
                                  "capacity": {"application": cap.get("application"), "digest": cap.get("digest"),
-                                              "review": (cap.get("review") or {}).get("state")} if cap else None}})
+                                              "review": (cap.get("review") or {}).get("state")} if cap else None},
+                    # icx-mdz-06: the survivor IV&V, its sign-off, and why the bundle does or does not carry it
+                    "ivv": ivv, "ivv_reason": (pre.get("ivv") or {}).get("reason")})
     return out
 
 
@@ -468,6 +491,42 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
                         recommendation="Declare the team's capacity, with its source, in "
                                        "args/modernisation_capacity.yaml and have it reviewed, and give every task an "
                                        "estimate; ICDEV[OS] reads the waves' overdue checks as unverified until then."))
+                iv = b.get("ivv")
+                if iv and iv.get("error"):
+                    findings.append(finding(
+                        "mdz.ivv.unreadable", "medium", f"{b['name']}: the survivor IV&V record cannot be read",
+                        thread_id=thread, detail=str(iv["error"])[:300],
+                        recommendation="Fix the audit trail or the decision ledger; the bundle carries no IV&V until "
+                                       "then (unverified in ICDEV[OS])."))
+                elif iv:
+                    so, rthread = iv.get("signoff") or {}, (f"audit_trail:{iv['audit_id']}" if iv.get("audit_id")
+                                                             else thread)
+                    if so.get("state") == "refused":
+                        findings.append(finding(
+                            "mdz.ivv.refused", "high",
+                            f"{b['name']}: an independent assessor refused the survivor IV&V result", thread_id=rthread,
+                            detail=f"result {iv['digest'][:12]} of {iv['assessed_at']}, refused by {so.get('by')} "
+                                   f"(step {so.get('step_id')})",
+                            recommendation="Address what the assessor found, re-run survivor_ivv.py and have the new "
+                                           "result signed off; ICDEV[OS] does not assure this survivor."))
+                    elif so.get("state") != "signed":
+                        findings.append(finding(
+                            "mdz.ivv.unsigned", "medium",
+                            f"{b['name']}: the survivor IV&V result has no independent sign-off"
+                            + (" (the sign-off was of an earlier result)" if so.get("state") == "stale" else ""),
+                            thread_id=rthread, detail=str(b.get("ivv_reason") or iv["digest"])[:600],
+                            recommendation="A person who did not build or approve the plan signs it off or refuses it "
+                                           "on /migration-canvas/modernisation (decl-wft-mdz-survivor-ivv-signoff); the "
+                                           "bundle carries no IV&V until then."))
+                    open_areas = sorted(k for k, v in (iv.get("areas") or {}).items() if v != "pass")
+                    if open_areas:
+                        findings.append(finding(
+                            "mdz.ivv.areas_not_passed", "medium",
+                            f"{b['name']}: {len(open_areas)} IV&V area(s) not passed ({iv['recommendation']})",
+                            thread_id=rthread,
+                            detail=", ".join(f"{k} {iv['areas'][k]}" for k in open_areas)[:600],
+                            recommendation="Fix what failed and give each unverified area evidence an automated check "
+                                           "can read; unverified is never a pass."))
                 gone = [k for k in required if k in b["missing"]]
                 if gone:
                     findings.append(finding(
@@ -487,6 +546,10 @@ class ModernisationGovernanceTwin(GovernanceTwinAdapter):
             "plans_with_undated_waves": sum(1 for b in evidence.get("bundles") or []
                                             if (b.get("schedule") or {}).get("planned_waves")
                                             and not b["schedule"].get("dated")),
+            "survivor_ivv_results": sum(1 for b in evidence.get("bundles") or []
+                                        if b.get("ivv") and not b["ivv"].get("error")),
+            "survivor_ivv_signed": sum(1 for b in evidence.get("bundles") or []
+                                       if ((b.get("ivv") or {}).get("signoff") or {}).get("state") == "signed"),
             "applications_assessed": len(evidence.get("assessments") or []),
             "applications_without_recommendation": sum(1 for a in evidence.get("assessments") or []
                                                        if not a["recommended"]),

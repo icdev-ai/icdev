@@ -4772,6 +4772,8 @@ python tools/modernization/db_migration_planner.py --app-id "app-1" --target pos
 python tools/modernization/strangler_fig_manager.py --plan-id "plan-1" --status --json                                 # Strangler fig status
 python tools/modernization/app_wave_planner.py --app-id "app-1" --out waves.json                                     # An application's own waves (strangler order, backouts)
 python tools/modernization/app_wave_planner.py --app-id "app-1" --capacity args/modernisation_capacity.yaml --out waves.json  # icx-mdz-05: each wave's estimate; dates only from a reviewed team capacity, else why not
+python tools/modernization/survivor_ivv.py --app-id "app-1" [--target-dir out/]                                 # icx-mdz-06: ICDEV's IV&V over a survivor's modernisation outputs, per area pass/fail/unverified, recorded
+python tools/modernization/survivor_ivv.py --app-id "app-1" --show                                                   # icx-mdz-06: the latest result, its independent sign-off, and what the bundle carries
 python tools/modernization/refactor_jobs.py --app-id "app-1" --strategy rehost --out refactor.json                     # The migrators as CAM refactor jobs
 python tools/modernization/refactor_jobs.py --app-id "app-1" --icos-decisions decisions.json --icos-jwks icos_jwks.json  # icx-mdz-02: runs only on ICDEV[OS]'s signed may-plan (else exit 3, nothing written)
 python tools/modernization/monolith_decomposer.py --app-id "app-1" --create-plan --project-id "proj-123" --strategy rehost --icos-decisions decisions.json --icos-jwks icos_jwks.json --json  # Plan only on may-plan
@@ -9930,6 +9932,13 @@ icx-mdz-05: a wave is dated only from a team capacity declared in
 `decl-wft-mdz-capacity-review` (Modernisation page). MCP (read-only):
 `modernisation_wave_schedule`. The e2e server sets `ICDEV_MODERNISATION_CAPACITY_E2E` to a
 capacity file the e2e seed writes (honoured only under `tests/`).
+
+icx-mdz-06: a consolidation survivor's IV&V is ICDEV's own (`ivv_assessor.evaluate`) over its
+modernisation outputs (`survivor_ivv.py`); an area is pass only when every requirement there
+passed an automated check, otherwise fail or unverified. A person separate from whoever built or
+approved the plan signs it off at its digest through `decl-wft-mdz-survivor-ivv-signoff`
+(Modernisation page); the bundle carries the `ivv` section only while it is signed at the current
+digest. MCP (read-only): `modernisation_survivor_ivv`.
 
 ```bash
 python -m tools.twin_core.governance --observe --canvas mdc --json     # the modernisation twin

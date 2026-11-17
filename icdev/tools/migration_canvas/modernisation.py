@@ -37,9 +37,16 @@ migration canvas, and the routes it calls:
                                                                          decl-wft-mdz-process-review)
     POST /migration-canvas/api/modernisation/icos-decisions/check        verify a signed ICDEV[OS] decisions export
                                                                          against the PINNED JWKS; may-plan / may-retire
+    GET  /migration-canvas/api/modernisation/apps/<app_id>/ivv           (icx-mdz-06) the latest survivor IV&V result
+                                                                         (per area pass/fail/unverified, findings,
+                                                                         evidence digests), its sign-off, who may not
+                                                                         sign it, and what the bundle carries
+    POST /migration-canvas/api/modernisation/apps/<app_id>/ivv/signoff   an independent person signs off or refuses
+                                                                         the result at its digest (declared step
+                                                                         decl-wft-mdz-survivor-ivv-signoff)
 
-Everything here reads, except the job approval, the process review and the capacity review, which are a person's
-steps. Nothing runs a job, plans a migration or
+Everything here reads, except the job approval, the process review, the capacity review and the IV&V sign-off, which
+are a person's steps. Nothing runs a job, plans a migration or
 accepts a strategy: ICDEV[OS] signs the portfolio decisions, and ICDEV only records or proposes.
 
 The pinned ICDEV[OS] JWKS is a file the operator pinned once, named by ``ICDEV_ICOS_JWKS``. With none pinned, the check
@@ -182,7 +189,7 @@ def bundle_preview(app_id: str) -> dict:
     returned (``schema_errors``), never hidden behind a refusal; the 7R's confidence and unmeasured criteria per
     strategy, the waves derived before a plan (and each planned wave's estimate), and the application's security
     domain -- or why it has none -- are said."""
-    from tools.modernization import app_wave_planner, apptwin_export, bundle_features, cloud_native_jobs
+    from tools.modernization import app_wave_planner, apptwin_export, bundle_features, cloud_native_jobs, survivor_ivv
     from tools.modernization import refactor_jobs as rj
 
     conn = _core()
@@ -197,6 +204,11 @@ def bundle_preview(app_id: str) -> dict:
             env, env_report = None, {"declared": False, "error": str(exc), "reason": str(exc)}
         refactor = rj.report(app_id)
         cn = cloud_native_jobs.report(app_id)
+        try:                                              # icx-mdz-06: carried only when signed at its digest
+            ivv = survivor_ivv.for_bundle(app_id, conn)
+        except Exception as exc:  # noqa: BLE001 -- unreadable is said, and the section stays null (unverified)
+            ivv = {"section": None, "reason": f"the survivor IV&V could not be read: {exc}"}
+            conn.rollback()
         extract, extract_error = None, None               # icx-mdz-03: features and processes, no model
         try:
             extract = bundle_features.report(app_id, conn)
@@ -208,7 +220,7 @@ def bundle_preview(app_id: str) -> dict:
         try:
             bundle = apptwin_export.build(app_id, conn, waves=waves, refactor=refactor["jobs"] or None,
                                           cloud_native=cn if cn["jobs"] else None, extract=extract, seven_r=seven,
-                                          environment=env, check=False, reasons={
+                                          environment=env, check=False, survivor_ivv=ivv, reasons={
                                               k: f"the features and processes could not be derived: {extract_error}"
                                               for k in ("features", "processes")} if extract_error else None)
         except apptwin_export.BundleError as exc:
@@ -250,6 +262,8 @@ def bundle_preview(app_id: str) -> dict:
             "environment_report": env_report,
             "security_domain": (bundle["application"].get("environment") or {}).get("security_domain"),
             "missing": {k: v.get("reason") for k, v in states.items() if v["state"] == "missing"},
+            # icx-mdz-06: the survivor IV&V the bundle carries (signed at its digest), or why none
+            "ivv": {"carried": bundle.get("ivv") is not None, "reason": ivv.get("reason")},
             "processes_unreviewed": sum(1 for p in (extract or {}).get("processes") or []
                                         if (p.get("review") or {}).get("state") != "reviewed"),
             **({"extract_error": extract_error} if extract_error else {}),
@@ -474,6 +488,74 @@ def register_modernisation_routes(bp, login_required: Callable) -> None:
                         "review": {"state": "reviewed" if step["affirmative"] else "rejected",
                                    "decision": step["decision"], "by": step["decided_by"],
                                    "signature_digest": digest}})
+
+    @bp.route("/api/modernisation/apps/<app_id>/ivv")
+    @login_required
+    def api_modernisation_survivor_ivv(app_id):
+        """The application's latest survivor IV&V result, its sign-off, who may not sign it and what the bundle
+        carries (icx-mdz-06). Writes nothing; the IV&V is run by ``survivor_ivv.py``, never from here."""
+        from tools.modernization import survivor_ivv
+
+        conn = _core()
+        try:
+            survivor_ivv.application(app_id, conn)
+            return jsonify(survivor_ivv.report(app_id, conn))
+        except survivor_ivv.IvvError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:  # noqa: BLE001 — unreadable is said, never "unsigned"
+            logger.warning("modernisation ivv %s: %s", app_id, exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/modernisation/apps/<app_id>/ivv/signoff", methods=["POST"])
+    @login_required
+    def api_modernisation_ivv_signoff(app_id):
+        """An independent person signs off or refuses the application's survivor IV&V result, with a reason, at its digest.
+
+        Body: ``{decision: sign|refuse, reason, digest}``. The person's step of the declared template
+        ``decl-wft-mdz-survivor-ivv-signoff``, bound to the result's digest. Refused to anyone who built or approved the
+        application's plan (``survivor_ivv.builders``), for a result that is not the one the person saw (a newer run),
+        and for a result already decided at this digest. The result is not changed: the exporter reads the step.
+        """
+        from tools.modernization import survivor_ivv
+        from tools.workflow_hitl import declared
+
+        data = request.get_json(force=True, silent=True) or {}
+        conn = _core()
+        try:
+            try:
+                survivor_ivv.application(app_id, conn)
+            except survivor_ivv.IvvError as exc:
+                return jsonify({"error": str(exc)}), 404
+            try:
+                result = survivor_ivv.latest(app_id, conn)
+                built = survivor_ivv.builders(app_id, conn)
+                so = survivor_ivv.signoff(app_id, result, conn)
+            except Exception as exc:  # noqa: BLE001 — independence that cannot be checked is not assumed
+                return jsonify({"error": f"the IV&V record or the decision ledger could not be read: {exc}"}), 503
+        finally:
+            conn.close()
+        if result is None:
+            return jsonify({"error": f"no survivor IV&V has run for {app_id}: run "
+                                     f"python tools/modernization/survivor_ivv.py --app-id {app_id} first"}), 404
+        if str(data.get("digest") or "") != result["digest"]:
+            return jsonify({"error": "the IV&V result is not what you read: its digest is now "
+                                     f"{result['digest'][:12]} (reload it)", "digest": result["digest"]}), 409
+        if so["state"] in ("signed", "refused"):
+            return jsonify({"error": f"this IV&V result has already been {so['state']} by {so['by']}"}), 409
+        try:
+            step = declared.take_step(survivor_ivv.TEMPLATE, surface=survivor_ivv.SURFACE,
+                                      decision=str(data.get("decision") or "").strip().lower(),
+                                      subject=survivor_ivv.subject(app_id),
+                                      reason=str(data.get("reason") or "").strip(),
+                                      payload=survivor_ivv.payload(result), separated_from=built)
+        except declared.StepRefused as exc:
+            return jsonify(exc.to_dict()), exc.status
+        return jsonify({"app_id": app_id, "decision_step": step,
+                        "signoff": {"state": "signed" if step["affirmative"] else "refused",
+                                    "decision": step["decision"], "by": step["decided_by"],
+                                    "result_digest": result["digest"]}})
 
     @bp.route("/api/modernisation/icos-decisions/check", methods=["POST"])
     @login_required

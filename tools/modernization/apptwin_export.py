@@ -27,6 +27,10 @@ produced, so every section is traceable to the tool that made it:
                                                          twelve factors, config by location, events; AI use cases
                                                          DRAFTED from --aiify's opportunities
     --ivv/--sbd/--rtm/--coherence/--readiness            already in the bundle's section shape
+    (database)    ivv (when --ivv is not given)          tools/modernization/survivor_ivv.py (icx-mdz-06): ICDEV's
+                                                         IV&V of the application's modernisation outputs, carried
+                                                         only when an independent person signed it off at its
+                                                         digest; else sections["ivv"] says why
 
 A verification result (``--ivv``/``--sbd``/``--rtm``/``--coherence``) is passed through as it was made, with the
 ``subject`` its tool recorded (``tools/compliance/portable_result.py --bundle``, ``tools/workflow/app_coherence.py
@@ -845,14 +849,18 @@ def build(app_id: str, conn, *, at: str | None = None, features: dict | None = N
           sections: dict | None = None, waves: list | dict | None = None, strangler: list | None = None,
           refactor: list | dict | None = None, static_features: dict | None = None,
           cloud_native: dict | None = None, extract: dict | None = None, environment: dict | None = None,
-          reasons: dict | None = None, check: bool = True) -> dict:
+          reasons: dict | None = None, check: bool = True, survivor_ivv: dict | None = None) -> dict:
     """The bundle (contract 1.189.0), validated before it is returned (``check``: the preview validates it itself).
 
     icx-mdz-04: the extras ICDEV used to write beside it are inline -- each feature's provenance (``both`` when seen
     running too) and capability hints; each process's source, step signature and review; each strategy's confidence
     and unmeasured criteria; ``derived_waves`` when no plan carries the waves; each planned wave's estimate; the
     application's declared ``environment`` (``environment``: the fields from ``environment()``; absent stays absent);
-    and ``sections``, every section and part present or missing with why (``reasons``: the run's own)."""
+    and ``sections``, every section and part present or missing with why (``reasons``: the run's own).
+
+    icx-mdz-06: ``survivor_ivv`` is ``survivor_ivv.for_bundle``'s ``{section, reason}``: the ``ivv`` section only when an
+    independent person signed the current IV&V result at its digest, and ``sections["ivv"]`` says why either way. An
+    ``ivv`` passed in ``sections`` (``--ivv``) is carried as made instead."""
     at = at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     if sum(x is not None for x in (features, static_features, extract)) > 1:
         raise BundleError("give one features report (observed, static or the extract), not both: each is one tool's report")
@@ -879,12 +887,19 @@ def build(app_id: str, conn, *, at: str | None = None, features: dict | None = N
                               if cloud_native is not None else None)
     for k in PASSTHROUGH:
         bundle[k] = (sections or {}).get(k)
+    ivv_why = None
+    if bundle["ivv"] is None and survivor_ivv:      # icx-mdz-06: signed at the current digest, or why not
+        bundle["ivv"], ivv_why = survivor_ivv.get("section"), survivor_ivv.get("reason")
+        if bundle["ivv"] is None and ivv_why:
+            reasons = {**(reasons or {}), "ivv": (reasons or {}).get("ivv") or ivv_why}
     if environment:
         bundle["application"]["environment"] = {k: environment[k] for k in ENVIRONMENT_FIELDS if environment.get(k)}
     dw = derived_waves(waves, at=at) if bundle["migration"] is None else None
     if dw is not None:                   # left out, not null, when a plan carries the waves or none was derived
         bundle["derived_waves"] = dw
     bundle["sections"] = section_states(bundle, waves=waves, reasons=reasons)
+    if bundle["ivv"] is not None and ivv_why:
+        bundle["sections"]["ivv"]["reason"] = ivv_why
     if check:
         errors = validate(bundle)
         if errors:
@@ -977,12 +992,19 @@ def main(argv: list[str] | None = None) -> int:
     try:
         name = (conn.execute("SELECT name FROM legacy_applications WHERE id = %s", (a.app_id,)).fetchone() or {"name": None})["name"]
         env, env_report = environment(a.app_id, name, path=a.environments)
+        survivor = None
+        if a.ivv is None:                       # icx-mdz-06: the survivor IV&V, carried only when signed
+            from tools.modernization import survivor_ivv
+            try:
+                survivor = survivor_ivv.for_bundle(a.app_id)
+            except Exception as exc:  # noqa: BLE001 -- unreadable is said, and the section stays null (unverified)
+                survivor = {"section": None, "reason": f"the survivor IV&V could not be read: {exc}"}
         b = build(a.app_id, conn, at=_iso(a.at) if a.at else None, features=load(a.features),
                   processes=[load(p) for p in a.process], aiify=load(a.aiify), integrity=load(a.integrity),
                   seven_r=load(a.seven_r), sections={k: load(getattr(a, k)) for k in PASSTHROUGH},
                   waves=load(a.waves), strangler=load(a.strangler), refactor=load(a.refactor),
                   static_features=load(a.static_features), cloud_native=load(a.cloud_native),
-                  extract=load(a.extract), environment=env, reasons=load(a.reasons))
+                  extract=load(a.extract), environment=env, reasons=load(a.reasons), survivor_ivv=survivor)
     except (BundleError, OSError, KeyError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}))
         return 1

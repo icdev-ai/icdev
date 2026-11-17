@@ -2,7 +2,7 @@
 """The decisions a person takes on modernisation work, read back from the ledger (icx-mdz-01).
 
 Every modernisation decision runs through a declared template under ``args/workflow_hitl_templates/``
-(``tools/workflow_hitl/declared.py``). For four of them the decided step IS the record, so there is no second table to
+(``tools/workflow_hitl/declared.py``). For five of them the decided step IS the record, so there is no second table to
 drift from it:
 
     decl-wft-mdz-7r-strategy             the 7R strategy ICDEV proposes for an application (subject: the assessment id).
@@ -15,6 +15,9 @@ drift from it:
     decl-wft-mdz-capacity-review         (icx-mdz-05) a person's review of one declared team capacity at its digest
                                          (subject: "capacity:<application name or legacy id>"); wave_schedule dates
                                          the application's waves only from an approved one.
+    decl-wft-mdz-survivor-ivv-signoff    (icx-mdz-06) an independent person's sign-off of one survivor IV&V result at
+                                         its digest (subject: "ivv:<app id>"), separate from whoever built or approved
+                                         the application's plan; the exporter carries only a signed, current result.
 
 The other three (AI-Ify promotion and scan deletion, Process-Ify observed-draft review) gate an effect their own
 stores keep; their steps are read here only to show who took them.
@@ -33,6 +36,7 @@ TEMPLATE_AIIFY_DELETE = "decl-wft-mdz-aiify-scan-delete"
 TEMPLATE_OBSERVED = "decl-wft-mdz-processify-observed-approve"
 TEMPLATE_PROCESS = "decl-wft-mdz-process-review"
 TEMPLATE_CAPACITY = "decl-wft-mdz-capacity-review"
+TEMPLATE_IVV = "decl-wft-mdz-survivor-ivv-signoff"
 
 STRATEGIES = ("rehost", "replatform", "refactor", "rearchitect", "repurchase", "retire", "retain")
 

@@ -9067,6 +9067,13 @@ RESOURCE_REGISTRY = {
         "description": "Read one legacy application's waves with each wave's estimated hours (the sum of its migration tasks' own estimates; none, never 0, where unknown) and, ONLY from a team capacity a person declared in args/modernisation_capacity.yaml and approved at its digest (decl-wft-mdz-capacity-review), its planned start and end dates (one wave at a time, in dependency order, deterministic). Otherwise every wave says why it is undated (no capacity declared, unreviewed, no estimate): no date is ever made up. Each date carries the declared capacity's digest. Read-only: reviews nothing, dates nothing, writes nothing.",
         "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
     },
+    "modernisation_survivor_ivv": {
+        "category": "modernization",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_modernisation_survivor_ivv",
+        "description": "Read one legacy application's latest survivor IV&V result (ICDEV's own IV&V, ivv_assessor per IEEE 1012, over its modernisation outputs): each process area pass, fail or unverified (not assessed, manual or semi-automated is unverified, never a pass), its findings, each requirement's evidence digest, the tool version, the date and the result digest; the independent sign-off a person took at that digest (decl-wft-mdz-survivor-ivv-signoff: signed, refused, stale or unsigned); who may not sign it because they built or approved the application's plan; and whether the ICDEV[OS] bundle carries it (only when signed at the current digest) or why not. Read-only: runs no IV&V, signs nothing, writes nothing.",
+        "input_schema": {"type": "object", "properties": {"app_id": {"type": "string", "description": "The legacy application's id"}}, "required": ["app_id"]},
+    },
     "modernisation_features": {
         "category": "modernization",
         "module": "tools.mcp.gap_handlers",
@@ -9796,6 +9803,7 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "modernisation_bundle":                     True,
     "modernisation_features":                   True,
     "modernisation_wave_schedule":              True,
+    "modernisation_survivor_ivv":               True,
 })
 
 

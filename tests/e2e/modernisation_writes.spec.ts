@@ -2,7 +2,7 @@
 // E2E: every modernisation write the feature-conformance audit credits to a page is SENT
 // BY THAT PAGE, as a person would send it (icx-mdz-01; icx-mdz-03: the process review; icx-mdz-04: the
 // bundle's contract, security domain, 7R confidence and derived waves, shown; icx-mdz-05: the waves not dated
-// and why, and the capacity review).
+// and why, and the capacity review; icx-mdz-06: a survivor's IV&V, per area, and its independent sign-off).
 //
 // The audit (tools/conformance/feature_audit.py) now judges six modernisation features:
 // the 7R assessment, AI-Ify, Process-Ify, an application's waves and CAM jobs,
@@ -36,6 +36,7 @@ type Seeded = {
   refused_plan: { status: string; audit_id: number | null };
   cloud_native: { jobs: { id: string; scaffold: string; status: string }[] };
   capacity: { application: string; file: string };
+  survivor: { app_id: string; digest: string; recommendation: string };
 };
 
 function seed(): Seeded {
@@ -206,5 +207,21 @@ test.describe('Every credited modernisation write is sent by its page (icx-mdz-0
     await sends(page, 'POST', /^\/migration-canvas\/api\/modernisation\/icos-decisions\/check$/,
       () => page.click('#mdz-icos-check'));
     await expect(page.locator('#mdz-icos-body')).toContainText('untrusted', { timeout: T });
+  });
+
+  // ── icx-mdz-06: the survivor's IV&V, per area, and an independent person's sign-off ──
+  test('Modernisation: a survivor IV&V result per area, signed off by an independent person', async ({ page }) => {
+    const id = s.survivor.app_id;
+    await page.goto(`/migration-canvas/modernisation?app=${encodeURIComponent(id)}`);
+    await expect(page.locator('#mdz-ivv-digest')).toContainText(s.survivor.digest.slice(0, 16), { timeout: T });
+    await expect(page.locator('#mdz-ivv-areas')).toContainText('unverified');
+    await expect(page.locator('#mdz-ivv-signoff')).toContainText('unsigned');
+    await expect(page.locator('#mdz-ivv-bundle')).toContainText('not carried');
+    await page.fill('#mdz-ivv-reason', 'mdz06 e2e: independent review for the test (synthetic)');
+    await sends(page, 'POST', new RegExp(`^/migration-canvas/api/modernisation/apps/${id}/ivv/signoff$`),
+      () => page.locator(`[data-sign-ivv="${s.survivor.digest}"]`).click());
+    await expect(page.locator('#mdz-ivv-msg')).toContainText('Recorded IV&V signed', { timeout: T });
+    await expect(page.locator('#mdz-ivv-signoff')).toContainText('signed', { timeout: T });
+    await expect(page.locator('#mdz-ivv-bundle')).toContainText('signed by', { timeout: T });
   });
 });

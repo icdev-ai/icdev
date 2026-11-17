@@ -4789,6 +4789,44 @@ def handle_modernisation_wave_schedule(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_modernisation_survivor_ivv(args: dict) -> dict:
+    """MCP (icx-mdz-06): one application's latest survivor IV&V result -- each area pass/fail/unverified with its
+    findings and evidence digests, the tool version and date -- its independent sign-off, who may not sign it, and
+    what the bundle carries. Read-only: runs no IV&V and signs nothing."""
+    app_id = _app_id(args)
+    if not app_id:
+        return {"error": "app_id is required"}
+    try:
+        from tools.db.storage import get_connection
+        from tools.modernization import survivor_ivv
+
+        conn = get_connection()
+        try:
+            survivor_ivv.application(app_id, conn)
+            rep = survivor_ivv.report(app_id, conn)
+        finally:
+            conn.close()
+        r = rep["result"]
+        return {"classification": CORTEX_CLASSIFICATION, "app_id": app_id,
+                "result": None if r is None else {
+                    **{k: r.get(k) for k in ("digest", "assessed_at", "expires_at", "tool", "tool_version",
+                                             "recommendation", "overall_score", "critical_findings", "conditions",
+                                             "target", "subject")},
+                    "areas": [{k: a[k] for k in ("code", "name", "status", "score", "why", "findings")}
+                              | {"evidence": {q["id"]: q["evidence_digest"] for q in a["requirements"]}}
+                              for a in r["areas"]],
+                    "findings": r.get("findings") or []},
+                "signoff": rep["signoff"], "separate_from": rep["separate_from"],
+                "bundle": {"carried": rep["bundle"]["section"] is not None, "reason": rep["bundle"]["reason"]},
+                "run_with": rep["run_with"],
+                "decide_at": "/migration-canvas/modernisation (decl-wft-mdz-survivor-ivv-signoff)"}
+    except ValueError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("handle_modernisation_survivor_ivv: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_modernisation_cloud_native(args: dict) -> dict:
     """MCP: one application's cloud-native jobs and the cloud_native section the exporter would carry."""
     app_id = _app_id(args)
