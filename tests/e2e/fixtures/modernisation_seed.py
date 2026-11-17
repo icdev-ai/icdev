@@ -16,7 +16,10 @@ the product uses, never a hand-written INSERT of derived state:
   Approve / Reject;
 * (icx-mdz-02) one plan attempted for the application with no ICDEV[OS] decisions
   export (``monolith_decomposer.create_migration_plan``), which ``plan_gate`` refuses,
-  writing nothing but its audit row, so /migration lists the refusal.
+  writing nothing but its audit row, so /migration lists the refusal;
+* (icx-mdz-05) a team capacity declared for the application in the e2e capacity file the
+  server reads (``ICDEV_MODERNISATION_CAPACITY_E2E``, honoured only under ``tests/``), so
+  the Modernisation page offers Approve capacity / Reject.
 
 The 7R assessment itself is NOT seeded: the test presses Assess on /migration.
 Everything is named ``mdz01-e2e-*`` so it cannot be mistaken for real data. Synthetic.
@@ -75,6 +78,19 @@ def seed_observed_draft(run: str) -> str:
     return op.save_draft(op.build_draft(capture, name=f"mdz01-e2e observed draft {run}"))
 
 
+#: icx-mdz-05: the e2e server reads its team capacity from here (ICDEV_MODERNISATION_CAPACITY_E2E, honoured only under
+#: tests/); the shipped args/modernisation_capacity.yaml stays empty.
+CAPACITY = ROOT / "tests" / "e2e" / "fixtures" / ".mdz05_capacity.yaml"
+
+
+def seed_capacity(app_name: str) -> dict:
+    """A team capacity declared for the synthetic application, for a person to review on the page (synthetic)."""
+    CAPACITY.write_text(f"# CUI // SP-CTI\n# icx-mdz-05 e2e fixture (synthetic), written by modernisation_seed.py\n"
+                        f"version: 1\napplications:\n  {app_name}:\n    hours_per_week: 40\n"
+                        f"    start: \"2027-01-04\"\n    source: \"mdz05 e2e fixture (synthetic)\"\n", encoding="utf-8")
+    return {"application": app_name, "file": str(CAPACITY)}
+
+
 def seed_refused_plan(project_id: str, app_id: str) -> dict:
     import os
 
@@ -93,6 +109,7 @@ def main() -> int:
     run = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     app = seed_application(run)
     out = {**app, "source": str(SOURCE), "cloud_native": seed_cloud_native(app["app_id"]),
+           "capacity": seed_capacity(f"mdz01-e2e-shop-{run}"),
            "observed_workflow_id": seed_observed_draft(run),
            "refused_plan": seed_refused_plan(app["project_id"], app["app_id"])}
     print(json.dumps(out, default=str))

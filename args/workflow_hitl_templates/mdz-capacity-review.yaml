@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+id: decl-wft-mdz-capacity-review
+name: "Modernisation: review a declared team capacity before it dates an application's waves"
+description: >-
+  args/modernisation_capacity.yaml declares how many hours a week a team spends
+  on one legacy application, from which date, and where that is decided. It is a
+  reviewed config: the wave planner dates the application's waves from it only
+  once a person approved it. The person reads the entry, its digest and the
+  waves it would date on the Modernisation page and approves or rejects it, with
+  a reason. The review binds the entry's digest: a changed entry is stale and
+  must be reviewed again.
+decides: [migration_canvas.api_modernisation_capacity_review]
+effect: >-
+  The decided step in wf_decision_steps is the review (subject:
+  "capacity:<application name or legacy id>"; payload: the entry and its
+  digest). wave_schedule reads it: an entry approved at that digest dates the
+  waves (each date carries the digest), a rejected, stale or unreviewed one
+  dates none. The file and the plan are not changed.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: declare
+    step_type: automated
+    description: A person declared the capacity, with its source, in args/modernisation_capacity.yaml.
+  - name: review
+    step_type: manual
+    role: delivery_owner
+    holders: [admin, pm]
+    decisions: {approve: affirm, reject: deny}
+    reason_required: [approve, reject]

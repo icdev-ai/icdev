@@ -56,7 +56,8 @@ def test_every_template_is_well_formed_and_decides_its_own_surfaces():
     from tools.workflow_hitl import declared
 
     templates = declared.load_templates()
-    assert len(templates) == 15  # icx-ace-01 auto-dispatch; icx-mdz-01 five modernisation; icx-mdz-03 process review
+    # icx-ace-01 auto-dispatch; icx-mdz-01 five modernisation; icx-mdz-03 process review; icx-mdz-05 capacity review
+    assert len(templates) == 16
     owners = {}
     for tid, tmpl in templates.items():
         assert declared.validate_template(tmpl) == [], tid
@@ -78,6 +79,8 @@ def test_every_template_is_well_formed_and_decides_its_own_surfaces():
         "workflow_canvas.api_observed_review", "migration_canvas.api_refactor_job_approve",
         # icx-mdz-03: a person's review of an extracted process at its signature digest
         "migration_canvas.api_modernisation_process_review",
+        # icx-mdz-05: a person's review of a declared team capacity at its digest
+        "migration_canvas.api_modernisation_capacity_review",
     }
     assert declared.manual_stage(templates["decl-wft-cortex-award"])["separate_from"] == "proposer"
 
@@ -96,10 +99,10 @@ def test_a_malformed_template_is_named():
 def test_seed_is_idempotent_and_never_a_canvas_default(declared, wf_db):
     first = declared.seed_declared_templates()
     second = declared.seed_declared_templates()
-    assert len(first["seeded"]) == 15 and second == {"seeded": [], "updated": []}
+    assert len(first["seeded"]) == 16 and second == {"seeded": [], "updated": []}
     rows = _rows(wf_db, "SELECT id, is_default, is_system FROM wf_templates "
                         "WHERE id LIKE 'decl-wft-%'")
-    assert len(rows) == 15 and all(r[1] == 0 and r[2] == 1 for r in rows)
+    assert len(rows) == 16 and all(r[1] == 0 and r[2] == 1 for r in rows)
 
 
 # ── take_step ────────────────────────────────────────────────────────────────
@@ -592,7 +595,7 @@ def test_the_decisions_page_lists_and_decides(wf_db):
     assert as_pm.post(f"/decisions/api/steps/{prop['step_id']}/decide",
                       json={"decision": "accept"}).status_code == 409
     templates = as_pm.get("/decisions/api/templates").get_json()["templates"]
-    assert len(templates) == 15
+    assert len(templates) == 16  # icx-mdz-05: the capacity review
 
 
 def test_the_mcp_tool_reads_and_never_decides(wf_db):
@@ -600,7 +603,7 @@ def test_the_mcp_tool_reads_and_never_decides(wf_db):
     from tools.mcp.tool_registry import READ_ONLY_DECLARATIONS, tool_authorization
 
     out = handle_workflow_decision_steps({"status": "pending"})
-    assert out["steps"] == [] and len(out["templates"]) == 15
+    assert out["steps"] == [] and len(out["templates"]) == 16  # icx-mdz-05: the capacity review
     assert READ_ONLY_DECLARATIONS["workflow_decision_steps"] is True
     assert tool_authorization("workflow_decision_steps")["tier"] == "read"
 

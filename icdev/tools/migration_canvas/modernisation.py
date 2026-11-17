@@ -8,7 +8,14 @@ migration canvas, and the routes it calls:
 
     GET  /migration-canvas/modernisation                                 the page
     GET  /migration-canvas/api/modernisation/apps                        legacy applications, with their latest 7R
-    GET  /migration-canvas/api/modernisation/apps/<app_id>/waves         app_wave_planner.report (derived, never stored)
+    GET  /migration-canvas/api/modernisation/apps/<app_id>/waves         app_wave_planner.report (derived, never stored);
+                                                                         (icx-mdz-05) each wave's estimate and dates
+                                                                         from a reviewed team capacity, or why none
+    POST /migration-canvas/api/modernisation/apps/<app_id>/capacity/review
+                                                                         a person approves or rejects the team
+                                                                         capacity declared for the application, at its
+                                                                         digest (declared step
+                                                                         decl-wft-mdz-capacity-review)
     GET  /migration-canvas/api/modernisation/apps/<app_id>/refactor-jobs refactor_jobs.report, each job's review
     POST /migration-canvas/api/modernisation/refactor-jobs/<job_id>/approve
                                                                          a person approves or rejects a job's output
@@ -31,7 +38,8 @@ migration canvas, and the routes it calls:
     POST /migration-canvas/api/modernisation/icos-decisions/check        verify a signed ICDEV[OS] decisions export
                                                                          against the PINNED JWKS; may-plan / may-retire
 
-Everything here reads, except the job approval and the process review, which are a person's steps. Nothing runs a job, plans a migration or
+Everything here reads, except the job approval, the process review and the capacity review, which are a person's
+steps. Nothing runs a job, plans a migration or
 accepts a strategy: ICDEV[OS] signs the portfolio decisions, and ICDEV only records or proposes.
 
 The pinned ICDEV[OS] JWKS is a file the operator pinned once, named by ``ICDEV_ICOS_JWKS``. With none pinned, the check
@@ -224,6 +232,8 @@ def bundle_preview(app_id: str) -> dict:
             "counts": {k: len(bundle[k]) for k in ("components", "apis", "data", "dependencies", "features", "processes")
                        if isinstance(bundle.get(k), list)},
             "waves": len(plan_waves),
+            # icx-mdz-05: the waves' dates come only from a reviewed team capacity; else why not (unmeasured)
+            "schedule": waves.get("schedule"),
             "planned_waves": [{k: w.get(k) for k in ("id", "title", "order", "estimated_hours", "starts", "ends")}
                               | {"components": len(w.get("components") or [])} for w in plan_waves],
             "derived_waves": None if dw is None else {
@@ -296,6 +306,54 @@ def register_modernisation_routes(bp, login_required: Callable) -> None:
             return jsonify({"error": str(exc)}), 500
         finally:
             conn.close()
+
+    @bp.route("/api/modernisation/apps/<app_id>/capacity/review", methods=["POST"])
+    @login_required
+    def api_modernisation_capacity_review(app_id):
+        """A person approves or rejects the team capacity declared for one application, with a reason, at its digest.
+
+        Body: ``{decision: approve|reject, reason, digest}``. The person's step of the declared template
+        ``decl-wft-mdz-capacity-review``; the decided step is the review, bound to the entry and its digest. An entry
+        that is not the one the person saw (the file changed) is refused, and one already reviewed at this digest is
+        not reviewed twice. The file and the plan are not changed: the wave planner reads the review.
+        """
+        from tools.modernization import decisions, wave_schedule
+        from tools.workflow_hitl import declared
+
+        data = request.get_json(force=True, silent=True) or {}
+        conn = _core()
+        try:
+            row = conn.execute("SELECT name FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
+            if row is None:
+                return jsonify({"error": f"no legacy application {app_id}"}), 404
+            try:
+                key, entry = wave_schedule.capacity_for(app_id, row["name"])
+            except wave_schedule.CapacityError as exc:
+                return jsonify({"error": f"the capacity file is refused: {exc}"}), 409
+            if entry is None:
+                return jsonify({"error": f"no team capacity is declared for {row['name']} in "
+                                         f"{wave_schedule.shown()}: declare one, with its source, first"}), 404
+            if str(data.get("digest") or "") != entry["digest"]:
+                return jsonify({"error": "the capacity is not what you reviewed: its digest is now "
+                                         f"{entry['digest'][:12]} (reload it)", "digest": entry["digest"]}), 409
+            if wave_schedule.review_state(key, entry, conn)["state"] in ("reviewed", "rejected"):
+                return jsonify({"error": f"the capacity for {key} has already been reviewed at this digest"}), 409
+        finally:
+            conn.close()
+        payload = {"app_id": app_id, "application": key, "file": wave_schedule.shown(),
+                   **{k: entry[k] for k in (*wave_schedule.FIELDS, "digest")}}
+        try:
+            step = declared.take_step(decisions.TEMPLATE_CAPACITY,
+                                      surface="migration_canvas.api_modernisation_capacity_review",
+                                      decision=str(data.get("decision") or "").strip().lower(),
+                                      subject=wave_schedule.subject(key),
+                                      reason=str(data.get("reason") or "").strip(), payload=payload)
+        except declared.StepRefused as exc:
+            return jsonify(exc.to_dict()), exc.status
+        return jsonify({"app_id": app_id, "application": key, "decision_step": step,
+                        "review": {"state": "reviewed" if step["affirmative"] else "rejected",
+                                   "decision": step["decision"], "by": step["decided_by"],
+                                   "digest": entry["digest"]}})
 
     @bp.route("/api/modernisation/apps/<app_id>/refactor-jobs")
     @login_required

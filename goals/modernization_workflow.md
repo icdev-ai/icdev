@@ -268,7 +268,39 @@ Critical path: <task_ids>
 
 **Database populated:** `migration_plans`, `migration_tasks`
 
+**May-plan: a plan is written only on ICDEV[OS]'s signed answer (`tools/modernization/plan_gate.py`).** Planning a
+migration is the step ICDEV[OS] decides, so both planners ask its signed may-plan before they write anything:
+
+| Planner | Flags | Environment variables |
+|---|---|---|
+| `monolith_decomposer.py --create-plan` | `--icos-decisions <export.json> --icos-jwks <pinned_jwks.json>` | `ICDEV_ICOS_DECISIONS`, `ICDEV_ICOS_JWKS` |
+| `refactor_jobs.py` (CAM refactor jobs, Step 6) | `--icos-decisions <export.json> --icos-jwks <pinned_jwks.json>` | same |
+| `sample_pipeline.py` | `--icos-decisions`, `--icos-jwks`, and `--resume` to plan once ICDEV[OS] has decided | same |
+
+- The export is ICDEV[OS]'s `GET /api/v1/portfolio/decisions/export`. The JWKS is the file you PINNED from ICDEV[OS]'s
+  `/oauth/jwks` once; a key that comes with an export is never trusted.
+- `plan_gate.check` answers `allowed`, `refused` (the export verified and says no, including a `--strategy` other than
+  the one ICDEV[OS] accepted), `missing` (no export or no pinned JWKS) or `untrusted` (it does not verify, or its audit
+  chain was broken). It never writes.
+- `plan_gate.require` records every answer in the append-only audit trail (`approval_granted`
+  `mdz.may_plan.allowed:<app>`, or `approval_denied` `mdz.may_plan.refused:<app>`) and raises `PlanRefused` unless the
+  answer is `allowed`. On a refusal nothing is written: no plan row, no task, no CAM project, no job. The CLIs exit 3;
+  the MCP plan tool (`modernization_server.py`) answers `outcome: refused` with the reason. A lost audit row never turns a refusal into a plan.
+- The 7R page (`/migration`) lists refusals, and the modernisation twin (canvas `mdc`) flags
+  `mdz.seven_r.plan_refused` until a plan for that application exists after it.
+
+**Waves, estimates and dates (`app_wave_planner.py`, `wave_schedule.py`, icx-mdz-05).** The planner derives the waves
+from the application's own dependencies. Each wave's `estimated_hours` is the sum of its tasks' own estimates in
+`migration_tasks` (none, never 0, when a task has none). Dates come only from a team capacity a person declared in
+`args/modernisation_capacity.yaml` (hours a week, a start date, its source; shipped empty) AND approved at its digest
+on the Modernisation page (`decl-wft-mdz-capacity-review`). Then the waves are dated one at a time, in dependency order,
+over Monday to Friday, and each date carries the capacity digest. With no capacity, an unreviewed or changed one, or a
+wave with no estimate, no date is written and the report says why (unmeasured).
+
+**Tool:** `python tools/modernization/app_wave_planner.py --app-id <app_id> [--capacity <file>] --out waves.json`
+
 **Error handling:**
+- May-plan missing, untrusted or refused → no plan is written (exit 3); get ICDEV[OS]'s decision first (Step 4)
 - Strategy not approved → refuse to create plan, redirect to Step 4
 - Circular dependencies in task ordering → flag and request manual sequencing
 - Estimated duration exceeds 12 months → recommend phased approach with PI milestones
@@ -627,3 +659,5 @@ Log at each major milestone: registration, analysis, strategy approval, plan cre
 ## Changelog
 
 - 2026-02-16: Initial creation
+- 2026-11-16: icx-mdz-05: Step 5 documents the may-plan flags and `plan_gate.py` (icx-mdz-02), and wave estimates and
+  dates from a declared, reviewed team capacity

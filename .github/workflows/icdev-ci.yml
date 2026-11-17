@@ -1003,6 +1003,10 @@ jobs:
       # topic, so the Co-Worker page offers "Turn auto on" for the e2e gate to see sent.
       # RoleLoader honours this only for a directory under tests/; no shipped role opts in.
       ICDEV_ACE_E2E_ROLES_DIR: ${{ github.workspace }}/tests/e2e/fixtures/ace_roles
+      # icx-mdz-05: the modernisation seed declares a team capacity for its synthetic app here, so
+      # the Modernisation page offers "Approve capacity" for the e2e gate to see sent. Honoured only
+      # for a file under tests/ (wave_schedule.capacity_path); the shipped args file stays empty.
+      ICDEV_MODERNISATION_CAPACITY_E2E: ${{ github.workspace }}/tests/e2e/fixtures/.mdz05_capacity.yaml
       # icx-cnf-08: this job has no model. Say so, so every AI-assist path takes its
       # deterministic fallback at once instead of waiting on providers that are not there
       # (the ACE profile page's preview never answered within the test's 30 s).

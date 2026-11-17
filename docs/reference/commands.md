@@ -4771,6 +4771,7 @@ python tools/modernization/monolith_decomposer.py --app-id "app-1" --target micr
 python tools/modernization/db_migration_planner.py --app-id "app-1" --target postgresql --json                         # DB migration DDL
 python tools/modernization/strangler_fig_manager.py --plan-id "plan-1" --status --json                                 # Strangler fig status
 python tools/modernization/app_wave_planner.py --app-id "app-1" --out waves.json                                     # An application's own waves (strangler order, backouts)
+python tools/modernization/app_wave_planner.py --app-id "app-1" --capacity args/modernisation_capacity.yaml --out waves.json  # icx-mdz-05: each wave's estimate; dates only from a reviewed team capacity, else why not
 python tools/modernization/refactor_jobs.py --app-id "app-1" --strategy rehost --out refactor.json                     # The migrators as CAM refactor jobs
 python tools/modernization/refactor_jobs.py --app-id "app-1" --icos-decisions decisions.json --icos-jwks icos_jwks.json  # icx-mdz-02: runs only on ICDEV[OS]'s signed may-plan (else exit 3, nothing written)
 python tools/modernization/monolith_decomposer.py --app-id "app-1" --create-plan --project-id "proj-123" --strategy rehost --icos-decisions decisions.json --icos-jwks icos_jwks.json --json  # Plan only on may-plan
@@ -9923,6 +9924,12 @@ decisions check verifies a signed ICDEV[OS] export only against the JWKS named b
 `ICDEV_ICOS_JWKS`. MCP (read-only): `modernisation_seven_r`, `aiify_promotions`,
 `processify_observed_drafts`, `modernisation_waves_jobs`, `modernisation_cloud_native`,
 `modernisation_bundle`.
+
+icx-mdz-05: a wave is dated only from a team capacity declared in
+`args/modernisation_capacity.yaml` and approved at its digest through
+`decl-wft-mdz-capacity-review` (Modernisation page). MCP (read-only):
+`modernisation_wave_schedule`. The e2e server sets `ICDEV_MODERNISATION_CAPACITY_E2E` to a
+capacity file the e2e seed writes (honoured only under `tests/`).
 
 ```bash
 python -m tools.twin_core.governance --observe --canvas mdc --json     # the modernisation twin

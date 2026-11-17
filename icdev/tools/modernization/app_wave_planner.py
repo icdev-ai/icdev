@@ -15,11 +15,17 @@ in the strangler order:
 
 Each wave carries its backout, derived and never written by hand: route its components back to the legacy
 application through the facade (the legacy code stays deployed and authoritative until the wave closes), and, when a
-later wave depends on it, back that wave out first. No dates: a wave is planned, never scheduled here. An application
+later wave depends on it, back that wave out first. ``plan`` derives the waves and never dates them. An application
 with no dependency resolved inside it is one wave, and ``basis`` says why. The output is what
 ``apptwin_export.py --waves`` carries in the bundle's ``migration.waves``.
 
-    python tools/modernization/app_wave_planner.py --app-id <legacy app id> [--plan-id <plan>] [--out waves.json]
+icx-mdz-05: ``report`` gives each wave its ``estimated_hours`` (the sum of the plan's own task estimates on its
+components) and, only from a team capacity a person declared in ``args/modernisation_capacity.yaml`` AND reviewed at
+its digest, its ``starts`` and ``ends`` (``wave_schedule.py``: one wave at a time, in dependency order). Otherwise a
+wave says why it is ``undated`` and the report's ``schedule`` says why none is (unmeasured): no date is made up.
+
+    python tools/modernization/app_wave_planner.py --app-id <legacy app id> [--plan-id <plan>] [--capacity <yaml>] \
+        [--out waves.json]
 """
 from __future__ import annotations
 
@@ -34,7 +40,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 TOOL = "icdev-it/app_wave_planner"
 METHOD = ("strangler order over the application's own dependencies: leaves first, a dependency cycle moved together, "
-          "each wave depending only on earlier waves (deterministic; never scheduled)")
+          "each wave depending only on earlier waves (deterministic; dated only from a reviewed team capacity)")
 
 
 def _sccs(nodes: list[str], deps: dict[str, set[str]]) -> list[list[str]]:
@@ -122,8 +128,12 @@ def plan(components: dict[str, str], edges: list[tuple[str, str]], *, app: str =
     return {"tool": TOOL, "method": METHOD, "basis": basis, "waves": out}
 
 
-def report(app_id: str, conn, *, plan_id: str | None = None) -> dict:
-    """The application's waves, from the scratch database's ``legacy_*`` tables."""
+def report(app_id: str, conn, *, plan_id: str | None = None, capacity: str | Path | None = None) -> dict:
+    """The application's waves, from the scratch database's ``legacy_*`` tables, each with its estimate and -- from a
+    declared, reviewed capacity (``capacity``: the file; default ``args/modernisation_capacity.yaml``) -- its dates
+    (icx-mdz-05, ``wave_schedule.apply``)."""
+    from tools.modernization import wave_schedule
+
     app = conn.execute("SELECT name FROM legacy_applications WHERE id = %s", (app_id,)).fetchone()
     if app is None:
         raise ValueError(f"no legacy application {app_id!r}")
@@ -131,21 +141,25 @@ def report(app_id: str, conn, *, plan_id: str | None = None) -> dict:
                          (app_id,)).fetchall()
     edges = conn.execute("SELECT source_component_id, target_component_id FROM legacy_dependencies "
                          "WHERE legacy_app_id = %s AND target_component_id IS NOT NULL", (app_id,)).fetchall()
+    names = {str(c["id"]): str(c["qualified_name"] or c["name"]) for c in comps}
     got = plan({c["id"]: c["qualified_name"] or c["name"] for c in comps},
                [(e["source_component_id"], e["target_component_id"]) for e in edges], app=app["name"])
+    got = wave_schedule.apply(got, app_id, conn, names=names, app=app["name"], plan_id=plan_id, path=capacity)
     return {**got, "app_id": app_id, **({"plan_id": plan_id} if plan_id else {})}
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Plan the waves of an application's own migration plan")
     ap.add_argument("--app-id", required=True, help="the legacy application's id (legacy_applications.id)")
-    ap.add_argument("--plan-id", help="the migration plan the waves belong to (recorded, not checked)")
+    ap.add_argument("--plan-id", help="the migration plan the waves belong to (its tasks' estimates; default the latest)")
+    ap.add_argument("--capacity", type=Path, help="the declared team capacity file (default "
+                                                  "args/modernisation_capacity.yaml): dates only from a reviewed entry")
     ap.add_argument("--out", type=Path, help="write the waves here (default: stdout)")
     a = ap.parse_args(argv)
     from tools.db.storage import get_connection
     conn = get_connection()
     try:
-        rep = report(a.app_id, conn, plan_id=a.plan_id)
+        rep = report(a.app_id, conn, plan_id=a.plan_id, capacity=a.capacity)
     except ValueError as exc:
         print(json.dumps({"status": "error", "error": str(exc)}))
         return 1
@@ -154,7 +168,8 @@ def main(argv: list[str] | None = None) -> int:
     text = json.dumps(rep, indent=2, sort_keys=True) + "\n"
     if a.out:
         a.out.write_text(text, encoding="utf-8")
-        print(json.dumps({"status": "ok", "out": str(a.out), "waves": len(rep["waves"]), "basis": rep["basis"]}))
+        print(json.dumps({"status": "ok", "out": str(a.out), "waves": len(rep["waves"]), "basis": rep["basis"],
+                          "dated": rep["schedule"]["dated"], "schedule": rep["schedule"]["reason"]}))
     else:
         sys.stdout.write(text)
     return 0

@@ -2,7 +2,8 @@
 # ICDEV platform model: application modernisation (icx-mdz-01; icx-mdz-02: 7R on
 # evidence, one 7R engine, may-plan enforced; icx-mdz-03: features and processes
 # without a model, every bundle part present or missing; icx-mdz-04: the bundle
-# carries what ICDEV[OS] contract 1.189.0 accepts, inline) -- the 7R assessment,
+# carries what ICDEV[OS] contract 1.189.0 accepts, inline; icx-mdz-05: each wave's
+# estimate and, only from a declared team capacity a person reviewed, its dates) -- the 7R assessment,
 # AI-Ify, Process-Ify, an application's waves and CAM refactor jobs, cloud-native
 # targets, and the ICDEV[OS] apptwin exporter and decision import.
 #
@@ -152,6 +153,24 @@ elements:
       - tools/modernization/refactor_jobs.py::run
       - tools/modernization/sample_pipeline.py::resume
 
+  - id: mdz.wave_schedule
+    type: sysml_element
+    kind: block
+    name: Wave estimates from the plan's tasks, and dates only from a declared team capacity a person reviewed
+    features: [mdz.waves_cam, mdz.exporter]
+    code:
+      - tools/modernization/wave_schedule.py::schedule
+      - tools/modernization/wave_schedule.py::declared
+      - tools/modernization/wave_schedule.py::review_state
+      - tools/modernization/wave_schedule.py::plan_estimates
+      - tools/modernization/wave_schedule.py::apply
+      - tools/modernization/app_wave_planner.py::report
+      - tools/modernization/apptwin_export.py::schedule_reason
+      - tools/modernization/apptwin_export.py::section_states
+      - tools/migration_canvas/modernisation.py::register_modernisation_routes
+      - args/modernisation_capacity.yaml
+      - args/workflow_hitl_templates/mdz-capacity-review.yaml
+
   - id: mdz.twin
     type: sysml_element
     kind: block
@@ -187,6 +206,7 @@ interfaces:
       - tools/mcp/gap_handlers.py::handle_modernisation_cloud_native
       - tools/mcp/gap_handlers.py::handle_modernisation_bundle
       - tools/mcp/gap_handlers.py::handle_modernisation_features
+      - tools/mcp/gap_handlers.py::handle_modernisation_wave_schedule
 
 requirements:
   - id: PM-MDZ-01
@@ -563,3 +583,58 @@ requirements:
       - tests/test_icx_mdz_04_bundle_fields.py::test_the_twin_flags_a_bundle_failing_the_contract_or_without_a_security_domain
       - tests/test_icx_mdz_04_bundle_fields.py::test_the_twin_observes_no_security_domain_with_a_thread_and_replays
       - tests/test_icx_mdz_04_ambient.py::test_the_bundle_preview_carries_the_7r_confidence_and_the_unreported_domain
+
+  - id: PM-MDZ-20
+    title: A wave carries its tasks' estimate, and dates only from a team capacity a person declared and reviewed
+    text: >-
+      Each wave's estimated_hours is the sum of its migration tasks' own
+      estimates (none, never 0, where a task has none or none is on it). Its
+      starts and ends are computed deterministically from a team capacity
+      declared in args/modernisation_capacity.yaml (hours a week, a start, a
+      source; shipped empty) and approved by a person at its digest: one wave at
+      a time, in dependency order, over working days. No capacity, an unreviewed,
+      rejected or changed one, no estimate, or an earlier undated wave: no date,
+      and the planner and the bundle say why (unmeasured). Each date carries the
+      capacity digest; the bundle carries them in the contract's own fields and
+      still validates.
+    type: functional
+    priority: high
+    features: [mdz.waves_cam, mdz.exporter]
+    elements: [mdz.wave_schedule, mdz.bundle_contract]
+    controls: [SA-11, CM-3]
+    tests:
+      - tests/test_icx_mdz_05_wave_dates.py::test_no_capacity_declared_dates_nothing_and_says_why
+      - tests/test_icx_mdz_05_wave_dates.py::test_a_capacity_no_person_approved_at_its_digest_dates_nothing
+      - tests/test_icx_mdz_05_wave_dates.py::test_a_reviewed_capacity_gives_exact_dates
+      - tests/test_icx_mdz_05_wave_dates.py::test_dependency_order_is_respected_whatever_the_listing_order
+      - tests/test_icx_mdz_05_wave_dates.py::test_a_wave_with_no_estimate_is_undated_and_so_is_every_wave_after_it
+      - tests/test_icx_mdz_05_wave_dates.py::test_the_capacity_file_ships_empty_and_refuses_what_it_cannot_read
+      - tests/test_icx_mdz_05_wave_dates.py::test_estimated_hours_is_the_sum_of_the_plans_own_task_estimates
+      - tests/test_icx_mdz_05_wave_dates.py::test_before_a_plan_no_estimate_and_no_date_and_the_report_says_why
+      - tests/test_icx_mdz_05_wave_dates.py::test_the_planner_dates_the_waves_only_once_the_capacity_is_approved_and_the_bundle_carries_them
+      - tests/test_icx_mdz_05_wave_dates.py::test_without_a_capacity_the_bundle_says_why_and_still_validates
+      - tests/test_icx_mdz_05_ambient.py::test_the_waves_are_dated_only_after_the_capacity_review_is_read_back
+
+  - id: PM-MDZ-21
+    title: Reviewing a team capacity is a person's step at its digest; the page, the twin and MCP show the dates or why none
+    text: >-
+      A person approves or rejects the declared capacity, with a reason, on the
+      Modernisation page (decl-wft-mdz-capacity-review), bound to the entry's
+      digest and taken once; a changed entry is reviewed again. The page shows
+      each wave's estimate and dates, or "not dated" with why, and the capacity
+      with its review. The twin flags a capacity no person approved and a
+      plan whose waves carry no dates, threaded to the application, and
+      replays. The MCP wave-schedule tool is read-only. The e2e capacity file
+      is honoured only under tests/.
+    type: non_functional
+    priority: high
+    features: [mdz.waves_cam]
+    elements: [mdz.wave_schedule, mdz.twin, if.mdz.console, if.mdz.mcp]
+    controls: [AC-5, AU-10, CA-7]
+    tests:
+      - tests/test_icx_mdz_05_wave_dates.py::test_reviewing_the_capacity_is_a_persons_step_bound_to_its_digest
+      - tests/test_icx_mdz_05_wave_dates.py::test_the_page_shows_estimates_dates_why_and_the_capacity_review
+      - tests/test_icx_mdz_05_wave_dates.py::test_the_twin_flags_an_unreviewed_capacity_and_undated_waves
+      - tests/test_icx_mdz_05_wave_dates.py::test_the_twin_observes_undated_waves_with_a_thread_and_replays
+      - tests/test_icx_mdz_05_wave_dates.py::test_the_mcp_wave_schedule_tool_is_read_only_and_says_why
+      - tests/test_icx_mdz_05_wave_dates.py::test_the_e2e_capacity_file_is_honoured_only_under_tests
