@@ -57,15 +57,15 @@ def _build(**kw):
 # ── the contract ─────────────────────────────────────────────────────────────
 
 
-def test_the_vendored_contract_is_icos_1_189_0_pinned_by_digest():
+def test_the_vendored_contract_is_icos_1_192_0_pinned_by_digest():
     from tools.modernization import apptwin_export as ax
 
     raw = (ROOT / "context" / "icos" / "apptwin.schema.json").read_bytes()
     assert hashlib.sha256(raw).hexdigest() == ax.SCHEMA_SHA256
     doc = json.loads(raw)
-    assert doc["x-icos-contract"] == ax.CONTRACT_VERSION == "1.189.0"
+    assert doc["x-icos-contract"] == ax.CONTRACT_VERSION == "1.192.0"     # osx-mdz-09 re-pinned it (1.189.0 before)
     readme = (ROOT / "context" / "icos" / "README.md").read_text(encoding="utf-8")
-    assert ax.SCHEMA_SHA256 in readme and "1.189.0" in readme
+    assert ax.SCHEMA_SHA256 in readme and "1.192.0" in readme
     d = doc["$defs"]
     assert "both" in d["Feature"]["properties"]["provenance"]["anyOf"][0]["enum"]
     assert {"derived_waves", "sections"} <= set(doc["properties"])
@@ -290,9 +290,10 @@ def test_the_page_shows_confidence_unmeasured_security_domain_and_derived_waves(
 
 def test_the_bundle_preview_and_mcp_tool_carry_the_new_fields(canvas):
     from tools.mcp import gap_handlers
+    from tools.modernization import apptwin_export as ax
 
     d = _client(canvas).get("/migration-canvas/api/modernisation/apps/app-1/bundle").get_json()
-    assert d["valid"] is True and d["schema_errors"] == [] and d["contract"] == "1.189.0"
+    assert d["valid"] is True and d["schema_errors"] == [] and d["contract"] == ax.CONTRACT_VERSION
     assert d["security_domain"] is None and d["environment_report"]["declared"] is False
     assert d["derived_waves"]["waves"] and "never approved" in d["derived_waves"]["means"]
     assert d["section_states"]["migration.waves"]["derived"] == len(d["derived_waves"]["waves"])
@@ -345,7 +346,7 @@ def test_the_real_bundles_meet_the_pinned_contract_inline_with_no_side_file():
         gaps = json.loads((BUNDLES / f"{name}.gaps.json").read_text(encoding="utf-8"))
         assert ax.validate(b) == [], name
         assert not (BUNDLES / f"{name}.features.json").exists(), f"{name}: everything is inline; no side file"
-        assert gaps["contract"] == "1.189.0" and b["sections"] == gaps["sections"], name
+        assert gaps["contract"] == "1.189.0" and b["sections"] == gaps["sections"], name   # made at 1.189.0; still valid
         assert any(f.get("capability_hints") for f in b["features"]), f"{name}: hints inline"
         assert {f["provenance"] for f in b["features"]} == {"static"}, f"{name}: the source is never run"
         assert all(p["signature"]["digest"] and p["review"]["state"] == "unreviewed" and p["source"] == "static"

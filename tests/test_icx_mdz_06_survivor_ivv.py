@@ -280,7 +280,7 @@ def test_the_bundle_carries_only_a_signed_current_result_and_always_validates(sh
     body = {"decision": "sign", "reason": "mdz06 test: independent review (synthetic)", "digest": r["digest"]}
     assert _client(canvas, ISSO).post(SIGN, json=body).status_code == 200
     b = _bundle()
-    assert ax.validate(b) == [], "the pinned 1.189.0 contract and ICDEV[OS]'s agreement rules"
+    assert ax.validate(b) == [], "the pinned contract (1.192.0) and ICDEV[OS]'s agreement rules"
     iv = b["ivv"]
     assert (iv["kind"], iv["assessor"], iv["recommendation"]) == ("independent", ISSO["id"], r["recommendation"])
     assert iv["assessed_at"] == r["assessed_at"] and iv["expires_at"] == r["expires_at"]
@@ -289,6 +289,19 @@ def test_the_bundle_carries_only_a_signed_current_result_and_always_validates(sh
         "only a measured area has a score: unverified is never passed"
     assert iv["subject"]["inventory_digest"] == ax.inventory_digest(b), "bound to what it assessed"
     assert b["sections"]["ivv"]["state"] == "present" and f"signed by {ISSO['id']}" in b["sections"]["ivv"]["reason"]
+    # osx-mdz-09 (ICDEV[OS] 1.190.0): every area's status, the findings, the evidence and the sign-off, as fields
+    assert iv["area_status"] == {a["code"]: {"status": a["status"], "name": a["name"], "why": a["why"]} for a in r["areas"]}
+    assert set(iv["areas"]) <= set(iv["area_status"]), "ICDEV[OS] refuses a score with no status"
+    assert [f["id"] for f in iv["findings"]] == [f["finding_id"] for f in r["findings"]]
+    assert all(f["area"] in iv["area_status"] for f in iv["findings"]), "a finding names its area by code"
+    ev = iv["evidence"]
+    assert ev["result_digest"] == r["digest"] and ev["outputs_digest"] == r["target"]["digest"]
+    assert ev["outputs_files"] == r["target"]["files"] == 2
+    assert ev["requirements"] == {q["id"]: q["evidence_digest"] for a in r["areas"] for q in a["requirements"]}
+    assert iv["tool_version"] == r["tool_version"]
+    so = iv["signoff"]
+    assert (so["signed_by"], so["result_digest"], so["role"]) == (ISSO["id"], r["digest"], "isso")
+    assert so["step_id"].startswith("step-") and so["decided_at"] >= iv["assessed_at"], "signed after it was assessed"
 
 
 def test_a_newer_result_after_the_signoff_leaves_it_stale_and_uncarried(shop, canvas, tmp_path):

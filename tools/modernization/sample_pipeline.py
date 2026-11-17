@@ -35,7 +35,9 @@ Every step is the existing tool, run as a subprocess with the scratch database i
      7. processify --from-doc      the README (processes, basis document); skipped by --no-model, the only step that
                                    calls a model. The static and observed processes above need none.
      8. monolith_decomposer        --create-plan with the strategy (migration)
-     9. app_wave_planner           the plan's waves, each with its backout (migration.waves; osx-fth-13)
+     9. app_wave_planner           the plan's waves, each with its backout (migration.waves; osx-fth-13), dated only from
+                                   a team capacity a person declared and reviewed (--capacity, else
+                                   args/modernisation_capacity.yaml; icx-mdz-05): the plan's schedule says which
     10. apptwin_export             every section a step produced, and every section's present/missing state
                                    (``sections``, in the bundle itself since icx-mdz-04 and in gaps.json: the waves,
                                    refactor jobs and cloud-native parts too); the waves derived before a plan as
@@ -153,8 +155,10 @@ def _refactor(r: Run, app: str, chosen: str | None, a: dict, gate: list[str]) ->
     return jobs
 
 
-def _plan_and_waves(r: Run, app: str, project: str, chosen: str | None, strategy_from: str, gate: list[str]):
-    """Steps 8 and 9: the migration plan -- only on ICDEV[OS]'s may-plan -- and its waves."""
+def _plan_and_waves(r: Run, app: str, project: str, chosen: str | None, strategy_from: str, gate: list[str],
+                    capacity: Path | None = None):
+    """Steps 8 and 9: the migration plan -- only on ICDEV[OS]'s may-plan -- and its waves, dated only from a reviewed
+    entry of the declared capacity file (``capacity``; else the planner's default)."""
     if chosen:
         rc, so, se = r.tool("plan", "tools/modernization/monolith_decomposer.py", "--app-id", app, "--create-plan",
                             "--project-id", project, "--strategy", chosen, "--target-arch", "modular_monolith",
@@ -164,10 +168,13 @@ def _plan_and_waves(r: Run, app: str, project: str, chosen: str | None, strategy
     else:
         r.note("plan", False, "migration", "no strategy: neither --strategy nor a 7R recommendation")
     waves_path = r.out / "waves.json"
-    rc, so, se = r.tool("waves", "tools/modernization/app_wave_planner.py", "--app-id", app, "--out", str(waves_path))
+    rc, so, se = r.tool("waves", "tools/modernization/app_wave_planner.py", "--app-id", app, "--out", str(waves_path),
+                        *(["--capacity", str(capacity)] if capacity else []))
     waves = json.loads(waves_path.read_text()) if rc == 0 and waves_path.is_file() else None
+    sch = (waves or {}).get("schedule") or {}
     r.note("waves", bool((waves or {}).get("waves")), "migration.waves", None if waves else _why(se, so),
-           waves=len((waves or {}).get("waves") or []), basis=(waves or {}).get("basis"))
+           waves=len((waves or {}).get("waves") or []), basis=(waves or {}).get("basis"),
+           schedule={"dated": bool(sch.get("dated")), "reason": sch.get("reason")} if sch else None)
     return waves
 
 
@@ -289,7 +296,8 @@ def _gate(icos_decisions: Path | None, icos_jwks: Path | None) -> tuple[list[str
 def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: str | None = None,
              at: str | None = None, no_model: bool = False, targets: dict | None = None,
              icos_decisions: Path | None = None, icos_jwks: Path | None = None, observed: Path | None = None,
-             observed_processes: list[Path] | None = None, environments: Path | None = None) -> dict:
+             observed_processes: list[Path] | None = None, environments: Path | None = None,
+             capacity: Path | None = None) -> dict:
     source, out = source.resolve(), out.resolve()
     if not source.is_dir():
         raise PipelineError(f"no source directory {source}")
@@ -409,7 +417,8 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
             procs.append("process.json")
         r.note("processify", bool(d), "processes", None if d else _why(se, so))
 
-    waves = _plan_and_waves(r, app, project, chosen, "--strategy" if strategy else "the 7R recommendation", gate)
+    waves = _plan_and_waves(r, app, project, chosen, "--strategy" if strategy else "the 7R recommendation", gate,
+                            _keep(out, capacity, "capacity.yaml"))
 
     inputs = {"static_features": feats_path.name if n_feats else None, "extract": ext_path.name if extract else None,
               "seven_r": "seven_r.json" if seven else None,
@@ -425,16 +434,22 @@ def pipeline(source: Path, name: str, scratch_db: Path, out: Path, *, strategy: 
 def _keep_environments(out: Path, environments: Path | None) -> Path | None:
     """The declared environments file this run used (icx-mdz-04), copied into the run so --resume reads the same one;
     with none given, the repository's ``args/modernisation_environments.yaml`` (the exporter's default)."""
-    dest = out / "environments.yaml"
-    if environments:
-        if Path(environments).resolve() != dest.resolve():
-            shutil.copyfile(environments, dest)
+    return _keep(out, environments, "environments.yaml")
+
+
+def _keep(out: Path, given: Path | None, name: str) -> Path | None:
+    """A declared file this run used (environments, icx-mdz-04; team capacity, osx-mdz-09), copied into the run as
+    ``name`` so --resume reads the same one; none given: the one an earlier run kept, else None (the tool's default)."""
+    dest = out / name
+    if given:
+        if Path(given).resolve() != dest.resolve():
+            shutil.copyfile(given, dest)
         return dest
     return dest if dest.is_file() else None
 
 
 def resume(out: Path, scratch_db: Path, *, icos_decisions: Path, icos_jwks: Path, strategy: str | None = None,
-           at: str | None = None, environments: Path | None = None) -> dict:
+           at: str | None = None, environments: Path | None = None, capacity: Path | None = None) -> dict:
     """Plan the application a first run assessed, now that ICDEV[OS] has decided (icx-mdz-02).
 
     The first run cannot plan: a migration is planned only on ICDEV[OS]'s signed may-plan, which ICDEV[OS] gives after
@@ -467,7 +482,8 @@ def resume(out: Path, scratch_db: Path, *, icos_decisions: Path, icos_jwks: Path
            "no controller offers two or more actions, and no REA capture was given: no process without a model",
            processes=n, rules_digest=((extract or {}).get("rules") or {}).get("digest"))
     jobs = _refactor(r, app, chosen, a, gate)
-    waves = _plan_and_waves(r, app, project, chosen, "--strategy" if strategy else "the 7R recommendation", gate)
+    waves = _plan_and_waves(r, app, project, chosen, "--strategy" if strategy else "the 7R recommendation", gate,
+                            _keep(out, capacity, "capacity.yaml"))
     inputs.update(refactor="refactor.json" if jobs else None, extract=ext_path.name if extract else None,
                   waves="waves.json" if (waves or {}).get("waves") else None)
     return _export(r, name=prior["application"], app=app, project=project, source_name=prior.get("source") or "",
@@ -499,6 +515,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="a declared environments file (args/modernisation_environments.yaml's shape): each "
                          "application's security domain, impact level, ATO boundary and hosting as its deployment "
                          "declares them, with the source (default: that file)")
+    ap.add_argument("--capacity",
+                    help="a declared team capacity file (args/modernisation_capacity.yaml's shape, osx-mdz-09): the "
+                         "waves are dated only from an entry a person reviewed at its digest (default: that file)")
     ap.add_argument("--resume", action="store_true",
                     help="plan the application a first run in --out assessed, once ICDEV[OS] decided "
                          "(needs --icos-decisions and --icos-jwks)")
@@ -509,7 +528,8 @@ def main(argv: list[str] | None = None) -> int:
                 ap.error("--resume needs --icos-decisions and --icos-jwks")
             rep = resume(Path(a.out), Path(a.scratch_db), icos_decisions=Path(a.icos_decisions),
                          icos_jwks=Path(a.icos_jwks), strategy=a.strategy, at=a.at,
-                         environments=Path(a.environments) if a.environments else None)
+                         environments=Path(a.environments) if a.environments else None,
+                         capacity=Path(a.capacity) if a.capacity else None)
         else:
             if not (a.source and a.name):
                 ap.error("--source and --name are required (or --resume)")
@@ -519,7 +539,8 @@ def main(argv: list[str] | None = None) -> int:
                            icos_jwks=Path(a.icos_jwks) if a.icos_jwks else None,
                            observed=Path(a.observed) if a.observed else None,
                            observed_processes=[Path(p) for p in a.observed_process],
-                           environments=Path(a.environments) if a.environments else None)
+                           environments=Path(a.environments) if a.environments else None,
+                           capacity=Path(a.capacity) if a.capacity else None)
     except (PipelineError, subprocess.TimeoutExpired) as e:
         print(json.dumps({"status": "error", "error": str(e)}))
         return 1

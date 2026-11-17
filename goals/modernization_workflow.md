@@ -275,7 +275,7 @@ migration is the step ICDEV[OS] decides, so both planners ask its signed may-pla
 |---|---|---|
 | `monolith_decomposer.py --create-plan` | `--icos-decisions <export.json> --icos-jwks <pinned_jwks.json>` | `ICDEV_ICOS_DECISIONS`, `ICDEV_ICOS_JWKS` |
 | `refactor_jobs.py` (CAM refactor jobs, Step 6) | `--icos-decisions <export.json> --icos-jwks <pinned_jwks.json>` | same |
-| `sample_pipeline.py` | `--icos-decisions`, `--icos-jwks`, and `--resume` to plan once ICDEV[OS] has decided | same |
+| `sample_pipeline.py` | `--icos-decisions`, `--icos-jwks`, and `--resume` to plan once ICDEV[OS] has decided; `--capacity` names the declared capacity file the waves are dated from (osx-mdz-09) | same |
 
 - The export is ICDEV[OS]'s `GET /api/v1/portfolio/decisions/export`. The JWKS is the file you PINNED from ICDEV[OS]'s
   `/oauth/jwks` once; a key that comes with an export is never trusted.

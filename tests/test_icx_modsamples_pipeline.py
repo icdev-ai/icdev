@@ -227,6 +227,30 @@ def test_the_scratch_database_must_be_new(tmp_path):
     assert p.returncode == 1 and "must be a new file" in p.stdout
 
 
+def test_the_capacity_file_reaches_the_wave_planner_and_is_kept_for_resume(tmp_path):
+    """osx-mdz-09: --capacity names the declared capacity the waves are dated from; the run keeps it, so a resume reads
+    the same file (a date is made only from an entry a person reviewed: wave_schedule)."""
+    from tools.modernization import sample_pipeline as sp
+
+    out = tmp_path / "out"
+    out.mkdir()
+    cap = tmp_path / "capacity.yaml"
+    cap.write_text("version: 1\napplications: {}\n", encoding="utf-8")
+    kept = sp._keep(out, cap, "capacity.yaml")
+    assert kept == out / "capacity.yaml" and kept.read_text(encoding="utf-8") == cap.read_text(encoding="utf-8")
+    assert sp._keep(out, None, "capacity.yaml") == kept, "a resume reads the file the first run kept"
+    assert sp._keep(tmp_path / "other", None, "capacity.yaml") is None, "none given or kept: the planner's default"
+    r = sp.Run(tmp_path / "x.db", out)
+    seen = []
+    r.tool = lambda step, *args, **kw: seen.append((step, args)) or (1, "", "no such app")
+    sp._plan_and_waves(r, "app-1", "proj-1", None, "the 7R recommendation", [], kept)
+    waves = next(args for step, args in seen if step == "waves")
+    assert waves[waves.index("--capacity") + 1] == str(kept)
+    seen.clear()
+    sp._plan_and_waves(r, "app-1", "proj-1", None, "the 7R recommendation", [])
+    assert "--capacity" not in next(args for step, args in seen if step == "waves")
+
+
 def test_aiify_export_carries_the_enum_relative_paths_and_disqualifiers(tmp_path):
     scan = {"overall_verdict": "Partially AI-ready", "overall_ai_readiness": "partial", "opportunities": [
         {"opportunity_id": 1, "pattern_type": "nested_conditionals", "module_path": str(tmp_path / "src/A.java"),
