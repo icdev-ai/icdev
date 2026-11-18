@@ -1,0 +1,8 @@
+# CUI // SP-CTI
+# osx-cop-02: an AI-BOM config that declares nothing (the twin says unverified, never passed).
+router_configs: []
+models_from_router: false
+registry: false
+datasets: []
+gold_sets: []
+prompts: []

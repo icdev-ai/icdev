@@ -298,6 +298,28 @@
     "instance detail page has Activity Log tab"
    ]
   },
+  "GET aibom.aibom_api_twin": {
+   "endpoint": "aibom.aibom_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare the AI-BOM, the preparer cannot publish it, another person publishes it, download it, open the twin thread",
+    "the AI-BOM export page in the dark theme has no axe violations",
+    "the AI-BOM export page in the light theme has no axe violations"
+   ]
+  },
+  "GET aibom.aibom_api_view": {
+   "endpoint": "aibom.aibom_api_view",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare the AI-BOM, the preparer cannot publish it, another person publishes it, download it, open the twin thread",
+    "the AI-BOM export page in the dark theme has no axe violations",
+    "the AI-BOM export page in the light theme has no axe violations"
+   ]
+  },
   "GET aiify.api_get_scan": {
    "endpoint": "aiify.api_get_scan",
    "method": "GET",
@@ -837,6 +859,24 @@
    "test": false,
    "tests": [
     "ACE: a suggested team is confirmed and declined from its chat card"
+   ]
+  },
+  "POST aibom.aibom_api_prepare": {
+   "endpoint": "aibom.aibom_api_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare the AI-BOM, the preparer cannot publish it, another person publishes it, download it, open the twin thread"
+   ]
+  },
+  "POST aibom.aibom_api_publish": {
+   "endpoint": "aibom.aibom_api_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare the AI-BOM, the preparer cannot publish it, another person publishes it, download it, open the twin thread"
    ]
   },
   "POST aiify.api_generate_prd": {

@@ -149,3 +149,6 @@ tests/test_icx_coe_03_ambient.py
 # (PL/pgSQL append-only triggers, UNIQUE(path_id, prev_hash)) and the decl-wft-coe-golden-path-publish step in
 # wf_decision_steps.
 tests/test_icx_coe_04_ambient.py
+# osx-cop-02: ICDEV[IT]'s AI-BOM prepared and published on the ambient PG: aibom_export_events (PL/pgSQL
+# append-only triggers, UNIQUE(system, prev_hash)) and the decl-wft-aibom-publish step in wf_decision_steps.
+tests/test_osx_cop_02_ambient.py

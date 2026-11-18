@@ -1,0 +1,4 @@
+# CUI // SP-CTI
+# SYNTHETIC gold set for the osx-cop-02 AI-BOM tests (labelled).
+queries:
+  - {id: syn-1, query: "which router config is in force?", expect: "router.yaml"}
