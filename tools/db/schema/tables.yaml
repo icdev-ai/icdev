@@ -380,6 +380,8 @@ tables:
   control_crosswalk: it
   control_mappings: it
   control_narratives: it
+  cop_academy_events: it
+  cop_academy_learners: it
   cpmp_budget_allocations: it
   cpmp_budget_obligations: it
   cpmp_budget_tier_history: it

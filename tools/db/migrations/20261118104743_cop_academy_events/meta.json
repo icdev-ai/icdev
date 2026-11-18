@@ -1,0 +1,7 @@
+{
+  "description": "FORGE Academy CoP tracks: the learners' pseudonyms and the append-only, hash-chained ledger of mission attempts and xAPI batches (prepared, then a person publishes or refuses) (icx-cop-01)",
+  "date": "2026-11-18",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

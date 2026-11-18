@@ -149,3 +149,7 @@ tests/test_icx_coe_03_ambient.py
 # (PL/pgSQL append-only triggers, UNIQUE(path_id, prev_hash)) and the decl-wft-coe-golden-path-publish step in
 # wf_decision_steps.
 tests/test_icx_coe_04_ambient.py
+# icx-cop-01: a learner completes a CoP path and the xAPI batch is published on the ambient PG: cop_academy_events
+# (PL/pgSQL append-only triggers, UNIQUE(scope, prev_hash)), cop_academy_learners, and the
+# decl-wft-cop-academy-xapi-publish step in wf_decision_steps.
+tests/test_icx_cop_01_ambient.py

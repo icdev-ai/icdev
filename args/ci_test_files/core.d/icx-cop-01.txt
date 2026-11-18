@@ -1,0 +1,7 @@
+# icx-cop-01: FORGE Academy tracks per Community of Practice -- four tracks on our own patterns, readings that exist;
+# server-side grading with answers that never leave; each learner's append-only hash-chained record; xAPI statements
+# from the ledger alone (pseudonymous account, ADL verbs, path activity id); the icos-cop-academy/v1 batch against
+# ICDEV[OS]'s pinned schema, deterministic; publishing a person's declared step, never the preparer's; the export and
+# its verification; page, routes, twin threads and replay, MCP read and draft; and the ambient PG run.
+tests/test_icx_cop_01_tracks.py
+tests/test_icx_cop_01_ambient.py

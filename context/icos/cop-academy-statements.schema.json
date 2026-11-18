@@ -1,0 +1,267 @@
+{
+  "$defs": {
+    "Account": {
+      "additionalProperties": false,
+      "properties": {
+        "homePage": {
+          "description": "the Academy's home page (xAPI account)",
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Homepage",
+          "type": "string"
+        },
+        "name": {
+          "description": "the learner's account name there",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "homePage",
+        "name"
+      ],
+      "title": "Account",
+      "type": "object"
+    },
+    "Activity": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "the learning path's activity id: academy.path_prefix + the path id",
+          "maxLength": 300,
+          "minLength": 8,
+          "title": "Id",
+          "type": "string"
+        },
+        "objectType": {
+          "const": "Activity",
+          "default": "Activity",
+          "title": "Objecttype",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Activity",
+      "type": "object"
+    },
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "$ref": "#/$defs/Account"
+        },
+        "objectType": {
+          "const": "Agent",
+          "default": "Agent",
+          "title": "Objecttype",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "System",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "system",
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    },
+    "Result": {
+      "additionalProperties": false,
+      "properties": {
+        "completion": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completion"
+        },
+        "success": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Success"
+        }
+      },
+      "title": "Result",
+      "type": "object"
+    },
+    "Statement": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "id": {
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "object": {
+          "$ref": "#/$defs/Activity"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Result"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        },
+        "verb": {
+          "$ref": "#/$defs/Verb"
+        }
+      },
+      "required": [
+        "id",
+        "actor",
+        "verb",
+        "object",
+        "timestamp"
+      ],
+      "title": "Statement",
+      "type": "object"
+    },
+    "Verb": {
+      "additionalProperties": false,
+      "properties": {
+        "display": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Display",
+          "type": "object"
+        },
+        "id": {
+          "description": "an xAPI verb IRI",
+          "maxLength": 300,
+          "minLength": 8,
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "Verb",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:cop-academy-statements:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "An xAPI statement batch from ICDEV[IT]'s Academy, as ICOS imports it.",
+  "properties": {
+    "classification": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "what the producer claims; carried as a claim only -- ICOS marks the batch by its own config",
+      "title": "Classification"
+    },
+    "content_digest": {
+      "description": "SHA-256 over the canonical JSON (keys sorted, separators ',' and ':') of the batch without content_digest; ICOS recomputes it",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "paths": {
+      "description": "the learning path ids this batch reports on",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Paths",
+      "type": "array"
+    },
+    "produced_at": {
+      "format": "date-time",
+      "title": "Produced At",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "schema": {
+      "const": "icos-cop-academy/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "statements": {
+      "items": {
+        "$ref": "#/$defs/Statement"
+      },
+      "maxItems": 20000,
+      "title": "Statements",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "producer",
+    "produced_at",
+    "paths",
+    "statements",
+    "content_digest"
+  ],
+  "title": "Statements",
+  "type": "object",
+  "x-icos-contract": "1.194.0",
+  "x-license": "Apache-2.0"
+}

@@ -666,6 +666,30 @@ features:
           file: tools/idp/blueprint.py
           text: "A person, never the version's author, retires a published golden path version, or keeps it."
 
+  # ── FORGE Academy tracks per Community of Practice (icx-cop-01) ───────────
+  # One track per CoP on this platform's own patterns (args/academy_cop_tracks.yaml), graded on
+  # the server, every attempt on the learner's own append-only chain; xAPI statements derived from
+  # that ledger alone, in an icos-cop-academy/v1 batch for ICDEV[OS]. A learner's attempt is a
+  # grade, not a decision; preparing the batch decides nothing; publishing it to ICDEV[OS] is a
+  # person's declared step (decl-wft-cop-academy-xapi-publish), never the preparer's.
+  - key: cop.academy
+    component: idp
+    label: "Communities of Practice: FORGE Academy tracks, xAPI to ICDEV[OS]"
+    endpoints:
+      - idp.idp_cop_tracks_page
+      - idp.idp_api_cop_tracks
+      - idp.idp_api_cop_mission_attempt
+      - idp.idp_api_cop_xapi_prepare
+      - idp.idp_api_cop_xapi_publish
+      - idp.idp_api_cop_xapi_published
+    mcp_tools: [cop_academy, cop_academy_xapi_prepare]
+    declared_decisions:
+      - id: cop.academy.publish
+        endpoint: idp.idp_api_cop_xapi_publish
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A person, never the preparer, publishes the prepared xAPI batch to ICDEV[OS], or refuses it."
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory

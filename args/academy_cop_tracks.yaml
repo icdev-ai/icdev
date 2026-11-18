@@ -1,0 +1,469 @@
+# CUI // SP-CTI
+# FORGE Academy tracks per Community of Practice (icx-cop-01). Read by tools/idp/cop_tracks.py.
+#
+# Owner decision (2026-11-17, "CoP home: split"): ICDEV[IT] hosts the hubs and the Academy learning
+# paths; ICDEV[OS] holds the marked knowledge and the signed contribution workflow, and its CoP
+# charters link these learning paths BY ID (args/cops.yaml there, osx-cop-01). NO cloud-vendor
+# training or certification content: every mission is about OUR platform's own patterns, and each
+# cites the files in this repository that a learner reads.
+#
+# NOTHING HERE IS A RESULT. This file declares the tracks, their missions and each mission's
+# knowledge check. A learner's answers are graded on the server against `answer` (never sent to a
+# browser or an agent); a pass is recorded in the append-only, hash-chained cop_academy_events, and
+# only what that ledger holds becomes an xAPI statement. Completing a path is passing every one of
+# its missions as they are declared NOW.
+#
+# A track:
+#   id        the learning path id ICDEV[OS] links (its activity id is xapi.path_prefix + id)
+#   cop       the Community of Practice it serves (engineering, ai-data, application, cloud)
+#   missions  each with an id (stable: it is in the ledger), a title, the platform pattern it
+#             teaches, a summary, `reading` (repo-relative paths that exist; a test holds them to
+#             it) and `questions` (prompt, options, the index of the correct option)
+version: 1
+
+# The xAPI statements a published bundle carries (xAPI 1.0.3 statement shape; the batch is
+# icos-cop-academy/v1, context/icos/cop-academy-statements.schema.json).
+xapi:
+  schema: icos-cop-academy/v1
+  # The activity id of a learning path: ICDEV[OS]'s args/cops.yaml academy.path_prefix + the path id.
+  path_prefix: "urn:icdev:academy:path:"
+  # The xAPI account homePage of a learner's pseudonymous account. A learner is never named, never
+  # mailed: the account name is a random pseudonym kept in cop_academy_learners.
+  homepage: "https://icdev.ai/academy"
+  # ADL vocabulary (https://adlnet.gov/expapi/verbs/). completed: every mission of the path passed;
+  # progressed: at least one passed, not yet all (result.completion false: never read as complete).
+  verbs:
+    completed: "http://adlnet.gov/expapi/verbs/completed"
+    progressed: "http://adlnet.gov/expapi/verbs/progressed"
+
+# A mission passes only when every answer is right.
+grading:
+  pass_mark: 1.0
+
+# The twin's thresholds (args/twin_governance.yaml cop_academy wins when given). ICDEV[OS] counts a
+# batch older than 30 days for nothing (its academy.max_age_d), so a published bundle older than
+# stale_days is a finding here first.
+publish:
+  waiting_warn_days: 7
+  stale_days: 25
+
+tracks:
+  # ── Engineering CoP (AIDLC) ─────────────────────────────────────────────────────────────────
+  - id: cop-engineering-foundations
+    cop: engineering
+    name: "Engineering CoP (AIDLC): how ICDEV builds with AI in the loop"
+    missions:
+      - id: eng-red-first
+        title: "Red first, gated in the PR that adds it"
+        pattern: red-first
+        summary: >-
+          A changed test that still passes against the tree before the change is not a test.
+          CI re-derives the red: it applies only the changed test to the merge base and requires
+          it to fail there and pass here. A new test file is gated in the PR that adds it, through a
+          fragment named for the task, and a gated test that skips is unmeasured, not passing.
+        reading:
+          - tools/ci/red_first_gate.py
+          - docs/ci/test-gating-policy.md
+          - args/ci_skip_census.txt
+        questions:
+          - id: q1
+            prompt: "What does the red-first gate check for a test file a branch adds or modifies?"
+            options:
+              - "That the test file is formatted and its imports resolve"
+              - "That the test fails on the merge base with only that file applied, and passes on the branch"
+              - "That the test passes three times in a row on the branch"
+            answer: 1
+          - id: q2
+            prompt: "Where is a new test file gated so CI runs it?"
+            options:
+              - "In a fragment named for the task, args/ci_test_files/core.d/<task-id>.txt, in the same PR"
+              - "Nowhere: CI collects every test module automatically"
+              - "In a follow-up PR once the test has been green for a week"
+            answer: 0
+          - id: q3
+            prompt: "A gated test calls pytest.skip. What is it?"
+            options:
+              - "A passing test"
+              - "Unmeasured: the skip must be named in the skip census with a written reason, and the ceiling only goes down"
+              - "Ignored by CI entirely"
+            answer: 1
+      - id: eng-standards-register
+        title: "The engineering standards register and exemptions that expire"
+        pattern: standards-register
+        summary: >-
+          One entry per standard with a declared lifecycle: proposed, reviewed, adopted, deprecated.
+          A standard without a machine check or a named evidence step is refused at adoption. An
+          exemption waives one rule for one scope and always expires; once expired it FAILS the
+          scorecard until a person renews or revokes it.
+        reading:
+          - args/engineering_standards.yaml
+          - tools/idp/standards.py
+          - tools/idp/exemptions.py
+        questions:
+          - id: q1
+            prompt: "What happens to a standard proposed with no check?"
+            options:
+              - "It is adopted and scored as pass"
+              - "It is refused at adoption"
+              - "It is adopted and scored as not applicable"
+            answer: 1
+          - id: q2
+            prompt: "An exemption's expiry date has passed. What does the scorecard say about the rule it waived?"
+            options:
+              - "The rule fails, and the lapse is named, until a person renews or revokes the exemption"
+              - "The rule still passes: the exemption was granted"
+              - "The rule is not scored"
+            answer: 0
+          - id: q3
+            prompt: "Who may grant an exemption?"
+            options:
+              - "The person who requested it"
+              - "A scorecard, automatically, when the rule is minor"
+              - "A person who did not request it, through a declared step"
+            answer: 2
+      - id: eng-golden-paths
+        title: "Golden paths and scorecards against adopted standards"
+        pattern: golden-paths
+        summary: >-
+          `icdev scaffold service --path <id>` renders a service conformant by construction: each
+          path declares the standards it satisfies by id and version, and is behind when a standard
+          in force that applies is missing. Each repo is scored only against the standards in force
+          that apply to it; a manual evidence step is needs evidence, never pass.
+        reading:
+          - args/golden_paths.yaml
+          - tools/idp/golden_paths.py
+          - tools/idp/conformance.py
+        questions:
+          - id: q1
+            prompt: "A golden path does not declare a standard that is in force and applies. What is it?"
+            options:
+              - "Behind, and CI fails until it declares it"
+              - "Fine: a path only lists what it chooses"
+              - "Retired automatically"
+            answer: 0
+          - id: q2
+            prompt: "On a repo's scorecard, a standard checked by a manual evidence step shows what?"
+            options:
+              - "pass, once the step is written down"
+              - "needs evidence: a person reads it, and it is never passed by machine"
+              - "fail"
+            answer: 1
+          - id: q3
+            prompt: "Who publishes a new golden path version?"
+            options:
+              - "Its author, as soon as the drift check passes"
+              - "A person who is not the version's author, through a declared step, when its gate holds"
+              - "The scaffold, on first use"
+            answer: 1
+
+  # ── AI and data CoP ─────────────────────────────────────────────────────────────────────────
+  - id: cop-ai-data-foundations
+    cop: ai-data
+    name: "AI and data CoP: models, agents and evidence, governed"
+    missions:
+      - id: ai-governed-router
+        title: "Every model call goes through the governed router"
+        pattern: llm-router
+        summary: >-
+          No model id is written in code. A call names its function and LLMRouter resolves the
+          provider chain from args/llm_config.yaml; an undeclared function falls back to the
+          default route silently, so declaring it is part of the change. A test parses the code for
+          a literal bound to model= and fails on one.
+        reading:
+          - tools/llm/router.py
+          - args/llm_config.yaml
+          - tests/test_no_hardcoded_model_ids.py
+        questions:
+          - id: q1
+            prompt: "Where does a new feature say which model serves its calls?"
+            options:
+              - "As model='<id>' on the request"
+              - "In args/llm_config.yaml, under the function it routes by, resolved by LLMRouter"
+              - "In an environment variable read by the feature"
+            answer: 1
+          - id: q2
+            prompt: "A feature routes by a function args/llm_config.yaml does not declare. What happens?"
+            options:
+              - "The call fails loudly"
+              - "It silently falls back to the default route, which is why declaring the function is part of the change"
+              - "The router picks the cheapest model"
+            answer: 1
+          - id: q3
+            prompt: "What enforces 'no model ids in code'?"
+            options:
+              - "A code review checklist"
+              - "A test that parses the code for a value bound to model= or model_id=, with grandfathered counts that only go down"
+              - "Nothing: it is advice"
+            answer: 1
+      - id: ai-agents-propose
+        title: "Agents propose; people decide; citations are checked"
+        pattern: agents-propose
+        summary: >-
+          An MCP tool is declared read-only or mutating; a mutating one halts at the approval gate.
+          An agent's output is a draft that a person takes through a declared step. Every
+          model-drafted artifact carries [source: ...] citations validated against its evidence.
+        reading:
+          - args/agent_approval_policy.yaml
+          - tools/quality/citation_grounding.py
+          - tools/workflow_hitl/declared.py
+        questions:
+          - id: q1
+            prompt: "An agent calls an MCP tool that writes. What happens?"
+            options:
+              - "It runs: the agent was trusted to call it"
+              - "It halts at the approval gate; a person decides"
+              - "It runs and is logged"
+            answer: 1
+          - id: q2
+            prompt: "What may an agent do with a decision a person takes through a declared workflow step?"
+            options:
+              - "Take the step on the person's behalf"
+              - "Propose a draft; only a person whose role holds the step takes it"
+              - "Take the step if the person is away"
+            answer: 1
+          - id: q3
+            prompt: "What must a model-drafted artifact carry before it is promoted or exported?"
+            options:
+              - "Inline [source: ...] citations validated against its evidence"
+              - "The model's name"
+              - "Nothing, if a person read it"
+            answer: 0
+      - id: ai-twin-unverified
+        title: "The twin: unverified is never passed"
+        pattern: twin
+        summary: >-
+          A governance twin collects evidence and judges it with a pure function. A check it could
+          not read is unverified and lowers coverage; it never counts as a pass. Every finding
+          carries the thread to the record it rests on, and a recorded observation replays to the
+          same verdict.
+        reading:
+          - tools/twin_core/governance.py
+          - args/twin_governance.yaml
+        questions:
+          - id: q1
+            prompt: "The twin could not read a source. What does that check say?"
+            options:
+              - "verified, with nothing found"
+              - "unverified: it counts for nothing and lowers coverage"
+              - "It is left out"
+            answer: 1
+          - id: q2
+            prompt: "What does every finding of a governance twin carry?"
+            options:
+              - "A thread id to the record it rests on"
+              - "A model's explanation"
+              - "A fix that is applied automatically"
+            answer: 0
+          - id: q3
+            prompt: "What does replaying a recorded observation do?"
+            options:
+              - "Collects fresh evidence"
+              - "Re-judges the recorded evidence and compares the verdict digest"
+              - "Deletes the observation"
+            answer: 1
+
+  # ── Application CoP ─────────────────────────────────────────────────────────────────────────
+  - id: cop-application-foundations
+    cop: application
+    name: "Application CoP: features that meet the five rules"
+    missions:
+      - id: app-five-rules
+        title: "The five rules, judged by the audit"
+        pattern: five-rules
+        summary: >-
+          Every feature has a console page, a declared workflow for each decision a person takes, a
+          twin that observes it, a platform-model requirement traced to real tests, and a read-only
+          MCP tool (any writing tool halts at the gate). feature_audit derives each verdict from
+          the repository; the config may give a reason for a rule that does not apply, never a pass.
+        reading:
+          - args/feature_conformance.yaml
+          - tools/conformance/feature_audit.py
+          - args/platform_model
+        questions:
+          - id: q1
+            prompt: "Which of these is NOT one of the five rules?"
+            options:
+              - "A declared workflow for every decision a person takes"
+              - "A requirement in the platform model traced to an existing test"
+              - "A model must approve the feature before it ships"
+            answer: 2
+          - id: q2
+            prompt: "How does a feature pass a rule in args/feature_conformance.yaml?"
+            options:
+              - "By writing pass next to it"
+              - "It cannot: the audit derives every verdict from the repository; the file may only state a reason a rule does not apply"
+              - "By adding it to the census"
+            answer: 1
+          - id: q3
+            prompt: "What must a requirement in args/platform_model name to count?"
+            options:
+              - "An element whose code exists, and tests whose file and function exist"
+              - "A Jira ticket"
+              - "Only a title"
+            answer: 0
+      - id: app-declared-workflows
+        title: "Declared workflow steps: a person, a reason, a digest"
+        pattern: signed-workflows
+        summary: >-
+          A decision is a declared template's manual stage held by named roles. The person gives a
+          reason, takes the step bound to the digest of what they read, and is refused when they
+          built the subject (separate_from: builders) or hold a service key. Nothing advances itself.
+        reading:
+          - tools/workflow_hitl/declared.py
+          - args/workflow_hitl_templates
+        questions:
+          - id: q1
+            prompt: "A step is declared separate_from: builders. Who is refused?"
+            options:
+              - "Anyone who built or prepared the subject"
+              - "Nobody"
+              - "Only administrators"
+            answer: 0
+          - id: q2
+            prompt: "The subject changed after the person read it. What happens when they take the step?"
+            options:
+              - "It is taken on the new version"
+              - "It is refused: the step is bound to the digest they read, so they reload it"
+              - "It is queued"
+            answer: 1
+          - id: q3
+            prompt: "Can a service key take a declared decision step?"
+            options:
+              - "Yes, if it has the role"
+              - "No: a service key can propose, never decide"
+              - "Only at night"
+            answer: 1
+      - id: app-page-completeness
+        title: "A page names its routes by endpoint id"
+        pattern: console-pages
+        summary: >-
+          A page calls a route by its Flask endpoint id through the generated route table
+          (icdevFetch, icdevRoute, url_for), never a path it writes itself. Every mutating route of
+          an audited feature is called by a page, and CI's e2e gate fails on a credited write no
+          page sent.
+        reading:
+          - tools/dashboard/routes_gen.py
+          - tools/conformance/feature_audit.py
+        questions:
+          - id: q1
+            prompt: "How does a page call /idp/api/standards-twin?"
+            options:
+              - "fetch('/idp/api/standards-twin')"
+              - "icdevFetch('idp.idp_api_standards_twin'), by its endpoint id"
+              - "Through an iframe"
+            answer: 1
+          - id: q2
+            prompt: "A feature has a POST route no page calls. What does the audit say?"
+            options:
+              - "Nothing"
+              - "A GUI gap: a mutating route called by no page (or a stated machine surface)"
+              - "It passes if it has a test"
+            answer: 1
+          - id: q3
+            prompt: "What proves at runtime that a page sent a write?"
+            options:
+              - "The e2e run's recorded calls, told apart from a test's own request by the initiator stack"
+              - "The page's HTML"
+              - "A screenshot"
+            answer: 0
+
+  # ── Cloud CoP ───────────────────────────────────────────────────────────────────────────────
+  - id: cop-cloud-foundations
+    cop: cloud
+    name: "Cloud CoP: running ICDEV anywhere, marked and accounted"
+    missions:
+      - id: cloud-marking
+        title: "Marking every artifact"
+        pattern: marking
+        summary: >-
+          Every artifact carries its classification marking, CUI for IL4 and IL5 and SECRET for
+          IL6, applied through the classification manager rather than a hand-written banner. A
+          security gate blocks on a missing marking.
+        reading:
+          - tools/compliance/classification_manager.py
+        questions:
+          - id: q1
+            prompt: "How does a generated artifact get its banner?"
+            options:
+              - "Typed by hand into the template"
+              - "From classification_manager.py, never hard-coded"
+              - "It does not need one in a cloud deployment"
+            answer: 1
+          - id: q2
+            prompt: "What marking do IL4 and IL5 artifacts carry?"
+            options:
+              - "CUI"
+              - "None"
+              - "SECRET"
+            answer: 0
+          - id: q3
+            prompt: "An artifact has no marking. What does a security gate do?"
+            options:
+              - "Adds one"
+              - "Blocks"
+              - "Warns and continues"
+            answer: 1
+      - id: cloud-append-only
+        title: "The audit trail is append-only and hash-chained"
+        pattern: append-only-audit
+        summary: >-
+          Audit and decision ledgers are append-only: triggers refuse UPDATE and DELETE on SQLite
+          and PostgreSQL, each row carries the hash of the one before it, and a new append-only
+          table is listed in the guard hook so a tool call cannot rewrite it.
+        reading:
+          - tools/audit/chain.py
+          - .claude/hooks/pre_tool_use.py
+        questions:
+          - id: q1
+            prompt: "A ledger row is wrong. How is it corrected?"
+            options:
+              - "UPDATE the row"
+              - "DELETE it and insert a new one"
+              - "Append a new event; the old row stays"
+            answer: 2
+          - id: q2
+            prompt: "What lets a reader detect a row altered in place?"
+            options:
+              - "Each row's hash over its content and the previous row's hash"
+              - "The row's timestamp"
+              - "Nothing"
+            answer: 0
+          - id: q3
+            prompt: "A new append-only table is added. Where else must it be declared?"
+            options:
+              - "Nowhere"
+              - "In APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py"
+              - "In the README"
+            answer: 1
+      - id: cloud-postgres-first
+        title: "PostgreSQL first, migrations scaffolded"
+        pattern: storage
+        summary: >-
+          Runtime SQL is written for PostgreSQL; the SQLite translation exists only so init paths
+          work when PostgreSQL is away. A new column is a migration, because CREATE TABLE IF NOT
+          EXISTS never alters a live table, and a migration id is scaffolded, never hand-numbered.
+        reading:
+          - tools/db/storage.py
+          - tools/db/migrate.py
+        questions:
+          - id: q1
+            prompt: "You need a new column on an existing table. What do you write?"
+            options:
+              - "Edit the CREATE TABLE statement"
+              - "A migration, scaffolded with tools/db/migrate.py --create"
+              - "An ALTER at import time"
+            answer: 1
+          - id: q2
+            prompt: "Why never hand-number a migration?"
+            options:
+              - "Concurrent branches pick the same number, and the loser silently never runs"
+              - "Numbers are too long"
+              - "It is only a style rule"
+            answer: 0
+          - id: q3
+            prompt: "Which dialect is runtime SQL authored for?"
+            options:
+              - "SQLite, translated for PostgreSQL"
+              - "PostgreSQL, with SQLite only as an init fallback"
+              - "Whatever the developer prefers"
+            answer: 1
