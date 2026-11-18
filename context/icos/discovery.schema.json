@@ -1,0 +1,714 @@
+{
+  "$defs": {
+    "Anomaly": {
+      "additionalProperties": false,
+      "description": "A rule-based anomaly (ICDEV[IT]'s fixed checks; a model's findings are never exported), described by its type.",
+      "properties": {
+        "column": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_$ -]{0,127}$",
+          "title": "Column",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "method": {
+          "const": "rule",
+          "default": "rule",
+          "title": "Method",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "table": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_$ -]{0,127}$",
+          "title": "Table",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "high_null_rate",
+            "zero_cardinality",
+            "potential_pii",
+            "outlier_range",
+            "other"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "table",
+        "column",
+        "severity",
+        "type",
+        "description"
+      ],
+      "title": "Anomaly",
+      "type": "object"
+    },
+    "CatalogEntry": {
+      "additionalProperties": false,
+      "description": "An entry of ICDEV[IT]'s catalogue of data products that covers this source (its data-mesh product registry).",
+      "properties": {
+        "domain_name": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain Name"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "product_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Product Id",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "maxLength": 40,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "tables": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Tables",
+          "type": "array"
+        }
+      },
+      "required": [
+        "product_id",
+        "name"
+      ],
+      "title": "CatalogEntry",
+      "type": "object"
+    },
+    "Column": {
+      "additionalProperties": false,
+      "properties": {
+        "distinct_count": {
+          "minimum": 0,
+          "title": "Distinct Count",
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "why the profiler could not read it",
+          "title": "Error"
+        },
+        "inferred_type": {
+          "default": "unknown",
+          "enum": [
+            "string",
+            "numeric",
+            "integer",
+            "datetime",
+            "boolean",
+            "unknown"
+          ],
+          "title": "Inferred Type",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_$ -]{0,127}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "null_count": {
+          "minimum": 0,
+          "title": "Null Count",
+          "type": "integer"
+        },
+        "null_pct": {
+          "description": "per cent of rows that are null",
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Null Pct",
+          "type": "number"
+        },
+        "physical_type": {
+          "default": "",
+          "description": "the type the source declares",
+          "maxLength": 100,
+          "title": "Physical Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "null_count",
+        "null_pct",
+        "distinct_count"
+      ],
+      "title": "Column",
+      "type": "object"
+    },
+    "PiiFinding": {
+      "additionalProperties": false,
+      "description": "A column the PII scanner flagged: by its name and the pattern NAMES its values matched -- never a value.",
+      "properties": {
+        "column": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_$ -]{0,127}$",
+          "title": "Column",
+          "type": "string"
+        },
+        "method": {
+          "const": "rule",
+          "default": "rule",
+          "title": "Method",
+          "type": "string"
+        },
+        "patterns": {
+          "description": "pattern names (ssn, email, phone, card), never values",
+          "items": {
+            "type": "string"
+          },
+          "title": "Patterns",
+          "type": "array"
+        },
+        "pii_type": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Pii Type",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "table": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_$ -]{0,127}$",
+          "title": "Table",
+          "type": "string"
+        }
+      },
+      "required": [
+        "table",
+        "column",
+        "severity",
+        "pii_type",
+        "reason"
+      ],
+      "title": "PiiFinding",
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "const": "icdev-it",
+          "default": "icdev-it",
+          "title": "System",
+          "type": "string"
+        },
+        "tool": {
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    },
+    "Publication": {
+      "additionalProperties": false,
+      "description": "A person's publication of the bundle in ICDEV[IT]'s declared step, bound to its content_digest; never by the\nperson who prepared it. A bundle with no publication is a draft nobody published, and ICOS refuses it.",
+      "properties": {
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "decided_at": {
+          "format": "date-time",
+          "title": "Decided At",
+          "type": "string"
+        },
+        "event_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Id"
+        },
+        "prepared_by": {
+          "minLength": 1,
+          "title": "Prepared By",
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "signed_by": {
+          "minLength": 1,
+          "title": "Signed By",
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "title": "Step Id",
+          "type": "string"
+        },
+        "template": {
+          "minLength": 1,
+          "title": "Template",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signed_by",
+        "step_id",
+        "decided_at",
+        "template",
+        "content_digest",
+        "prepared_by"
+      ],
+      "title": "Publication",
+      "type": "object"
+    },
+    "QualityResult": {
+      "additionalProperties": false,
+      "description": "A quality rule of the design and its latest run against this source; ``passed`` is null when it never ran.",
+      "properties": {
+        "actual": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual"
+        },
+        "column": {
+          "default": "",
+          "maxLength": 128,
+          "title": "Column",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "kind": {
+          "enum": [
+            "completeness",
+            "uniqueness",
+            "range",
+            "pattern",
+            "freshness",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "passed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Passed"
+        },
+        "ran_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ran At"
+        },
+        "rule_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "table": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_$ -]{0,127}$",
+          "title": "Table",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        }
+      },
+      "required": [
+        "rule_id",
+        "table",
+        "kind"
+      ],
+      "title": "QualityResult",
+      "type": "object"
+    },
+    "SchemaPin": {
+      "additionalProperties": false,
+      "description": "The contract the producer validated the bundle against: its version, and the SHA-256 of the schema's body.",
+      "properties": {
+        "body_sha256": {
+          "description": "SHA-256 of the canonical JSON of the schema file without x-icos-contract",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Body Sha256",
+          "type": "string"
+        },
+        "contract": {
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "title": "Contract",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract",
+        "body_sha256"
+      ],
+      "title": "SchemaPin",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "description": "The source profiled: its key (declared in ICOS's ``args/discovery.yaml``), how ICDEV[IT] reached it and the\nprofile the bundle was built from. No connection detail (host, path, user, password) is carried.",
+      "properties": {
+        "design_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Design Id"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "sqlite",
+            "postgresql",
+            "duckdb",
+            "file",
+            "other"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "profile_id": {
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profiled_at": {
+          "format": "date-time",
+          "title": "Profiled At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "kind",
+        "profile_id",
+        "profiled_at"
+      ],
+      "title": "Source",
+      "type": "object"
+    },
+    "Summary": {
+      "additionalProperties": false,
+      "properties": {
+        "anomalies": {
+          "minimum": 0,
+          "title": "Anomalies",
+          "type": "integer"
+        },
+        "columns": {
+          "minimum": 0,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "pii": {
+          "minimum": 0,
+          "title": "Pii",
+          "type": "integer"
+        },
+        "quality_failed": {
+          "minimum": 0,
+          "title": "Quality Failed",
+          "type": "integer"
+        },
+        "quality_passed": {
+          "minimum": 0,
+          "title": "Quality Passed",
+          "type": "integer"
+        },
+        "quality_unrun": {
+          "minimum": 0,
+          "title": "Quality Unrun",
+          "type": "integer"
+        },
+        "tables": {
+          "minimum": 0,
+          "title": "Tables",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tables",
+        "columns",
+        "pii",
+        "anomalies",
+        "quality_passed",
+        "quality_failed",
+        "quality_unrun"
+      ],
+      "title": "Summary",
+      "type": "object"
+    },
+    "Table": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "$ref": "#/$defs/Column"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_$ -]{0,127}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "row_count": {
+          "minimum": 0,
+          "title": "Row Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "row_count"
+      ],
+      "title": "Table",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:discovery:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Owned by ICDEV[OS] (osx-cap-02); exported by ICDEV[IT] (tools/data_canvas/discovery_export.py). One source as ICDEV[IT]'s Data Design Canvas profiled it: tables and columns with types and counts, PII flags (pattern names, never values), rule-based anomalies, quality results and catalogue entries -- metadata only, never a datum. schema_pin is the contract version and the SHA-256 of this schema's canonical JSON without x-icos-contract. content_digest is SHA-256 over the canonical JSON (keys sorted, separators ',' and ':') of the bundle without content_digest, publication and produced_at; ICOS recomputes it. publication is a person's declared step bound to that digest, never by its preparer.",
+  "properties": {
+    "anomalies": {
+      "items": {
+        "$ref": "#/$defs/Anomaly"
+      },
+      "title": "Anomalies",
+      "type": "array"
+    },
+    "as_of": {
+      "format": "date",
+      "title": "As Of",
+      "type": "string"
+    },
+    "catalog": {
+      "items": {
+        "$ref": "#/$defs/CatalogEntry"
+      },
+      "title": "Catalog",
+      "type": "array"
+    },
+    "classification": {
+      "default": "",
+      "description": "what ICDEV[IT] banners it; a claim only, never a marking",
+      "title": "Classification",
+      "type": "string"
+    },
+    "content_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "pii": {
+      "items": {
+        "$ref": "#/$defs/PiiFinding"
+      },
+      "title": "Pii",
+      "type": "array"
+    },
+    "produced_at": {
+      "format": "date-time",
+      "title": "Produced At",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "publication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Publication"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "quality": {
+      "items": {
+        "$ref": "#/$defs/QualityResult"
+      },
+      "title": "Quality",
+      "type": "array"
+    },
+    "schema": {
+      "const": "icos-discovery/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "schema_pin": {
+      "$ref": "#/$defs/SchemaPin"
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary"
+    },
+    "tables": {
+      "items": {
+        "$ref": "#/$defs/Table"
+      },
+      "title": "Tables",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "schema_pin",
+    "producer",
+    "produced_at",
+    "source",
+    "as_of",
+    "tables",
+    "summary",
+    "content_digest"
+  ],
+  "title": "Discovery",
+  "type": "object",
+  "x-icos-contract": "1.194.0",
+  "x-license": "Apache-2.0"
+}

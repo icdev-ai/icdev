@@ -1,0 +1,9 @@
+# CUI // SP-CTI
+# osx-cap-02: the SYNTHETIC source the data discovery tests, the e2e journey and the ICDEV[OS]
+# example bundles use (ICDEV_DISCOVERY_SOURCES_E2E names this file; honoured only under tests/).
+# Nothing here describes a real system.
+sources:
+  - {key: syn-track-export, name: "Synthetic track summary export", design: "cap02 synthetic track export"}
+publish:
+  waiting_warn_days: 7
+  stale_days: 14

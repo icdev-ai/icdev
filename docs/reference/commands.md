@@ -7777,6 +7777,26 @@ python tools/idp/conformance_export.py --repo ft --snapshot
 python tools/idp/dora.py --repo-path . --ref origin/main --at 2026-11-17 --json
 ```
 
+### Data discovery export to ICDEV[OS] (osx-cap-02)
+
+Each source declared in `args/data_discovery_export.yaml` is exported, from its stored Data
+Design Canvas profile, as one `icos-discovery/v1` bundle for ICDEV[OS] (its contract schema,
+vendored and pinned, `context/icos/discovery.schema.json`): types and counts, PII by pattern
+name, rule-based anomalies, quality results and catalogue entries -- metadata only, never a
+datum. A bundle is prepared on `/data-discovery/` (or by an agent through MCP) and published
+only by a person who did not prepare it.
+
+```bash
+# A source's bundle, deterministic given its inputs (a draft unless a person published this content)
+python tools/data_canvas/discovery_export.py --source <key> --out .tmp/discovery --at 2026-11-18T00:00:00Z
+
+# The newest PUBLISHED bundle, as ICDEV[OS] imports it
+python tools/data_canvas/discovery_export.py --source <key> --published --out .tmp/discovery
+
+# The declared sources and their ledger state
+python tools/data_canvas/discovery_export.py --list
+```
+
 ### Golden paths (icx-coe-04)
 
 A new service starts conformant by construction on a golden path (`args/golden_paths.yaml`):

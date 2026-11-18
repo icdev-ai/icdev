@@ -5234,3 +5234,54 @@ def handle_coe_golden_path_propose(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_coe_golden_path_propose: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_data_discovery_export(args: dict) -> dict:
+    """MCP (osx-cap-02): the data discovery export -- every declared source, one source's bundle built now, or its
+    newest published bundle.
+
+    Read-only: metadata only (types, counts, PII flags by pattern name, rule-based anomalies, quality results,
+    catalogue entries), never a datum. Prepares and publishes nothing.
+    """
+    try:
+        from tools.data_canvas import discovery_bundle
+
+        source = str(args.get("source") or "").strip()
+        if not source:
+            return {"classification": CORTEX_CLASSIFICATION, "sources": discovery_bundle.sources_view()}
+        try:
+            if args.get("published"):
+                b = discovery_bundle.published_bundle(source)
+                if b is None:
+                    return {"error": f"no bundle of {source} has been published", "code": "unpublished"}
+                return {"classification": CORTEX_CLASSIFICATION, "bundle": b}
+            return {"classification": CORTEX_CLASSIFICATION,
+                    "source": discovery_bundle.source_view(source, profile_id=str(args.get("profile") or "") or None)}
+        except discovery_bundle.DiscoveryRefused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_data_discovery_export: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_data_discovery_prepare(args: dict) -> dict:
+    """MCP (osx-cap-02): an agent prepares a source's discovery bundle as a DRAFT, recorded as ``agent:<id>``.
+
+    Preparing decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or
+    refuses it on /data-discovery/ (decl-wft-data-discovery-publish).
+    """
+    try:
+        from tools.data_canvas import discovery_bundle
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = discovery_bundle.prepare(str(args.get("source") or ""), {"id": f"agent:{agent}", "role": "service"},
+                                           profile_id=str(args.get("profile") or "") or None,
+                                           as_of=str(args.get("as_of") or "") or None, note=str(args.get("note") or ""))
+        except discovery_bundle.DiscoveryRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who did not prepare it publishes it or refuses it on /data-discovery/"}
+    except Exception as exc:
+        logger.warning("handle_data_discovery_prepare: %s", exc)
+        return {"error": str(exc)}

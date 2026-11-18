@@ -666,6 +666,31 @@ features:
           file: tools/idp/blueprint.py
           text: "A person, never the version's author, retires a published golden path version, or keeps it."
 
+  # ── Data discovery export to ICDEV[OS] (osx-cap-02) ───────────────────────
+  # What the Data Design Canvas found in a declared source (types, counts, PII flags by
+  # pattern name, rule-based anomalies, quality results, catalogue entries; metadata
+  # only) as one icos-discovery/v1 bundle per source. Preparing a bundle decides nothing;
+  # publishing it to ICDEV[OS] is a person's declared step
+  # (decl-wft-data-discovery-publish), never the preparer's.
+  - key: data.discovery_export
+    component: data_discovery
+    label: "Data discovery export: a source's profile, PII, anomalies, quality and catalogue for ICDEV[OS]"
+    endpoints:
+      - data_discovery.dd_export_page
+      - data_discovery.dd_api_sources
+      - data_discovery.dd_api_source
+      - data_discovery.dd_api_prepare
+      - data_discovery.dd_api_publish
+      - data_discovery.dd_api_bundle
+      - data_discovery.dd_api_twin
+    mcp_tools: [data_discovery_export, data_discovery_prepare]
+    declared_decisions:
+      - id: data.discovery_export.publish
+        endpoint: data_discovery.dd_api_publish
+        evidence:
+          file: tools/data_canvas/discovery_blueprint.py
+          text: "A person, never the preparer, publishes a source's prepared discovery bundle to ICDEV[OS], or refuses it."
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory

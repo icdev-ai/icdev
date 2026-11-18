@@ -1,0 +1,7 @@
+{
+  "description": "data discovery export ledger: a source's icos-discovery/v1 bundle prepared, then a person publishes or refuses; append-only and hash-chained (osx-cap-02)",
+  "date": "2026-11-18",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}
