@@ -5180,3 +5180,57 @@ def handle_coe_conformance_prepare(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_coe_conformance_prepare: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_coe_golden_paths(args: dict) -> dict:
+    """MCP (icx-coe-04): the golden paths, or one path, against the standards in force.
+
+    Read-only: each path's version in use, the standards it declares by id and version, whether it
+    is behind the standards in force, and its last drift check. With ``check``: every declared path
+    against the register (``--check``). Proposes, drift-checks and publishes nothing.
+    """
+    try:
+        from tools.idp import golden_paths
+
+        path_id = str(args.get("path_id") or "").strip()
+        try:
+            if args.get("check"):
+                return {"classification": CORTEX_CLASSIFICATION,
+                        "check": golden_paths.check(str(args.get("source") or "register"))}
+            if path_id:
+                return {"classification": CORTEX_CLASSIFICATION, "path": golden_paths.path_view(path_id)}
+            return {"classification": CORTEX_CLASSIFICATION, "paths": golden_paths.paths_view()}
+        except golden_paths.GoldenPathRefused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_coe_golden_paths: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_coe_golden_path_propose(args: dict) -> dict:
+    """MCP (icx-coe-04): an agent proposes a golden path version as a DRAFT, recorded as ``agent:<id>``.
+
+    Proposing decides nothing: its drift check is run on /idp/golden-paths (or by CI), and a person
+    who did not author it publishes it or refuses (decl-wft-coe-golden-path-publish).
+    """
+    try:
+        from tools.idp import golden_paths
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            try:
+                view = golden_paths.path_view(str(args.get("path_id") or ""))
+                base = view["versions"][-1]["entry"] if view["versions"] else view["declared"]
+            except golden_paths.GoldenPathRefused:
+                base = None
+            out = golden_paths.propose(
+                golden_paths.entry_from_form({"id": args.get("path_id"), "version": args.get("version"),
+                                              "satisfies": args.get("satisfies")}, base),
+                {"id": f"agent:{agent}", "role": "service"}, note=str(args.get("note") or ""))
+        except golden_paths.GoldenPathRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "its drift check runs; a person who did not author it publishes it on /idp/golden-paths"}
+    except Exception as exc:
+        logger.warning("handle_coe_golden_path_propose: %s", exc)
+        return {"error": str(exc)}

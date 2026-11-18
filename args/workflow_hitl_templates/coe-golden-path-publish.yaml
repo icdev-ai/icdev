@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+id: decl-wft-coe-golden-path-publish
+name: "Golden paths: a person publishes a proposed path version, or refuses it (propose -> drift check -> publish)"
+description: >-
+  A golden path (args/golden_paths.yaml) is how a new ICDEV[IT] service is made conformant by
+  construction: a template and the engineering standards it satisfies, by id and version. Anyone, or
+  an agent, proposes a new version on /idp/golden-paths and runs its drift check (scaffold into a
+  temporary tree, then the IDP scorecard, feature_audit and the generated tests on the result); that
+  decides nothing. A person who did not author the version publishes it or refuses, with a reason,
+  bound to its digest, and only when the gate holds: its newest drift check passed on the template as
+  it is now, and it is not behind the standards in force. A gate that cannot be evaluated blocks.
+decides: [idp.idp_api_golden_path_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject "golden_path:<id>@<version>";
+  payload: the path, the version, its entry digest and the drift check it rests on).
+  coe_golden_path_events appends a published or refused event bound to that step and chained to the
+  row before it. A published version is the one `icdev scaffold service --path <id>` is held to; the
+  version it replaces reads superseded.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: Someone (a person, or an agent's draft) proposed a path version and ran its drift check.
+  - name: publish
+    step_type: manual
+    role: golden_path_publisher
+    holders: [admin, isso, reviewer]
+    # The version's author never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]

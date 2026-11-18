@@ -13,6 +13,11 @@
 # AI-assisted rework from declared sources; no data is unverified) and one
 # icos-conformance/v1 bundle per repo for ICDEV[OS], published by a person.
 #
+# icx-coe-04 adds golden paths: `icdev scaffold service` renders a service conformant by
+# construction; each path declares the standards it satisfies by id and version, is behind
+# when a standard in force that applies is missing (CI fails), and a drift check scores the
+# scaffold with the IDP scorecard and feature_audit. A person publishes or retires a version.
+#
 # requirement -> element -> code -> test (-> NIST control). Rules: see the
 # header of args/platform_model/cortex.yaml.
 
@@ -228,6 +233,80 @@ interfaces:
     code:
       - tools/mcp/gap_handlers.py::handle_coe_conformance
       - tools/mcp/gap_handlers.py::handle_coe_conformance_prepare
+
+  - id: coe.golden_paths
+    type: sysml_element
+    kind: block
+    name: Golden paths (a template and the standards it satisfies, by id and version)
+    features: [coe.golden_paths]
+    code:
+      - args/golden_paths.yaml
+      - data/templates/services/golden/manifest.yaml
+      - tools/idp/golden_paths.py::load_config
+      - tools/idp/golden_paths.py::in_force
+      - tools/idp/golden_paths.py::required
+      - tools/idp/golden_paths.py::behind
+      - tools/idp/golden_paths.py::check
+      - tools/cli/scaffold.py::scaffold_service
+      - tools/idp/golden_paths.py::generate_artifacts
+      - tools/idp/golden_paths.py::register
+
+  - id: coe.golden_drift
+    type: sysml_element
+    kind: block
+    name: The drift check (scaffold into a temporary tree, then the IDP scorecard and feature_audit)
+    features: [coe.golden_paths]
+    code:
+      - tools/idp/golden_paths.py::drift
+      - tools/iqe/adapters/idp.py::rooted
+
+  - id: coe.golden_publish
+    type: sysml_element
+    kind: block
+    name: Golden path versions (propose, drift check, a person publishes or retires; the ledger)
+    features: [coe.golden_paths]
+    code:
+      - tools/idp/golden_paths.py::propose
+      - tools/idp/golden_paths.py::record_drift
+      - tools/idp/golden_paths.py::publish
+      - tools/idp/golden_paths.py::retire
+      - tools/idp/golden_paths.py::seed
+      - tools/idp/golden_paths.py::chain
+      - args/workflow_hitl_templates/coe-golden-path-publish.yaml
+      - args/workflow_hitl_templates/coe-golden-path-retire.yaml
+
+  - id: if.coe.golden_paths.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /idp/golden-paths and its routes
+    features: [coe.golden_paths]
+    code:
+      - tools/dashboard/templates/idp/golden_paths.html
+      - tools/idp/blueprint.py::idp_golden_paths_page
+      - tools/idp/blueprint.py::idp_api_golden_path
+      - tools/idp/blueprint.py::idp_api_golden_path_propose
+      - tools/idp/blueprint.py::idp_api_golden_path_drift
+      - tools/idp/blueprint.py::idp_api_golden_path_publish
+      - tools/idp/blueprint.py::idp_api_golden_path_retire
+
+  - id: if.coe.golden_paths.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP read and draft-only propose for the golden paths
+    features: [coe.golden_paths]
+    code:
+      - tools/mcp/gap_handlers.py::handle_coe_golden_paths
+      - tools/mcp/gap_handlers.py::handle_coe_golden_path_propose
+
+  - id: coe.golden_twin
+    type: sysml_element
+    kind: block
+    name: The golden paths in the idp governance twin
+    features: [coe.golden_paths]
+    code:
+      - tools/idp/golden_paths.py::twin_evidence
+      - tools/idp/golden_paths.py::twin_judge
+      - tools/twin_core/adapters/coe_standards.py
 
 requirements:
   - id: PM-COE-01
@@ -554,3 +633,100 @@ requirements:
       - tests/test_icx_coe_03_conformance.py::test_the_twin_observes_bundles_with_threads
       - tests/test_icx_coe_03_conformance.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read
       - tests/test_icx_coe_03_conformance.py::test_the_mcp_tools_read_and_only_prepare
+
+  - id: PM-COE-16
+    title: A golden path declares the standards it satisfies, and the ones that apply are derived
+    text: >-
+      Each path in args/golden_paths.yaml declares the engineering standards it satisfies, by id
+      and version. The standards that apply to it are derived from the register, never listed:
+      every standard in force whose id matches the path's repo declaration in
+      args/coe_conformance.yaml. A path that does not declare one, or declares another version,
+      is behind, and python tools/idp/golden_paths.py --check fails CI with "the golden path is
+      behind the standards in force".
+    type: functional
+    priority: high
+    features: [coe.golden_paths]
+    elements: [coe.golden_paths]
+    controls: [CM-2, SA-8]
+    tests:
+      - tests/test_icx_coe_04_golden_paths.py::test_the_paths_declare_every_standard_in_force_derived_from_the_register
+      - tests/test_icx_coe_04_golden_paths.py::test_adopting_a_standard_that_applies_puts_the_path_behind_and_ci_fails
+      - tests/test_icx_coe_04_golden_paths.py::test_a_standard_that_does_not_apply_or_a_version_change_is_judged_exactly
+
+  - id: PM-COE-17
+    title: icdev scaffold service renders a service with every piece a conformant service needs
+    text: >-
+      The service on a golden path carries its contract, an SBOM (and an AI-BOM when it uses a
+      model) from the existing generators, a control map, OTel spans, a PROPOSED ADR record (the
+      generator never accepts one), a page, a declared HITL template, a twin adapter with
+      threads, a platform-model requirement traced to its own test, read and propose MCP tools,
+      a feature_conformance entry, tests and a scorecard declaration; the shared registers are
+      spliced as text, and nothing is overwritten.
+    type: functional
+    priority: high
+    features: [coe.golden_paths]
+    elements: [coe.golden_paths]
+    controls: [SA-3, SA-8, CM-8]
+    tests:
+      - tests/test_icx_coe_04_golden_paths.py::test_scaffold_service_renders_every_piece_and_registers_it_as_text
+
+  - id: PM-COE-18
+    title: The drift check scores the scaffold with the IDP scorecard and feature_audit
+    text: >-
+      The drift check scaffolds the path into a temporary tree laid over the checkout and judges
+      the result with the platform's own judges: a standard checked by a scorecard rule must pass
+      on the scaffold by machine, a manual one shows needs_evidence, a rule that measured nothing
+      is unverified; feature_audit finds no gap; the generated tests are red without the service
+      and green with it. Anything else is drift, with why. It stays fast enough for CI.
+    type: functional
+    priority: high
+    features: [coe.golden_paths]
+    elements: [coe.golden_drift]
+    controls: [CA-2, SA-11]
+    tests:
+      - tests/test_icx_coe_04_golden_paths.py::test_the_drift_check_passes_the_scaffold_machine_pass_manual_needs_evidence
+      - tests/test_icx_coe_04_golden_paths.py::test_a_machine_standard_the_scaffold_does_not_meet_is_drift_never_pass
+      - tests/test_icx_coe_04_golden_paths.py::test_the_scorecard_grades_another_tree_only_while_rooted
+
+  - id: PM-COE-19
+    title: A path version is published or retired by a person who did not author it, when its gate holds
+    text: >-
+      Proposing a version and running its drift check decide nothing (anyone, or an agent).
+      Publishing or refusing it (decl-wft-coe-golden-path-publish) and retiring or keeping it
+      (decl-wft-coe-golden-path-retire) are a person's declared steps, with a reason, bound to its
+      digest, refused to its author and to a service key. Publishing needs its newest drift check
+      to have passed on the template as it is now, and the version not to be behind; a gate that
+      cannot be evaluated blocks. coe_golden_path_events is append-only and hash-chained; seeds
+      are the labelled bootstrap identity's.
+    type: functional
+    priority: high
+    features: [coe.golden_paths]
+    elements: [coe.golden_publish]
+    controls: [AC-5, AU-9, AU-10]
+    tests:
+      - tests/test_icx_coe_04_golden_paths.py::test_propose_drift_and_publish_by_another_person_when_the_gate_holds
+      - tests/test_icx_coe_04_golden_paths.py::test_the_gate_blocks_a_failed_or_stale_drift_check_and_a_version_behind
+      - tests/test_icx_coe_04_golden_paths.py::test_an_agent_only_drafts_and_retiring_is_a_persons_step_never_the_authors
+      - tests/test_icx_coe_04_golden_paths.py::test_the_ledger_is_append_only_and_hash_chained
+      - tests/test_icx_coe_04_golden_paths.py::test_seeds_are_recorded_by_the_bootstrap_identity_never_a_person
+      - tests/test_icx_coe_04_ambient.py::test_a_path_version_proposed_drift_checked_and_published_on_the_platform_database
+
+  - id: PM-COE-20
+    title: The golden paths page, the twin with threads, and MCP read and draft
+    text: >-
+      /idp/golden-paths, linked from /idp/standards and the nav, shows each path, the standards
+      it meets and its last drift check, and offers propose, the drift check and the publish and
+      retire steps by endpoint id. The idp twin observes coe.golden_paths: a path with no
+      published version, or none drift-checked, is unverified; a path behind, a failed or stale
+      drift check and a bootstrap-only version are findings threaded to their ledger row, and an
+      observation replays. MCP coe_golden_paths reads; coe_golden_path_propose only drafts.
+    type: functional
+    priority: medium
+    features: [coe.golden_paths]
+    elements: [if.coe.golden_paths.console, coe.golden_twin, if.coe.golden_paths.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_icx_coe_04_golden_paths.py::test_the_routes_and_the_page
+      - tests/test_icx_coe_04_golden_paths.py::test_the_twin_observes_paths_with_threads_and_replays
+      - tests/test_icx_coe_04_golden_paths.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read
+      - tests/test_icx_coe_04_golden_paths.py::test_the_mcp_tools_read_and_only_propose

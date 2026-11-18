@@ -1,0 +1,7 @@
+# CUI // SP-CTI
+collection: {{ key }}.items
+query: "Show every {{ display_name }} proposal and its state"
+description: Every proposal of {{ display_name }}, with who proposed it and where it stands.
+iqe: foreach i in {{ key }}.items select i.step_id, i.subject, i.status, i.proposed_by
+example_questions:
+  - "What has been proposed to {{ display_name }}?"

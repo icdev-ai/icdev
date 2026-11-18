@@ -1,0 +1,15 @@
+# The MCP registrations (spliced into tools/mcp/tool_registry.py by golden_paths.register).
+- name: {{ key }}_items
+  category: {{ key }}
+  module: tools.{{ key }}.mcp_tools
+  handler: handle_{{ key }}_items
+  description: "Read every {{ display_name }} proposal and its state (pending, decided). Reads only."
+  read_only: true
+  input_schema: {type: object, properties: {limit: {type: integer}}}
+- name: {{ key }}_propose
+  category: {{ key }}
+  module: tools.{{ key }}.mcp_tools
+  handler: handle_{{ key }}_propose
+  description: "Propose an item to {{ display_name }}, recorded as the agent's draft (agent:<name>). It decides nothing: a person who did not propose it decides it on {{ url_prefix }}/."
+  read_only: false
+  input_schema: {type: object, properties: {agent_id: {type: string}, title: {type: string}, note: {type: string}}, required: [title]}

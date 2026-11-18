@@ -79,3 +79,8 @@ engineering_standards:
   conformance:
     waiting_warn_days: 7
     stale_days: 14
+  # icx-coe-04: a proposed golden path version waiting this long for a person, or a version in use
+  # whose newest drift check is this old, is a finding (args/golden_paths.yaml sets the defaults).
+  golden_paths:
+    waiting_warn_days: 14
+    drift_stale_days: 30

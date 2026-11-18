@@ -635,6 +635,37 @@ features:
           file: tools/idp/blueprint.py
           text: "A person, never the preparer, publishes a repo's prepared bundle to ICDEV[OS], or refuses it."
 
+  # ── Engineering CoE: golden paths (icx-coe-04) ──────────────────────────
+  # A new service conformant by construction: `icdev scaffold service --path <id>`, each
+  # path declaring the standards it satisfies by id and version (args/golden_paths.yaml),
+  # behind when a standard in force that applies is missing (CI fails), and a drift check
+  # that scores the scaffold with the IDP scorecard and feature_audit. Proposing a version
+  # and running its drift check decide nothing; publishing or retiring one is a person's
+  # declared step, never its author's.
+  - key: coe.golden_paths
+    component: idp
+    label: "Engineering CoE: golden paths, a new service conformant by construction"
+    endpoints:
+      - idp.idp_golden_paths_page
+      - idp.idp_api_golden_paths
+      - idp.idp_api_golden_path
+      - idp.idp_api_golden_path_propose
+      - idp.idp_api_golden_path_drift
+      - idp.idp_api_golden_path_publish
+      - idp.idp_api_golden_path_retire
+    mcp_tools: [coe_golden_paths, coe_golden_path_propose]
+    declared_decisions:
+      - id: coe.golden_paths.publish
+        endpoint: idp.idp_api_golden_path_publish
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A person, never the version's author, publishes a proposed golden path version, or refuses it."
+      - id: coe.golden_paths.retire
+        endpoint: idp.idp_api_golden_path_retire
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A person, never the version's author, retires a published golden path version, or keeps it."
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory

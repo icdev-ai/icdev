@@ -224,6 +224,25 @@ jobs:
           ICDEV_STORAGE_BACKEND: sqlite
           ICDEV_DB_PATH: ${{ runner.temp }}/exemption-gate.db
         run: python tools/idp/exemptions.py --check --gate
+      # icx-coe-04. Every golden path (args/golden_paths.yaml) declares, by id and version, every
+      # engineering standard in force that applies to it (derived from the register and
+      # args/coe_conformance.yaml, never listed by hand). Adopting a standard that applies to services
+      # without a new path version fails here: "the golden path is behind the standards in force".
+      # Reads files only (~1 s). Exit codes: 0 current, 1 a path is behind. Do NOT add `|| true`.
+      - name: Golden paths are not behind the standards in force
+        working-directory: ${{ github.workspace }}
+        run: python tools/idp/golden_paths.py --check
+      # icx-coe-04. Scaffold each path into a temporary tree laid over this checkout, then run the IDP
+      # scorecard and feature_audit on the result and prove the generated tests red without the
+      # service and green with it: a machine-checkable standard must pass, only a manual one may show
+      # needs_evidence. ~15 s for both paths (measured). Writes nothing to the repo; the probes use a
+      # throwaway SQLite database. Exit codes: 0 conformant, 1 drift. Do NOT add `|| true`.
+      - name: Golden path drift check (scaffold, scorecard, feature_audit)
+        working-directory: ${{ github.workspace }}
+        env:
+          ICDEV_STORAGE_BACKEND: sqlite
+          ICDEV_DB_PATH: ${{ runner.temp }}/golden-drift.db
+        run: python tools/idp/golden_paths.py --drift
       # The gated test list lives in args/ci_test_files/core.txt, NOT here
       # (kax-conflict-07). It used to be a line-continuation chain in this file,
       # which made every task that added a test edit this hand-written workflow at

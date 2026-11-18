@@ -7777,6 +7777,31 @@ python tools/idp/conformance_export.py --repo ft --snapshot
 python tools/idp/dora.py --repo-path . --ref origin/main --at 2026-11-17 --json
 ```
 
+### Golden paths (icx-coe-04)
+
+A new service starts conformant by construction on a golden path (`args/golden_paths.yaml`):
+`icdev scaffold service` renders it, and the path declares the engineering standards it
+satisfies, by id and version. The standards that apply are derived from the register and
+`args/coe_conformance.yaml`. A version is proposed and drift-checked on `/idp/golden-paths`
+(or by an agent through MCP) and published or retired only by a person who did not author it.
+
+```bash
+# A new service on a golden path, in place (registry, feature_conformance and MCP spliced as text)
+icdev scaffold service ledger_review --display-name "Ledger Review"
+icdev scaffold service ledger_review --display-name "Ledger Review" --path model-service --out .tmp/svc --no-register
+
+# CI: every path declares every standard in force that applies (exit 1: behind)
+python tools/idp/golden_paths.py --check
+python tools/idp/golden_paths.py --check --source ledger --json
+
+# CI: scaffold each path into a temp tree, run the IDP scorecard and feature_audit on it (exit 1: drift)
+python tools/idp/golden_paths.py --drift
+python tools/idp/golden_paths.py --drift --path model-service --keep .tmp/golden --json
+
+# Record the declared paths in the ledger (labelled bootstrap identity, idempotent)
+python tools/idp/golden_paths.py --seed
+```
+
 ### Component Scorer (idp-score-01)
 
 The complement to the scorecard above: where `tools/idp/scorecard.py` grades a

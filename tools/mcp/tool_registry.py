@@ -9207,6 +9207,33 @@ RESOURCE_REGISTRY = {
             "required": ["repo"],
         },
     },
+    # -- golden paths: a new service conformant by construction (icx-coe-04) ---
+    "coe_golden_paths": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_golden_paths",
+        "description": "Read the golden paths (/idp/golden-paths, args/golden_paths.yaml): each path's version in use, the engineering standards it declares by id and version, whether it is behind the standards in force (derived from the register), and its last drift check (the scaffold scored by the IDP scorecard and feature_audit). With path_id: one path's versions, gate and history. With check: every path against the register, as CI runs it. Reads only.",
+        "input_schema": {"type": "object", "properties": {
+            "path_id": {"type": "string", "description": "service, model-service, ..."},
+            "check": {"type": "boolean", "description": "Every path against the standards in force"},
+            "source": {"type": "string", "description": "register (default) or ledger, with check"}}},
+    },
+    "coe_golden_path_propose": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_golden_path_propose",
+        "description": "Propose a new golden path version as a DRAFT, recorded as the agent's (agent:<name>): the path, a new version and the standards it satisfies (ID@version). It decides nothing: its drift check is run, and a person who did not author it publishes it or refuses on /idp/golden-paths (decl-wft-coe-golden-path-publish).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The proposing agent's name (recorded as agent:<name>)"},
+                "path_id": {"type": "string"}, "version": {"type": "string"},
+                "satisfies": {"type": "array", "items": {"type": "string"}, "description": "ID@version"},
+                "note": {"type": "string"},
+            },
+            "required": ["path_id", "version"],
+        },
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -9930,6 +9957,10 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
     "coe_conformance":                          True,
     "coe_conformance_prepare":                  False,
+    # icx-coe-04: golden paths. The read reads; propose records a draft version (one ledger row)
+    # and decides nothing, so it is not read-only and halts at the gate.
+    "coe_golden_paths":                         True,
+    "coe_golden_path_propose":                  False,
 })
 
 

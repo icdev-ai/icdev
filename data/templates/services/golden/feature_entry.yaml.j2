@@ -1,0 +1,16 @@
+# The feature_conformance entry (spliced into args/feature_conformance.yaml by golden_paths.register).
+key: {{ key }}.service
+component: {{ key }}
+label: "{{ display_name }} (golden path {{ path_id }} {{ path_version }})"
+endpoints:
+  - {{ key }}.{{ key }}_page
+  - {{ key }}.{{ key }}_api_items
+  - {{ key }}.{{ key }}_api_propose
+  - {{ key }}.{{ key }}_api_decide
+mcp_tools: [{{ key }}_items, {{ key }}_propose]
+declared_decisions:
+  - id: {{ key }}.decide
+    endpoint: {{ key }}.{{ key }}_api_decide
+    evidence:
+      file: tools/{{ key }}/blueprint.py
+      text: "A person who did not propose it approves or rejects a proposal, with a reason (declared step)."

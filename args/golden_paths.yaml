@@ -1,0 +1,114 @@
+# CUI // SP-CTI
+# Golden paths (icx-coe-04): a new service that is conformant by construction. Read by
+# tools/idp/golden_paths.py; scaffolded by `icdev scaffold service` (tools/cli/scaffold.py). Why:
+# docs/reference/adrs.md, D-COE-4.
+#
+# ONE ENTRY PER PATH. A path is a template that `icdev scaffold service --path <id>` renders, and a
+# declaration of the engineering standards (args/engineering_standards.yaml) it satisfies, by id AND
+# version.
+#
+#   id          what --path takes
+#   version     the path's version; a new declaration is a new version, proposed on /idp/golden-paths
+#   owner       the dashboard ROLE accountable for it
+#   repo        a repo key of args/coe_conformance.yaml. The standards that APPLY to the path are
+#               derived, never listed here: every standard IN FORCE in the register whose id matches
+#               that repo's `standards` patterns. A service of ICDEV[IT] answers to what ICDEV[IT]
+#               answers to.
+#   template    the template tree the path renders (data/templates/services/<flavor>)
+#   vars        template variables the path fixes (uses_model: the service calls a model through the
+#               governed router, so it carries an AI-BOM as well as an SBOM)
+#   satisfies   each standard the path claims, with the version it was built against and what in the
+#               scaffold meets it. The path is BEHIND when a standard in force that applies to it is
+#               missing here, or is here at a version other than the one in force:
+#               `python tools/idp/golden_paths.py --check` fails CI with "the golden path is behind
+#               the standards in force".
+#   seed        how the entry enters the ledger the first time `--seed` runs: published only when it
+#               is not behind the register's seeds, by the labelled bootstrap identity below, NEVER a
+#               person's signature; otherwise proposed.
+#
+# STATUS IS NOT HERE. proposed / published / refused / retired, and each version's drift checks, is
+# the replay of the append-only ledger coe_golden_path_events. Publishing and retiring a version are
+# a person's declared steps (args/workflow_hitl_templates/coe-golden-path-*.yaml), never the author's.
+
+version: 1
+
+seed_identity: "bootstrap:icx-coe-04-seed"
+
+# The drift check (`python tools/idp/golden_paths.py --drift`): scaffold the path into a temporary
+# directory laid over this checkout, then run the IDP scorecard and feature_audit on the result, and
+# prove the generated tests red without the service and green with it. A machine-checkable standard
+# must pass; only a manual one may show needs_evidence. Anything else is drift.
+drift:
+  # The key the check scaffolds under (never registered in this repo).
+  sample_key: golden_drift
+  sample_display_name: Golden Drift Sample
+  # Seconds a probe subprocess (url_map and MCP registry, generated tests) may take.
+  timeout_seconds: 300
+
+# A version proposed and not decided after this many days is a twin finding; so is a path whose
+# newest drift check is older than this.
+waiting_warn_days: 14
+drift_stale_days: 30
+
+paths:
+  - id: service
+    title: A new ICDEV[IT] service with a console page, a decision and a twin
+    version: "1.0"
+    owner: developer
+    repo: it
+    template: data/templates/services/golden
+    vars: {uses_model: false}
+    satisfies:
+      - id: ENG-SEC-GATES
+        version: "1.0"
+        by: CUI markings on every generated file; a control map (tools/<key>/control_map.yaml); the SBOM generated at scaffold time
+      - id: ENG-RED-FIRST
+        version: "1.0"
+        by: tests/test_<key>.py, proved red without the service and green with it by the drift check
+      - id: ENG-COHERENCE
+        version: "1.0"
+        by: registry entry, manifest-ready layout, no hand-written route paths (endpoint ids only)
+      - id: ENG-FIVE-RULES
+        version: "1.0"
+        by: page, declared HITL template, twin adapter with threads, platform-model requirement traced to the generated test, read and propose MCP tools, a feature_conformance entry
+      - id: ENG-GUARD-HOOKS
+        version: "1.0"
+        by: no shell neutraliser and no hook edit in the scaffold; nothing it generates bypasses a guard
+      - id: ENG-PAGE-COMPLETENESS
+        version: "1.0"
+        by: template, icdev mirror, route, backing module, constants, nav link and IQE adapter with seed queries
+      - id: ENG-E2E-SPEC
+        version: "1.0"
+        by: tests/e2e/<key>.spec.ts
+    seed: published
+
+  - id: model-service
+    title: A new ICDEV[IT] service that calls a model through the governed router
+    version: "1.0"
+    owner: developer
+    repo: it
+    template: data/templates/services/golden
+    vars: {uses_model: true}
+    satisfies:
+      - id: ENG-SEC-GATES
+        version: "1.0"
+        by: CUI markings; a control map; the SBOM and the AI-BOM generated at scaffold time
+      - id: ENG-RED-FIRST
+        version: "1.0"
+        by: tests/test_<key>.py, proved red without the service and green with it by the drift check
+      - id: ENG-COHERENCE
+        version: "1.0"
+        by: registry entry; the model reached only by llm_function through the router (no model id in code)
+      - id: ENG-FIVE-RULES
+        version: "1.0"
+        by: page, declared HITL template, twin adapter with threads, platform-model requirement traced to the generated test, read and propose MCP tools, a feature_conformance entry
+      - id: ENG-GUARD-HOOKS
+        version: "1.0"
+        by: no shell neutraliser and no hook edit in the scaffold
+      - id: ENG-PAGE-COMPLETENESS
+        version: "1.0"
+        by: template, icdev mirror, route, backing module, constants, nav link and IQE adapter with seed queries
+      - id: ENG-E2E-SPEC
+        version: "1.0"
+        by: tests/e2e/<key>.spec.ts
+    seed: published

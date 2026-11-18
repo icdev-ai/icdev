@@ -1,0 +1,24 @@
+# CUI // SP-CTI
+"""IQE adapter: {{ display_name }} (golden path `{{ path_id }}` {{ path_version }}).
+
+Collections:
+    {{ key }}.items  one row per proposal: step id, subject, state, who proposed and who decided.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from tools.iqe.executor import register_collection
+
+
+def items_adapter(conn: Any = None, tenant_id: str | None = None) -> list[dict]:
+    from tools.{{ key }} import service
+
+    try:
+        return [{k: s.get(k) for k in ("step_id", "subject", "status", "proposed_by", "decided_by",
+                                       "decision", "updated_at")} for s in service.items(500)]
+    except Exception:  # noqa: BLE001 — an unreadable ledger is no rows, never invented ones
+        return []
+
+
+register_collection("{{ key }}.items", items_adapter)

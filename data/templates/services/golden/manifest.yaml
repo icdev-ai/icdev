@@ -1,0 +1,127 @@
+# CUI // SP-CTI
+# Golden path template (icx-coe-04): a new ICDEV[IT] service that is conformant by construction.
+# Rendered by `icdev scaffold service <key> --display-name "Name" [--path service|model-service]`
+# (tools/cli/scaffold.py, through tools/builder/template_engine.render_tree). Which standards the
+# result satisfies is declared in args/golden_paths.yaml; tools/idp/golden_paths.py --drift proves it.
+#
+# Every file lands at its repo-relative path under --out. The shared registers a service must be in
+# (args/component_registry.yaml, args/feature_conformance.yaml, tools/mcp/tool_registry.py) are not
+# rendered here: the snippets under .golden/ are spliced into them by golden_paths.register(), the
+# same text splice `icdev scaffold canvas` uses for the registry, so no reviewed comment is lost.
+# The SBOM, the AI-BOM and the ADR record are produced after rendering by the existing generators
+# (tools/compliance/sbom_generator.py, tools/security/ai_bom_generator.py, tools/idp/adrs.py).
+name: golden
+kind: service
+description: >-
+  A service with a console page, a read API, a propose API, a person's decision through a declared
+  workflow, a governance twin with threads, a platform-model requirement traced to its own test, read
+  and propose MCP tools, OTel spans, a contract, a control map, an IQE adapter and an e2e spec.
+variables:
+  key:
+    type: string
+    required: true
+    description: Short technical key (snake_case), the package name under tools/ and the blueprint name.
+  display_name:
+    type: string
+    required: true
+    description: Human-facing name.
+  env_flag:
+    type: string
+    required: true
+    description: Primary .env toggle that gates the blueprint.
+  url_prefix:
+    type: string
+    default: "/{{ key | replace('_', '-') }}"
+    description: Where the registry mounts the blueprint.
+  owner:
+    type: string
+    default: developer
+    description: The dashboard role accountable for the service (the scorecard's has-owner rule).
+  owner_contact:
+    type: string
+    default: "{{ owner }}@icdev.invalid"
+    description: Where the owner is reached (the scorecard's owner-reachable rule).
+  uses_model:
+    type: boolean
+    default: false
+    description: The service drafts with a model through the governed router (an AI-BOM is generated).
+  path_id:
+    type: string
+    default: service
+    description: The golden path (args/golden_paths.yaml) this scaffold was rendered from.
+  path_version:
+    type: string
+    default: "1.0"
+    description: The path version.
+  standards:
+    type: string
+    default: ""
+    description: The standards the path declares, "ID@version" comma separated (filled by the scaffolder).
+  key_upper:
+    type: string
+    default: "{{ key | upper | replace('_', '-') }}"
+    description: The key as an id segment (ADR and requirement ids).
+
+files:
+  - src: __init__.py.j2
+    dest: "tools/{{ key }}/__init__.py"
+  - src: constants.py.j2
+    dest: "tools/{{ key }}/constants.py"
+  - src: service.py.j2
+    dest: "tools/{{ key }}/service.py"
+  - src: telemetry.py.j2
+    dest: "tools/{{ key }}/telemetry.py"
+  - src: blueprint.py.j2
+    dest: "tools/{{ key }}/blueprint.py"
+  - src: mcp_tools.py.j2
+    dest: "tools/{{ key }}/mcp_tools.py"
+  - src: contract.openapi.yaml.j2
+    dest: "tools/{{ key }}/contract.openapi.yaml"
+  - src: control_map.yaml.j2
+    dest: "tools/{{ key }}/control_map.yaml"
+  - src: service.yaml.j2
+    dest: "tools/{{ key }}/service.yaml"
+  - src: requirements.txt.j2
+    dest: "tools/{{ key }}/bom/requirements.txt"
+  - src: page.html.j2
+    dest: "tools/dashboard/templates/{{ key }}/page.html"
+  - src: page.html.j2
+    dest: "icdev/tools/dashboard/templates/{{ key }}/page.html"
+  - src: iqe_adapter.py.j2
+    dest: "tools/iqe/adapters/{{ key }}.py"
+  - src: query_overview.yaml.j2
+    dest: "context/iqe/queries/{{ key }}/overview.yaml"
+  - src: query_pending.yaml.j2
+    dest: "context/iqe/queries/{{ key }}/pending.yaml"
+  - src: query_decided.yaml.j2
+    dest: "context/iqe/queries/{{ key }}/decided.yaml"
+  - src: twin_adapter.py.j2
+    dest: "tools/twin_core/adapters/{{ key }}.py"
+  - src: workflow.yaml.j2
+    dest: "args/workflow_hitl_templates/{{ key | replace('_', '-') }}-decide.yaml"
+  - src: platform_model.yaml.j2
+    dest: "args/platform_model/{{ key }}.yaml"
+  - src: test_service.py.j2
+    dest: "tests/test_{{ key }}.py"
+  - src: e2e.spec.ts.j2
+    dest: "tests/e2e/{{ key }}.spec.ts"
+  - src: registry_entry.yaml.j2
+    dest: ".golden/component_registry.yaml"
+  - src: feature_entry.yaml.j2
+    dest: ".golden/feature_conformance.yaml"
+  - src: mcp_entry.yaml.j2
+    dest: ".golden/mcp_tools.yaml"
+
+validators:
+  - type: file_exists
+    path: "tools/{{ key }}/blueprint.py"
+  - type: python_syntax
+    path: "tools/{{ key }}/blueprint.py"
+  - type: python_syntax
+    path: "tools/{{ key }}/service.py"
+  - type: python_syntax
+    path: "tools/{{ key }}/mcp_tools.py"
+  - type: python_syntax
+    path: "tools/twin_core/adapters/{{ key }}.py"
+  - type: python_syntax
+    path: "tests/test_{{ key }}.py"

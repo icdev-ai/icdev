@@ -1,0 +1,25 @@
+# CUI // SP-CTI
+"""{{ display_name }}: OTel wiring. Every route and service call runs inside a span.
+
+Through ICDEV's pluggable tracer (tools/observability, D280): OTel when the SDK is configured, the
+air-gapped SQLite tracer, or the null tracer. Content is never put on a span unless content tracing
+is switched on (set_content_tag).
+"""
+from __future__ import annotations
+
+from contextlib import contextmanager
+from typing import Any, Iterator
+
+from tools.{{ key }}.constants import OTEL_SERVICE
+
+
+@contextmanager
+def span(name: str, **attributes: Any) -> Iterator[Any]:
+    """A span named ``icdev.{{ key }}.<name>`` with the service's attributes."""
+    from tools.observability import get_tracer
+
+    with get_tracer().start_span(f"{OTEL_SERVICE}.{name}") as sp:
+        sp.set_attribute("service.name", OTEL_SERVICE)
+        for k, v in attributes.items():
+            sp.set_attribute(f"{OTEL_SERVICE}.{k}", v)
+        yield sp

@@ -1,0 +1,71 @@
+<!-- CUI // SP-CTI — {{ display_name }} (golden path {{ path_id }} {{ path_version }}) -->
+{% raw %}{% extends "base.html" %}
+{% block title %}{{ display_name }} — ICDEV{% endblock %}
+{% block content %}{% endraw %}
+<style>
+  .svc-wrap { padding: 16px 24px; max-width: 1100px; color: var(--text-primary); }
+  .svc-wrap h1 { font-size: 22px; margin: 0 0 4px; }
+  .svc-wrap h2 { font-size: 16px; margin: 0 0 8px; }
+  .svc-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+  .svc-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .svc-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .svc-card th, .svc-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
+  .svc-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .svc-wrap input { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; width: 100%; }
+  .svc-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; }
+</style>
+<div class="svc-wrap">
+  <h1>{% raw %}{{ display_name }}{% endraw %}</h1>
+  <p class="svc-help" id="svc-help">Anyone may propose an item; it decides nothing. A person who did not propose it
+    approves or rejects it, with a reason, through the declared workflow <code>{% raw %}{{ template }}{% endraw %}</code>.</p>
+  <div class="svc-card">
+    <h2>Propose</h2>
+    <label for="svc-title">Title</label><input id="svc-title" autocomplete="off">
+    <label for="svc-note">Note</label><input id="svc-note" autocomplete="off">
+    <p><button type="button" class="svc-btn" id="svc-propose">Propose</button></p>
+    <div id="svc-propose-msg" role="status"></div>
+  </div>
+  <div class="svc-card">
+    <h2>Proposals</h2>
+    <label for="svc-reason">Reason for your decision</label><input id="svc-reason" autocomplete="off">
+    <table><thead><tr><th scope="col">Proposal</th><th scope="col">Proposed by</th><th scope="col">State</th><th scope="col">Step</th></tr></thead>
+      <tbody id="svc-items"><tr><td colspan="4">Loading.</td></tr></tbody></table>
+    <div id="svc-decide-msg" role="status"></div>
+  </div>
+</div>
+<script>
+(function () {
+  'use strict';
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]; }); }
+  function json(sent) { return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); }); }
+  function post(body) { return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)}; }
+  function load() {
+    json(icdevFetch('{{ key }}.{{ key }}_api_items')).then(function (res) {
+      var rows = (res.j.items || []).map(function (s) {
+        var step = s.status === 'pending' ? '<button type="button" class="svc-btn" data-decide="approve" data-step="' + esc(s.step_id) + '">Approve</button> ' +
+          '<button type="button" class="svc-btn" data-decide="reject" data-step="' + esc(s.step_id) + '">Reject</button>' : esc(s.decision + ' by ' + s.decided_by);
+        return '<tr data-item="' + esc(s.step_id) + '" data-status="' + esc(s.status) + '"><td>' + esc(s.subject) + '</td><td>' + esc(s.proposed_by) + '</td><td>' + esc(s.status) + '</td><td>' + step + '</td></tr>';
+      });
+      document.getElementById('svc-items').innerHTML = rows.join('') || '<tr><td colspan="4">No proposal yet.</td></tr>';
+    });
+  }
+  document.getElementById('svc-propose').addEventListener('click', function () {
+    var msg = document.getElementById('svc-propose-msg');
+    json(icdevFetch('{{ key }}.{{ key }}_api_propose', {}, post({title: document.getElementById('svc-title').value, note: document.getElementById('svc-note').value}))).then(function (res) {
+      msg.textContent = res.ok ? 'Proposed ' + res.j.title + '; a person who did not propose it decides it.' : 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || '');
+      load();
+    });
+  });
+  document.addEventListener('click', function (ev) {
+    var t = ev.target, dec = t.getAttribute && t.getAttribute('data-decide');
+    if (!dec) return;
+    var msg = document.getElementById('svc-decide-msg');
+    json(icdevFetch('{{ key }}.{{ key }}_api_decide', {}, post({step_id: t.getAttribute('data-step'), decision: dec, reason: document.getElementById('svc-reason').value}))).then(function (res) {
+      msg.textContent = res.ok ? 'Decided: ' + res.j.decision + ' by ' + res.j.decided_by : 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || '');
+      load();
+    });
+  });
+  load();
+})();
+</script>
+{% raw %}{% endblock %}{% endraw %}

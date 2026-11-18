@@ -55,6 +55,17 @@ an unverified check, never a pass. Findings, each threaded to the ledger row
 * ``coe.conformance.metric_unverified`` (low) a delivery metric with no data;
 * ``coe.conformance.stale`` / ``.awaiting_publish`` / ``.self_published`` /
   ``.chain_broken``.
+
+icx-coe-04 observes ``coe.golden_paths`` too (``tools/idp/golden_paths.py`` holds the
+evidence and judgement): each golden path's versions in ``coe_golden_path_events``
+against the standards in force. A path with no published version, or a version in
+use never drift-checked, is an unverified check, never a pass. Findings, each
+threaded to the ledger row (``coe_golden_path:<event id>``):
+
+* ``coe.golden_path.behind`` (high) a standard in force that applies is not declared;
+* ``coe.golden_path.drift`` (high) / ``.drift_stale`` (medium) / ``.drift_old`` (low);
+* ``coe.golden_path.bootstrap_only`` / ``.awaiting_publish`` / ``.declares_retired_standard``
+  (low), ``.self_published`` / ``.chain_broken`` (critical).
 """
 from __future__ import annotations
 
@@ -76,7 +87,7 @@ from tools.twin_core.registry import register_twin
 class EngineeringStandardsTwin(GovernanceTwinAdapter):
     canvas_key = "idp"
     display_name = "Engineering standards register"
-    observes = ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance")
+    observes = ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance", "coe.golden_paths")
 
     def replay(self, observation_id: str) -> dict:
         """Re-judge a recorded observation from its evidence (see governance.replay)."""
@@ -84,13 +95,15 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
 
     def collect(self) -> dict:
         ev = self._collect_standards()
-        from tools.idp import adrs, conformance, exemptions
+        from tools.idp import adrs, conformance, exemptions, golden_paths
 
         # icx-coe-02: the exemptions and the ADRs, read the same way (never raising).
         ev["exemptions"] = exemptions.twin_evidence()
         ev["adrs"] = adrs.twin_evidence()
         # icx-coe-03: the conformance bundles per repo.
         ev["conformance"] = conformance.twin_evidence()
+        # icx-coe-04: the golden paths against the standards in force.
+        ev["golden_paths"] = golden_paths.twin_evidence()
         return ev
 
     def _collect_standards(self) -> dict:
@@ -237,6 +250,15 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
             c, f, s = conformance.twin_judge(evidence["conformance"] or {},
                                              policy.get("conformance") or {},
                                              evidence.get("observed_at") or "")
+            checks += c
+            findings += f
+            extra_summary.update(s)
+        if "golden_paths" in evidence:
+            from tools.idp import golden_paths
+
+            c, f, s = golden_paths.twin_judge(evidence["golden_paths"] or {},
+                                              policy.get("golden_paths") or {},
+                                              evidence.get("observed_at") or "")
             checks += c
             findings += f
             extra_summary.update(s)
