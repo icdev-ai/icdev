@@ -137,3 +137,7 @@ tests/test_icx_mdz_06_ambient.py
 # coe_standard_events ledger (PL/pgSQL append-only triggers, UNIQUE(standard_id, prev_hash)) and the three
 # decl-wft-coe-standard-* steps in wf_decision_steps.
 tests/test_icx_coe_01_ambient.py
+# icx-coe-02: an exemption granted, expired (failing the check) and revoked, and an ADR proposed, accepted and
+# superseded, on the ambient PG: idp_rule_exemptions' new columns, chain index and PL/pgSQL append-only triggers,
+# coe_adr_events, and the decl-wft-coe-exemption-grant / decl-wft-coe-adr-* steps in wf_decision_steps.
+tests/test_icx_coe_02_ambient.py

@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+id: decl-wft-coe-exemption-renew
+name: "Scorecard exemptions: a person renews a granted exemption, or refuses (renewal -> renew)"
+description: >-
+  A granted exemption runs to its expiry and then fails the scorecard. Someone may
+  ask for it to run to a new expiry; asking decides nothing, and the exemption
+  still lapses on its current date. It runs on only when a person who neither
+  requested it nor asked for the renewal renews it on /idp/exemptions, with a
+  reason, at the digest of the renewal they read. There is no automatic renewal
+  and no timer that decides.
+decides: [idp.idp_api_exemption_renew]
+effect: >-
+  The decided step in wf_decision_steps is the renewal (subject:
+  "exemption:<key>"; payload: the key, the exemption digest and the new expiry).
+  The exemption log appends a renewed event (the new expiry) or a renewal_refused
+  event (the expiry unchanged) to idp_rule_exemptions, bound to that step.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: renewal
+    step_type: automated
+    description: Someone asked for a granted exemption to run to a new expiry, with a reason.
+  - name: renew
+    step_type: manual
+    role: exemption_approver
+    holders: [admin, isso, reviewer]
+    # Neither the requester nor whoever asked for the renewal renews it.
+    separate_from: builders
+    decisions: {renew: affirm, refuse: deny}
+    reason_required: [renew, refuse]

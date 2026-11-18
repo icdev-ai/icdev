@@ -954,6 +954,282 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "coe_adr_propose mutating, approval tier 'unknown' (default_tier) halts",
+            "coe_adrs read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-COE-08 -> coe.adrs -> tests/test_icx_coe_02_adrs.py::test_the_migration_is_lossless, tests/test_icx_coe_02_adrs.py::test_the_flat_doc_is_generated_and_drift_fails_the_check, tests/test_icx_coe_02_adrs.py::test_every_record_validates_and_links_to_real_requirements_and_standards, tests/test_icx_coe_02_adrs.py::test_export_writes_the_record_and_the_doc_follows",
+            "PM-COE-09 -> coe.adrs -> tests/test_icx_coe_02_adrs.py::test_propose_accept_supersede_with_history, tests/test_icx_coe_02_adrs.py::test_the_author_is_never_the_signer, tests/test_icx_coe_02_adrs.py::test_supersede_needs_an_accepted_successor_and_neither_author, tests/test_icx_coe_02_adrs.py::test_records_are_seeded_by_the_bootstrap_identity_never_a_person, tests/test_icx_coe_02_adrs.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_icx_coe_02_ambient.py::test_an_adr_lifecycle_on_the_platform_database",
+            "PM-COE-10 -> if.coe.records.console, coe.twin, if.coe.records.mcp -> tests/test_icx_coe_02_exemptions.py::test_the_routes_take_the_steps_and_refuse_what_they_must, tests/test_icx_coe_02_exemptions.py::test_the_pages_render_and_link_from_the_standards_page, tests/test_icx_coe_02_exemptions.py::test_the_twin_reports_expired_and_migrated_exemptions_with_threads, tests/test_icx_coe_02_exemptions.py::test_the_mcp_tools_read_and_only_draft, tests/test_icx_coe_02_adrs.py::test_the_adr_routes_and_page, tests/test_icx_coe_02_adrs.py::test_the_twin_says_unverified_for_records_not_in_the_ledger"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "idp.idp_api_adr_accept called from tools/dashboard/templates/idp/adrs.html",
+            "idp.idp_api_adr_propose called from tools/dashboard/templates/idp/adrs.html",
+            "idp.idp_api_adr_supersede called from tools/dashboard/templates/idp/adrs.html",
+            "nav links /idp/adrs",
+            "page /idp/adrs renders idp/adrs.html",
+            "registry entry 'idp'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_adrs_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/adrs",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/adrs.html"
+              ],
+              "endpoint": "idp.idp_api_adrs",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/adrs",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/adrs.html"
+              ],
+              "endpoint": "idp.idp_api_adr",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/adrs/<adr_id>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/adrs.html"
+              ],
+              "endpoint": "idp.idp_api_adr_accept",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/adrs/<adr_id>/accept",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/adrs.html"
+              ],
+              "endpoint": "idp.idp_api_adr_supersede",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/adrs/<adr_id>/supersede",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/adrs.html"
+              ],
+              "endpoint": "idp.idp_api_adr_propose",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/adrs/propose",
+              "write": true
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "idp.idp_api_adr_accept (declared (tools/idp/blueprint.py: \"A person, never the author, accepts a proposed ADR or returns it.\")) -> template decl-wft-coe-adr-accept (args/workflow_hitl_templates/coe-adr-accept.yaml)",
+            "idp.idp_api_adr_supersede (declared (tools/idp/blueprint.py: \"A person who wrote neither ADR supersedes an accepted ADR by its successor, or deprecates it.\")) -> template decl-wft-coe-adr-supersede (args/workflow_hitl_templates/coe-adr-supersede.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "idp",
+      "key": "coe.adrs",
+      "label": "Engineering CoE: architecture decision records as signed, versioned records"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "coe_exemption_request mutating, approval tier 'unknown' (default_tier) halts",
+            "coe_exemptions read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-COE-06 -> coe.exemptions -> tests/test_icx_coe_02_exemptions.py::test_a_request_without_an_expiry_is_refused, tests/test_icx_coe_02_exemptions.py::test_an_expiry_must_be_after_today_and_within_the_horizon, tests/test_icx_coe_02_exemptions.py::test_scopes_resolve_and_link_the_standards_they_waive, tests/test_icx_coe_02_exemptions.py::test_an_expired_exemption_fails_the_scorecard_and_the_ci_check, tests/test_icx_coe_02_exemptions.py::test_a_config_grant_or_auto_approve_fails_the_check",
+            "PM-COE-07 -> coe.exemptions -> tests/test_icx_coe_02_exemptions.py::test_the_requester_is_never_the_approver_and_a_step_is_bound_to_the_digest, tests/test_icx_coe_02_exemptions.py::test_renewal_is_a_persons_step_and_nothing_renews_by_itself, tests/test_icx_coe_02_exemptions.py::test_revoking_is_a_stop_with_a_reason, tests/test_icx_coe_02_exemptions.py::test_the_log_is_append_only_and_hash_chained, tests/test_icx_coe_02_exemptions.py::test_legacy_exemptions_are_migrated_by_the_bootstrap_identity_never_granted, tests/test_icx_coe_02_exemptions.py::test_rows_carry_the_writers_label_and_a_person_reads_back_their_request, tests/test_icx_coe_02_ambient.py::test_an_exemption_lifecycle_on_the_platform_database",
+            "PM-COE-10 -> if.coe.records.console, coe.twin, if.coe.records.mcp -> tests/test_icx_coe_02_exemptions.py::test_the_routes_take_the_steps_and_refuse_what_they_must, tests/test_icx_coe_02_exemptions.py::test_the_pages_render_and_link_from_the_standards_page, tests/test_icx_coe_02_exemptions.py::test_the_twin_reports_expired_and_migrated_exemptions_with_threads, tests/test_icx_coe_02_exemptions.py::test_the_mcp_tools_read_and_only_draft, tests/test_icx_coe_02_adrs.py::test_the_adr_routes_and_page, tests/test_icx_coe_02_adrs.py::test_the_twin_says_unverified_for_records_not_in_the_ledger"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "idp.idp_api_exemption_decide called from tools/dashboard/templates/idp/exemptions.html",
+            "idp.idp_api_exemption_renew called from tools/dashboard/templates/idp/exemptions.html",
+            "idp.idp_api_exemption_renewal called from tools/dashboard/templates/idp/exemptions.html",
+            "idp.idp_api_exemption_request called from tools/dashboard/templates/idp/exemptions.html",
+            "idp.idp_api_exemption_revoke called from tools/dashboard/templates/idp/exemptions.html",
+            "nav links /idp/exemptions",
+            "page /idp/exemptions renders idp/exemptions.html",
+            "registry entry 'idp'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/exemptions.html"
+              ],
+              "endpoint": "idp.idp_api_exemptions",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/exemptions",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/exemptions.html"
+              ],
+              "endpoint": "idp.idp_api_exemption",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/exemptions/<ref>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/exemptions.html"
+              ],
+              "endpoint": "idp.idp_api_exemption_decide",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/exemptions/<ref>/decide",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/exemptions.html"
+              ],
+              "endpoint": "idp.idp_api_exemption_renew",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/exemptions/<ref>/renew",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/exemptions.html"
+              ],
+              "endpoint": "idp.idp_api_exemption_renewal",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/exemptions/<ref>/renewal",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/exemptions.html"
+              ],
+              "endpoint": "idp.idp_api_exemption_revoke",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/exemptions/<ref>/revoke",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/exemptions.html"
+              ],
+              "endpoint": "idp.idp_api_exemption_request",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/exemptions/request",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_exemptions_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/exemptions",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "idp.idp_api_exemption_decide (declared (tools/idp/blueprint.py: \"A person, never the requester, grants an exemption request or denies it.\")) -> template decl-wft-coe-exemption-grant (args/workflow_hitl_templates/coe-exemption-grant.yaml)",
+            "idp.idp_api_exemption_renew (declared (tools/idp/blueprint.py: \"A person, never the requester or the asker, renews an exemption or refuses.\")) -> template decl-wft-coe-exemption-renew (args/workflow_hitl_templates/coe-exemption-renew.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "idp",
+      "key": "coe.exemptions",
+      "label": "Engineering CoE: scorecard exemptions that expire"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
             "coe_standard_propose mutating, approval tier 'unknown' (default_tier) halts",
             "coe_standards read-only, tool_authorization tier 'read'"
           ],
@@ -997,6 +1273,8 @@
             },
             {
               "by_id": [
+                "tools/dashboard/templates/idp/adrs.html",
+                "tools/dashboard/templates/idp/exemptions.html",
                 "tools/dashboard/templates/idp/standards.html"
               ],
               "endpoint": "idp.idp_api_standards_twin",
@@ -1068,7 +1346,10 @@
               "write": true
             },
             {
-              "by_id": [],
+              "by_id": [
+                "tools/dashboard/templates/idp/adrs.html",
+                "tools/dashboard/templates/idp/exemptions.html"
+              ],
               "endpoint": "idp.idp_standards_page",
               "methods": [
                 "GET"
@@ -3097,6 +3378,8 @@
       "tools/dashboard/templates/coworker/trust.html",
       "tools/dashboard/templates/coworkers/index.html",
       "tools/dashboard/templates/document_intelligence/explorer.html",
+      "tools/dashboard/templates/idp/adrs.html",
+      "tools/dashboard/templates/idp/exemptions.html",
       "tools/dashboard/templates/idp/standards.html",
       "tools/dashboard/templates/includes/_chat_action_card.html",
       "tools/dashboard/templates/includes/classification_macros.html",
@@ -3123,8 +3406,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 24,
-    "features_conforming": 24,
+    "features": 26,
+    "features_conforming": 26,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3155,6 +3438,20 @@
         "workflow": 0
       },
       "ace.trust_sessions": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "coe.adrs": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "coe.exemptions": {
         "ai_native": 0,
         "architecture": 0,
         "gui": 0,
@@ -3303,11 +3600,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 148,
-    "routes_by_id": 123,
-    "routes_observed": 108,
-    "writes_by_id": 59,
-    "writes_observed": 59
+    "routes": 162,
+    "routes_by_id": 138,
+    "routes_observed": 122,
+    "writes_by_id": 67,
+    "writes_observed": 67
   },
   "tool": "feature_audit",
   "version": 1

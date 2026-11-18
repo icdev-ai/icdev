@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for rule-level scorecard exemptions with approval and audit (idp-score-04).
+"""Tests for rule-level scorecard exemptions with approval and audit (idp-score-04, icx-coe-02).
 
 The acceptance contract is one sentence and every clause of it is a test here:
 
@@ -7,25 +7,28 @@ The acceptance contract is one sentence and every clause of it is a test here:
   2. an exempt rule does **not** block ladder progression
   3. the exemption writes an **append-only** record naming approver and reason
 
-Plus the two invariants that make those worth anything:
+Plus the invariants that make those worth anything:
 
-  * ``autoApprove`` is OFF by default, so a request waives nothing until
-    somebody approves it
-  * an exemption with no approver or no reason is INERT — it does not waive
+  * a request waives nothing until a person who did not request it grants it
+    through the declared step (icx-coe-02: ``autoApprove`` is refused)
+  * an exemption with no approver, no reason or no expiry is INERT — it does
+    not waive; a grant written into the scorecard YAML is inert too
 
-The store is exercised through the **real migration** rather than a
-hand-written CREATE TABLE, because the bug class this is most exposed to is an
-INSERT naming a column the live schema lacks: it raises, is swallowed by the
-caller, and reports success while persisting nothing. Connections come from
-``tools.db.storage.get_connection`` rather than raw ``sqlite3``, because the
-module writes ``%s`` placeholders and only the storage wrapper translates them
-— a raw connection here would make the tests assert their own no-op.
+The store is the conftest platform database (``wf_db``): the exemption log as
+both migrations shape it, and the ``wf_`` tables a person's declared step is
+recorded in. The INSERT is checked against the migrations' DDL, because the bug
+class this is most exposed to is an INSERT naming a column the live schema
+lacks: it raises, is swallowed by the caller, and reports success while
+persisting nothing. Connections come from ``tools.db.storage.get_connection``
+rather than raw ``sqlite3``, because the module writes ``%s`` placeholders and
+only the storage wrapper translates them.
 """
 from __future__ import annotations
 
 import importlib
 import importlib.util
 import textwrap
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -54,6 +57,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MIGRATION_DIR = REPO_ROOT / "tools" / "db" / "migrations" / "20260803030514_idp_rule_exemptions"
 
 SCORECARD = "test-exempt"
+
+#: Labelled test persons (synthetic): who requests, and who grants (icx-coe-02: never the same).
+REQUESTER = "alice"
+APPROVER = {"id": "bob", "role": "reviewer"}
+#: Every exemption expires (icx-coe-02); the log keeps UTC dates.
+EXPIRES = (datetime.now(timezone.utc).date() + timedelta(days=60)).isoformat()
 
 # `bravo` fails the Gold rule only, so one waiver is exactly the difference
 # between Bronze and Gold for it. `charlie` fails both, which is the shape that
@@ -110,12 +119,16 @@ def _register_fixture_collection():
 
 
 @pytest.fixture
-def conn(tmp_path, monkeypatch):
-    """A storage connection over a temp SQLite DB with the migration applied."""
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
+def conn(wf_db):
+    """A storage connection over the conftest platform DB (the exemption log and the wf_ tables).
+
+    A grant is a person's declared step (icx-coe-02), recorded in wf_decision_steps,
+    so the log and the steps share one database. The original migration still runs
+    and finds its table there.
+    """
     from tools.db.storage import get_connection
 
-    connection = get_connection(db_path=str(tmp_path / "exemptions.db"))
+    connection = get_connection()
     _load_migration("up").up(connection)
     yield connection
     try:
@@ -125,14 +138,14 @@ def conn(tmp_path, monkeypatch):
 
 
 def _grant(conn, rule="has-owner", component="bravo", **kwargs):
-    """Request + approve in one step, the way an operator would."""
+    """Request, then a different person grants it through the declared step."""
     request_exemption(
         SCORECARD,
         rule,
         component,
         reason=kwargs.pop("reason", "Vendor-managed; ICDEV cannot assign an owner."),
-        requested_by=kwargs.pop("requested_by", "alice"),
-        expires=kwargs.pop("expires", None),
+        requested_by=kwargs.pop("requested_by", REQUESTER),
+        expires=kwargs.pop("expires", EXPIRES),
         policy=kwargs.pop("policy", ExemptionPolicy()),
         conn=conn,
     )
@@ -140,7 +153,7 @@ def _grant(conn, rule="has-owner", component="bravo", **kwargs):
         SCORECARD,
         rule,
         component,
-        approved_by=kwargs.pop("approved_by", "bob"),
+        actor=kwargs.pop("actor", APPROVER),
         decision_reason=kwargs.pop("decision_reason", "Confirmed with the vendor."),
         policy=ExemptionPolicy(),
         conn=conn,
@@ -273,13 +286,18 @@ def test_the_evaluated_outcome_carries_the_approver(conn):
 
 
 def test_every_inserted_column_exists_in_the_live_schema(conn):
-    """The swallowed-INSERT bug class, pinned."""
+    """The swallowed-INSERT bug class, pinned: against both migrations' columns."""
+    old = (MIGRATION_DIR / "up.py").read_text(encoding="utf-8")
+    new = (REPO_ROOT / "tools" / "db" / "migrations" / "20261118010237_coe_exemptions_adrs"
+           / "up.py").read_text(encoding="utf-8")
+    declared = {c for c in INSERT_COLUMNS if f"\n    {c} " in old or f'("{c}", ' in new}
+    missing = set(INSERT_COLUMNS) - declared
+    assert not missing, f"INSERT names columns absent from the migrations: {sorted(missing)}"
     live = {
         str(dict(row)["name"])
         for row in conn.execute("PRAGMA table_info(idp_rule_exemptions)").fetchall()
     }
-    missing = set(INSERT_COLUMNS) - live
-    assert not missing, f"INSERT names columns absent from the migration: {sorted(missing)}"
+    assert set(INSERT_COLUMNS) <= live
 
     _grant(conn)
     total = dict(conn.execute("SELECT COUNT(*) AS n FROM idp_rule_exemptions").fetchone())
@@ -310,7 +328,7 @@ def test_revoking_stops_the_waiver_and_the_rule_applies_again(conn):
 def test_a_pending_request_waives_nothing(conn):
     request_exemption(
         SCORECARD, "has-owner", "bravo",
-        reason="Vendor-managed.", requested_by="alice",
+        reason="Vendor-managed.", requested_by="alice", expires=EXPIRES,
         policy=ExemptionPolicy(), conn=conn,
     )
 
@@ -331,33 +349,27 @@ def test_auto_approve_defaults_off_on_a_shipped_scorecard():
     assert card.exemption_policy.enabled is True
 
 
-def test_auto_approve_when_enabled_records_both_events(conn):
-    """Auto-approval still leaves a record — including that nobody reviewed it."""
-    row = request_exemption(
-        SCORECARD, "has-owner", "bravo",
-        reason="Vendor-managed.", requested_by="alice",
-        policy=ExemptionPolicy(auto_approve=True), conn=conn,
-    )
-    assert row["status"] == STATUS_APPROVED
-    assert row["auto_approved"] == 1
-    assert row["decided_by"] == "alice"
-
-    events = history(SCORECARD, conn=conn)
-    assert [e["event"] for e in events] == ["requested", "approved"], (
-        "the request is a separate event, so 'nobody reviewed this' stays visible"
-    )
-    assert events[-1]["self_approved"] == 1
+def test_auto_approve_is_refused_and_writes_nothing(conn):
+    """icx-coe-02: granting is a person's declared step, so the switch is refused, not honoured."""
+    with pytest.raises(ExemptionError, match="autoApprove") as exc:
+        request_exemption(
+            SCORECARD, "has-owner", "bravo",
+            reason="Vendor-managed.", requested_by="alice", expires=EXPIRES,
+            policy=ExemptionPolicy(auto_approve=True), conn=conn,
+        )
+    assert exc.value.code == "auto_approve"
+    assert history(SCORECARD, conn=conn) == []
 
 
 def test_a_denied_request_waives_nothing(conn):
     request_exemption(
         SCORECARD, "has-owner", "bravo",
-        reason="Vendor-managed.", requested_by="alice",
+        reason="Vendor-managed.", requested_by="alice", expires=EXPIRES,
         policy=ExemptionPolicy(), conn=conn,
     )
     deny_exemption(
         SCORECARD, "has-owner", "bravo",
-        denied_by="bob", decision_reason="An owner can be assigned.",
+        actor=APPROVER, decision_reason="An owner can be assigned.",
         policy=ExemptionPolicy(), conn=conn,
     )
 
@@ -404,10 +416,11 @@ exemptions:
     assert next(o for o in bravo["rules"] if o["identifier"] == "has-owner")["status"] == "fail"
     inert = report["exemptions"]["inert"]
     assert len(inert) == 1
-    assert "no approver" in inert[0]["defect"]
+    assert "not granted by a person's declared step" in inert[0]["defect"]
 
 
-def test_a_yaml_grant_with_an_approver_and_reason_applies():
+def test_a_yaml_grant_never_applies_even_with_an_approver_and_reason():
+    """icx-coe-02: config is not a person's declared step; request it on /idp/exemptions."""
     attributed = _card(
         """
 exemptions:
@@ -424,10 +437,10 @@ exemptions:
 
     bravo = next(r for r in report["results"] if r["entity"] == "bravo")
     outcome = next(o for o in bravo["rules"] if o["identifier"] == "has-owner")
-    assert outcome["status"] == "exempt"
-    assert outcome["exemption"]["approved_by"] == "platform-lead@example.mil"
-    assert outcome["exemption"]["source"] == "scorecard"
-    assert bravo["level"] == "Gold"
+    assert outcome["status"] == "fail"
+    assert outcome["exemption"] is None
+    assert report["exemptions"]["inert"][0]["source"] == "scorecard"
+    assert bravo["level"] == "Bronze"
 
 
 def test_a_placeholder_approver_is_not_an_approver():
@@ -462,19 +475,22 @@ exemptions:
     report = evaluate(expired, conn=None, today="2026-08-03")
     bravo = next(r for r in report["results"] if r["entity"] == "bravo")
     assert next(o for o in bravo["rules"] if o["identifier"] == "has-owner")["status"] == "fail"
-    assert "expired" in report["exemptions"]["inert"][0]["defect"]
+    # a YAML grant is inert before it is anything else (expired or not); the log's
+    # expired grants FAIL (tests/test_icx_coe_02_exemptions.py)
+    assert "declared step" in report["exemptions"]["inert"][0]["defect"]
+    assert report["exemptions"]["gate"] == "pass"
 
 
 def test_a_revocation_in_the_log_overrides_a_grant_still_in_the_yaml(conn):
     """Otherwise revoking a waiver would require a code change to take effect."""
     request_exemption(
         SCORECARD, "has-owner", "bravo",
-        reason="Vendor-managed.", requested_by="alice",
+        reason="Vendor-managed.", requested_by="alice", expires=EXPIRES,
         policy=ExemptionPolicy(), conn=conn,
     )
     approve_exemption(
         SCORECARD, "has-owner", "bravo",
-        approved_by="bob", policy=ExemptionPolicy(), conn=conn,
+        actor=APPROVER, decision_reason="ok", policy=ExemptionPolicy(), conn=conn,
     )
     revoke_exemption(
         SCORECARD, "has-owner", "bravo",
@@ -498,7 +514,9 @@ exemptions:
 
 
 def test_attribution_defect_reports_why(conn):
-    assert attribution_defect(status=STATUS_APPROVED, approved_by="bob", reason="ok") == ""
+    assert attribution_defect(status=STATUS_APPROVED, approved_by="bob", reason="ok",
+                              expires=EXPIRES) == ""
+    assert "no expiry" in attribution_defect(status=STATUS_APPROVED, approved_by="bob", reason="ok")
     assert "not approved" in attribution_defect(
         status=STATUS_PENDING, approved_by="", reason="ok"
     )
@@ -529,13 +547,19 @@ def test_a_request_without_a_reason_is_refused(conn):
 def test_an_approval_without_an_approver_is_refused(conn):
     request_exemption(
         SCORECARD, "has-owner", "bravo",
-        reason="Vendor-managed.", requested_by="alice",
+        reason="Vendor-managed.", requested_by="alice", expires=EXPIRES,
         policy=ExemptionPolicy(), conn=conn,
     )
-    with pytest.raises(ExemptionError, match="name who"):
+    with pytest.raises(ExemptionError, match="signed-in person"):
         approve_exemption(
             SCORECARD, "has-owner", "bravo",
-            approved_by="TBD", policy=ExemptionPolicy(), conn=conn,
+            actor="TBD", decision_reason="ok", policy=ExemptionPolicy(), conn=conn,
+        )
+    with pytest.raises(ExemptionError, match="independent"):
+        approve_exemption(
+            SCORECARD, "has-owner", "bravo",
+            actor={"id": "alice", "role": "reviewer"}, decision_reason="mine",
+            policy=ExemptionPolicy(), conn=conn,
         )
     assert current_states(SCORECARD, conn=conn)[0]["status"] == STATUS_PENDING
 
@@ -544,7 +568,7 @@ def test_approving_something_that_was_never_requested_is_refused(conn):
     with pytest.raises(ExemptionError, match="no exemption"):
         approve_exemption(
             SCORECARD, "has-owner", "bravo",
-            approved_by="bob", policy=ExemptionPolicy(), conn=conn,
+            actor=APPROVER, decision_reason="ok", policy=ExemptionPolicy(), conn=conn,
         )
 
 
@@ -553,17 +577,17 @@ def test_a_second_request_for_a_live_exemption_is_refused(conn):
     with pytest.raises(ExemptionError, match="already has"):
         request_exemption(
             SCORECARD, "has-owner", "bravo",
-            reason="Again.", requested_by="alice",
+            reason="Again.", requested_by="alice", expires=EXPIRES,
             policy=ExemptionPolicy(), conn=conn,
         )
     # …but it can be re-requested once revoked, and the log shows the full arc.
     revoke_exemption(
         SCORECARD, "has-owner", "bravo",
-        revoked_by="carol", policy=ExemptionPolicy(), conn=conn,
+        revoked_by="carol", decision_reason="Owner assigned.", policy=ExemptionPolicy(), conn=conn,
     )
     row = request_exemption(
         SCORECARD, "has-owner", "bravo",
-        reason="The vendor situation is back.", requested_by="alice",
+        reason="The vendor situation is back.", requested_by="alice", expires=EXPIRES,
         policy=ExemptionPolicy(), conn=conn,
     )
     assert row["event_index"] == 4
@@ -593,7 +617,7 @@ def test_notifications_are_off_by_default_and_name_who_was_told(conn, monkeypatc
 
     request_exemption(
         SCORECARD, "rls-clean", "charlie",
-        reason="Upstream store enforces RLS.", requested_by="alice",
+        reason="Upstream store enforces RLS.", requested_by="alice", expires=EXPIRES,
         policy=ExemptionPolicy(user_specific_notifications=True), conn=conn,
     )
     assert len(sent) == 1
@@ -636,6 +660,6 @@ def test_revoked_status_constant_is_what_the_store_writes(conn):
     _grant(conn)
     revoke_exemption(
         SCORECARD, "has-owner", "bravo",
-        revoked_by="carol", policy=ExemptionPolicy(), conn=conn,
+        revoked_by="carol", decision_reason="Owner assigned.", policy=ExemptionPolicy(), conn=conn,
     )
     assert current_states(SCORECARD, conn=conn)[0]["status"] == STATUS_REVOKED

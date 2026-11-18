@@ -4,6 +4,10 @@
 # declared lifecycle (propose -> review -> adopt -> deprecate), a standard without
 # a check refused at adoption, seeds by reference.
 #
+# icx-coe-02 adds exemptions that expire (scope, mandatory expiry, a person's
+# grant and renewal, an expired exemption FAILS) and ADRs as signed, versioned
+# records with the flat ADR log generated from them.
+#
 # requirement -> element -> code -> test (-> NIST control). Rules: see the
 # header of args/platform_model/cortex.yaml.
 
@@ -64,6 +68,49 @@ elements:
       - tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin
       - tools/twin_core/governance.py::resolve_thread
 
+  - id: coe.exemptions
+    type: sysml_element
+    kind: block
+    name: Scorecard exemptions that expire (scope, mandatory expiry, standards waived, append-only hash-chained log)
+    features: [coe.exemptions]
+    code:
+      - args/coe_records.yaml
+      - tools/idp/exemptions.py::request_exemption
+      - tools/idp/exemptions.py::resolve_scope
+      - tools/idp/exemptions.py::validate_expiry
+      - tools/idp/exemptions.py::decide_exemption
+      - tools/idp/exemptions.py::request_renewal
+      - tools/idp/exemptions.py::renew_exemption
+      - tools/idp/exemptions.py::revoke_by_key
+      - tools/idp/exemptions.py::migrate_legacy
+      - tools/idp/exemptions.py::verify_chain
+      - tools/idp/exemptions.py::check
+      - tools/idp/scorecard.py::evaluate
+      - tools/db/migrations/20261118010237_coe_exemptions_adrs/up.py
+      - args/workflow_hitl_templates/coe-exemption-grant.yaml
+      - args/workflow_hitl_templates/coe-exemption-renew.yaml
+
+  - id: coe.adrs
+    type: sysml_element
+    kind: block
+    name: ADRs as signed, versioned records; the flat ADR log generated from them
+    features: [coe.adrs]
+    code:
+      - docs/reference/adrs/_layout.md
+      - tools/idp/adrs.py::parse_flat
+      - tools/idp/adrs.py::render
+      - tools/idp/adrs.py::check_doc
+      - tools/idp/adrs.py::validate_records
+      - tools/idp/adrs.py::propose
+      - tools/idp/adrs.py::accept
+      - tools/idp/adrs.py::supersede
+      - tools/idp/adrs.py::seed
+      - tools/idp/adrs.py::export
+      - tools/idp/adrs.py::chain
+      - tools/idp/adrs.py::replay
+      - args/workflow_hitl_templates/coe-adr-accept.yaml
+      - args/workflow_hitl_templates/coe-adr-supersede.yaml
+
 interfaces:
   - id: if.coe.console
     type: sysml_element
@@ -84,6 +131,32 @@ interfaces:
     code:
       - tools/mcp/gap_handlers.py::handle_coe_standards
       - tools/mcp/gap_handlers.py::handle_coe_standard_propose
+
+  - id: if.coe.records.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /idp/exemptions and /idp/adrs and their routes
+    features: [coe.exemptions, coe.adrs]
+    code:
+      - tools/dashboard/templates/idp/exemptions.html
+      - tools/dashboard/templates/idp/adrs.html
+      - tools/idp/blueprint.py::idp_exemptions_page
+      - tools/idp/blueprint.py::idp_api_exemption_decide
+      - tools/idp/blueprint.py::idp_api_exemption_renew
+      - tools/idp/blueprint.py::idp_adrs_page
+      - tools/idp/blueprint.py::idp_api_adr_accept
+      - tools/idp/blueprint.py::idp_api_adr_supersede
+
+  - id: if.coe.records.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP reads and draft-only proposals for exemptions and ADRs
+    features: [coe.exemptions, coe.adrs]
+    code:
+      - tools/mcp/gap_handlers.py::handle_coe_exemptions
+      - tools/mcp/gap_handlers.py::handle_coe_exemption_request
+      - tools/mcp/gap_handlers.py::handle_coe_adrs
+      - tools/mcp/gap_handlers.py::handle_coe_adr_propose
 
 requirements:
   - id: PM-COE-01
@@ -191,3 +264,117 @@ requirements:
       - tests/test_icx_coe_01_standards.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read
       - tests/test_icx_coe_01_standards.py::test_the_mcp_tools_read_and_only_draft
       - tests/test_icx_coe_01_standards.py::test_the_cli_validates_and_lists
+
+  - id: PM-COE-06
+    title: Every exemption expires, has one declared scope and links to the standards it waives
+    text: >-
+      An exemption names a scorecard and one scope (rule, service, standard or repo)
+      and links to the engineering standards it waives, each checked against the
+      register. A request with no expiry, one not after today, or one beyond
+      max_expiry_days is refused. An exemption past its expiry no longer exempts:
+      it FAILS the scorecard (exemptions.gate fail, the rule failing with the lapse
+      named) and the CI check, until a person renews or revokes it. A grant written
+      into scorecard YAML, or an autoApprove switch, fails the check.
+    type: functional
+    priority: high
+    features: [coe.exemptions]
+    elements: [coe.exemptions]
+    controls: [CA-7, CM-6]
+    tests:
+      - tests/test_icx_coe_02_exemptions.py::test_a_request_without_an_expiry_is_refused
+      - tests/test_icx_coe_02_exemptions.py::test_an_expiry_must_be_after_today_and_within_the_horizon
+      - tests/test_icx_coe_02_exemptions.py::test_scopes_resolve_and_link_the_standards_they_waive
+      - tests/test_icx_coe_02_exemptions.py::test_an_expired_exemption_fails_the_scorecard_and_the_ci_check
+      - tests/test_icx_coe_02_exemptions.py::test_a_config_grant_or_auto_approve_fails_the_check
+
+  - id: PM-COE-07
+    title: Granting and renewing are a person's declared step; nothing renews by itself; the log is append-only
+    text: >-
+      Granting (decl-wft-coe-exemption-grant) and renewing (decl-wft-coe-exemption-renew)
+      are a person's declared steps, with a reason, bound to the exemption digest
+      read, and refused to the requester and to whoever asked for the renewal. No
+      automatic renewal, no timer that decides. Revoking is a stop with a reason.
+      idp_rule_exemptions is append-only (triggers) and hash-chained; approved
+      exemptions with no expiry are migrated by a labelled bootstrap identity with
+      an expiry, never granted again.
+    type: functional
+    priority: high
+    features: [coe.exemptions]
+    elements: [coe.exemptions]
+    controls: [AC-5, AU-9, AU-10]
+    tests:
+      - tests/test_icx_coe_02_exemptions.py::test_the_requester_is_never_the_approver_and_a_step_is_bound_to_the_digest
+      - tests/test_icx_coe_02_exemptions.py::test_renewal_is_a_persons_step_and_nothing_renews_by_itself
+      - tests/test_icx_coe_02_exemptions.py::test_revoking_is_a_stop_with_a_reason
+      - tests/test_icx_coe_02_exemptions.py::test_the_log_is_append_only_and_hash_chained
+      - tests/test_icx_coe_02_exemptions.py::test_legacy_exemptions_are_migrated_by_the_bootstrap_identity_never_granted
+      - tests/test_icx_coe_02_exemptions.py::test_rows_carry_the_writers_label_and_a_person_reads_back_their_request
+      - tests/test_icx_coe_02_ambient.py::test_an_exemption_lifecycle_on_the_platform_database
+
+  - id: PM-COE-08
+    title: ADRs are records; the flat ADR log is generated from them and drift fails
+    text: >-
+      Each ADR is a record (id, title, version, status, section, supersedes,
+      superseded_by, links to platform-model requirements and engineering
+      standards, context, decision, consequences, who recorded it). The flat doc
+      is generated from the records and the layout; a drift fails the check. The
+      migration from the flat doc is lossless, proved by regenerating it byte for
+      byte. Every link names a real requirement or standard.
+    type: functional
+    priority: high
+    features: [coe.adrs]
+    elements: [coe.adrs]
+    controls: [CM-2, CM-3]
+    tests:
+      - tests/test_icx_coe_02_adrs.py::test_the_migration_is_lossless
+      - tests/test_icx_coe_02_adrs.py::test_the_flat_doc_is_generated_and_drift_fails_the_check
+      - tests/test_icx_coe_02_adrs.py::test_every_record_validates_and_links_to_real_requirements_and_standards
+      - tests/test_icx_coe_02_adrs.py::test_export_writes_the_record_and_the_doc_follows
+
+  - id: PM-COE-09
+    title: Accepting and superseding an ADR are declared steps; the author never signs
+    text: >-
+      ADR status is the replay of the append-only, hash-chained coe_adr_events.
+      Propose is a draft by anyone or an agent. Accept or return
+      (decl-wft-coe-adr-accept) and supersede or deprecate
+      (decl-wft-coe-adr-supersede) are a person's steps, with a reason, bound to the
+      record digest read, refused to the author (and, to supersede, to the
+      successor's author); a successor must be accepted. Records are seeded by a
+      labelled bootstrap identity, never a person.
+    type: functional
+    priority: high
+    features: [coe.adrs]
+    elements: [coe.adrs]
+    controls: [AC-5, AU-10]
+    tests:
+      - tests/test_icx_coe_02_adrs.py::test_propose_accept_supersede_with_history
+      - tests/test_icx_coe_02_adrs.py::test_the_author_is_never_the_signer
+      - tests/test_icx_coe_02_adrs.py::test_supersede_needs_an_accepted_successor_and_neither_author
+      - tests/test_icx_coe_02_adrs.py::test_records_are_seeded_by_the_bootstrap_identity_never_a_person
+      - tests/test_icx_coe_02_adrs.py::test_the_ledger_is_append_only_and_hash_chained
+      - tests/test_icx_coe_02_ambient.py::test_an_adr_lifecycle_on_the_platform_database
+
+  - id: PM-COE-10
+    title: The exemption and ADR pages, the twin with threads, and MCP reads and drafts
+    text: >-
+      /idp/exemptions (with each exemption's expiry state) and /idp/adrs, linked
+      from /idp/standards, offer the step each item waits for and call their routes
+      by endpoint id; the portal scorecard shows the exemption gate. The idp twin
+      judges the exemption log and the ADR records and ledger: an expired
+      exemption is a finding threaded to its row, a migrated one waits for the
+      owner, an ADR record not in the ledger is unverified, never passed, and an
+      observation replays. MCP coe_exemptions and coe_adrs read;
+      coe_exemption_request and coe_adr_propose only draft and halt at the
+      approval gate.
+    type: functional
+    priority: medium
+    features: [coe.exemptions, coe.adrs]
+    elements: [if.coe.records.console, coe.twin, if.coe.records.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_icx_coe_02_exemptions.py::test_the_routes_take_the_steps_and_refuse_what_they_must
+      - tests/test_icx_coe_02_exemptions.py::test_the_pages_render_and_link_from_the_standards_page
+      - tests/test_icx_coe_02_exemptions.py::test_the_twin_reports_expired_and_migrated_exemptions_with_threads
+      - tests/test_icx_coe_02_exemptions.py::test_the_mcp_tools_read_and_only_draft
+      - tests/test_icx_coe_02_adrs.py::test_the_adr_routes_and_page
+      - tests/test_icx_coe_02_adrs.py::test_the_twin_says_unverified_for_records_not_in_the_ledger

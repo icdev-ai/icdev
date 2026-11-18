@@ -69,3 +69,7 @@ modernisation:
 # many days is a finding; every other finding is a fact about the ledger.
 engineering_standards:
   draft_waiting_warn_days: 14
+  # icx-coe-02: an active exemption this close to its expiry is a (low) finding; a proposed ADR
+  # waiting longer than this is one too. An expired exemption is always a (high) finding.
+  exemption_expiring_warn_days: 14
+  adr_waiting_warn_days: 14

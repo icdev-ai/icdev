@@ -4945,6 +4945,68 @@ CREATE INDEX IF NOT EXISTS idx_coe_standard_events_standard
     ON coe_standard_events (standard_id, created_at);
 CREATE TRIGGER IF NOT EXISTS coe_standard_events_no_update BEFORE UPDATE ON coe_standard_events BEGIN SELECT RAISE(ABORT, 'coe_standard_events is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS coe_standard_events_no_delete BEFORE DELETE ON coe_standard_events BEGIN SELECT RAISE(ABORT, 'coe_standard_events is append-only'); END;
+
+-- icx-coe-02: scorecard exemptions that expire (migrations 20260803030514 + 20261118010237: scope,
+-- mandatory expiry, digest, declared step, hash chain) and the ADR records ledger. Same DDL; both
+-- append-only.
+CREATE TABLE IF NOT EXISTS idp_rule_exemptions (
+    id                TEXT PRIMARY KEY,
+    exemption_key     TEXT NOT NULL,
+    scorecard_key     TEXT NOT NULL,
+    rule_identifier   TEXT NOT NULL,
+    component_key     TEXT NOT NULL,
+    event             TEXT NOT NULL,
+    status            TEXT NOT NULL,
+    event_index       INTEGER NOT NULL DEFAULT 1,
+    reason            TEXT NOT NULL,
+    requested_by      TEXT NOT NULL,
+    decided_by        TEXT,
+    decision_reason   TEXT,
+    auto_approved     INTEGER NOT NULL DEFAULT 0,
+    self_approved     INTEGER NOT NULL DEFAULT 0,
+    expires_on        TEXT,
+    notified          TEXT,
+    recorded_at       TEXT NOT NULL,
+    tenant_id         TEXT,
+    classification    TEXT DEFAULT 'CUI // SP-CTI',
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+    scope_kind        TEXT NOT NULL DEFAULT 'rule',
+    scope_ref         TEXT NOT NULL DEFAULT '',
+    standard_ids      TEXT NOT NULL DEFAULT '[]',
+    requested_expires_on TEXT,
+    exemption_digest  TEXT NOT NULL DEFAULT '',
+    step_id           TEXT NOT NULL DEFAULT '',
+    actor             TEXT NOT NULL DEFAULT '',
+    actor_kind        TEXT NOT NULL DEFAULT 'person',
+    prev_hash         TEXT,
+    row_hash          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ixmp_key_index ON idp_rule_exemptions (exemption_key, event_index);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ixmp_chain ON idp_rule_exemptions (exemption_key, prev_hash);
+CREATE TRIGGER IF NOT EXISTS idp_rule_exemptions_no_update BEFORE UPDATE ON idp_rule_exemptions BEGIN SELECT RAISE(ABORT, 'idp_rule_exemptions is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS idp_rule_exemptions_no_delete BEFORE DELETE ON idp_rule_exemptions BEGIN SELECT RAISE(ABORT, 'idp_rule_exemptions is append-only'); END;
+CREATE TABLE IF NOT EXISTS coe_adr_events (
+    event_id        TEXT PRIMARY KEY,
+    adr_id          TEXT NOT NULL,
+    version         TEXT NOT NULL,
+    event           TEXT NOT NULL
+        CHECK(event IN ('seeded','proposed','accepted','returned','superseded','deprecated')),
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent','bootstrap')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    entry_digest    TEXT NOT NULL,
+    entry_json      TEXT NOT NULL,
+    detail_json     TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(adr_id, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_coe_adr_events_adr ON coe_adr_events (adr_id, created_at);
+CREATE TRIGGER IF NOT EXISTS coe_adr_events_no_update BEFORE UPDATE ON coe_adr_events BEGIN SELECT RAISE(ABORT, 'coe_adr_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS coe_adr_events_no_delete BEFORE DELETE ON coe_adr_events BEGIN SELECT RAISE(ABORT, 'coe_adr_events is append-only'); END;
 """
 
 

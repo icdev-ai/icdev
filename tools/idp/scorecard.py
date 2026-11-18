@@ -39,11 +39,21 @@ incentive a scorecard exists to remove. An exempt rule does not hold the ladder
 either: a rung whose only unmet rule is exempted here is met, and progression
 continues.
 
-Every exemption must name **who approved it** and **why**; one that does not is
-reported as *inert* and waives nothing. Grants come from two places, merged:
-the scorecard's own ``exemptions.grants`` block, and the append-only approval
-log in ``tools/idp/exemptions.py``. Config carries ``enabled``, ``autoApprove``
-(default off) and ``userSpecificNotifications``.
+Every exemption must name **who approved it**, **why**, and **when it
+expires**; one that does not is reported as *inert* and waives nothing. Grants
+come from the append-only approval log in ``tools/idp/exemptions.py``, where a
+person's declared step granted them (icx-coe-02). A grant still written into a
+scorecard's ``exemptions.grants`` block is not a person's step, so it is read,
+reported as inert, and fails the exemption check. Config carries ``enabled``
+and ``userSpecificNotifications``; ``autoApprove`` is refused.
+
+An exemption's scope is a rule on a component, every rule on a component
+(``service``: rule ``*``), a standard's rule on a component, or a rule on every
+component of a repo (``repo``: component ``*``).
+
+An exemption PAST ITS EXPIRY is not merely inert: it FAILS. The rule is graded
+as it is (fail, unless it now passes), the outcome names the lapsed waiver, and
+the report's ``exemptions.gate`` is ``fail`` until a person renews or revokes it.
 
 Dimensions and the letter grade (idp-ui-01)
 -------------------------------------------
@@ -94,8 +104,10 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.idp.exemptions import (  # noqa: E402
     ACTIVE_STATUS,
+    ANY,
     ExemptionPolicy,
     attribution_defect,
+    is_expired_defect,
 )
 from tools.iqe import IQESyntaxError, execute_query, parse  # noqa: E402
 from tools.iqe.ast_nodes import AttrRef, BinOp, CollectionCall, SelectNode  # noqa: E402
@@ -216,9 +228,19 @@ class Exemption:
     source: str = "scorecard"
     decision_reason: str = ""
     auto_approved: bool = False
+    #: icx-coe-02: the waiver's breadth, the standards it waives, and its log key.
+    scope_kind: str = "rule"
+    scope_ref: str = ""
+    standard_ids: tuple[str, ...] = ()
+    exemption_key: str = ""
+    step_id: str = ""
 
     def defect(self, today: str, policy: "ExemptionPolicy | None" = None) -> str:
         """Why this exemption does not apply, or ``""`` when it does."""
+        if self.source == "scorecard":
+            # Config is not a person's declared step (icx-coe-02).
+            return ("declared in the scorecard file, not granted by a person's declared step: "
+                    "request it on /idp/exemptions")
         return attribution_defect(
             status=self.status,
             approved_by=self.approved_by,
@@ -231,6 +253,10 @@ class Exemption:
     def is_active(self, today: str, policy: "ExemptionPolicy | None" = None) -> bool:
         """True when this exemption actually waives its rule."""
         return not self.defect(today, policy)
+
+    def is_expired(self, today: str, policy: "ExemptionPolicy | None" = None) -> bool:
+        """True when this exemption was granted and has lapsed: it FAILS."""
+        return is_expired_defect(self.defect(today, policy))
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -336,7 +362,9 @@ class RuleOutcome:
 
     #: Set on an ``exempt`` outcome: who approved the waiver, why, when it
     #: lapses, and which store it came from. An exemption with no attribution
-    #: never reaches this point — it is reported as inert instead.
+    #: never reaches this point — it is reported as inert instead. Also set on a
+    #: ``fail`` whose waiver has EXPIRED (``expired: true``): the lapse is named
+    #: where the rule fails, not only in the exemptions list.
     exemption: dict[str, Any] | None = None
 
     @property
@@ -616,9 +644,8 @@ def parse_scorecard(data: dict[str, Any], source_path: str = "") -> Scorecard:
             expires=str(raw.get("expires") or ""),
             approved_by=str(raw.get("approvedBy") or raw.get("approved_by") or ""),
             approved_at=str(raw.get("approvedAt") or raw.get("approved_at") or ""),
-            # A grant written into the scorecard file is approved by whoever
-            # the file says approved it; there is no pending state in YAML,
-            # because merging the edit *is* the approval step for config.
+            # A grant written into the scorecard file is read and reported, never
+            # applied: config is not a person's declared step (icx-coe-02).
             status=ACTIVE_STATUS,
             source="scorecard",
             decision_reason=str(raw.get("decisionReason") or raw.get("decision_reason") or ""),
@@ -882,16 +909,35 @@ def _store_exemptions(scorecard: Scorecard, conn: Any) -> list[Exemption]:
             source="approval-log",
             decision_reason=str(state.get("decision_reason") or ""),
             auto_approved=bool(state.get("auto_approved")),
+            scope_kind=str(state.get("scope_kind") or "rule"),
+            scope_ref=str(state.get("scope_ref") or ""),
+            standard_ids=tuple(_standard_ids(state.get("standard_ids"))),
+            exemption_key=str(state.get("exemption_key") or ""),
+            step_id=str(state.get("step_id") or ""),
         )
         for state in states
     ]
+
+
+def _standard_ids(value: Any) -> list[str]:
+    from tools.idp.exemptions import _ids  # noqa: PLC0415
+
+    return _ids(value)
+
+
+def _waiver(table: dict[tuple[str, str], "Exemption"], rule: str,
+            entity: str) -> "Exemption | None":
+    """The exemption covering (rule, entity): exact, then the component's every rule
+    (``service``), then the rule on every component (``repo``)."""
+    return table.get((rule, entity)) or table.get((ANY, entity)) or table.get((rule, ANY))
 
 
 def _resolve_exemptions(
     scorecard: Scorecard,
     conn: Any,
     today: str,
-) -> tuple[dict[tuple[str, str], Exemption], list[dict[str, Any]]]:
+) -> tuple[dict[tuple[str, str], Exemption], list[dict[str, Any]],
+           dict[tuple[str, str], Exemption]]:
     """Split every known grant into the ones that apply and the ones that do not.
 
     The approval log wins over a YAML grant for the same (rule, entity): a
@@ -899,12 +945,14 @@ def _resolve_exemptions(
     still written in the file, otherwise revoking would require a code change
     and would not take effect until it merged.
 
-    Returns ``(active_by_target, inert)``. The inert list is reported rather
-    than discarded — an exemption that silently failed to apply is as confusing
-    as one that silently applied.
+    Returns ``(active_by_target, inert, expired_by_target)``. The inert list is
+    reported rather than discarded — an exemption that silently failed to apply
+    is as confusing as one that silently applied. An expired one is kept apart:
+    it fails.
     """
     policy = scorecard.exemption_policy
     active: dict[tuple[str, str], Exemption] = {}
+    expired: dict[tuple[str, str], Exemption] = {}
     inert: list[dict[str, Any]] = []
     for grant in list(scorecard.exemptions) + _store_exemptions(scorecard, conn):
         target = (grant.identifier, grant.entity)
@@ -913,9 +961,14 @@ def _resolve_exemptions(
             inert.append({**grant.to_dict(), "defect": defect})
             # A revoked/denied log entry also clears any YAML grant it shadows.
             active.pop(target, None)
+            if grant.source != "scorecard" and is_expired_defect(defect):
+                expired[target] = grant
+            else:
+                expired.pop(target, None)
         else:
             active[target] = grant
-    return active, inert
+            expired.pop(target, None)
+    return active, inert, expired
 
 
 def evaluate(
@@ -923,6 +976,7 @@ def evaluate(
     conn: Any = None,
     today: str | None = None,
     tenant_id: str | None = None,
+    exemptions_conn: Any = None,
 ) -> dict[str, Any]:
     """Evaluate *scorecard* over every entity in its collection.
 
@@ -943,9 +997,13 @@ def evaluate(
     both readings: a scheduled reflex recording the platform's own series must
     keep the platform view even when it runs inside a tenant's request context,
     and ``evaluate(card, tenant_id=None)`` from that reflex says so.
+
+    ``exemptions_conn`` reads the exemption log from a connection other than
+    ``conn`` (the portal grades the live collection with ``conn=None`` and its
+    exemptions from the platform database). Omitted, ``conn`` is used.
     """
     with _tenant_scope(tenant_id):
-        return _evaluate_scoped(scorecard, conn, today, tenant_id)
+        return _evaluate_scoped(scorecard, conn, today, tenant_id, exemptions_conn)
 
 
 def _tenant_scope(tenant_id: str | None) -> Any:
@@ -965,6 +1023,7 @@ def _evaluate_scoped(
     conn: Any,
     today: str | None,
     tenant_id: str | None,
+    exemptions_conn: Any = None,
 ) -> dict[str, Any]:
     """Body of :func:`evaluate`, run with the tenant scope already bound."""
     _ensure_adapter(scorecard)
@@ -976,7 +1035,8 @@ def _evaluate_scoped(
     facts = _fact_rows(scorecard, conn)
     adapter_module = scorecard.resolved_adapter_module()
 
-    active_exemptions, inert_exemptions = _resolve_exemptions(scorecard, conn, today)
+    active_exemptions, inert_exemptions, expired_exemptions = _resolve_exemptions(
+        scorecard, exemptions_conn if exemptions_conn is not None else conn, today)
 
     # Evidence field lists are per rule, not per entity — parse once.
     rule_fields = {
@@ -1004,7 +1064,8 @@ def _evaluate_scoped(
     for entity in entities:
         outcomes: list[RuleOutcome] = []
         for rule in scorecard.rules:
-            waiver: Exemption | None = active_exemptions.get((rule.identifier, entity))
+            waiver: Exemption | None = _waiver(active_exemptions, rule.identifier, entity)
+            lapsed: Exemption | None = None
             if entity not in applicable[rule.identifier]:
                 status = "not_applicable"
                 message = ""
@@ -1021,6 +1082,10 @@ def _evaluate_scoped(
             else:
                 status = "fail"
                 message = rule.failure_message
+                lapsed = _waiver(expired_exemptions, rule.identifier, entity)
+                if lapsed is not None:
+                    # An expired waiver FAILS, and says so where the rule fails.
+                    message = f"exemption expired on {lapsed.expires}: {rule.failure_message}"
             fact_row = facts.get(entity) or {}
             fields = rule_fields.get(rule.identifier) or []
             outcomes.append(
@@ -1044,7 +1109,9 @@ def _evaluate_scoped(
                         observed={f: fact_row[f] for f in fields if f in fact_row},
                         note=rule.evidence_note,
                     ),
-                    exemption=waiver.to_dict() if waiver is not None else None,
+                    exemption=(waiver.to_dict() if waiver is not None else
+                               {**lapsed.to_dict(), "expired": True} if lapsed is not None
+                               else None),
                 )
             )
 
@@ -1087,12 +1154,17 @@ def _evaluate_scoped(
         # Exemptions are reported, never implicit: the policy in force, every
         # waiver that applied (with its approver), and every one that did not
         # (with the reason it did not).
+        # An exemption past its expiry FAILS (icx-coe-02): ``gate`` is ``fail``
+        # until a person renews or revokes it.
         "exemptions": {
             "policy": scorecard.exemption_policy.to_dict(),
             "active_count": len(active_exemptions),
             "inert_count": len(inert_exemptions),
+            "expired_count": len(expired_exemptions),
             "active": [ex.to_dict() for ex in active_exemptions.values()],
             "inert": inert_exemptions,
+            "expired": [ex.to_dict() for ex in expired_exemptions.values()],
+            "gate": "fail" if expired_exemptions else "pass",
         },
         # Repo-relative: the absolute path is a property of whichever worktree
         # happened to render the page, and printing it in the UI leaks a local
@@ -1118,10 +1190,8 @@ def _evaluate_scoped(
                 "exempt": len(
                     {
                         entity
-                        for (identifier, entity) in active_exemptions
-                        if identifier == r.identifier
-                        and entity in applicable[r.identifier]
-                        and entity not in passing[r.identifier]
+                        for entity in applicable[r.identifier] - passing[r.identifier]
+                        if _waiver(active_exemptions, r.identifier, entity) is not None
                     }
                 ),
             }
@@ -1272,6 +1342,9 @@ def _render(report: dict[str, Any], component: str | None) -> str:
             lines.append(
                 f"  {grant['identifier']}:{grant['entity']} — INERT: {grant['defect']}"
             )
+        if exemptions.get("gate") == "fail":
+            lines.append(f"  EXEMPTION GATE FAILED: {exemptions.get('expired_count')} expired "
+                         "exemption(s); a person renews or revokes each on /idp/exemptions")
     lines.append("")
     rows = report["results"]
     if component:

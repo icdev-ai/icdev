@@ -192,6 +192,24 @@
   </div>
   {% endif %}
 
+  <!-- ── Exemptions (icx-coe-02) ───────────────────────────────────────── -->
+  {% set _ex = exemptions or {} %}
+  <div class="mb-3 small" id="idp-exemption-gate" data-gate="{{ _ex.get('gate', 'pass') }}">
+    <span class="text-muted me-2">Exemptions:</span>
+    <span class="badge bg-secondary me-1">{{ _ex.get('active_count', 0) }} active</span>
+    <span class="badge bg-secondary me-1">{{ _ex.get('inert_count', 0) }} inert</span>
+    {% if _ex.get('gate') == 'fail' %}
+      <span class="badge bg-danger me-1" id="idp-exemption-failed">FAILED: {{ _ex.get('expired_count', 0) }} expired</span>
+      {% for g in _ex.get('expired') or [] %}
+        <span class="font-monospace me-1">{{ g.identifier }}:{{ g.entity }} expired {{ g.expires }}</span>
+      {% endfor %}
+    {% else %}
+      <span class="badge bg-success me-1">none expired</span>
+    {% endif %}
+    <span class="text-muted">Every exemption expires; one past its expiry fails this scorecard until a person
+      renews or revokes it on the <a href="/idp/exemptions">exemptions</a> page.</span>
+  </div>
+
   <!-- ── Rules ─────────────────────────────────────────────────────────── -->
   <h5 class="mt-4" id="scorecard">Rules &mdash; {{ scorecard_name }}</h5>
   <div class="table-responsive mb-4">

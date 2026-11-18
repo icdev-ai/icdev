@@ -415,6 +415,55 @@
     "Cortex findings: adjudicate an open finding with a reason"
    ]
   },
+  "GET idp.idp_adrs_page": {
+   "endpoint": "idp.idp_adrs_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "GET idp.idp_api_adr": {
+   "endpoint": "idp.idp_api_adr",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "both pages in the dark theme have no axe violations",
+    "both pages in the light theme have no axe violations",
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "GET idp.idp_api_adrs": {
+   "endpoint": "idp.idp_api_adrs",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "GET idp.idp_api_exemption": {
+   "endpoint": "idp.idp_api_exemption",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "both pages in the dark theme have no axe violations",
+    "both pages in the light theme have no axe violations",
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "GET idp.idp_api_exemptions": {
+   "endpoint": "idp.idp_api_exemptions",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
   "GET idp.idp_api_standard": {
    "endpoint": "idp.idp_api_standard",
    "method": "GET",
@@ -442,6 +491,15 @@
    "test": false,
    "tests": [
     "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
+   ]
+  },
+  "GET idp.idp_exemptions_page": {
+   "endpoint": "idp.idp_exemptions_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
    ]
   },
   "GET idp.idp_standards_page": {
@@ -964,6 +1022,78 @@
    "test": false,
    "tests": [
     "Cortex findings: adjudicate an open finding with a reason"
+   ]
+  },
+  "POST idp.idp_api_adr_accept": {
+   "endpoint": "idp.idp_api_adr_accept",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "POST idp.idp_api_adr_propose": {
+   "endpoint": "idp.idp_api_adr_propose",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "POST idp.idp_api_adr_supersede": {
+   "endpoint": "idp.idp_api_adr_supersede",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "POST idp.idp_api_exemption_decide": {
+   "endpoint": "idp.idp_api_exemption_decide",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "POST idp.idp_api_exemption_renew": {
+   "endpoint": "idp.idp_api_exemption_renew",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "POST idp.idp_api_exemption_renewal": {
+   "endpoint": "idp.idp_api_exemption_renewal",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "POST idp.idp_api_exemption_request": {
+   "endpoint": "idp.idp_api_exemption_request",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "POST idp.idp_api_exemption_revoke": {
+   "endpoint": "idp.idp_api_exemption_revoke",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
    ]
   },
   "POST idp.idp_api_standard_adopt": {

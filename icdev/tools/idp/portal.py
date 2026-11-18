@@ -83,9 +83,32 @@ def scorecard_report(
         from tools.idp.scorecard import evaluate, load_scorecard  # noqa: PLC0415
 
         card = load_scorecard(key, directory)
-        return evaluate(card, conn=conn)
+        log = _exemption_log(conn)
+        try:
+            return evaluate(card, conn=conn, exemptions_conn=log)
+        finally:
+            if log is not None and log is not conn:
+                log.close()
     except Exception as exc:  # noqa: BLE001
         return {"error": str(exc), "scorecard": key, "results": [], "rules": [], "ladder": []}
+
+
+def _exemption_log(conn: Any) -> Any:
+    """Where the scorecard reads its exemptions (icx-coe-02).
+
+    The portal grades the live collection with ``conn=None``; the exemption log
+    is in the platform database, so it is opened here for that read only. An
+    unreachable database costs the report its stored waivers (and the expired
+    ones still fail the CI check), never the scores.
+    """
+    if conn is not None:
+        return conn
+    try:
+        from tools.db.storage import get_connection  # noqa: PLC0415
+
+        return get_connection()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def available_scorecards(directory: Any = None) -> list[dict[str, str]]:
@@ -256,6 +279,8 @@ def portal_overview(
         "adapter_module": report.get("adapter_module", ""),
         "scorecard_source": report.get("source_path", ""),
         "rules": report.get("rules") or [],
+        # icx-coe-02: what the exemption log did to this scorecard, and its gate.
+        "exemptions": report.get("exemptions") or {},
         "rows": rows,
         "groups": group_by_kind(rows),
         "columns": list(CATALOG_COLUMNS),

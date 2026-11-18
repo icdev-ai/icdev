@@ -660,6 +660,14 @@ _THREAD_TABLES = {
     "coe_standard": ("core", "coe_standard_events", "event_id",
                      ("event_id", "standard_id", "version", "event", "actor", "actor_kind",
                       "step_id", "reason", "entry_digest", "row_hash", "created_at")),
+    # icx-coe-02: one row of a scorecard exemption's log, and one event in an ADR's life.
+    "idp_exemption": ("rls", "idp_rule_exemptions", "id",
+                      ("id", "exemption_key", "event", "status", "expires_on", "requested_by",
+                       "decided_by", "decision_reason", "step_id", "actor", "actor_kind",
+                       "row_hash", "recorded_at")),
+    "coe_adr": ("core", "coe_adr_events", "event_id",
+                ("event_id", "adr_id", "version", "event", "actor", "actor_kind", "step_id",
+                 "reason", "entry_digest", "row_hash", "created_at")),
 }
 #: Thread kinds whose ref is an integer row id.
 _INT_REFS = ("ace_audit", "ace_event", "aiify_decision", "audit_trail")

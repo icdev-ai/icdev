@@ -1,0 +1,308 @@
+<!-- CUI // SP-CTI — Scorecard exemptions that expire: request, a person's grant, renewal (icx-coe-02) -->
+{% extends "base.html" %}
+{% block title %}Exemptions — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .std-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .std-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .std-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .std-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .std-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .std-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .std-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .std-card th, .std-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .std-card th { color: var(--text-secondary); font-weight: 600; }
+  .std-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .std-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .std-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .std-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .std-tag.boot { background: var(--status-blue-bg); border-color: var(--status-blue); }
+  .std-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .std-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .std-btn.deny { border-color: var(--status-red); }
+  .std-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .std-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .std-wrap input, .std-wrap select, .std-wrap textarea { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .std-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 14px; }
+  .std-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .std-row > div { min-width: 200px; }
+  .std-wrap code { color: var(--text-primary); }
+  /* Link colour per theme, at AA contrast on the card and the page in each (axe, e2e). */
+  .std-wrap { --std-link: #8cc4ff; }
+  html[data-theme="light"] .std-wrap { --std-link: #0d4f9e; }
+  .std-wrap a, .std-wrap .std-link { color: var(--std-link); text-decoration: underline; }
+</style>
+
+<div class="std-wrap">
+  <nav aria-label="Breadcrumb" class="std-help"><a href="{{ url_for('idp.idp_portal') }}">Developer Portal</a> /
+    <a href="{{ url_for('idp.idp_standards_page') }}">Engineering standards</a> / Exemptions</nav>
+  <h1>Scorecard exemptions</h1>
+  <p class="std-help" id="ex-help">
+    An exemption takes a component out of a scorecard rule, for a <b>scope</b>: a rule on one component, every rule
+    on one component (service), the rule an engineering standard's check names (standard), or a rule on every
+    component of a repo. It links to the <a href="{{ url_for('idp.idp_standards_page') }}">engineering standards</a> it
+    waives. <b>Every exemption expires</b>: a request with no expiry is refused, and an exemption past its expiry
+    no longer exempts. It <b>fails the scorecard</b> and the CI check until a person renews or revokes it. Asking
+    decides nothing. Granting (<code>{{ templates.grant }}</code>) and renewing (<code>{{ templates.renew }}</code>)
+    are a person's declared steps, with a reason, bound to the exemption's digest. The requester never grants their
+    own. Nothing renews by itself. Revoking is a stop: immediate, with a reason. See the effect on the
+    <a href="{{ url_for('idp.idp_scorecards_page') }}">scorecard</a>.
+  </p>
+
+  <div class="std-card" id="ex-summary" aria-live="polite"></div>
+
+  <div class="std-card">
+    <h2>Look ahead</h2>
+    <p class="std-help">Judge every exemption as of a later date, to see what will have expired by then. A look-ahead
+      changes nothing.</p>
+    <div class="std-row">
+      <div><label for="ex-asof">As of (YYYY-MM-DD)</label><input id="ex-asof" autocomplete="off" value="{{ view.get('as_of') if view.get('look_ahead') else '' }}"></div>
+      <div><button type="button" class="std-btn" id="ex-asof-go">Look ahead</button>
+        <button type="button" class="std-btn" id="ex-asof-today">Today</button></div>
+    </div>
+  </div>
+
+  <div class="std-card">
+    <h2>Exemptions</h2>
+    <table id="ex-table">
+      <thead><tr><th scope="col">Exemption</th><th scope="col">Scope</th><th scope="col">Waives</th><th scope="col">State</th><th scope="col">Expires</th><th scope="col">Requested by</th><th scope="col">Granted by</th></tr></thead>
+      <tbody id="ex-body"></tbody>
+    </table>
+  </div>
+
+  <div class="std-card" id="ex-detail">
+    <h2>Exemption</h2>
+    <p class="std-help" id="ex-detail-body">Pick an exemption to see its history and the step it waits for.</p>
+    <div class="std-msg" id="ex-step-msg" role="status"></div>
+  </div>
+
+  <div class="std-card" id="ex-request">
+    <h2>Request an exemption</h2>
+    <p class="std-help">A request waives nothing until a person who is not you grants it. Give the scope, a reason and
+      an expiry (at most {{ view.get('max_expiry_days', 365) }} days out).</p>
+    <div class="std-grid">
+      <div><label for="r-scorecard">Scorecard</label>
+        <select id="r-scorecard">{% for c in scorecards %}<option value="{{ c.key }}">{{ c.key }}</option>{% endfor %}</select></div>
+      <div><label for="r-scope">Scope</label>
+        <select id="r-scope">{% for s in view.get('scopes') or [] %}<option value="{{ s }}">{{ s }}</option>{% endfor %}</select></div>
+      <div><label for="r-rule">Rule (none for a service scope)</label><select id="r-rule"></select></div>
+      <div><label for="r-component">Component (none for a repo scope)</label><input id="r-component" autocomplete="off"></div>
+      <div><label for="r-scope-ref">Repo or standard id (repo and standard scopes)</label><input id="r-scope-ref" autocomplete="off"></div>
+      <div><label for="r-expires">Expires (YYYY-MM-DD)</label><input id="r-expires" autocomplete="off"></div>
+    </div>
+    <label for="r-standards">Standards it waives (ids, optional: the rule's standards are linked for you)</label><input id="r-standards" autocomplete="off">
+    <label for="r-reason">Reason</label><textarea id="r-reason" rows="2"></textarea>
+    <p><button type="button" class="std-btn" id="r-submit">Request exemption</button></p>
+    <div class="std-msg" id="ex-request-msg" role="status"></div>
+  </div>
+
+  <div class="std-card" id="ex-twin">
+    <h2>Twin</h2>
+    <p class="std-help">The Developer Portal's governance twin judges the exemption log: an expired exemption, one about
+      to expire, one the migration gave an expiry that a person has not yet reviewed, a broken chain. Each finding carries
+      its thread to the log row it rests on. Recorded observations and their replay are on the
+      <a href="/twin-observatory/governance">governance twins</a> page.</p>
+    <p><button type="button" class="std-btn" id="twin-observe">Observe now</button></p>
+    <div id="ex-twin-body" class="std-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var initial = {{ view|tojson }};
+  var cards = {{ scorecards|tojson }};
+  var loadError = {{ error|tojson }};
+  var current = null;
+  var asOf = initial.look_ahead ? initial.as_of : '';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  var STEPS = {
+    decide: function (ref, body) { return getJson(icdevFetch('idp.idp_api_exemption_decide', {ref: ref}, postInit(body))); },
+    renewal: function (ref, body) { return getJson(icdevFetch('idp.idp_api_exemption_renewal', {ref: ref}, postInit(body))); },
+    renew: function (ref, body) { return getJson(icdevFetch('idp.idp_api_exemption_renew', {ref: ref}, postInit(body))); },
+    revoke: function (ref, body) { return getJson(icdevFetch('idp.idp_api_exemption_revoke', {ref: ref}, postInit(body))); }
+  };
+  function stateTag(st) {
+    var cls = {active: 'ok', expired: 'no', denied: 'no', revoked: 'no', inert: 'no',
+               pending: 'wait', expiring: 'wait', renewal_pending: 'wait'}[st] || '';
+    return '<span class="std-tag ' + cls + '" data-state="' + esc(st) + '">' + esc(st || 'none') + '</span>';
+  }
+  function scopeText(x) {
+    if (x.scope === 'service') return 'service: every rule on ' + x.component;
+    if (x.scope === 'repo') return 'repo ' + x.scope_ref + ': ' + x.rule + ' on every component';
+    if (x.scope === 'standard') return 'standard ' + x.scope_ref + ': ' + x.rule + ' on ' + x.component;
+    return 'rule ' + x.rule + ' on ' + x.component;
+  }
+
+  function renderList(v) {
+    var c = v.counts || {};
+    document.getElementById('ex-summary').innerHTML =
+      (loadError ? '<p class="std-msg">The exemption log could not be read: ' + esc(loadError) + '</p>' : '') +
+      '<b>' + esc((v.exemptions || []).length) + '</b> exemptions' +
+      (v.look_ahead ? ' judged <b id="ex-lookahead">as of ' + esc(v.as_of) + ' (look-ahead; today is ' + esc(v.today) + ')</b>' : ' judged today (' + esc(v.today) + ')') + ': ' +
+      Object.keys(c).sort().map(function (k) { return stateTag(k) + ' ' + esc(c[k]); }).join(' &middot; ') +
+      ' &middot; scorecard gate <span class="std-tag ' + (v.gate === 'fail' ? 'no' : 'ok') + '" id="ex-gate" data-gate="' + esc(v.gate) + '">' +
+      (v.gate === 'fail' ? 'FAILED: ' + esc((v.failed || []).length) + ' expired' : 'pass') + '</span>';
+    document.getElementById('ex-body').innerHTML = (v.exemptions || []).map(function (x) {
+      return '<tr data-ex="' + esc(x.ref) + '" data-key="' + esc(x.exemption_key) + '" data-state="' + esc(x.state) + '">' +
+        '<td><button type="button" class="std-link" data-open="' + esc(x.ref) + '">' + esc(x.exemption_key) + '</button></td>' +
+        '<td>' + esc(scopeText(x)) + '</td><td>' + esc((x.standard_ids || []).join(', ') || '(no registered standard)') + '</td>' +
+        '<td>' + stateTag(x.state) + (x.migrated ? ' <span class="std-tag boot">migrated</span>' : '') + '</td>' +
+        '<td>' + esc(x.expires_on || 'none') + (x.requested_expires_on ? ' (renewal asks ' + esc(x.requested_expires_on) + ')' : '') + '</td>' +
+        '<td>' + esc(x.requested_by) + '</td><td>' + esc(x.approved_by || '') + '</td></tr>';
+    }).join('') || '<tr><td colspan="7">No exemption is recorded.</td></tr>';
+  }
+
+  function loadList() {
+    return getJson(icdevFetch('idp.idp_api_exemptions', {}, {}, asOf ? {as_of: asOf} : {})).then(function (res) {
+      if (res.ok) { loadError = ''; renderList(res.j); }
+      else { loadError = res.j.error || 'unreadable'; renderList({}); }
+    });
+  }
+
+  function stepControls(d) {
+    var nx = d.next || [];
+    if (!nx.length) return '<p class="std-help" id="ex-no-step">No step waits on this exemption (' + esc(d.state) + ').</p>';
+    var who = Object.keys(d.builders || {});
+    var out = '<h3>Your step</h3><p class="std-help">' + (who.length ? 'May not grant or renew it: <b>' + esc(who.join(', ')) + '</b>. ' : '') +
+      'A reason is required. Bound to digest <code>' + esc(String(d.digest).slice(0, 16)) + '</code>.</p>' +
+      '<label for="ex-reason">Reason</label><input id="ex-reason" autocomplete="off">';
+    var btns = [];
+    if (nx.indexOf('grant') >= 0) {
+      btns.push('<button type="button" class="std-btn" data-step="decide" data-decision="grant">Grant</button>');
+      btns.push('<button type="button" class="std-btn deny" data-step="decide" data-decision="deny">Deny</button>');
+    }
+    if (nx.indexOf('renew') >= 0) {
+      btns.push('<button type="button" class="std-btn" data-step="renew" data-decision="renew">Renew to ' + esc(d.requested_expires_on) + '</button>');
+      btns.push('<button type="button" class="std-btn deny" data-step="renew" data-decision="refuse">Refuse renewal</button>');
+    }
+    if (nx.indexOf('request_renewal') >= 0) {
+      out += '<label for="ex-renew-expires">Renew to (YYYY-MM-DD)</label><input id="ex-renew-expires" autocomplete="off">';
+      btns.push('<button type="button" class="std-btn" data-step="renewal" data-decision="ask">Ask for a renewal</button>');
+    }
+    if (nx.indexOf('revoke') >= 0) {
+      btns.push('<button type="button" class="std-btn deny" data-step="revoke" data-decision="revoke">Revoke (stop)</button>');
+    }
+    return out + '<p>' + btns.join(' ') + '</p>';
+  }
+
+  function renderDetail(d) {
+    current = d;
+    var body = '<h3 id="ex-detail-title">' + esc(d.exemption_key) + '</h3>' +
+      '<p>' + stateTag(d.state) + ' &middot; ' + esc(scopeText(d)) + ' &middot; expires <b>' + esc(d.expires_on || 'none') + '</b>' +
+      (d.approved_by ? ' &middot; granted by ' + esc(d.approved_by) : '') + '</p>' +
+      '<p class="std-help">Reason: ' + esc(d.reason) + '</p>' +
+      '<p id="ex-standards">Waives: ' + ((d.standard_ids || []).map(function (s) { return '<code>' + esc(s) + '</code>'; }).join(', ') || 'no registered standard') + '</p>' +
+      '<h3>History</h3><table id="ex-history"><thead><tr><th scope="col">When</th><th scope="col">#</th><th scope="col">Event</th><th scope="col">By</th><th scope="col">Expires</th><th scope="col">Step</th><th scope="col">Reason</th></tr></thead><tbody>' +
+      (d.history || []).map(function (h) {
+        return '<tr data-event="' + esc(h.event) + '"><td>' + esc(h.recorded_at) + '</td><td>' + esc(h.event_index) + '</td><td>' + stateTag(h.event) + '</td>' +
+          '<td>' + esc(h.actor || h.decided_by || h.requested_by) + (h.actor_kind === 'bootstrap' ? ' <span class="std-tag boot">bootstrap, not a person</span>' : '') + '</td>' +
+          '<td>' + esc(h.expires_on || '') + '</td><td><code>' + esc(h.step_id || '') + '</code></td><td>' + esc(h.decision_reason || '') + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      (d.chain && d.chain.intact === false ? '<p class="std-msg">This history does not verify: ' + esc(d.chain.problems[0].problem) + '</p>'
+        : '<p class="std-help">Hash chain: ' + esc(d.chain.chained) + ' chained row(s)' + (d.chain.legacy ? ', ' + esc(d.chain.legacy) + ' legacy (before the chain, not verified)' : '') + '.</p>') +
+      stepControls(d);
+    document.getElementById('ex-detail-body').innerHTML = body;
+    document.getElementById('ex-detail-body').className = '';
+  }
+
+  function openExemption(ref) {
+    return getJson(icdevFetch('idp.idp_api_exemption', {ref: ref})).then(function (res) {
+      if (!res.ok) { document.getElementById('ex-step-msg').textContent = res.j.error || 'not found'; return; }
+      renderDetail(res.j);
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var open = t.getAttribute('data-open');
+    if (open) { document.getElementById('ex-step-msg').textContent = ''; openExemption(open); return; }
+    var step = t.getAttribute('data-step');
+    if (!step || !current) return;
+    var msg = document.getElementById('ex-step-msg');
+    var reason = ((document.getElementById('ex-reason') || {}).value || '').trim();
+    if (!reason) { msg.textContent = 'A reason is required.'; return; }
+    var body = {reason: reason, decision: t.getAttribute('data-decision'), digest: current.digest};
+    if (step === 'renewal') body.expires = ((document.getElementById('ex-renew-expires') || {}).value || '').trim();
+    var ref = current.ref;
+    STEPS[step](ref, body).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      var r = res.j;
+      msg.textContent = 'Recorded: ' + r.exemption_key + ' ' + r.event + ', now ' + r.status + ' (expires ' + r.expires_on + ')' +
+        (r.decision_step ? ' (step ' + r.decision_step.step_id + ')' : '') + '.';
+      loadList(); openExemption(ref);
+    });
+  });
+
+  function fillRules() {
+    var key = document.getElementById('r-scorecard').value;
+    var card = cards.filter(function (c) { return c.key === key; })[0] || {rules: []};
+    document.getElementById('r-rule').innerHTML = '<option value="">(none)</option>' +
+      card.rules.map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + '</option>'; }).join('');
+  }
+  document.getElementById('r-scorecard').addEventListener('change', fillRules);
+  fillRules();
+
+  document.getElementById('r-submit').addEventListener('click', function () {
+    var v = function (id) { return ((document.getElementById(id) || {}).value || '').trim(); };
+    var msg = document.getElementById('ex-request-msg');
+    getJson(icdevFetch('idp.idp_api_exemption_request', {}, postInit({
+      scorecard: v('r-scorecard'), scope: v('r-scope'), rule: v('r-rule'), component: v('r-component'),
+      scope_ref: v('r-scope-ref'), standards: v('r-standards'), reason: v('r-reason'), expires: v('r-expires')
+    }))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not requested (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Requested ' + res.j.exemption_key + ', pending until a person grants it (expires ' + res.j.expires_on + ').';
+      loadList(); openExemption(res.j.ref);
+    });
+  });
+
+  document.getElementById('ex-asof-go').addEventListener('click', function () {
+    asOf = ((document.getElementById('ex-asof') || {}).value || '').trim();
+    loadList();
+  });
+  document.getElementById('ex-asof-today').addEventListener('click', function () {
+    asOf = ''; document.getElementById('ex-asof').value = ''; loadList();
+  });
+
+  document.getElementById('twin-observe').addEventListener('click', function () {
+    var box = document.getElementById('ex-twin-body');
+    getJson(icdevFetch('idp.idp_api_standards_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j;
+      var vs = (env.violations || []).filter(function (f) { return String(f.rule_id).indexOf('coe.exemption') === 0 || String(f.rule_id).indexOf('coe.exemptions') === 0; });
+      box.innerHTML = '<p id="ex-twin-verdict">Verdict ' + stateTag(env.verdict) + ' coverage ' + esc(env.coverage_score) + ', ' + esc(vs.length) + ' exemption finding(s).</p>' +
+        '<ul>' + vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
+            ' &middot; thread <button type="button" class="std-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
+        }).join('') + '</ul><div id="ex-thread"></div>';
+    });
+  });
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var th = t.getAttribute && t.getAttribute('data-thread');
+    if (!th) return;
+    getJson(icdevFetch('idp.idp_api_standards_twin', {}, {}, {thread: th})).then(function (res) {
+      var rec = res.j.record || {};
+      document.getElementById('ex-thread').innerHTML = res.j.resolved
+        ? '<p>Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.exemption_key || rec.path || '') + ' ' + esc(rec.event || '') + ' by ' + esc(rec.actor || rec.decided_by || '') + ' ' + esc(rec.recorded_at || '') + '</p>'
+        : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';
+    });
+  });
+
+  renderList(initial);
+})();
+</script>
+{% endblock %}

@@ -9125,6 +9125,63 @@ RESOURCE_REGISTRY = {
             "required": ["id", "title", "version", "owner", "scope", "sources"],
         },
     },
+    # -- exemptions that expire, and ADRs as records (icx-coe-02) --------------
+    "coe_exemptions": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_exemptions",
+        "description": "Read ICDEV's scorecard exemptions (/idp/exemptions): each one's scorecard, scope (rule: a rule on a component; service: every rule on a component; standard: an engineering standard's rule; repo: a rule on every component of a repo), the engineering standards it waives, and its expiry state (pending, active, expiring, expired, renewal_pending, denied, revoked). Every exemption expires; one past its expiry FAILS the scorecard (gate fail) until a person renews or revokes it. Give ref for one exemption's hash-chained history, digest and the step it waits for; as_of (YYYY-MM-DD) looks ahead. Read-only: grants, renews and revokes nothing.",
+        "input_schema": {"type": "object", "properties": {
+            "ref": {"type": "string", "description": "One exemption's ref (from the list)"},
+            "as_of": {"type": "string", "description": "Judge expiry as of this date (YYYY-MM-DD)"}}},
+    },
+    "coe_exemption_request": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_exemption_request",
+        "description": "Draft a scorecard exemption REQUEST, recorded as the agent's (agent:<name>). It waives nothing: a person who did not request it grants or denies it on /idp/exemptions, a declared step an agent cannot take. Give scorecard, rule, component, scope (rule, service, standard or repo; scope_ref names the repo or the standard), reason and expires (YYYY-MM-DD, after today and within the configured horizon): a request with no expiry is refused.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The requesting agent's name (recorded as agent:<name>)"},
+                "scorecard": {"type": "string"}, "rule": {"type": "string"}, "component": {"type": "string"},
+                "scope": {"type": "string", "enum": ["rule", "service", "standard", "repo"]},
+                "scope_ref": {"type": "string"}, "reason": {"type": "string"},
+                "expires": {"type": "string", "description": "YYYY-MM-DD"},
+                "standards": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["reason", "expires"],
+        },
+    },
+    "coe_adrs": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_adrs",
+        "description": "Read ICDEV's architecture decision records (/idp/adrs): each ADR's status (proposed, accepted, superseded, deprecated), version, section, what it supersedes or is superseded by, its links to platform-model requirements and engineering standards, and who recorded it (a person's declared step, or the labelled bootstrap identity that migrated the flat log, never a signature). Records are merged with the hash-chained ledger; docs/reference/adrs.md is generated from them. Give adr_id for one ADR's record, versions and history; q filters; limit caps the list. Read-only.",
+        "input_schema": {"type": "object", "properties": {
+            "adr_id": {"type": "string", "description": "One ADR, e.g. D-COE-2"},
+            "q": {"type": "string"}, "limit": {"type": "integer"}}},
+    },
+    "coe_adr_propose": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_adr_propose",
+        "description": "Propose an architecture decision record as a DRAFT, recorded as the agent's (agent:<name>). A draft decides nothing: a person who is not its author accepts or returns it, and later supersedes it, each a declared step on /idp/adrs that an agent cannot take. Give id (D-AREA-N), title, context, decision, consequences, and optionally version, section, supersedes (ADR ids), requirements (platform-model requirement ids) and standards (engineering standard ids); every link must exist.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string"}, "id": {"type": "string"}, "title": {"type": "string"},
+                "version": {"type": "string"}, "section": {"type": "string"},
+                "context": {"type": "string"}, "decision": {"type": "string"},
+                "consequences": {"type": "string"},
+                "supersedes": {"type": "array", "items": {"type": "string"}},
+                "requirements": {"type": "array", "items": {"type": "string"}},
+                "standards": {"type": "array", "items": {"type": "string"}},
+                "note": {"type": "string"},
+            },
+            "required": ["id", "title", "context", "decision", "consequences"],
+        },
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -9838,6 +9895,12 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # nothing, so it is not read-only and halts at the approval gate's default tier.
     "coe_standards":                            True,
     "coe_standard_propose":                     False,
+    # icx-coe-02: exemptions and ADRs. The reads read; each draft writes one row and
+    # decides nothing, so it is not read-only and halts at the approval gate.
+    "coe_exemptions":                           True,
+    "coe_exemption_request":                    False,
+    "coe_adrs":                                 True,
+    "coe_adr_propose":                          False,
 })
 
 

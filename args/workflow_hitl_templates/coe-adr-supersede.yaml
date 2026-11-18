@@ -1,0 +1,28 @@
+# CUI // SP-CTI
+id: decl-wft-coe-adr-supersede
+name: "Architecture decision records: an architect supersedes or deprecates an accepted ADR"
+description: >-
+  An accepted ADR stops being the decision of record only when a person who wrote
+  neither it nor its successor supersedes it on /idp/adrs (by an accepted ADR,
+  named), or deprecates it, with a reason, at the digest of the record they read.
+  Nothing advances on its own.
+decides: [idp.idp_api_adr_supersede]
+effect: >-
+  The decided step in wf_decision_steps is the signature (subject:
+  "adr:<id>@<version>"; payload: the id, version, record digest and the
+  successor). The ADR ledger appends a superseded or deprecated event to
+  coe_adr_events, bound to that step.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: accepted
+    step_type: automated
+    description: The ADR is accepted (decl-wft-coe-adr-accept) or was migrated as accepted.
+  - name: supersede
+    step_type: manual
+    role: architecture_steward
+    holders: [admin, isso, reviewer]
+    # Neither the ADR's author nor its successor's author takes this step.
+    separate_from: builders
+    decisions: {supersede: affirm, deprecate: affirm}
+    reason_required: [supersede, deprecate]

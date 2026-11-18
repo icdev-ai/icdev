@@ -25,6 +25,24 @@ Every finding's thread is the ledger row it rests on (``coe_standard:<event
 id>``), or the register file (``config:args/engineering_standards.yaml@<sha>``).
 Nothing read is never a pass: an unreadable ledger, register or scorecard set is
 an unverified check.
+
+icx-coe-02 adds the rest of the CoE's records on the same canvas, observing
+``coe.exemptions`` and ``coe.adrs`` (``tools/idp/exemptions.py`` and
+``tools/idp/adrs.py`` hold their evidence and judgement):
+
+* ``coe.exemption.expired``        an approved exemption past its expiry: it
+                                  fails the scorecard (high), threaded to its row;
+* ``coe.exemption.expiring``       one inside the warning window (low);
+* ``coe.exemption.migrated``       given an expiry by the migration, not a
+                                  person: the owner reviews it (medium);
+* ``coe.exemption.no_expiry`` / ``.self_approved`` / ``.unknown_standard`` /
+  ``.config_grant`` / ``.chain_broken``;
+* ``coe.adr.doc_drift``            the flat ADR log differs from the records;
+* ``coe.adr.unexported``           a ledger decision not yet in its record;
+* ``coe.adr.record_invalid`` / ``.proposed.waiting`` / ``.chain_broken``.
+
+An ADR record the ledger has never seen is an unverified check, never a pass.
+Expiry is judged on the observation's date, so a replay judges the same.
 """
 from __future__ import annotations
 
@@ -46,13 +64,22 @@ from tools.twin_core.registry import register_twin
 class EngineeringStandardsTwin(GovernanceTwinAdapter):
     canvas_key = "idp"
     display_name = "Engineering standards register"
-    observes = ("coe.standards",)
+    observes = ("coe.standards", "coe.exemptions", "coe.adrs")
 
     def replay(self, observation_id: str) -> dict:
         """Re-judge a recorded observation from its evidence (see governance.replay)."""
         return replay_observation(self, observation_id)
 
     def collect(self) -> dict:
+        ev = self._collect_standards()
+        from tools.idp import adrs, exemptions
+
+        # icx-coe-02: the exemptions and the ADRs, read the same way (never raising).
+        ev["exemptions"] = exemptions.twin_evidence()
+        ev["adrs"] = adrs.twin_evidence()
+        return ev
+
+    def _collect_standards(self) -> dict:
         from tools.idp import standards
 
         ev: dict = {"canvas": self.canvas_key, "target_id": "coe.standards",
@@ -172,6 +199,24 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
                         f"{sid} is declared in the register but not in the ledger",
                         thread_id=f"config:{reg['path']}@{reg['sha256'][:12]}",
                         recommendation="Run python tools/idp/standards.py --seed."))
+        # icx-coe-02: the exemptions and the ADRs (absent from an observation recorded before).
+        extra_summary: dict = {}
+        if "exemptions" in evidence:
+            from tools.idp import exemptions
+
+            c, f, s = exemptions.twin_judge(evidence["exemptions"] or {}, policy,
+                                            evidence.get("observed_at") or "")
+            checks += c
+            findings += f
+            extra_summary.update(s)
+        if "adrs" in evidence:
+            from tools.idp import adrs
+
+            c, f, s = adrs.twin_judge(evidence["adrs"] or {}, policy,
+                                      evidence.get("observed_at") or "")
+            checks += c
+            findings += f
+            extra_summary.update(s)
         if len(findings) > cap:
             findings = findings[:cap]
         items = (ledger or {}).get("standards") or []
@@ -183,5 +228,6 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
             "drafts": sum(1 for s in items if s.get("state") in ("proposed", "reviewed")),
             "ledger_rows": (ledger or {}).get("rows"),
             "chain_intact": ledger is not None and not ledger.get("problems"),
+            **extra_summary,
         }
         return {"checks": checks, "findings": findings, "summary": summary}

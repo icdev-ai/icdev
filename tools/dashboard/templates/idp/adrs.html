@@ -1,0 +1,269 @@
+<!-- CUI // SP-CTI — Architecture decision records as signed, versioned records (icx-coe-02) -->
+{% extends "base.html" %}
+{% block title %}Architecture Decisions — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .std-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .std-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .std-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .std-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .std-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .std-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .std-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .std-card th, .std-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .std-card th { color: var(--text-secondary); font-weight: 600; }
+  .std-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .std-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .std-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .std-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .std-tag.boot { background: var(--status-blue-bg); border-color: var(--status-blue); }
+  .std-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .std-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .std-btn.deny { border-color: var(--status-red); }
+  .std-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .std-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .std-wrap input, .std-wrap select, .std-wrap textarea { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .std-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 14px; }
+  .std-text { white-space: pre-wrap; font-size: 13px; line-height: 1.5; margin: 0 0 8px; }
+  .std-wrap code { color: var(--text-primary); }
+  /* Link colour per theme, at AA contrast on the card and the page in each (axe, e2e). */
+  .std-wrap { --std-link: #8cc4ff; }
+  html[data-theme="light"] .std-wrap { --std-link: #0d4f9e; }
+  .std-wrap a, .std-wrap .std-link { color: var(--std-link); text-decoration: underline; }
+</style>
+
+<div class="std-wrap">
+  <nav aria-label="Breadcrumb" class="std-help"><a href="{{ url_for('idp.idp_portal') }}">Developer Portal</a> /
+    <a href="{{ url_for('idp.idp_standards_page') }}">Engineering standards</a> / Architecture decisions</nav>
+  <h1>Architecture decision records</h1>
+  <p class="std-help" id="adr-help">
+    Every architecture decision is a <b>record</b>: its context, decision and consequences, what it supersedes, and
+    its links to the platform model's requirements and to the
+    <a href="{{ url_for('idp.idp_standards_page') }}">engineering standards</a>. The flat log
+    (<code>docs/reference/adrs.md</code>) is <b>generated</b> from the records and a drift fails CI. Anyone, or an agent,
+    may propose an ADR; proposing decides nothing. A person who is not its author accepts or returns it
+    (<code>{{ templates.accept }}</code>), and later supersedes or deprecates it (<code>{{ templates.supersede }}</code>),
+    with a reason, bound to the record's digest. The decisions migrated from the flat log were recorded by a labelled
+    bootstrap identity, which is never a person's signature.
+  </p>
+
+  <div class="std-card" id="adr-summary" aria-live="polite"></div>
+
+  <div class="std-card">
+    <h2>Records</h2>
+    <label for="adr-q">Filter by id, title or section</label><input id="adr-q" autocomplete="off">
+    <p class="std-help" id="adr-shown"></p>
+    <table id="adr-table">
+      <thead><tr><th scope="col">ADR</th><th scope="col">Title</th><th scope="col">Status</th><th scope="col">Section</th><th scope="col">Links</th><th scope="col">Recorded by</th></tr></thead>
+      <tbody id="adr-body"></tbody>
+    </table>
+  </div>
+
+  <div class="std-card" id="adr-detail">
+    <h2>Decision</h2>
+    <p class="std-help" id="adr-detail-body">Pick an ADR to see its record, its history and the step it waits for.</p>
+    <div class="std-msg" id="adr-step-msg" role="status"></div>
+  </div>
+
+  <div class="std-card" id="adr-propose">
+    <h2>Propose an ADR</h2>
+    <p class="std-help">A draft, accepted (or returned) by a person who is not you. Ids look like
+      <code>D-AREA-N</code>. Requirements are platform-model requirement ids (e.g. <code>PM-COE-08</code>); standards
+      are engineering standard ids (e.g. <code>ENG-E2E-SPEC</code>); every link must exist.</p>
+    <div class="std-grid">
+      <div><label for="a-id">Id</label><input id="a-id" autocomplete="off"></div>
+      <div><label for="a-version">Version</label><input id="a-version" value="1" autocomplete="off"></div>
+      <div><label for="a-section">Section</label><input id="a-section" autocomplete="off"></div>
+      <div><label for="a-supersedes">Supersedes (ADR ids)</label><input id="a-supersedes" autocomplete="off"></div>
+      <div><label for="a-requirements">Requirements</label><input id="a-requirements" autocomplete="off"></div>
+      <div><label for="a-standards">Standards</label><input id="a-standards" autocomplete="off"></div>
+    </div>
+    <label for="a-title">Title</label><input id="a-title" autocomplete="off">
+    <label for="a-context">Context</label><textarea id="a-context" rows="2"></textarea>
+    <label for="a-decision">Decision</label><textarea id="a-decision" rows="3"></textarea>
+    <label for="a-consequences">Consequences</label><textarea id="a-consequences" rows="2"></textarea>
+    <label for="a-note">Note to the reviewer</label><input id="a-note" autocomplete="off">
+    <p><button type="button" class="std-btn" id="a-submit">Propose draft</button></p>
+    <div class="std-msg" id="adr-propose-msg" role="status"></div>
+  </div>
+
+  <div class="std-card" id="adr-twin">
+    <h2>Twin</h2>
+    <p class="std-help">The Developer Portal's governance twin judges the ADRs: a flat log that drifted from its records, a
+      ledger decision not yet exported to its record, a proposal waiting, a broken chain. A record the ledger has never
+      seen is unverified, never passed. Each finding carries its thread.</p>
+    <p><button type="button" class="std-btn" id="twin-observe">Observe now</button></p>
+    <div id="adr-twin-body" class="std-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var initial = {{ view|tojson }};
+  var loadError = {{ error|tojson }};
+  var current = null;
+  var all = initial.adrs || [];
+  var SHOW = 100;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  var STEPS = {
+    accept: function (id, body) { return getJson(icdevFetch('idp.idp_api_adr_accept', {adr_id: id}, postInit(body))); },
+    supersede: function (id, body) { return getJson(icdevFetch('idp.idp_api_adr_supersede', {adr_id: id}, postInit(body))); }
+  };
+  function stateTag(st) {
+    var cls = {accepted: 'ok', superseded: 'no', deprecated: 'no', returned: 'no', proposed: 'wait'}[st] || '';
+    return '<span class="std-tag ' + cls + '" data-state="' + esc(st) + '">' + esc(st || 'none') + '</span>';
+  }
+  function byTag(who, kind) {
+    if (!who) return '';
+    return kind === 'bootstrap' ? '<span class="std-tag boot" title="a labelled bootstrap identity, not a person">' + esc(who) + ' (bootstrap, not a signature)</span>'
+         : esc(who) + (kind === 'agent' ? ' (agent)' : '');
+  }
+
+  function renderSummary(v) {
+    var c = v.counts || {};
+    var doc = v.doc || {};
+    var chain = v.chain || {};
+    document.getElementById('adr-summary').innerHTML =
+      (loadError ? '<p class="std-msg">The ADR records could not be read: ' + esc(loadError) + '</p>' : '') +
+      '<b>' + esc(v.total) + '</b> ADRs: ' +
+      Object.keys(c).sort().map(function (k) { return stateTag(k) + ' ' + esc(c[k]); }).join(' &middot; ') +
+      ' &middot; ' + esc(v.in_ledger) + ' in the ledger' +
+      ' &middot; flat log ' + (doc.ok ? '<span class="std-tag ok" id="adr-doc">generated from the records</span>'
+                                      : '<span class="std-tag no" id="adr-doc">drifted</span> ' + esc(doc.error || '')) +
+      ' &middot; ' + (chain.intact === false ? '<span class="std-tag no">chain broken</span>' : '<span class="std-tag ok">hash chain intact</span>');
+  }
+  function renderList() {
+    var q = ((document.getElementById('adr-q') || {}).value || '').trim().toLowerCase();
+    var rows = all.filter(function (s) {
+      return !q || s.id.toLowerCase().indexOf(q) >= 0 || (s.title || '').toLowerCase().indexOf(q) >= 0 || (s.section || '').toLowerCase().indexOf(q) >= 0;
+    });
+    document.getElementById('adr-shown').textContent = 'Showing ' + Math.min(rows.length, SHOW) + ' of ' + rows.length + ' matching.';
+    document.getElementById('adr-body').innerHTML = rows.slice(0, SHOW).map(function (s) {
+      var links = (s.requirements || []).concat(s.standards || []);
+      return '<tr data-adr="' + esc(s.id) + '"><td><button type="button" class="std-link" data-open="' + esc(s.id) + '">' + esc(s.id) + '</button></td>' +
+        '<td>' + esc(s.title) + '</td><td>' + stateTag(s.status) + (s.superseded_by ? ' by ' + esc(s.superseded_by) : '') + (s.in_ledger ? '' : ' <span class="std-tag" title="not in the ledger: unverified">record only</span>') + '</td>' +
+        '<td>' + esc(s.section) + '</td><td>' + esc(links.join(', ')) + '</td><td>' + byTag(s.recorded_by, s.recorded_kind) + '</td></tr>';
+    }).join('') || '<tr><td colspan="6">No ADR matches.</td></tr>';
+  }
+  function loadAll() {
+    return getJson(icdevFetch('idp.idp_api_adrs')).then(function (res) {
+      if (res.ok) { loadError = ''; all = res.j.adrs || []; renderSummary(res.j); renderList(); }
+      else { loadError = res.j.error || 'unreadable'; renderSummary({}); }
+    });
+  }
+
+  function stepControls(d) {
+    var nx = d.next || [];
+    if (!nx.length) return '<p class="std-help" id="adr-no-step">No step waits on this ADR (' + esc(d.status) + (d.in_ledger ? '' : ', not yet in the ledger') + ').</p>';
+    var who = Object.keys(d.builders || {});
+    var out = '<h3>Your step</h3><p class="std-help">' + (who.length ? 'May not take it: <b>' + esc(who.join(', ')) + '</b>. ' : '') +
+      'A reason is required. Bound to digest <code>' + esc(String(d.entry_digest).slice(0, 16)) + '</code>.</p>' +
+      '<label for="adr-reason">Reason</label><input id="adr-reason" autocomplete="off">';
+    if (nx[0] === 'accept') {
+      out += '<p><button type="button" class="std-btn" data-step="accept" data-decision="accept">Accept</button> ' +
+             '<button type="button" class="std-btn deny" data-step="accept" data-decision="return">Return to author</button></p>';
+    } else if (nx[0] === 'supersede') {
+      out += '<label for="adr-successor">Superseded by (an accepted ADR id)</label><input id="adr-successor" autocomplete="off">' +
+             '<p><button type="button" class="std-btn deny" data-step="supersede" data-decision="supersede">Supersede</button> ' +
+             '<button type="button" class="std-btn deny" data-step="supersede" data-decision="deprecate">Deprecate</button></p>';
+    }
+    return out;
+  }
+
+  function renderDetail(d) {
+    current = d;
+    var e = d.entry || {};
+    var links = e.links || {};
+    var body = '<h3 id="adr-detail-title">' + esc(d.id) + ' (version ' + esc(d.version) + '): ' + esc(d.title) + '</h3>' +
+      '<p>' + stateTag(d.status) + (d.superseded_by ? ' by ' + esc(d.superseded_by) : '') + ' &middot; ' + esc(e.section || '') +
+      (d.in_ledger ? '' : ' &middot; <span class="std-tag">record only: not yet in the ledger (unverified)</span>') + '</p>' +
+      '<h3>Context</h3><p class="std-text">' + (e.context ? esc(e.context) : '<i>Not recorded in the flat log; its section is its context.</i>') + '</p>' +
+      '<h3>Decision</h3><p class="std-text" id="adr-decision">' + esc(e.decision) + '</p>' +
+      '<h3>Consequences</h3><p class="std-text">' + (e.consequences ? esc(e.consequences) : '<i>Not recorded in the flat log.</i>') + '</p>' +
+      '<p id="adr-links">Supersedes: ' + esc((e.supersedes || []).join(', ') || 'nothing') +
+      ' &middot; requirements: ' + ((links.requirements || []).map(function (r) { return '<code>' + esc(r) + '</code>'; }).join(', ') || 'none') +
+      ' &middot; standards: ' + ((links.standards || []).map(function (s) { return '<code>' + esc(s) + '</code>'; }).join(', ') || 'none') + '</p>' +
+      '<h3>History</h3><table id="adr-history"><thead><tr><th scope="col">When</th><th scope="col">Version</th><th scope="col">Event</th><th scope="col">By</th><th scope="col">Step</th><th scope="col">Reason</th></tr></thead><tbody>' +
+      (d.history || []).map(function (h) {
+        return '<tr data-event="' + esc(h.event) + '"><td>' + esc(h.created_at) + '</td><td>' + esc(h.version) + '</td><td>' + stateTag(h.event === 'seeded' ? 'seeded ' + h.state : h.event) + '</td>' +
+          '<td>' + byTag(h.actor, h.actor_kind) + '</td><td><code>' + esc(h.step_id || '') + '</code></td><td>' + esc(h.reason) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      (d.chain && d.chain.intact === false ? '<p class="std-msg">This history does not verify: ' + esc(d.chain.problems[0].problem) + '</p>' : '') +
+      stepControls(d);
+    document.getElementById('adr-detail-body').innerHTML = body;
+    document.getElementById('adr-detail-body').className = '';
+  }
+
+  function openAdr(id) {
+    return getJson(icdevFetch('idp.idp_api_adr', {adr_id: id})).then(function (res) {
+      if (!res.ok) { document.getElementById('adr-step-msg').textContent = res.j.error || 'not found'; return; }
+      renderDetail(res.j);
+    });
+  }
+
+  document.getElementById('adr-q').addEventListener('input', renderList);
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var open = t.getAttribute('data-open');
+    if (open) { document.getElementById('adr-step-msg').textContent = ''; openAdr(open); return; }
+    var step = t.getAttribute('data-step');
+    if (!step || !current) return;
+    var msg = document.getElementById('adr-step-msg');
+    var reason = ((document.getElementById('adr-reason') || {}).value || '').trim();
+    if (!reason) { msg.textContent = 'A reason is required.'; return; }
+    var body = {version: current.version, decision: t.getAttribute('data-decision'), reason: reason, digest: current.entry_digest};
+    if (step === 'supersede') body.superseded_by = ((document.getElementById('adr-successor') || {}).value || '').trim();
+    var id = current.id;
+    STEPS[step](id, body).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Recorded: ' + id + ' version ' + res.j.version + ' is now ' + res.j.state + ' (step ' + res.j.decision_step.step_id + ').';
+      loadAll(); openAdr(id);
+    });
+  });
+
+  document.getElementById('a-submit').addEventListener('click', function () {
+    var v = function (id) { return ((document.getElementById(id) || {}).value || '').trim(); };
+    var msg = document.getElementById('adr-propose-msg');
+    getJson(icdevFetch('idp.idp_api_adr_propose', {}, postInit({
+      id: v('a-id'), version: v('a-version'), title: v('a-title'), section: v('a-section'), context: v('a-context'),
+      decision: v('a-decision'), consequences: v('a-consequences'), supersedes: v('a-supersedes'),
+      requirements: v('a-requirements'), standards: v('a-standards'), note: v('a-note')
+    }))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not proposed (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Proposed ' + res.j.adr_id + ' version ' + res.j.version + ' as a draft.';
+      loadAll(); openAdr(res.j.adr_id);
+    });
+  });
+
+  document.getElementById('twin-observe').addEventListener('click', function () {
+    var box = document.getElementById('adr-twin-body');
+    getJson(icdevFetch('idp.idp_api_standards_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j;
+      var vs = (env.violations || []).filter(function (f) { return String(f.rule_id).indexOf('coe.adr') === 0; });
+      box.innerHTML = '<p id="adr-twin-verdict">Verdict ' + stateTag(env.verdict) + ' coverage ' + esc(env.coverage_score) + ', ' + esc(vs.length) + ' ADR finding(s).</p>' +
+        '<ul>' + vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) + ' &middot; thread <code>' + esc(f.thread_id) + '</code></li>';
+        }).join('') + '</ul>';
+    });
+  });
+
+  renderSummary(initial);
+  renderList();
+})();
+</script>
+{% endblock %}

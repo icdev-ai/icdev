@@ -2042,6 +2042,10 @@ components:
       href: /idp/scorecards
     - label: Engineering Standards
       href: /idp/standards
+    - label: Exemptions
+      href: /idp/exemptions
+    - label: Architecture Decisions
+      href: /idp/adrs
   iqe:
     adapter_module: tools.iqe.adapters.idp
     collections:
