@@ -1,0 +1,28 @@
+# CUI // SP-CTI
+# AI-BOM export (osx-cop-02): ICDEV[IT]'s OWN AI components, described as one AI bill of materials in
+# SPDX 3.0.1 (AI and Dataset profiles) and CycloneDX 1.7 (ML-BOM), exported to ICDEV[OS] as an
+# icos-aibom/v1 bundle (tools/compliance/aibom_bundle.py). A person who did not prepare it publishes it.
+#
+#   router_configs      the governed router's configuration files (each a component, by file digest)
+#   models_from_router  every entry of each router config's `models:` map is a model component
+#                       (an external model, by the digest of its declared entry; supplier = its provider)
+#   registry            the platform database's registered models (ft_model_versions, by adapter hash)
+#                       and datasets (ft_datasets, by content hash); a row with no SHA-256 is left out
+#                       and SAID on /ai-bom/, never given a digest it does not have
+#   datasets, gold_sets dataset and gold set files (by file digest)
+#   prompts             prompt template files or directories (by file digest: the text never leaves)
+#
+# A test or e2e run may name another file with ICDEV_AIBOM_SOURCES_E2E, honoured only for a path under
+# tests/.
+router_configs: [args/llm_config.yaml]
+models_from_router: true
+registry: true
+datasets: []
+gold_sets: [args/rag/golden_query_set.yaml]
+prompts: [hardprompts]
+
+# A prepared AI-BOM waiting this long for a person, or a published one this old, is a finding of the
+# AI-BOM twin.
+publish:
+  waiting_warn_days: 7
+  stale_days: 30

@@ -1,0 +1,14 @@
+# CUI // SP-CTI
+# SYNTHETIC router config for the osx-cop-02 AI-BOM tests (labelled; no real model or provider).
+models:
+  syn-drafter:
+    provider: synthetic-provider
+    model_id: synthetic-drafter-v1
+    context_window: 8000
+  syn-reviewer:
+    provider: synthetic-provider
+    model_id: synthetic-reviewer-v1
+    context_window: 8000
+routing:
+  drafting: [syn-drafter]
+  review: [syn-reviewer]

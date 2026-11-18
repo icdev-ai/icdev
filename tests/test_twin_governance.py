@@ -25,8 +25,9 @@ from tools.twin_core import governance as gov
 from tools.twin_core.registry import TwinRegistry, known_canvas_keys
 
 # icx-mdz-01 added "mdc", the modernisation twin (tools/twin_core/adapters/modernisation.py); icx-coe-01 added
-# "idp", the engineering standards register twin (tools/twin_core/adapters/coe_standards.py).
-GOVERNANCE_KEYS = {"cortex", "ace", "cwk", "twin_observatory", "mdc", "idp"}
+# "idp", the engineering standards register twin (tools/twin_core/adapters/coe_standards.py); osx-cop-02 added
+# "aibom", the AI-BOM export twin (tools/twin_core/adapters/aibom.py).
+GOVERNANCE_KEYS = {"cortex", "ace", "cwk", "twin_observatory", "mdc", "idp", "aibom"}
 
 
 def _ago(**kw) -> str:
@@ -79,8 +80,12 @@ def _adapter(key):
 def test_four_governance_twins_register_under_registry_canvas_keys(db):
     adapters = gov.governance_adapters()
     assert set(adapters) == GOVERNANCE_KEYS
-    # validated against args/component_registry.yaml, not just any string
-    assert GOVERNANCE_KEYS <= known_canvas_keys()
+    # validated against args/component_registry.yaml, not just any string. osx-cop-02: the AI-BOM export twin
+    # observes a core extension (aibom, its own page and blueprint), not a canvas; it is held to the registry's
+    # component keys, and every other twin still to a canvas key.
+    assert GOVERNANCE_KEYS - {"aibom"} <= known_canvas_keys()
+    from tools.config.component_registry import get_registry
+    assert get_registry().get("aibom").kind == "core_extension"
     assert adapters["twin_observatory"].observes == ("conformance.audit",)
 
 

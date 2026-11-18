@@ -1,0 +1,7 @@
+{
+  "description": "AI-BOM export ledger: ICDEV[IT]'s icos-aibom/v1 bundle (SPDX 3.0.1 + CycloneDX 1.7) prepared, then a person publishes or refuses; append-only and hash-chained (osx-cop-02)",
+  "date": "2026-11-18",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

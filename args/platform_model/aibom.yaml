@@ -1,0 +1,170 @@
+# CUI // SP-CTI
+# ICDEV platform model: ICDEV[IT]'s own AI-BOM for ICDEV[OS] (osx-cop-02). The router configs, the
+# models they route to and the registered ones, the datasets, gold sets and prompts (by digest) are
+# described as one AI bill of materials in SPDX 3.0.1 (AI and Dataset profiles) and CycloneDX 1.7
+# (ML-BOM), each validated against the official schema vendored unmodified; both travel in one
+# icos-aibom/v1 bundle against ICDEV[OS]'s published schema vendored and pinned here; a person who
+# did not prepare it publishes it.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the
+# header of args/platform_model/cortex.yaml.
+
+component: aibom
+project_id: icdev-platform
+
+elements:
+  - id: aib.bundle
+    type: sysml_element
+    kind: block
+    name: The icos-aibom/v1 bundle (SPDX 3.0.1 AI + CycloneDX 1.7 ML-BOM) against the pinned contract
+    features: [compliance.aibom_export]
+    code:
+      - tools/compliance/aibom_bundle.py::build
+      - tools/compliance/aibom_bundle.py::inventory
+      - tools/compliance/aibom_bundle.py::spdx_document
+      - tools/compliance/aibom_bundle.py::cyclonedx_bom
+      - tools/compliance/aibom_bundle.py::schema
+      - tools/compliance/aibom_bundle.py::validate
+      - tools/compliance/aibom_bundle.py::content_digest
+      - tools/compliance/aibom_bundle.py::load_config
+      - tools/compliance/aibom_export.py::export
+      - context/icos/aibom.schema.json
+      - args/aibom_export.yaml
+
+  - id: aib.standards
+    type: sysml_element
+    kind: block
+    name: The official SPDX 3.0.1 and CycloneDX 1.7 JSON schemas, vendored unmodified with their licences
+    features: [compliance.aibom_export]
+    code:
+      - tools/compliance/aibom_bundle.py::spdx_errors
+      - tools/compliance/aibom_bundle.py::cyclonedx_errors
+      - context/standards/spdx/3.0.1/spdx-json-schema.json
+      - context/standards/cyclonedx/1.7/bom-1.7.schema.json
+
+  - id: aib.publish
+    type: sysml_element
+    kind: block
+    name: Prepare, then a person publishes through a declared step, in an append-only hash-chained ledger
+    features: [compliance.aibom_export]
+    code:
+      - tools/compliance/aibom_bundle.py::prepare
+      - tools/compliance/aibom_bundle.py::publish
+      - tools/compliance/aibom_bundle.py::published_bundle
+      - tools/compliance/aibom_bundle.py::chain
+      - tools/compliance/aibom_bundle.py::replay
+      - tools/workflow_hitl/declared.py::take_step
+      - tools/db/migrations/20261118140000_aibom_export_events/up.py
+      - args/workflow_hitl_templates/aibom-publish.yaml
+
+  - id: if.aib.console
+    type: sysml_element
+    kind: interface_block
+    name: The /ai-bom/ page and its routes, called by endpoint id
+    features: [compliance.aibom_export]
+    code:
+      - tools/dashboard/templates/compliance/aibom_export.html
+      - tools/compliance/aibom_blueprint.py::aibom_page
+      - tools/compliance/aibom_blueprint.py::aibom_api_view
+      - tools/compliance/aibom_blueprint.py::aibom_api_prepare
+      - tools/compliance/aibom_blueprint.py::aibom_api_publish
+      - tools/compliance/aibom_blueprint.py::aibom_api_bundle
+      - tools/compliance/aibom_blueprint.py::aibom_api_document
+      - tools/compliance/aibom_blueprint.py::aibom_api_twin
+
+  - id: aib.twin
+    type: sysml_element
+    kind: block
+    name: The AI-BOM governance twin (threads to ledger rows, unverified when nothing is published)
+    features: [compliance.aibom_export]
+    code:
+      - tools/twin_core/adapters/aibom.py
+      - tools/compliance/aibom_bundle.py::twin_evidence
+      - tools/compliance/aibom_bundle.py::twin_judge
+
+  - id: if.aib.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP aibom_export (read) and aibom_prepare (draft only)
+    features: [compliance.aibom_export]
+    code:
+      - tools/mcp/gap_handlers.py::handle_aibom_export
+      - tools/mcp/gap_handlers.py::handle_aibom_prepare
+
+requirements:
+  - id: PM-AIB-01
+    title: The AI-BOM is SPDX 3.0.1 and CycloneDX 1.7, held to the official schemas, in the pinned ICOS contract
+    text: >-
+      ICDEV[IT]'s AI components declared in args/aibom_export.yaml (router configs, the models
+      they route to and the registered ones, datasets, gold sets, prompts) are described as one
+      AI-BOM: an SPDX 3.0.1 JSON-LD document (ai_AIPackage, dataset_DatasetPackage, software_File,
+      each verified by SHA-256) and a CycloneDX 1.7 ML-BOM (machine-learning-model and data
+      components, each with its SHA-256). Each is validated against the standard's official
+      published schema, vendored unmodified with its licence and pinned by SHA-256; an AI-BOM that
+      fails either is refused. Both travel in one icos-aibom/v1 bundle validated against
+      context/icos/aibom.schema.json, ICDEV[OS]'s published schema pinned by file and body digest.
+    type: interface
+    priority: high
+    features: [compliance.aibom_export]
+    elements: [aib.bundle, aib.standards]
+    controls: [CM-8, SR-4, SI-7]
+    tests:
+      - tests/test_osx_cop_02_aibom.py::test_the_schemas_are_pinned_the_icos_contract_by_file_and_body
+      - tests/test_osx_cop_02_aibom.py::test_the_ai_bom_is_spdx_and_cyclonedx_valid_against_the_official_schemas
+      - tests/test_osx_cop_02_aibom.py::test_an_ai_bom_failing_the_official_schema_is_refused
+
+  - id: PM-AIB-02
+    title: Deterministic, by digest; a prompt's text never leaves; what has no digest is said
+    text: >-
+      The same files, registry rows and as_of give the same content_digest, recomputable as
+      ICDEV[OS] recomputes it (the documents' own timestamps are the as_of date). A prompt is
+      carried by its path and SHA-256, never its text. A registered model or dataset with no
+      SHA-256 is left out and said, never given a digest it does not have; archived rows are not
+      components. A test configuration is honoured only under tests/.
+    type: functional
+    priority: high
+    features: [compliance.aibom_export]
+    elements: [aib.bundle]
+    controls: [CM-8, SI-12]
+    tests:
+      - tests/test_osx_cop_02_aibom.py::test_the_export_is_deterministic_given_its_inputs
+      - tests/test_osx_cop_02_aibom.py::test_the_components_are_declared_and_another_config_must_live_under_tests
+      - tests/test_osx_cop_02_aibom.py::test_the_registry_models_and_datasets_by_their_digest_or_said_left_out
+
+  - id: PM-AIB-03
+    title: Publishing is a person's declared step, never the preparer's, in an append-only ledger
+    text: >-
+      Anyone, or an agent recorded as one, prepares the AI-BOM, which records it at its digest in
+      aibom_export_events (append-only by triggers, hash-chained) and decides nothing. A person who
+      did not prepare it publishes it or refuses, with a reason, bound to the digest read
+      (decl-wft-aibom-publish); only a published AI-BOM carries its publication and leaves.
+    type: functional
+    priority: high
+    features: [compliance.aibom_export]
+    elements: [aib.publish]
+    controls: [AC-5, AU-9, AU-10]
+    tests:
+      - tests/test_osx_cop_02_aibom.py::test_publishing_is_a_persons_step_never_the_preparers
+      - tests/test_osx_cop_02_aibom.py::test_the_ledger_is_append_only_and_hash_chained
+      - tests/test_osx_cop_02_ambient.py::test_an_ai_bom_prepared_and_published_on_the_platform_database
+
+  - id: PM-AIB-04
+    title: The page, the twin and the agents' tools
+    text: >-
+      /ai-bom/ (in the nav) shows the components, what was left out, the two standards with their
+      schema digests, the AI-BOM it would prepare, the ledger, prepare and the publish step (closed
+      to the preparer, saying why), and the published bundle and both documents for download, every
+      route named by endpoint id. The aibom twin observes compliance.aibom_export: an AI-BOM never
+      published, or nothing declared, is unverified; a stale, self-published or long-waiting one is
+      a finding threaded to its ledger row, and an observation replays. MCP aibom_export reads;
+      aibom_prepare only drafts and halts at the gate.
+    type: functional
+    priority: medium
+    features: [compliance.aibom_export]
+    elements: [if.aib.console, aib.twin, if.aib.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_osx_cop_02_aibom.py::test_the_routes_and_the_page
+      - tests/test_osx_cop_02_aibom.py::test_the_twin_observes_with_threads_and_replays
+      - tests/test_osx_cop_02_aibom.py::test_the_twin_says_unverified_when_nothing_is_declared_or_readable
+      - tests/test_osx_cop_02_aibom.py::test_the_mcp_tools_read_and_only_prepare

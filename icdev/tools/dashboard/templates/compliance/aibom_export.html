@@ -1,0 +1,239 @@
+<!-- CUI // SP-CTI — ICDEV[IT]'s AI-BOM export to ICDEV[OS] (osx-cop-02) -->
+{% extends "base.html" %}
+{% block title %}AI-BOM export — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .aib-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .aib-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .aib-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .aib-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .aib-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .aib-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .aib-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .aib-card th, .aib-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .aib-card th { color: var(--text-secondary); font-weight: 600; }
+  .aib-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .aib-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .aib-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .aib-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .aib-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .aib-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .aib-btn.deny { border-color: var(--status-red); }
+  .aib-btn[disabled] { opacity: 0.7; cursor: not-allowed; }
+  .aib-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .aib-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .aib-wrap input { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .aib-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .aib-row > div { min-width: 200px; }
+  .aib-wrap code { color: var(--text-primary); word-break: break-all; }
+  /* Link colour per theme, at AA contrast on the card and the page in each (axe, e2e). */
+  .aib-wrap { --aib-link: #8cc4ff; }
+  html[data-theme="light"] .aib-wrap { --aib-link: #0d4f9e; }
+  .aib-wrap a, .aib-wrap .aib-link { color: var(--aib-link); text-decoration: underline; }
+</style>
+
+<div class="aib-wrap">
+  <nav aria-label="Breadcrumb" class="aib-help"><a href="/compliance">Compliance</a> / AI-BOM export</nav>
+  <h1>AI-BOM export to ICDEV[OS]</h1>
+  <p class="aib-help" id="aib-help">
+    ICDEV[IT]'s own AI components -- the router configurations, the models they route to and the models registered
+    here, the datasets and gold sets, and the prompt templates (<b>by digest only</b>, never their text) -- declared in
+    <code>{{ config_path }}</code>, described as one AI bill of materials in two public standards: an <b>SPDX 3.0.1</b>
+    document using its AI and Dataset profiles and a <b>CycloneDX 1.7</b> ML-BOM. Each is validated against the
+    standard's official published schema before it can be prepared, and both travel in one <code>{{ schema }}</code>
+    bundle against the ICDEV[OS] contract {{ contract }}. Anyone prepares it, and a person who did not prepare it
+    publishes it (<code>{{ template }}</code>), bound to its digest. ICDEV[OS] marks it by its own config, never by what
+    it claims.
+  </p>
+
+  <div class="aib-card">
+    <h2>AI-BOM</h2>
+    <div class="aib-row">
+      <div><label for="aib-asof">As of (YYYY-MM-DD, blank for today)</label><input id="aib-asof" autocomplete="off"></div>
+      <div><button type="button" class="aib-btn" id="aib-reload">Build again</button></div>
+    </div>
+    <div class="aib-msg" id="aib-summary" aria-live="polite">Building...</div>
+    <div class="aib-help" id="aib-standards"></div>
+  </div>
+
+  <div class="aib-card">
+    <h2>AI components</h2>
+    <table id="aib-components">
+      <thead><tr><th scope="col">Kind</th><th scope="col">Component</th><th scope="col">SHA-256</th><th scope="col">Supplier</th><th scope="col">Purpose</th></tr></thead>
+      <tbody id="aib-components-body"><tr><td colspan="5">Not built yet.</td></tr></tbody>
+    </table>
+    <h3>Left out</h3>
+    <div id="aib-omitted" class="aib-help">Nothing.</div>
+  </div>
+
+  <div class="aib-card" id="aib-bundle">
+    <h2>Prepare and publish</h2>
+    <p class="aib-help">Preparing records the AI-BOM, as built now, at its digest. It decides nothing. A person who did
+      not prepare it then publishes it to ICDEV[OS] or refuses it, with a reason. Only a published AI-BOM leaves.</p>
+    <div id="aib-ledger" class="aib-help"></div>
+    <p><button type="button" class="aib-btn" id="aib-prepare">Prepare the AI-BOM</button></p>
+    <div class="aib-msg" id="aib-prepare-msg" role="status"></div>
+    <div id="aib-publish"></div>
+    <div class="aib-msg" id="aib-publish-msg" role="status"></div>
+    <div id="aib-published" class="aib-help"></div>
+  </div>
+
+  <div class="aib-card" id="aib-twin">
+    <h2>Twin</h2>
+    <p class="aib-help">The AI-BOM twin observes the export ledger: an AI-BOM never published is unverified, never a
+      pass; one published by its preparer, one waiting too long for a person and one published too long ago are
+      findings. Each finding carries its thread to the ledger row it rests on. Recorded observations and their replay
+      are on the <a href="/twin-observatory/governance">governance twins</a> page.</p>
+    <p><button type="button" class="aib-btn" id="aib-observe">Observe now</button></p>
+    <div id="aib-twin-body" class="aib-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var me = {{ me|tojson }};
+  var view = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  function short(d) { return d ? String(d).slice(0, 16) : ''; }
+  function tag(cls, text, st) { return '<span class="aib-tag ' + cls + '" data-status="' + esc(st || text) + '">' + esc(text) + '</span>'; }
+
+  function render(v) {
+    view = v;
+    var st = v.standards || {};
+    document.getElementById('aib-standards').innerHTML =
+      'SPDX ' + esc((st.spdx || {}).version) + ' schema <code>' + esc(short((st.spdx || {}).sha256)) + '</code> &middot; CycloneDX ' +
+      esc((st.cyclonedx || {}).version) + ' schema <code>' + esc(short((st.cyclonedx || {}).sha256)) + '</code> (official, vendored unmodified) &middot; ICDEV[OS] contract ' +
+      esc(v.contract) + ' <code>' + esc(short(v.schema_sha256)) + '</code> &middot; config <code>' + esc(v.config.path) + '</code>';
+    var b = v.bundle;
+    if (!b) {
+      document.getElementById('aib-summary').innerHTML = '<span id="aib-unbuilt">Not built: ' + esc((v.unbuilt || {}).error) + '</span>';
+    } else {
+      var s = b.summary;
+      document.getElementById('aib-summary').innerHTML = 'As of <b>' + esc(b.as_of) + '</b> &middot; AI-BOM digest <code id="aib-digest">' +
+        esc(b.content_digest) + '</code> &middot; ' + esc(s.router_configs) + ' router config(s), ' + esc(s.models) + ' model(s), ' +
+        esc(s.datasets) + ' dataset(s), ' + esc(s.gold_sets) + ' gold set(s), ' + esc(s.prompts) + ' prompt(s); valid against SPDX ' +
+        esc(b.standards.spdx) + ' and CycloneDX ' + esc(b.standards.cyclonedx) + '.';
+    }
+    document.getElementById('aib-components-body').innerHTML = (v.components || []).map(function (c) {
+      return '<tr data-component="' + esc(c.id) + '"><td>' + esc(c.kind) + '</td><td><code>' + esc(c.id) + '</code></td><td><code>' +
+        esc(short(c.digest)) + '</code></td><td>' + esc(c.supplier || '') + '</td><td>' + esc(c.purpose || '') + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">No AI component is declared.</td></tr>';
+    document.getElementById('aib-omitted').innerHTML = (v.omitted || []).map(function (o) {
+      return '<div data-omitted="' + esc(o.kind + ':' + o.name) + '">' + esc(o.kind) + ' <code>' + esc(o.name) + '</code>: ' + esc(o.why) + '</div>';
+    }).join('') || 'Nothing: every declared component has a digest.';
+    renderLedger(v.ledger);
+  }
+
+  function renderLedger(l) {
+    var p = l.prepared, pub = l.published;
+    document.getElementById('aib-ledger').innerHTML =
+      (p ? 'Newest prepared: <code id="aib-prepared-digest">' + esc(short(p.content_digest)) + '</code> by ' + esc(p.actor) + ' at ' + esc(p.created_at) +
+        (p.decided ? ' (' + esc(p.decided.event) + ' by ' + esc(p.decided.actor) + ')' : ' <span class="aib-tag wait">waiting for a person</span>') : 'No AI-BOM has been prepared.') +
+      '<br>' + (pub ? 'Newest published: <code>' + esc(short(pub.content_digest)) + '</code> by ' + esc(pub.actor) + ' (step <code>' + esc(pub.step_id) + '</code>)' : 'No AI-BOM has been published: ICDEV[OS] has nothing to import.') +
+      (l.chain && l.chain.intact === false ? '<br><b>The ledger does not verify:</b> ' + esc(l.chain.problems[0].problem) : '');
+    var box = document.getElementById('aib-publish');
+    if (p && !p.decided) {
+      var who = Object.keys(l.builders || {});
+      var mine = me && who.indexOf(me) >= 0;
+      var off = mine ? ' disabled aria-describedby="aib-why-not"' : '';
+      box.innerHTML = '<h3>Your step</h3><p class="aib-help">May not publish it: <b>' + esc(who.join(', ')) + '</b>. A reason is required. Bound to digest <code>' +
+        esc(short(p.content_digest)) + '</code>.</p>' +
+        (mine ? '<p class="aib-msg" id="aib-why-not">You prepared this AI-BOM, so you may not publish it: a person who did not prepare it does.</p>' : '') +
+        '<label for="aib-reason">Reason</label><input id="aib-reason" autocomplete="off"' + (mine ? ' disabled' : '') + '>' +
+        '<p><button type="button" class="aib-btn" data-publish="publish"' + off + '>Publish to ICDEV[OS]</button> <button type="button" class="aib-btn deny" data-publish="refuse"' + off + '>Refuse</button></p>';
+    } else {
+      box.innerHTML = '';
+    }
+    if (pub) {
+      document.getElementById('aib-published').innerHTML = '<p id="aib-published-bundle">Published AI-BOM, digest <code id="aib-published-digest">' +
+        esc(pub.content_digest) + '</code>, published by ' + esc(pub.actor) + ' (prepared by ' + esc(pub.prepared_by) + '). <a id="aib-bundle-link" href="' +
+        esc(icdevRoute('aibom.aibom_api_bundle')) + '?download=1" download>Download the bundle as ICDEV[OS] imports it</a> &middot; <a id="aib-spdx-link" href="' +
+        esc(icdevRoute('aibom.aibom_api_document', {kind: 'spdx'})) + '?download=1" download>SPDX 3.0.1 document</a> &middot; <a id="aib-cdx-link" href="' +
+        esc(icdevRoute('aibom.aibom_api_document', {kind: 'cyclonedx'})) + '?download=1" download>CycloneDX 1.7 ML-BOM</a>.</p>';
+    } else {
+      document.getElementById('aib-published').innerHTML = '';
+    }
+  }
+
+  function load() {
+    var q = {};
+    var asOf = (document.getElementById('aib-asof').value || '').trim();
+    if (asOf) q.as_of = asOf;
+    document.getElementById('aib-summary').textContent = 'Building...';
+    return getJson(icdevFetch('aibom.aibom_api_view', {}, {}, q)).then(function (res) {
+      if (!res.ok) { document.getElementById('aib-summary').textContent = 'Not built (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      render(res.j);
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var dec = t.getAttribute('data-publish');
+    if (!dec || !view) return;
+    var msg = document.getElementById('aib-publish-msg');
+    var reason = ((document.getElementById('aib-reason') || {}).value || '').trim();
+    if (!reason) { msg.textContent = 'A reason is required.'; return; }
+    var p = view.ledger.prepared;
+    getJson(icdevFetch('aibom.aibom_api_publish', {}, postInit({decision: dec, reason: reason, digest: p.content_digest}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      var o = res.j;
+      msg.textContent = 'Recorded: the AI-BOM was ' + o.event + ' by ' + o.decided_by + ' (step ' + o.step.step_id + ').';
+      load();
+    });
+  });
+
+  document.getElementById('aib-prepare').addEventListener('click', function () {
+    var msg = document.getElementById('aib-prepare-msg');
+    var asOf = (document.getElementById('aib-asof').value || '').trim();
+    getJson(icdevFetch('aibom.aibom_api_prepare', {}, postInit({as_of: asOf, note: 'prepared on /ai-bom/'}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not prepared (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Prepared the AI-BOM ' + res.j.content_digest + ' as ' + res.j.prepared_by + '. A person who did not prepare it publishes it.';
+      load();
+    });
+  });
+  document.getElementById('aib-reload').addEventListener('click', function () { load(); });
+
+  document.getElementById('aib-observe').addEventListener('click', function () {
+    var box = document.getElementById('aib-twin-body');
+    getJson(icdevFetch('aibom.aibom_api_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j;
+      var vs = env.violations || [];
+      box.innerHTML = '<p id="aib-twin-verdict">Verdict ' + tag('', env.verdict, env.verdict) + ' coverage ' + esc(env.coverage_score) + ', ' + esc(vs.length) + ' finding(s).</p>' +
+        '<ul>' + vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
+            ' &middot; thread <button type="button" class="aib-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
+        }).join('') + '</ul><div id="aib-thread"></div>';
+    });
+  });
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var th = t.getAttribute && t.getAttribute('data-thread');
+    if (!th) return;
+    getJson(icdevFetch('aibom.aibom_api_twin', {}, {}, {thread: th})).then(function (res) {
+      var rec = res.j.record || {};
+      document.getElementById('aib-thread').innerHTML = res.j.resolved
+        ? '<p id="aib-thread-resolved">Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.event || '') +
+          ' by ' + esc(rec.actor || '') + ' ' + esc(rec.created_at || '') + ', digest <code>' + esc(short(rec.content_digest)) + '</code></p>'
+        : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';
+    });
+  });
+
+  load();
+})();
+</script>
+{% endblock %}

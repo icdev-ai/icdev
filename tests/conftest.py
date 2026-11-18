@@ -5054,6 +5054,29 @@ CREATE TABLE IF NOT EXISTS coe_golden_path_events (
 CREATE INDEX IF NOT EXISTS idx_coe_golden_path_events_path ON coe_golden_path_events (path_id, created_at);
 CREATE TRIGGER IF NOT EXISTS coe_golden_path_events_no_update BEFORE UPDATE ON coe_golden_path_events BEGIN SELECT RAISE(ABORT, 'coe_golden_path_events is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS coe_golden_path_events_no_delete BEFORE DELETE ON coe_golden_path_events BEGIN SELECT RAISE(ABORT, 'coe_golden_path_events is append-only'); END;
+
+-- osx-cop-02: the AI-BOM export ledger (migration 20261118140000): ICDEV[IT]'s icos-aibom/v1 bundle
+-- prepared, then a person publishes or refuses. Same DDL; append-only.
+CREATE TABLE IF NOT EXISTS aibom_export_events (
+    event_id        TEXT PRIMARY KEY,
+    system          TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused')),
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent','bootstrap')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    content_digest  TEXT NOT NULL,
+    bundle_json     TEXT NOT NULL DEFAULT '',
+    detail_json     TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(system, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_aibom_export_events_system ON aibom_export_events (system, created_at);
+CREATE TRIGGER IF NOT EXISTS aibom_export_events_no_update BEFORE UPDATE ON aibom_export_events BEGIN SELECT RAISE(ABORT, 'aibom_export_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS aibom_export_events_no_delete BEFORE DELETE ON aibom_export_events BEGIN SELECT RAISE(ABORT, 'aibom_export_events is append-only'); END;
 """
 
 

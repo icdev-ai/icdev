@@ -19,6 +19,10 @@
 *.ini text eol=lf
 *.env text eol=lf
 
+# osx-cop-02: official standards' schemas are vendored UNMODIFIED and pinned by SHA-256 (the SPDX 3.0.1 JSON
+# schema is published with CRLF line endings). Their bytes are kept exactly: no end-of-line normalisation.
+context/standards/** -text
+
 # ⚠ WHAT UNION DOES *NOT* DO (kpr-watch-07, measured 2026-08-17)
 #
 # GitHub does not apply these rules. `.gitattributes` merge drivers are honoured
