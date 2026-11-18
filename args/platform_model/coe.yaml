@@ -642,7 +642,8 @@ requirements:
       every standard in force whose id matches the path's repo declaration in
       args/coe_conformance.yaml. A path that does not declare one, or declares another version,
       is behind, and python tools/idp/golden_paths.py --check fails CI with "the golden path is
-      behind the standards in force".
+      behind the standards in force". The ledger's check (--source ledger) judges the version a person
+      published and is in use, as the page and the twin do (osx-coe-02).
     type: functional
     priority: high
     features: [coe.golden_paths]
@@ -652,6 +653,7 @@ requirements:
       - tests/test_icx_coe_04_golden_paths.py::test_the_paths_declare_every_standard_in_force_derived_from_the_register
       - tests/test_icx_coe_04_golden_paths.py::test_adopting_a_standard_that_applies_puts_the_path_behind_and_ci_fails
       - tests/test_icx_coe_04_golden_paths.py::test_a_standard_that_does_not_apply_or_a_version_change_is_judged_exactly
+      - tests/test_icx_coe_04_golden_paths.py::test_the_ledger_check_judges_the_version_in_use_as_the_page_does
 
   - id: PM-COE-17
     title: icdev scaffold service renders a service with every piece a conformant service needs
