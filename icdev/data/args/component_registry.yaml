@@ -2048,6 +2048,8 @@ components:
       href: /idp/adrs
     - label: Standards Scorecards
       href: /idp/conformance
+    - label: Golden Paths
+      href: /idp/golden-paths
   iqe:
     adapter_module: tools.iqe.adapters.idp
     collections:

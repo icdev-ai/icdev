@@ -217,6 +217,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # acted on it, so a re-evaluation appends instead. Mutable triage state,
         # if it is ever wanted, belongs in a separate table keyed on finding_id.
         "agent_findings",
+        # Governance twin observations (icx-cnf-03, migration 20261114163435). An
+        # observation is the evidence a twin read and the digest of the verdict it
+        # gave; replay re-judges it later. An edited row would replay to whatever
+        # it was edited into, so a new reading appends a new row.
+        "twin_governance_observations",
         # Cortex canvas governance/facade audit (ctx-canvas-01)
         "cortex_audit",
         # Constitutional AI per-rule critique trail (agx-verify-02, migration 292, NIST AU)
@@ -422,6 +427,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # call (ctx-govern-03, NIST AU). cortex_sessions is intentionally NOT here
         # (mutable session lifecycle: status/updated_at).
         "cortex_audit",
+        # Where the cortex_audit hash chain starts (icx-cnf-06, migration
+        # 20261114175314): the count and digest of the rows written before it.
+        # Editing it would let a changed pre-chain row verify again.
+        "cortex_audit_chain_genesis",
         # Phase 69 — Codebase Assistant (D-CA-6)
         "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)
@@ -675,6 +684,25 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wf_feedback",
         "wf_document_submissions",
         "wf_citations",
+        # icx-cnf-02, migration 20261114162849: the ledger of declared decision
+        # steps (proposed / decided / spent / withdrawn) and a person's ruling on a
+        # Cortex finding. A decision is a new row, never an edit.
+        "wf_decision_steps",
+        "cortex_finding_adjudications",
+        # icx-coe-01, migration 20261117231010: the engineering standards register's
+        # lifecycle ledger (seeded / proposed / reviewed / adopted / deprecated),
+        # hash-chained per standard. A standard's status is the replay of its rows.
+        "coe_standard_events",
+        # icx-coe-02, migration 20261118010237: the ADR records' lifecycle ledger
+        # (seeded / proposed / accepted / returned / superseded / deprecated), hash-chained
+        # per ADR. idp_rule_exemptions (above) gained its triggers in the same migration.
+        "coe_adr_events",
+        # icx-coe-03, migration 20261118024513: the conformance bundle ledger (prepared, then a
+        # person publishes or refuses), hash-chained per repo. Only a published bundle leaves.
+        "coe_conformance_events",
+        # icx-coe-04, migration 20261118070149: the golden path ledger (seeded, proposed,
+        # drift-checked, then a person publishes, refuses or retires), hash-chained per path.
+        "coe_golden_path_events",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
         # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)
@@ -759,6 +787,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ace_step_audit_log",
         "ace_webhook_log",
         "ace_skill_candidates",
+        # icx-ace-01, migration 20261115114944: the ACE auto-dispatch grants log
+        # (granted / revoked / suspended / expired / stop_all / resume_all).
+        "ace_dispatch_grants",
         # SIPA Software Integrity & Provenance Assessor (sipa-, NIST AU — assessment evidence is immutable)
         "integrity_capabilities",
         "integrity_findings",

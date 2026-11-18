@@ -1169,6 +1169,7 @@
               "by_id": [
                 "tools/dashboard/templates/idp/adrs.html",
                 "tools/dashboard/templates/idp/exemptions.html",
+                "tools/dashboard/templates/idp/golden_paths.html",
                 "tools/dashboard/templates/idp/standards.html"
               ],
               "endpoint": "idp.idp_conformance_page",
@@ -1357,6 +1358,144 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "coe_golden_path_propose mutating, approval tier 'unknown' (default_tier) halts",
+            "coe_golden_paths read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-COE-16 -> coe.golden_paths -> tests/test_icx_coe_04_golden_paths.py::test_the_paths_declare_every_standard_in_force_derived_from_the_register, tests/test_icx_coe_04_golden_paths.py::test_adopting_a_standard_that_applies_puts_the_path_behind_and_ci_fails, tests/test_icx_coe_04_golden_paths.py::test_a_standard_that_does_not_apply_or_a_version_change_is_judged_exactly",
+            "PM-COE-17 -> coe.golden_paths -> tests/test_icx_coe_04_golden_paths.py::test_scaffold_service_renders_every_piece_and_registers_it_as_text",
+            "PM-COE-18 -> coe.golden_drift -> tests/test_icx_coe_04_golden_paths.py::test_the_drift_check_passes_the_scaffold_machine_pass_manual_needs_evidence, tests/test_icx_coe_04_golden_paths.py::test_a_machine_standard_the_scaffold_does_not_meet_is_drift_never_pass, tests/test_icx_coe_04_golden_paths.py::test_the_scorecard_grades_another_tree_only_while_rooted",
+            "PM-COE-19 -> coe.golden_publish -> tests/test_icx_coe_04_golden_paths.py::test_propose_drift_and_publish_by_another_person_when_the_gate_holds, tests/test_icx_coe_04_golden_paths.py::test_the_gate_blocks_a_failed_or_stale_drift_check_and_a_version_behind, tests/test_icx_coe_04_golden_paths.py::test_an_agent_only_drafts_and_retiring_is_a_persons_step_never_the_authors, tests/test_icx_coe_04_golden_paths.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_icx_coe_04_golden_paths.py::test_seeds_are_recorded_by_the_bootstrap_identity_never_a_person, tests/test_icx_coe_04_ambient.py::test_a_path_version_proposed_drift_checked_and_published_on_the_platform_database",
+            "PM-COE-20 -> if.coe.golden_paths.console, coe.golden_twin, if.coe.golden_paths.mcp -> tests/test_icx_coe_04_golden_paths.py::test_the_routes_and_the_page, tests/test_icx_coe_04_golden_paths.py::test_the_twin_observes_paths_with_threads_and_replays, tests/test_icx_coe_04_golden_paths.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read, tests/test_icx_coe_04_golden_paths.py::test_the_mcp_tools_read_and_only_propose"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "idp.idp_api_golden_path_drift called from tools/dashboard/templates/idp/golden_paths.html",
+            "idp.idp_api_golden_path_propose called from tools/dashboard/templates/idp/golden_paths.html",
+            "idp.idp_api_golden_path_publish called from tools/dashboard/templates/idp/golden_paths.html",
+            "idp.idp_api_golden_path_retire called from tools/dashboard/templates/idp/golden_paths.html",
+            "nav links /idp/golden-paths",
+            "page /idp/golden-paths renders idp/golden_paths.html",
+            "registry entry 'idp'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "idp.idp_api_golden_paths",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/idp/api/golden-paths",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/golden_paths.html"
+              ],
+              "endpoint": "idp.idp_api_golden_path",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/golden-paths/<path_id>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/golden_paths.html"
+              ],
+              "endpoint": "idp.idp_api_golden_path_drift",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/golden-paths/<path_id>/drift",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/golden_paths.html"
+              ],
+              "endpoint": "idp.idp_api_golden_path_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/golden-paths/<path_id>/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/golden_paths.html"
+              ],
+              "endpoint": "idp.idp_api_golden_path_retire",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/golden-paths/<path_id>/retire",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/golden_paths.html"
+              ],
+              "endpoint": "idp.idp_api_golden_path_propose",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/golden-paths/propose",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_golden_paths_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/golden-paths",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "idp.idp_api_golden_path_publish (declared (tools/idp/blueprint.py: \"A person, never the version's author, publishes a proposed golden path version, or refuses it.\")) -> template decl-wft-coe-golden-path-publish (args/workflow_hitl_templates/coe-golden-path-publish.yaml)",
+            "idp.idp_api_golden_path_retire (declared (tools/idp/blueprint.py: \"A person, never the version's author, retires a published golden path version, or keeps it.\")) -> template decl-wft-coe-golden-path-retire (args/workflow_hitl_templates/coe-golden-path-retire.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "idp",
+      "key": "coe.golden_paths",
+      "label": "Engineering CoE: golden paths, a new service conformant by construction"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
             "coe_standard_propose mutating, approval tier 'unknown' (default_tier) halts",
             "coe_standards read-only, tool_authorization tier 'read'"
           ],
@@ -1403,6 +1542,7 @@
                 "tools/dashboard/templates/idp/adrs.html",
                 "tools/dashboard/templates/idp/conformance.html",
                 "tools/dashboard/templates/idp/exemptions.html",
+                "tools/dashboard/templates/idp/golden_paths.html",
                 "tools/dashboard/templates/idp/standards.html"
               ],
               "endpoint": "idp.idp_api_standards_twin",
@@ -1477,7 +1617,8 @@
               "by_id": [
                 "tools/dashboard/templates/idp/adrs.html",
                 "tools/dashboard/templates/idp/conformance.html",
-                "tools/dashboard/templates/idp/exemptions.html"
+                "tools/dashboard/templates/idp/exemptions.html",
+                "tools/dashboard/templates/idp/golden_paths.html"
               ],
               "endpoint": "idp.idp_standards_page",
               "methods": [
@@ -3510,6 +3651,7 @@
       "tools/dashboard/templates/idp/adrs.html",
       "tools/dashboard/templates/idp/conformance.html",
       "tools/dashboard/templates/idp/exemptions.html",
+      "tools/dashboard/templates/idp/golden_paths.html",
       "tools/dashboard/templates/idp/standards.html",
       "tools/dashboard/templates/includes/_chat_action_card.html",
       "tools/dashboard/templates/includes/classification_macros.html",
@@ -3536,8 +3678,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 27,
-    "features_conforming": 27,
+    "features": 28,
+    "features_conforming": 28,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3589,6 +3731,13 @@
         "workflow": 0
       },
       "coe.exemptions": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "coe.golden_paths": {
         "ai_native": 0,
         "architecture": 0,
         "gui": 0,
@@ -3737,11 +3886,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 168,
-    "routes_by_id": 143,
-    "routes_observed": 126,
-    "writes_by_id": 69,
-    "writes_observed": 69
+    "routes": 175,
+    "routes_by_id": 149,
+    "routes_observed": 132,
+    "writes_by_id": 73,
+    "writes_observed": 73
   },
   "tool": "feature_audit",
   "version": 1

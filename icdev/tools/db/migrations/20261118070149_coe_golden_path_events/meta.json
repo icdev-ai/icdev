@@ -1,0 +1,7 @@
+{
+  "description": "golden path ledger: seeded, proposed, drift-checked, then a person publishes, refuses or retires; append-only and hash-chained (icx-coe-04)",
+  "date": "2026-11-18",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

@@ -6,6 +6,7 @@ Subcommands:
   icdev scaffold canvas <key> --display-name "Name" [--flavor FLAVOR] [--out PATH]
   icdev scaffold child-app <key> --display-name "Name" [--flavor FLAVOR] [--canvases ...] [--out PATH]
   icdev scaffold core <key> --display-name "Name" [--flavor FLAVOR] [--out PATH]
+  icdev scaffold service <key> --display-name "Name" [--path service|model-service] [--out PATH]
 
 Examples:
   icdev scaffold canvas demo --display-name "Demo Canvas" --out ./demo-canvas
@@ -14,6 +15,13 @@ Examples:
   icdev scaffold child-app my_lab --display-name "My Lab" --template ./custom-template
   icdev scaffold core notification_hub --display-name "Notification Hub" --env-flag ICDEV_NOTIF_ENABLED
   icdev scaffold core notification_hub --display-name "Notification Hub" --dry-run
+  icdev scaffold service ledger_review --display-name "Ledger Review"
+  icdev scaffold service ledger_review --display-name "Ledger Review" --path model-service --out /tmp/x
+
+`service` is the GOLDEN PATH (icx-coe-04): a service that is conformant by construction against every
+engineering standard in force that applies to it. Which standards a path satisfies, by id and version,
+is declared in args/golden_paths.yaml; `python tools/idp/golden_paths.py --drift` scaffolds it into a
+temporary tree and proves it with the IDP scorecard and feature_audit.
 """
 
 from __future__ import annotations
@@ -25,9 +33,20 @@ import sys
 from pathlib import Path
 
 # Ensure repo root is on sys.path so `tools.builder` is importable when run directly.
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if REPO_ROOT.name == "icdev":
-    REPO_ROOT = REPO_ROOT.parent
+def repo_root_of(file: str | Path) -> Path:
+    """The repo this file belongs to: three levels up, or four from the icdev/ mirror.
+
+    The mirror (<repo>/icdev/tools/cli/scaffold.py) climbs one more level. Decided by what is THERE,
+    never by the directory's name alone: a checkout that is itself named `icdev` (CI's
+    /home/runner/work/icdev/icdev) must not climb out of the repo (icx-coe-04).
+    """
+    root = Path(file).resolve().parent.parent.parent
+    if root.name == "icdev" and (root.parent / "tools" / "cli" / "scaffold.py").is_file():
+        return root.parent
+    return root
+
+
+REPO_ROOT = repo_root_of(__file__)
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -134,7 +153,92 @@ def _build_parser() -> argparse.ArgumentParser:
     pack.add_argument("--dry-run", action="store_true", help="Preview what would be generated without writing files")
     pack.add_argument("--json", action="store_true", help="Emit JSON result")
 
+    # golden path (icx-coe-04) — a service conformant by construction. Its own kind, not a flag on
+    # `canvas`: what it promises (the standards it satisfies, by id and version) is per PATH and is
+    # checked in CI, so one entry point always produces the conformant thing, and the 31 canvas
+    # flavors keep meaning what they mean today.
+    service = sub.add_parser("service", help="Scaffold a new service on a golden path (conformant by construction)")
+    service.add_argument("key", help="Short service key, snake_case (e.g. ledger_review)")
+    service.add_argument("--display-name", required=True, help="Human-facing service name")
+    service.add_argument("--path", default="service", help="Golden path id from args/golden_paths.yaml (default: service)")
+    service.add_argument("--owner", default=None, help="Dashboard role that owns it (default: the path's owner)")
+    service.add_argument("--env-flag", default=None, help="Primary .env toggle (default: ICDEV_<KEY>_ENABLED)")
+    service.add_argument("--url-prefix", default=None, help="Flask url_prefix (default: /<key>)")
+    service.add_argument("--out", default=None, help="Output root (default: the repo root — writes in place)")
+    service.add_argument("--no-register", action="store_true",
+                         help="Do not splice the registry, feature_conformance and MCP entries into the output root")
+    service.add_argument("--dry-run", action="store_true", help="Preview what would be generated without writing files")
+    service.add_argument("--json", action="store_true", help="Emit JSON result")
+
     return parser
+
+
+def scaffold_service(key: str, display_name: str, out_dir: Path, *, path_id: str = "service",
+                     owner: str | None = None, env_flag: str | None = None, url_prefix: str | None = None,
+                     register: bool = True, dry_run: bool = False, config: dict | None = None) -> dict:
+    """Render a service on a golden path into *out_dir*, then generate its SBOM (and AI-BOM), its
+    proposed ADR record, and splice its registrations into *out_dir*'s shared registers.
+
+    The tree is rendered by the same template engine every scaffold uses; the SBOM, the AI-BOM and
+    the ADR record come from the existing generators (tools/idp/golden_paths.generate_artifacts).
+    Existing files are never overwritten: a service that is already there is refused.
+    """
+    from tools.idp import golden_paths as gp
+
+    entry = gp.path_entry(path_id, config)
+    if not re.match(r"^[a-z][a-z0-9_]{1,40}$", key):
+        return {"success": False, "errors": [f"key {key!r}: snake_case, 2 to 41 characters"]}
+    # The template is resolved where the path was declared (the root args/golden_paths.yaml was read from).
+    template_dir = gp.BASE_DIR / entry["template"]
+    variables = {
+        "key": key, "display_name": display_name,
+        "env_flag": _derive_env_flag(key, env_flag),
+        "url_prefix": _derive_url_prefix(key, url_prefix),
+        "owner": owner or entry["owner"],
+        "path_id": entry["id"], "path_version": entry["version"],
+        "standards": ",".join(f"{s['id']}@{s['version']}" for s in entry["satisfies"]),
+        **{k: ("true" if v is True else "false" if v is False else str(v)) for k, v in entry["vars"].items()},
+    }
+    clash = [f for f in (f"tools/{key}", f"tests/test_{key}.py") if (out_dir / f).exists()]
+    if clash and not dry_run:
+        return {"success": False, "errors": [f"{c} already exists: a service is never overwritten" for c in clash]}
+    result = render_tree(template_dir, out_dir, variables, skip_existing=True, dry_run=dry_run)
+    result["path"] = {"id": entry["id"], "version": entry["version"]}
+    if not result.get("success") or dry_run:
+        return result
+    result["artifacts"] = gp.generate_artifacts(out_dir, result["variables"])
+    if register:
+        result["registered"] = gp.register(out_dir, out_dir / gp.SNIPPETS_DIR)
+    return result
+
+
+def _scaffold_service(args) -> int:
+    out_dir = Path(args.out).resolve() if args.out else BASE_DIR
+    try:
+        result = scaffold_service(args.key, args.display_name, out_dir, path_id=args.path, owner=args.owner,
+                                  env_flag=args.env_flag, url_prefix=args.url_prefix,
+                                  register=not args.no_register, dry_run=args.dry_run)
+    except (KeyError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if args.json:
+        result.pop("manifest", None)
+        print(json.dumps(result, indent=2, default=str))
+    else:
+        ok = result.get("success")
+        print(f"{'Scaffolded' if ok else 'FAILED'} service {args.key} on golden path "
+              f"{(result.get('path') or {}).get('id')} {(result.get('path') or {}).get('version')} -> {out_dir}")
+        for f in result.get("rendered_files") or []:
+            print(f"  {'(would create)' if args.dry_run else '+'} {f}")
+        for f in (result.get("artifacts") or {}).get("files") or []:
+            print(f"  + {f}")
+        for e in (result.get("errors") or []) + (result.get("validation_failures") or []):
+            print(f"  ! {e}")
+        if ok and not args.dry_run:
+            print("\nNext: python tools/dashboard/routes_gen.py; python tools/idp/adrs.py --write;\n"
+                  "      python tools/dx/companion.py --sync --write --json; add tests/test_<key>.py to a\n"
+                  "      core.d fragment; the ADR is PROPOSED: a person accepts it on /idp/adrs.")
+    return 0 if result.get("success") else 1
 
 
 def _scaffold_docmod_pack(args) -> int:
@@ -421,6 +525,9 @@ def main(argv: list[str] | None = None) -> int:
     # url_prefix or component_registry entry, so none of that applies.
     if args.target == "docmod-pack":
         return _scaffold_docmod_pack(args)
+    # The golden path (icx-coe-04): its own flow, from args/golden_paths.yaml.
+    if args.target == "service":
+        return _scaffold_service(args)
 
     _kind_to_dir = {"canvas": "canvases", "child-app": "child_apps", "core": "core_extensions"}
     if args.flavor:

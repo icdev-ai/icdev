@@ -69,6 +69,15 @@ Scorecards against adopted standards and conformance bundles (icx-coe-03, tools/
   POST /idp/api/conformance/<repo>/prepare       Build and record a bundle at its digest (decides nothing)
   POST /idp/api/conformance/<repo>/publish       A person publishes or refuses it (declared step)
   GET  /idp/api/conformance/<repo>/bundle        The newest published bundle, with its publication
+
+Golden paths (icx-coe-04, tools/idp/golden_paths.py):
+  GET  /idp/golden-paths                          Every path, the standards each meets, its drift check
+  GET  /idp/api/golden-paths                      JSON: every path against the standards in force
+  GET  /idp/api/golden-paths/<path_id>            One path: versions, drift checks, history, next step
+  POST /idp/api/golden-paths/propose              A new path version (anyone; decides nothing)
+  POST /idp/api/golden-paths/<path_id>/drift      Run and record a version's drift check (decides nothing)
+  POST /idp/api/golden-paths/<path_id>/publish    A person publishes or refuses a version (declared step)
+  POST /idp/api/golden-paths/<path_id>/retire     A person retires or keeps a version (declared step)
 """
 from __future__ import annotations
 
@@ -856,3 +865,136 @@ def idp_api_conformance_bundle(repo: str):
     if b is None:
         return jsonify({"error": f"no bundle of {repo} has been published", "code": "unpublished"}), 404
     return jsonify(b)
+
+
+# ---------------------------------------------------------------------------
+# Golden paths: a new service conformant by construction (icx-coe-04)
+# ---------------------------------------------------------------------------
+#
+# Who decides: anyone (or an agent, as a draft) proposes a path version and runs its drift
+# check; neither decides anything. Publishing a version, or retiring one, is a person's declared
+# step (decl-wft-coe-golden-path-publish / -retire), never the version's author's, and publishing
+# only when its gate holds (a passing drift check on the template as it is now; not behind).
+
+
+def _golden_refused(exc):
+    return jsonify(exc.to_dict()), exc.status
+
+
+@bp.route("/golden-paths")
+def idp_golden_paths_page():
+    """Every golden path, the standards each meets, and its last drift check."""
+    from tools.idp import golden_paths
+
+    try:
+        view = golden_paths.paths_view()
+        error = ""
+    except Exception as exc:  # noqa: BLE001 — an unreadable ledger is said, not hidden
+        logger.warning("idp golden paths: ledger unreadable: %s", exc)
+        view = {"paths": [], "in_force": [], "chain": {}, "config": {}}
+        error = str(exc)
+    return render_template("idp/golden_paths.html", view=view, error=error,
+                           templates=golden_paths.TEMPLATES)
+
+
+@bp.route("/api/golden-paths")
+def idp_api_golden_paths():
+    """JSON: every golden path against the standards in force, with its last drift check."""
+    from tools.idp import golden_paths
+
+    try:
+        return jsonify(golden_paths.paths_view())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"the golden path ledger could not be read: {exc}"}), 503
+
+
+@bp.route("/api/golden-paths/<path_id>")
+def idp_api_golden_path(path_id: str):
+    """One golden path: every version, its drift checks and gate, the history, the step it waits for."""
+    from tools.idp import golden_paths
+
+    try:
+        return jsonify(golden_paths.path_view(path_id))
+    except golden_paths.GoldenPathRefused as exc:
+        return _golden_refused(exc)
+
+
+@bp.route("/api/golden-paths/propose", methods=["POST"])
+def idp_api_golden_path_propose():
+    """A new path version: anyone signed in, or an agent. It decides nothing.
+
+    Body: ``{id, version, satisfies: ["ID@version", ...], note}``; the other fields come from the
+    path's newest version.
+    """
+    from tools.idp import golden_paths
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        base = None
+        try:
+            view = golden_paths.path_view(str(data.get("id") or ""))
+            base = (view["versions"][-1]["entry"] if view["versions"] else view["declared"])
+        except golden_paths.GoldenPathRefused:
+            base = None
+        out = golden_paths.propose(golden_paths.entry_from_form(data, base), current_actor(),
+                                   note=str(data.get("note") or ""))
+    except golden_paths.GoldenPathRefused as exc:
+        return _golden_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/golden-paths/<path_id>/drift", methods=["POST"])
+def idp_api_golden_path_drift(path_id: str):
+    """Run a version's drift check and record its result. Anyone signed in; it decides nothing.
+
+    Body: ``{version}`` (the newest version when blank).
+    """
+    from tools.idp import golden_paths
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = golden_paths.record_drift(path_id, str(data.get("version") or "") or None, current_actor())
+    except golden_paths.GoldenPathRefused as exc:
+        return _golden_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/golden-paths/<path_id>/publish", methods=["POST"])
+def idp_api_golden_path_publish(path_id: str):
+    """A person, never the version's author, publishes a proposed golden path version, or refuses it.
+
+    Body: ``{version, decision: publish|refuse, reason, digest}``. The person's step of
+    decl-wft-coe-golden-path-publish, bound to the digest read, and refused when the gate does not hold.
+    """
+    from tools.idp import golden_paths
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = golden_paths.publish(path_id, str(data.get("version") or ""), decision=str(data.get("decision") or ""),
+                                   reason=str(data.get("reason") or ""), read_digest=str(data.get("digest") or ""),
+                                   actor=current_actor())
+    except golden_paths.GoldenPathRefused as exc:
+        return _golden_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/golden-paths/<path_id>/retire", methods=["POST"])
+def idp_api_golden_path_retire(path_id: str):
+    """A person, never the version's author, retires a published golden path version, or keeps it.
+
+    Body: ``{version, decision: retire|keep, reason, digest}`` (decl-wft-coe-golden-path-retire).
+    """
+    from tools.idp import golden_paths
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = golden_paths.retire(path_id, str(data.get("version") or ""), decision=str(data.get("decision") or ""),
+                                  reason=str(data.get("reason") or ""), read_digest=str(data.get("digest") or ""),
+                                  actor=current_actor())
+    except golden_paths.GoldenPathRefused as exc:
+        return _golden_refused(exc)
+    return jsonify(out)

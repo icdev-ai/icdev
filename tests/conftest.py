@@ -5030,6 +5030,30 @@ CREATE TABLE IF NOT EXISTS coe_conformance_events (
 CREATE INDEX IF NOT EXISTS idx_coe_conformance_events_repo ON coe_conformance_events (repo, created_at);
 CREATE TRIGGER IF NOT EXISTS coe_conformance_events_no_update BEFORE UPDATE ON coe_conformance_events BEGIN SELECT RAISE(ABORT, 'coe_conformance_events is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS coe_conformance_events_no_delete BEFORE DELETE ON coe_conformance_events BEGIN SELECT RAISE(ABORT, 'coe_conformance_events is append-only'); END;
+
+-- icx-coe-04: the golden path ledger (migration 20261118070149): seeded, proposed, drift-checked, then a
+-- person publishes, refuses or retires. Same DDL; append-only.
+CREATE TABLE IF NOT EXISTS coe_golden_path_events (
+    event_id        TEXT PRIMARY KEY,
+    path_id         TEXT NOT NULL,
+    version         TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('seeded','proposed','drift_checked','published','refused','retired','kept')),
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent','bootstrap')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    entry_digest    TEXT NOT NULL,
+    entry_json      TEXT NOT NULL,
+    detail_json     TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(path_id, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_coe_golden_path_events_path ON coe_golden_path_events (path_id, created_at);
+CREATE TRIGGER IF NOT EXISTS coe_golden_path_events_no_update BEFORE UPDATE ON coe_golden_path_events BEGIN SELECT RAISE(ABORT, 'coe_golden_path_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS coe_golden_path_events_no_delete BEFORE DELETE ON coe_golden_path_events BEGIN SELECT RAISE(ABORT, 'coe_golden_path_events is append-only'); END;
 """
 
 

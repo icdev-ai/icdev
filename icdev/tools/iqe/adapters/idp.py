@@ -44,8 +44,9 @@ Tenant scoping (idp-mt-01):
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from tools.iqe.executor import register_collection
 
@@ -55,10 +56,38 @@ from tools.iqe.executor import register_collection
 # from the icdev/ mirror, where cwd is not the repo root).
 # ---------------------------------------------------------------------------
 
+#: ``(root, registry path)`` while :func:`rooted` is in effect, else None.
+_ROOTED: tuple[Path, Path] | None = None
+
+
 def _base_dir() -> Path:
+    if _ROOTED is not None:
+        return _ROOTED[0]
     from tools.config.component_registry import BASE_DIR  # noqa: PLC0415
 
     return Path(BASE_DIR)
+
+
+@contextmanager
+def rooted(root: Path, registry_path: Path) -> Iterator[None]:
+    """Collect the facts from another tree and its registry, for the duration.
+
+    The golden-path drift check (icx-coe-04, ``tools/idp/golden_paths.py``)
+    scaffolds a service into a temporary tree laid over this checkout and grades
+    it with the SAME scorecard rules and the SAME fact collectors, so a scaffold
+    is scored exactly as a merged service would be. The memoized rows are
+    dropped on the way in and out, so nothing collected from the other tree is
+    ever served for this one.
+    """
+    global _ROOTED
+    before = _ROOTED
+    _ROOTED = (Path(root), Path(registry_path))
+    reset_cache()
+    try:
+        yield
+    finally:
+        _ROOTED = before
+        reset_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +384,7 @@ def _collect_components(conn: Any = None) -> list[dict]:
             validate_canvas_completeness,
         )
 
-        registry = get_registry()
+        registry = get_registry(registry_path=_ROOTED[1]) if _ROOTED else get_registry()
     except Exception:
         return []
 

@@ -23,6 +23,7 @@ icdev status [--json]              # Show active toggles
 icdev list [--json]               # List supported toggles
 icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>]   # Generate a new canvas from a Jinja2 template
 icdev scaffold child-app <key> --display-name "Name" --flavor <flavor> [--canvases k1,k2]  # Generate a new child app from a Jinja2 template
+icdev scaffold service <key> --display-name "Name" [--path service|model-service]  # A new service on a golden path, conformant by construction (args/golden_paths.yaml; CI: tools/idp/golden_paths.py --check / --drift)
 icdev profile list                 # List enterprise core profiles
 icdev profile show [<name>]        # Show active/core profile details
 icdev profile apply <name>         # Apply a profile's env overrides to .env

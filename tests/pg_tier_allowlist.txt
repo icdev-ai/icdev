@@ -145,3 +145,7 @@ tests/test_icx_coe_02_ambient.py
 # (PL/pgSQL append-only triggers, UNIQUE(repo, prev_hash)) and the decl-wft-coe-conformance-publish step in
 # wf_decision_steps.
 tests/test_icx_coe_03_ambient.py
+# icx-coe-04: a golden path version proposed, drift-checked and published on the ambient PG: coe_golden_path_events
+# (PL/pgSQL append-only triggers, UNIQUE(path_id, prev_hash)) and the decl-wft-coe-golden-path-publish step in
+# wf_decision_steps.
+tests/test_icx_coe_04_ambient.py

@@ -1,0 +1,7 @@
+# CUI // SP-CTI
+collection: {{ key }}.items
+query: "Which {{ display_name }} proposals wait for a person?"
+description: Proposals no person has decided yet.
+iqe: foreach i in {{ key }}.items where i.status == "pending" select i.step_id, i.subject, i.proposed_by
+example_questions:
+  - "What is waiting for a decision in {{ display_name }}?"

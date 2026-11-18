@@ -1,0 +1,7 @@
+# CUI // SP-CTI
+collection: {{ key }}.items
+query: "Which {{ display_name }} proposals were decided, and by whom?"
+description: Decided proposals with the person who decided each.
+iqe: foreach i in {{ key }}.items where i.status == "decided" select i.step_id, i.decision, i.decided_by
+example_questions:
+  - "Who decided the {{ display_name }} proposals?"

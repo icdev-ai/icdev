@@ -2390,3 +2390,34 @@ coe_conformance:
     Delivery metrics are computed from declared sources only (git history of main, a CI-run
     snapshot passed in, a board export), never the live board and never a live CI fetch.
     Outcomes, not adoption counts.
+
+
+# Golden paths: a new service conformant by construction (icx-coe-04)
+#
+# Enforced by tools/idp/golden_paths.py, tools/cli/scaffold.py (`icdev scaffold service`) and the
+# declared templates args/workflow_hitl_templates/coe-golden-path-{publish,retire}.yaml; tested in
+# tests/test_icx_coe_04_*.py (gated: core.d/icx-coe-04.txt). CI runs
+# `python tools/idp/golden_paths.py --check` and `--drift` (.github/workflows/icdev-ci.yml).
+coe_golden_paths:
+  blocking:
+    - path_behind_standards_in_force   # a standard in force that applies is not declared, or at another version
+    - scaffold_drift                   # a machine-checkable standard does not PASS on the scaffold, a feature_audit gap,
+                                       # a piece missing or malformed, or the generated tests not red-first
+    - manual_standard_scored_as_pass   # a manual evidence step is needs_evidence on a scaffold, never pass
+    - unmeasured_scored_as_pass        # a rule that measured nothing on the scaffold is unverified, never pass
+    - author_publishes                 # the version's author never publishes or retires it (separate_from: builders)
+    - step_by_non_person               # an agent or service key proposes and drift-checks; it never decides
+    - publish_without_passing_drift    # no drift check, a failed one, or one on another template digest
+    - publish_on_stale_digest          # the version changed since the person read it
+    - generator_accepts_adr            # the generator writes a PROPOSED ADR record, never accepted
+    - chain_broken                     # a ledger row that does not verify blocks any new event for that path
+  warning:
+    - path_unpublished                 # twin: coe.golden_path.<id> unverified (never passed)
+    - path_never_drift_checked         # twin: coe.golden_path.<id>.drift unverified
+    - path_behind                      # twin: coe.golden_path.behind
+    - drift_failed_or_stale            # twin: coe.golden_path.drift / .drift_stale / .drift_old
+    - bootstrap_only                   # twin: coe.golden_path.bootstrap_only
+  note: >
+    The drift check scaffolds into a temporary tree laid over the checkout and never writes to a
+    database or to the repo. The standards that apply to a path are derived from the register and
+    args/coe_conformance.yaml, never listed by hand.

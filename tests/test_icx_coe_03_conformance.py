@@ -639,7 +639,7 @@ def test_the_twin_observes_bundles_with_threads(seeded, synthetic_card, sources_
 
     c = _c()
     adapter = governance.adapter_for("idp")
-    assert adapter.observes == ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance")
+    assert adapter.observes == ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance", "coe.golden_paths")
     env = governance.observe(adapter, record=False)
     chk = {x["id"]: x for x in env["extra"]["checks"]}
     assert chk["coe.conformance.ledger"]["status"] == "verified"

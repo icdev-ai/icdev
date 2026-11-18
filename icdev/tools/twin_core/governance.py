@@ -672,6 +672,16 @@ _THREAD_TABLES = {
     "coe_conformance": ("core", "coe_conformance_events", "event_id",
                         ("event_id", "repo", "event", "actor", "actor_kind", "actor_role", "step_id",
                          "reason", "content_digest", "row_hash", "created_at")),
+    # icx-coe-04: one event in a golden path's life (seeded, proposed, drift-checked, published,
+    # refused, retired, kept).
+    "coe_golden_path": ("core", "coe_golden_path_events", "event_id",
+                        ("event_id", "path_id", "version", "event", "actor", "actor_kind", "actor_role",
+                         "step_id", "reason", "entry_digest", "row_hash", "created_at")),
+    # icx-coe-04: one declared decision step (its rows in wf_decision_steps), the thread a service
+    # scaffolded on a golden path gives its findings.
+    "wf_step": ("rls", "wf_decision_steps", "step_id",
+                ("event_id", "step_id", "event", "template_id", "surface", "subject", "actor", "actor_role",
+                 "decision", "reason", "created_at")),
 }
 #: Thread kinds whose ref is an integer row id.
 _INT_REFS = ("ace_audit", "ace_event", "aiify_decision", "audit_trail")

@@ -1,0 +1,16 @@
+// CUI // SP-CTI
+// E2E: {{ display_name }} (golden path {{ path_id }} {{ path_version }}). The page renders, a proposal is made
+// on it, and its decision step is offered. The decision itself is a person's declared step; the service's
+// pytest proves the proposer is refused it.
+import { test, expect } from '@playwright/test';
+
+test.describe('{{ display_name }}', () => {
+  test('the page renders and a proposal waits for a person', async ({ page }) => {
+    await page.goto('{{ url_prefix }}/');
+    await expect(page.locator('#svc-help')).toContainText('decides nothing');
+    await page.fill('#svc-title', 'e2e proposal (synthetic)');
+    await page.click('#svc-propose');
+    await expect(page.locator('#svc-propose-msg')).toContainText('Proposed', { timeout: 30_000 });
+    await expect(page.locator('tr[data-status="pending"]').first()).toBeVisible({ timeout: 30_000 });
+  });
+});

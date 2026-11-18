@@ -1,0 +1,33 @@
+# The component registry entry (spliced into args/component_registry.yaml by golden_paths.register).
+key: {{ key }}
+kind: canvas
+display_name: {{ display_name }}
+cli_name: {{ key | replace('_', '-') }}
+description: {{ display_name }} (golden path {{ path_id }} {{ path_version }})
+env_flag: {{ env_flag }}
+extra_env_flags: []
+default_enabled: false
+module: tools.{{ key }}.blueprint
+blueprint_attr: create_{{ key }}_blueprint
+url_prefix: {{ url_prefix }}
+min_il: IL4
+min_tier: community
+default_roles: [developer]
+owner: {{ owner }}
+owner_contact: {{ owner_contact }}
+on_call: {{ owner }}
+nav:
+  section: Canvases
+  label: {{ display_name }}
+  links:
+    - {label: Overview, href: "{{ url_prefix }}/"}
+iqe:
+  adapter_module: tools.iqe.adapters.{{ key }}
+  collections: [{{ key }}.items]
+completeness:
+  template: tools/dashboard/templates/{{ key }}/page.html
+  blueprint: true
+  constants: tools/{{ key }}/constants.py
+  iqe_adapter: true
+  nav_link: true
+  seed_queries: context/iqe/queries/{{ key }}/

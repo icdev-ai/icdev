@@ -504,7 +504,7 @@ def test_the_twin_observes_with_threads_that_resolve_and_replays(coe_db, monkeyp
     adapter = governance.adapter_for("idp")
     # icx-coe-02: the same canvas observes the CoE's exemptions and ADRs too
     # icx-coe-03: and its conformance bundles
-    assert adapter.observes == ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance")
+    assert adapter.observes == ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance", "coe.golden_paths")
     env = governance.observe(adapter)
     assert env["extra"]["recorded"] is True
     rules = {x["rule_id"] for x in env["violations"]}

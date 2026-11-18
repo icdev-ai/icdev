@@ -1,0 +1,27 @@
+# CUI // SP-CTI
+id: decl-wft-coe-golden-path-retire
+name: "Golden paths: a person retires a published path version, or keeps it"
+description: >-
+  Retiring a golden path version stops new services being scaffolded from it as the path in use. It
+  is a person's step, with a reason, bound to the version's digest, never its author's. Keeping it
+  records that someone looked and decided not to. Nothing retires by itself, and a retired version is
+  never deleted: its history stays in the ledger.
+decides: [idp.idp_api_golden_path_retire]
+effect: >-
+  The decided step in wf_decision_steps is the retirement (subject "golden_path:<id>@<version>").
+  coe_golden_path_events appends a retired or kept event bound to that step; a retired version is no
+  longer in use and the twin reports the path unverified until another version is published.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: request
+    step_type: automated
+    description: Someone asked for a published version to be retired.
+  - name: retire
+    step_type: manual
+    role: golden_path_steward
+    holders: [admin, isso, reviewer]
+    # The version's author never retires it alone.
+    separate_from: builders
+    decisions: {retire: affirm, keep: deny}
+    reason_required: [retire, keep]

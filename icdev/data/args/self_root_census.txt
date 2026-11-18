@@ -203,7 +203,6 @@ tools/ci/workflows/icdev_test.py::<module>::inline-1
 tools/cli/backfill_manifests.py::<module>::REPO_ROOT
 tools/cli/init.py::_package_resource_path::inline-1
 tools/cli/profile.py::<module>::REPO_ROOT
-tools/cli/scaffold.py::<module>::REPO_ROOT
 tools/cloud/cloud_mode_manager.py::<module>::BASE_DIR
 tools/cloud/csp_changelog.py::<module>::BASE_DIR
 tools/cloud/csp_health_checker.py::<module>::BASE_DIR

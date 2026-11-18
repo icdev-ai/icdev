@@ -1,0 +1,310 @@
+<!-- CUI // SP-CTI — Golden paths: a new service conformant by construction (icx-coe-04) -->
+{% extends "base.html" %}
+{% block title %}Golden paths — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .std-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .std-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .std-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .std-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .std-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .std-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .std-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .std-card th, .std-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .std-card th { color: var(--text-secondary); font-weight: 600; }
+  .std-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .std-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .std-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .std-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .std-tag.boot { background: var(--status-blue-bg); border-color: var(--status-blue); }
+  .std-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .std-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .std-btn.deny { border-color: var(--status-red); }
+  .std-btn[aria-pressed="true"] { border-width: 2px; font-weight: 600; }
+  .std-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .std-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .std-wrap input, .std-wrap textarea { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .std-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .std-row > div { min-width: 200px; }
+  .std-wrap code { color: var(--text-primary); word-break: break-all; }
+  /* Link colour per theme, at AA contrast on the card and the page in each (axe, e2e). */
+  .std-wrap { --std-link: #8cc4ff; }
+  html[data-theme="light"] .std-wrap { --std-link: #0d4f9e; }
+  .std-wrap a, .std-wrap .std-link { color: var(--std-link); text-decoration: underline; }
+</style>
+
+<div class="std-wrap">
+  <nav aria-label="Breadcrumb" class="std-help"><a href="{{ url_for('idp.idp_portal') }}">Developer Portal</a> /
+    <a href="{{ url_for('idp.idp_standards_page') }}">Engineering standards</a> / Golden paths</nav>
+  <h1>Golden paths</h1>
+  <p class="std-help" id="gp-help">
+    A golden path is how a new service starts <b>conformant by construction</b>:
+    <code>icdev scaffold service &lt;key&gt; --path &lt;id&gt;</code> renders it, and the path declares which
+    <a href="{{ url_for('idp.idp_standards_page') }}">engineering standards</a> it satisfies, by id and version
+    (<code>{{ view.get('config', {}).get('path', 'args/golden_paths.yaml') }}</code>). The standards that apply to a
+    path are derived from the register: every standard <b>in force</b> that its repo answers to. A path that does
+    not declare one of them is <b>behind</b>, and CI fails. The <b>drift check</b> scaffolds the path into a
+    temporary tree and runs the IDP scorecard and the five-rules audit on the result: a standard checked by a
+    scorecard rule must pass by machine; one checked by a manual evidence step shows <b>needs evidence</b>. Anyone
+    proposes a new version and runs its drift check; a person who did not author it publishes it
+    (<code>{{ templates.publish }}</code>) or later retires it (<code>{{ templates.retire }}</code>). Scores per repo
+    are on the <a href="{{ url_for('idp.idp_conformance_page') }}">standards scorecards</a>.
+  </p>
+  {% if error %}<p class="std-msg">The golden path ledger could not be read: {{ error }}</p>{% endif %}
+
+  <div class="std-card">
+    <h2>Paths</h2>
+    <table id="gp-paths">
+      <thead><tr><th scope="col">Path</th><th scope="col">In use</th><th scope="col">Standards in force</th><th scope="col">Last drift check</th><th scope="col">Open</th></tr></thead>
+      <tbody id="gp-paths-body">
+      {% for p in view.get('paths') or [] %}
+        {% set b = p.behind or {} %}
+        <tr data-path="{{ p.id }}" data-behind="{{ 'true' if b.get('behind') else 'false' }}" data-drift="{{ (p.drift or {}).get('result') or 'none' }}">
+          <td><b>{{ p.id }}</b><br>{{ p.title }}</td>
+          <td>{% if p.in_use %}{{ p.in_use }}{% if p.published_kind == 'bootstrap' %} <span class="std-tag boot">seeded</span>{% endif %}{% else %}<span class="std-tag wait">none published</span>{% endif %}</td>
+          <td>{% if not p.recorded %}<span class="std-tag wait">not recorded</span>{% elif b.get('behind') %}<span class="std-tag no">behind</span> missing {{ (b.get('missing') or [])|map(attribute='id')|join(', ') }}{{ (b.get('stale_version') or [])|map(attribute='id')|join(', ') }}{% else %}<span class="std-tag ok">meets all {{ (b.get('required') or [])|length }}</span>{% endif %}</td>
+          <td>{% if p.drift %}<span class="std-tag {{ 'ok' if p.drift.result == 'pass' else 'no' }}">{{ p.drift.result }}</span> {{ p.drift.at }}{% else %}<span class="std-tag wait">none recorded</span>{% endif %}</td>
+          <td><button type="button" class="std-btn" data-open="{{ p.id }}" aria-pressed="false">Open {{ p.id }}</button></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5">No golden path is declared.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="std-help">Standards in force now: {% for s in view.get('in_force') or [] %}<a href="{{ url_for('idp.idp_standards_page') }}#{{ s.id }}">{{ s.id }}</a> {{ s.version }}{% if not loop.last %}, {% endif %}{% else %}none{% endfor %}.
+      {% if view.get('in_force_error') %}The register could not be read: {{ view.in_force_error }}{% endif %}</p>
+  </div>
+
+  <div class="std-card" id="gp-detail">
+    <h2 id="gp-detail-title">Pick a path</h2>
+    <div class="std-msg" id="gp-summary" aria-live="polite"></div>
+    <h3>Standards: what applies, what the version in use declares, what the drift check found</h3>
+    <table id="gp-standards">
+      <thead><tr><th scope="col">Standard</th><th scope="col">In force</th><th scope="col">Declared</th><th scope="col">Drift check</th><th scope="col">How the scaffold meets it</th></tr></thead>
+      <tbody id="gp-standards-body"><tr><td colspan="5">Pick a path.</td></tr></tbody>
+    </table>
+    <div id="gp-drift" class="std-help"></div>
+    <p><button type="button" class="std-btn" id="gp-run-drift">Run drift check</button></p>
+    <div class="std-msg" id="gp-drift-msg" role="status"></div>
+    <h3>Versions</h3>
+    <table id="gp-versions">
+      <thead><tr><th scope="col">Version</th><th scope="col">State</th><th scope="col">Author</th><th scope="col">Drift check</th><th scope="col">Behind</th></tr></thead>
+      <tbody id="gp-versions-body"><tr><td colspan="5">Pick a path.</td></tr></tbody>
+    </table>
+    <div id="gp-step"></div>
+    <div class="std-msg" id="gp-step-msg" role="status"></div>
+  </div>
+
+  <div class="std-card" id="gp-propose-card">
+    <h2>Propose a new version</h2>
+    <p class="std-help">A proposal decides nothing. It records the version at its digest; run its drift check, then a
+      person who did not author it publishes it. The declaration below starts from every standard in force that
+      applies to the path.</p>
+    <div class="std-row">
+      <div><label for="gp-version">New version</label><input id="gp-version" autocomplete="off"></div>
+      <div><label for="gp-note">Note</label><input id="gp-note" autocomplete="off"></div>
+    </div>
+    <label for="gp-satisfies">Satisfies (ID@version, one per line)</label>
+    <textarea id="gp-satisfies" rows="6"></textarea>
+    <p><button type="button" class="std-btn" id="gp-propose">Propose version</button></p>
+    <div class="std-msg" id="gp-propose-msg" role="status"></div>
+  </div>
+
+  <div class="std-card" id="gp-twin">
+    <h2>Twin</h2>
+    <p class="std-help">The Developer Portal's governance twin observes the golden paths: a path with no published
+      version, or none drift-checked, is unverified; a path behind the standards in force, a failed or stale drift
+      check, and a version in use only on its bootstrap seed are findings. Each finding carries its thread to the
+      ledger row it rests on. Recorded observations and their replay are on the
+      <a href="/twin-observatory/governance">governance twins</a> page.</p>
+    <p><button type="button" class="std-btn" id="twin-observe">Observe now</button></p>
+    <div id="gp-twin-body" class="std-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var current = null;   // the path id
+  var view = null;      // the path's view
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  var TAGS = {pass: ['ok', 'pass (machine)'], fail: ['no', 'fail'], needs_evidence: ['wait', 'needs evidence'],
+              unverified: ['wait', 'UNVERIFIED'], drift: ['no', 'drift'], published: ['ok', 'published'],
+              proposed: ['wait', 'proposed'], refused: ['no', 'refused'], retired: ['', 'retired'],
+              superseded: ['', 'superseded']};
+  function tag(st) {
+    var t = TAGS[st] || ['', st || 'none'];
+    return '<span class="std-tag ' + t[0] + '" data-status="' + esc(st) + '">' + esc(t[1]) + '</span>';
+  }
+  function short(d) { return d ? String(d).slice(0, 16) : ''; }
+
+  function render(v) {
+    view = v;
+    var use = null, latest = v.versions[v.versions.length - 1] || null;
+    v.versions.forEach(function (x) { if (x.version === v.in_use) use = x; });
+    var shown = use || latest;
+    document.getElementById('gp-detail-title').textContent = 'Golden path ' + v.id + (v.in_use ? ' (' + v.in_use + ' in use)' : '');
+    var b = v.behind || {};
+    document.getElementById('gp-summary').innerHTML = esc(v.title) + ' &middot; repo <code>' + esc(v.repo) + '</code> &middot; ' +
+      (b.behind ? '<span class="std-tag no" id="gp-behind">behind the standards in force</span>' : '<span class="std-tag ok" id="gp-behind">meets every standard in force</span>');
+    var decl = {}, found = {};
+    ((shown && shown.entry.satisfies) || []).forEach(function (s) { decl[s.id] = s; });
+    (((shown && shown.drift) || {}).standards || []).forEach(function (s) { found[s.id] = s; });
+    var ids = (v.in_force || []).map(function (s) { return s.id; });
+    Object.keys(decl).forEach(function (k) { if (ids.indexOf(k) < 0) ids.push(k); });
+    document.getElementById('gp-standards-body').innerHTML = ids.map(function (id) {
+      var force = (v.in_force || []).filter(function (s) { return s.id === id; })[0];
+      var d = decl[id], f = found[id];
+      var state = !force ? 'not_in_force' : !d ? 'missing' : d.version !== force.version ? 'stale' : 'declared';
+      return '<tr data-std="' + esc(id) + '" data-state="' + state + '" data-status="' + esc(f ? f.status : '') + '"><td><a href="' +
+        esc(icdevRoute('idp.idp_standards_page')) + '#' + esc(id) + '">' + esc(id) + '</a>' + (force ? '<br>' + esc(force.title) : '') + '</td>' +
+        '<td>' + esc(force ? force.version : 'not in force') + '</td>' +
+        '<td>' + (state === 'missing' ? '<span class="std-tag no">not declared</span>' : state === 'stale' ? '<span class="std-tag no">declares ' + esc(d.version) + '</span>' : esc(d ? d.version : '')) + '</td>' +
+        '<td>' + (f ? tag(f.status) + ' ' + esc(f.why) : 'not checked') + '</td><td>' + esc(d ? d.by : '') + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">No standard applies.</td></tr>';
+    var dr = shown && shown.drift;
+    document.getElementById('gp-drift').innerHTML = dr
+      ? '<p id="gp-drift-result" data-result="' + esc(dr.result) + '">Drift check of ' + esc(shown.version) + ': ' + tag(dr.result) + ' by ' + esc(dr.by) + ' at ' + esc(dr.at) +
+        ' &middot; standards ' + Object.keys((dr.summary || {}).standards || {}).map(function (k) { return tag(k) + ' ' + esc(dr.summary.standards[k]); }).join(' ') +
+        ' &middot; five-rules gaps ' + esc((dr.summary || {}).gaps) + ' &middot; generated tests red first: ' + esc(((dr.tests || {}).red_first) ? 'yes' : 'no') +
+        ' &middot; template <code>' + esc(short(dr.template_digest)) + '</code></p>' +
+        ((dr.why || []).length ? '<ul>' + dr.why.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' : '')
+      : '<p id="gp-drift-result" data-result="none">No drift check is recorded for ' + esc(shown ? shown.version : 'this path') + ': unverified.</p>';
+    document.getElementById('gp-versions-body').innerHTML = v.versions.map(function (x) {
+      return '<tr data-version="' + esc(x.version) + '" data-state="' + esc(x.state) + '"><td>' + esc(x.version) + '</td><td>' + tag(x.state) +
+        (x.published_kind === 'bootstrap' ? ' <span class="std-tag boot">seeded</span>' : '') + (x.published_by ? ' by ' + esc(x.published_by) : '') + '</td>' +
+        '<td>' + esc(x.author) + ' (' + esc(x.author_kind) + ')</td><td>' + (x.drift ? tag(x.drift.result) : 'none') + '</td>' +
+        '<td>' + (x.behind.behind ? '<span class="std-tag no">behind</span>' : '<span class="std-tag ok">no</span>') + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">No version is recorded.</td></tr>';
+    var need = (v.in_force || []).map(function (s) { return s.id + '@' + s.version; });
+    var sat = document.getElementById('gp-satisfies');
+    if (!sat.value) sat.value = need.join('\n');
+    renderStep(v);
+  }
+
+  function renderStep(v) {
+    var box = document.getElementById('gp-step');
+    var open = v.versions.filter(function (x) { return x.state === 'proposed'; })[0];
+    var use = v.versions.filter(function (x) { return x.version === v.in_use; })[0];
+    var html = '';
+    if (open) {
+      html += '<h3>Your step: publish ' + esc(v.id) + ' ' + esc(open.version) + '</h3><p class="std-help">May not publish it: <b>' +
+        esc(Object.keys(open.builders || {}).join(', ')) + '</b>. A reason is required. Bound to digest <code id="gp-open-digest">' + esc(short(open.entry_digest)) + '</code>.' +
+        (open.gate.length ? ' <b>The gate does not hold yet:</b> ' + esc(open.gate.join('; ')) : ' The gate holds.') + '</p>' +
+        '<label for="gp-reason">Reason</label><input id="gp-reason" autocomplete="off">' +
+        '<p><button type="button" class="std-btn" data-step="publish" data-decision="publish" data-version="' + esc(open.version) + '">Publish</button> ' +
+        '<button type="button" class="std-btn deny" data-step="publish" data-decision="refuse" data-version="' + esc(open.version) + '">Refuse</button></p>';
+    } else if (use) {
+      html += '<h3>Retire ' + esc(v.id) + ' ' + esc(use.version) + '</h3><p class="std-help">A person who did not author it retires it or keeps it, with a reason.</p>' +
+        '<label for="gp-reason">Reason</label><input id="gp-reason" autocomplete="off">' +
+        '<p><button type="button" class="std-btn deny" data-step="retire" data-decision="retire" data-version="' + esc(use.version) + '">Retire</button> ' +
+        '<button type="button" class="std-btn" data-step="retire" data-decision="keep" data-version="' + esc(use.version) + '">Keep</button></p>';
+    }
+    box.innerHTML = html;
+  }
+
+  function load(id) {
+    current = id;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-open]'), function (el) {
+      el.setAttribute('aria-pressed', el.getAttribute('data-open') === id ? 'true' : 'false');
+    });
+    return getJson(icdevFetch('idp.idp_api_golden_path', {path_id: id})).then(function (res) {
+      if (!res.ok) { document.getElementById('gp-summary').textContent = 'Not read (' + (res.j.code || 'error') + '): ' + (res.j.error || ''); return; }
+      document.getElementById('gp-satisfies').value = '';
+      render(res.j);
+    });
+  }
+
+  function runDrift(version) {
+    var msg = document.getElementById('gp-drift-msg');
+    msg.textContent = 'Scaffolding ' + current + ' into a temporary tree and judging it...';
+    return getJson(icdevFetch('idp.idp_api_golden_path_drift', {path_id: current}, postInit({version: version || ''}))).then(function (res) {
+      msg.textContent = res.ok ? 'Drift check of ' + res.j.path_id + ' ' + res.j.version + ': ' + res.j.result + ' in ' + res.j.seconds + ' s.'
+                               : 'Not run (' + (res.j.code || 'error') + '): ' + (res.j.error || '');
+      return load(current);
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var o = t.getAttribute('data-open');
+    if (o) { document.getElementById('gp-step-msg').textContent = ''; load(o); return; }
+    var step = t.getAttribute('data-step');
+    if (step && view) {
+      var msg = document.getElementById('gp-step-msg');
+      var reason = ((document.getElementById('gp-reason') || {}).value || '').trim();
+      if (!reason) { msg.textContent = 'A reason is required.'; return; }
+      var ver = t.getAttribute('data-version');
+      var rec = view.versions.filter(function (x) { return x.version === ver; })[0];
+      var body = postInit({version: ver, decision: t.getAttribute('data-decision'), reason: reason, digest: rec.entry_digest});
+      var sent = step === 'publish' ? icdevFetch('idp.idp_api_golden_path_publish', {path_id: current}, body)
+                                    : icdevFetch('idp.idp_api_golden_path_retire', {path_id: current}, body);
+      getJson(sent).then(function (res) {
+        if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+        msg.textContent = 'Recorded: ' + res.j.path_id + ' ' + res.j.version + ' ' + res.j.event + ' by ' + res.j.decided_by + ' (step ' + res.j.step.step_id + ').';
+        load(current);
+      });
+      return;
+    }
+    var th = t.getAttribute('data-thread');
+    if (th) {
+      getJson(icdevFetch('idp.idp_api_standards_twin', {}, {}, {thread: th})).then(function (res) {
+        var rec = res.j.record || {};
+        document.getElementById('gp-thread').innerHTML = res.j.resolved
+          ? '<p id="gp-thread-resolved">Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.path_id || '') + ' ' + esc(rec.version || '') + ' ' +
+            esc(rec.event || '') + ' by ' + esc(rec.actor || '') + ' (' + esc(rec.actor_kind || '') + ') ' + esc(rec.created_at || '') + ', digest <code>' + esc(short(rec.entry_digest)) + '</code></p>'
+          : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';
+      });
+    }
+  });
+
+  document.getElementById('gp-run-drift').addEventListener('click', function () {
+    if (!current) { document.getElementById('gp-drift-msg').textContent = 'Pick a path first.'; return; }
+    var open = view && view.versions.filter(function (x) { return x.state === 'proposed'; })[0];
+    runDrift(open ? open.version : (view && view.in_use) || '');
+  });
+
+  document.getElementById('gp-propose').addEventListener('click', function () {
+    var msg = document.getElementById('gp-propose-msg');
+    if (!current) { msg.textContent = 'Pick a path first.'; return; }
+    var sat = document.getElementById('gp-satisfies').value.split(/\s+/).filter(function (x) { return x; });
+    getJson(icdevFetch('idp.idp_api_golden_path_propose', {}, postInit({id: current, version: document.getElementById('gp-version').value.trim(),
+      satisfies: sat, note: document.getElementById('gp-note').value}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not proposed (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Proposed ' + res.j.path_id + ' ' + res.j.version + ' as ' + res.j.author_kind + '. Its drift check runs next; a person who did not author it publishes it.';
+      runDrift(res.j.version);
+    });
+  });
+
+  document.getElementById('twin-observe').addEventListener('click', function () {
+    var box = document.getElementById('gp-twin-body');
+    getJson(icdevFetch('idp.idp_api_standards_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j;
+      var vs = (env.violations || []).filter(function (f) { return String(f.rule_id).indexOf('coe.golden_path') === 0; });
+      box.innerHTML = '<p id="gp-twin-verdict">Verdict ' + tag(env.verdict) + ' coverage ' + esc(env.coverage_score) + ', ' + esc(vs.length) + ' golden path finding(s).</p>' +
+        '<ul>' + vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
+            ' &middot; thread <button type="button" class="std-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
+        }).join('') + '</ul><div id="gp-thread"></div>';
+    });
+  });
+
+  var first = document.querySelector('[data-open]');
+  if (first) load(first.getAttribute('data-open'));
+})();
+</script>
+{% endblock %}

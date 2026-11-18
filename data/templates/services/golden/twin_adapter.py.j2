@@ -1,0 +1,59 @@
+# CUI // SP-CTI — {{ display_name }} governance twin (golden path {{ path_id }} {{ path_version }})
+"""Governance twin over {{ display_name }} (``tools/{{ key }}/service.py``).
+
+Canvas ``{{ key }}``, observing ``{{ key }}.service``. It reads every proposal and decision in
+``wf_decision_steps`` for the service's declared template (``service.twin_evidence``) and judges them
+purely, so an observation replays:
+
+* ``{{ key }}.service.waiting``       a proposal waiting longer than the policy allows (low);
+* ``{{ key }}.service.self_decided``  a proposal decided by its proposer (critical).
+
+Every finding's thread is the step it rests on (``wf_step:<step id>``). An unreadable ledger is an
+unverified check, never a pass.
+"""
+from __future__ import annotations
+
+from tools.twin_core.governance import GovernanceTwinAdapter, age_hours, check, finding, now_iso
+from tools.twin_core.governance import replay as replay_observation
+from tools.twin_core.registry import register_twin
+
+
+@register_twin
+class {{ key | replace('_', ' ') | title | replace(' ', '') }}Twin(GovernanceTwinAdapter):
+    canvas_key = "{{ key }}"
+    display_name = "{{ display_name }}"
+    observes = ("{{ key }}.service",)
+
+    def replay(self, observation_id: str) -> dict:
+        """Re-judge a recorded observation from its evidence (see governance.replay)."""
+        return replay_observation(self, observation_id)
+
+    def collect(self) -> dict:
+        from tools.{{ key }} import service
+        from tools.{{ key }}.constants import WAITING_WARN_DAYS
+
+        return {"canvas": self.canvas_key, "target_id": "{{ key }}.service", "observed_at": now_iso(),
+                "policy": {"waiting_warn_days": WAITING_WARN_DAYS}, "service": service.twin_evidence()}
+
+    def judge(self, evidence: dict) -> dict:
+        ev = evidence.get("service") or {}
+        rows = ev.get("items")
+        waiting = float((evidence.get("policy") or {}).get("waiting_warn_days") or 7)
+        checks = [check("{{ key }}.service.ledger", "{{ display_name }} proposals (wf_decision_steps)",
+                        rows is not None, (ev.get("errors") or {}).get("ledger") or "not read")]
+        findings = []
+        for r in rows or []:
+            if r.get("status") == "pending":
+                age = age_hours(r.get("updated_at"), evidence.get("observed_at") or "")
+                if age is not None and age > waiting * 24:
+                    findings.append(finding("{{ key }}.service.waiting", "low",
+                                            f"a proposal has waited {age / 24:.0f} days for a person",
+                                            thread_id=f"wf_step:{r['step_id']}",
+                                            recommendation="A person who did not propose it decides it."))
+            if r.get("status") == "decided" and r.get("decided_by") and r["decided_by"] == r.get("proposed_by"):
+                findings.append(finding("{{ key }}.service.self_decided", "critical",
+                                        "a proposal was decided by the person who proposed it",
+                                        thread_id=f"wf_step:{r['step_id']}",
+                                        recommendation="Treat it as undecided; another person decides it."))
+        summary = {"items": len(rows or []), "pending": sum(1 for r in rows or [] if r.get("status") == "pending")}
+        return {"checks": checks, "findings": findings, "summary": summary}
