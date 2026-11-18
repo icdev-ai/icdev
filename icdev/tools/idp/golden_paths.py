@@ -275,15 +275,37 @@ def behind(entry: dict, forced: list[dict]) -> dict:
             "not_in_force": extra, "required": [{"id": s["id"], "version": s["version"]} for s in need]}
 
 
+def _in_use(conn=None) -> dict[str, dict]:
+    """Each path's version IN USE in the ledger (``{path id: entry}``), as the page and the twin judge it."""
+    ch = chain(read_events(conn))
+    out = {}
+    for pid, ordered in ch.items():
+        if pid == "_problems":
+            continue
+        st = replay(ordered)
+        if st["in_use"]:
+            out[pid] = st["versions"][st["in_use"]]["entry"]
+    return out
+
+
 def check(source: str = "register", cfg: Optional[dict] = None, conn=None) -> dict:
-    """Every declared path against the standards in force. ``ok`` is false when one is behind."""
+    """Every declared path against the standards in force. ``ok`` is false when one is behind.
+
+    ``register`` (CI) judges each path as ``args/golden_paths.yaml`` declares it. ``ledger`` judges the version a
+    person published and is IN USE, as the page and the twin do (osx-coe-02), and the file's declaration only for a
+    path the ledger has not recorded.
+    """
     cfg = cfg or load_config()
     forced = in_force(source, conn)
+    use = _in_use(conn) if source == "ledger" else {}
     rows = []
     for e in cfg["paths"]:
         n = normalise(e)
+        judged = "declared (args/golden_paths.yaml)"
+        if n["id"] in use:
+            n, judged = normalise(use[n["id"]]), "in use (ledger)"
         b = behind(n, forced)
-        rows.append({"id": n["id"], "version": n["version"], **b,
+        rows.append({"id": n["id"], "version": n["version"], "judged": judged, **b,
                      "why": (f"{BEHIND}: {n['id']} {n['version']} does not declare "
                              + ", ".join([f"{m['id']} {m['version']}" for m in b["missing"]]
                                          + [f"{m['id']} {m['version']} (declares {m['declared']})"

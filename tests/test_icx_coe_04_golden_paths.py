@@ -258,6 +258,32 @@ def test_propose_drift_and_publish_by_another_person_when_the_gate_holds(gp, see
     assert rows == [("decl-wft-coe-golden-path-publish", PUBLISHER["id"], "publish")]
 
 
+def test_the_ledger_check_judges_the_version_in_use_as_the_page_does(gp, seeded, monkeypatch):
+    """osx-coe-02 (the CoE journey): once a person publishes a version that declares the new standard, the ledger
+    check agrees with the page and the twin -- it judges the version IN USE, not the file's declaration. The
+    register check (CI) still judges the file: a checkout has no ledger."""
+    _adopt(NEW_STD)
+    assert not gp.check("ledger")["ok"]
+    v = gp.path_view("service")
+    entry = gp.entry_from_form({"id": "service", "version": "1.1",
+                                "satisfies": [f"{s}@1.0" for s in SEEDED + ["ENG-COE04-PLANTED"]]},
+                               v["versions"][-1]["entry"])
+    p = gp.propose(entry, AUTHOR, note="declares the planted standard (synthetic)")
+    _pass_drift(monkeypatch, gp)
+    gp.record_drift("service", "1.1", AUTHOR)
+    gp.publish("service", "1.1", decision="publish", reason="Read it (synthetic).", read_digest=p["entry_digest"],
+               actor=PUBLISHER)
+    assert not gp.path_view("service")["behind"]["behind"], "the page: service meets every standard in force"
+    out = gp.check("ledger")
+    svc = next(r for r in out["paths"] if r["id"] == "service")
+    assert svc["version"] == "1.1" and svc["judged"] == "in use (ledger)" and not svc["behind"], svc
+    ms = next(r for r in out["paths"] if r["id"] == "model-service")
+    assert ms["version"] == "1.0" and ms["behind"] and ms["missing"][0]["id"] == "ENG-COE04-PLANTED"
+    assert not out["ok"], "model-service is still behind"
+    reg = next(r for r in gp.check("register")["paths"] if r["id"] == "service")
+    assert reg["version"] == "1.0" and reg["judged"] == "declared (args/golden_paths.yaml)"
+
+
 def test_the_gate_blocks_a_failed_or_stale_drift_check_and_a_version_behind(gp, seeded, monkeypatch, tmp_path):
     base = gp.path_view("service")["versions"][-1]["entry"]
     p = gp.propose({**base, "version": "1.2"}, AUTHOR)
