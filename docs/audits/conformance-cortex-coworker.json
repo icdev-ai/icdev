@@ -2855,7 +2855,7 @@
               "methods": [
                 "GET"
               ],
-              "observed": false,
+              "observed": true,
               "rule": "/data-discovery/",
               "write": false
             },
@@ -2877,7 +2877,7 @@
               "methods": [
                 "GET"
               ],
-              "observed": false,
+              "observed": true,
               "rule": "/data-discovery/api/sources/<source>",
               "write": false
             },
@@ -2901,7 +2901,7 @@
               "methods": [
                 "POST"
               ],
-              "observed": false,
+              "observed": true,
               "rule": "/data-discovery/api/sources/<source>/prepare",
               "write": true
             },
@@ -2913,7 +2913,7 @@
               "methods": [
                 "POST"
               ],
-              "observed": false,
+              "observed": true,
               "rule": "/data-discovery/api/sources/<source>/publish",
               "write": true
             },
@@ -2925,7 +2925,7 @@
               "methods": [
                 "GET"
               ],
-              "observed": false,
+              "observed": true,
               "rule": "/data-discovery/api/twin",
               "write": false
             }
@@ -4028,9 +4028,9 @@
     "gaps_total": 0,
     "routes": 182,
     "routes_by_id": 154,
-    "routes_observed": 132,
+    "routes_observed": 137,
     "writes_by_id": 75,
-    "writes_observed": 73
+    "writes_observed": 75
   },
   "tool": "feature_audit",
   "version": 1

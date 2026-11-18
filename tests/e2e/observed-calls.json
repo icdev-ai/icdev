@@ -406,6 +406,37 @@
     "Cortex: chat, govern, every verb, intake, and IQE"
    ]
   },
+  "GET data_discovery.dd_api_source": {
+   "endpoint": "data_discovery.dd_api_source",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "profile a source, prepare its bundle, refuse the preparer, publish it, download it, open the twin thread",
+    "the data discovery export page in the dark theme has no axe violations",
+    "the data discovery export page in the light theme has no axe violations"
+   ]
+  },
+  "GET data_discovery.dd_api_twin": {
+   "endpoint": "data_discovery.dd_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "profile a source, prepare its bundle, refuse the preparer, publish it, download it, open the twin thread",
+    "the data discovery export page in the dark theme has no axe violations",
+    "the data discovery export page in the light theme has no axe violations"
+   ]
+  },
+  "GET data_discovery.dd_export_page": {
+   "endpoint": "data_discovery.dd_export_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "profile a source, prepare its bundle, refuse the preparer, publish it, download it, open the twin thread"
+   ]
+  },
   "GET dic.explorer": {
    "endpoint": "dic.explorer",
    "method": "GET",
@@ -1053,6 +1084,24 @@
    "test": false,
    "tests": [
     "Cortex: every PMO verb, and an award proposed for another person to decide"
+   ]
+  },
+  "POST data_discovery.dd_api_prepare": {
+   "endpoint": "data_discovery.dd_api_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "profile a source, prepare its bundle, refuse the preparer, publish it, download it, open the twin thread"
+   ]
+  },
+  "POST data_discovery.dd_api_publish": {
+   "endpoint": "data_discovery.dd_api_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "profile a source, prepare its bundle, refuse the preparer, publish it, download it, open the twin thread"
    ]
   },
   "POST dic.api_explorer_cortex_finding_adjudicate": {
