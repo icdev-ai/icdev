@@ -2050,6 +2050,8 @@ components:
       href: /idp/conformance
     - label: Golden Paths
       href: /idp/golden-paths
+    - label: FOCUS Cost Bundles
+      href: /idp/finops/focus
   iqe:
     adapter_module: tools.iqe.adapters.idp
     collections:

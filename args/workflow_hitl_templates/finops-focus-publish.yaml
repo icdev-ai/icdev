@@ -1,0 +1,35 @@
+# CUI // SP-CTI
+id: decl-wft-finops-focus-publish
+name: "FOCUS cost bundles: a person publishes a prepared bundle to ICDEV[OS], or refuses it (prepare -> publish)"
+description: >-
+  A FOCUS cost bundle (icos-focus-cost/v1) is the cost evidence ICDEV[OS]'s Cloud CoP
+  judges each declared workload by: one billing period's FOCUS 1.4 Cost and Usage rows,
+  validated against ICDEV[OS]'s pinned schema, each workload's total and what no
+  workload names. Leaving the factory is a release, so a person attests it. Anyone, or
+  an agent, prepares a bundle from a FOCUS export on /idp/finops/focus, which records it
+  at its digest and decides nothing. A person who did not prepare it reads it and
+  publishes it or refuses, with a reason, bound to that digest. Nothing publishes
+  itself, and a newer bundle needs a new step.
+decides: [idp.idp_api_finops_focus_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject:
+  "finops_focus:<billing month>"; payload: the prepared event, the bundle's content
+  digest, the export it was read from and the billing period). finops_focus_events
+  appends a published or refused event bound to that step and chained to the row
+  before it. Only a published bundle carries its publication (who, the step, when, the
+  digest, who prepared it), and only a published bundle is exported for ICDEV[OS]
+  (tools/finops/focus_bundle.py --published <event> --out <file>).
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: prepare
+    step_type: automated
+    description: Someone (a person, or an agent's draft) built the bundle from a FOCUS export and recorded it at its digest.
+  - name: publish
+    step_type: manual
+    role: finops_publisher
+    holders: [admin, pm, reviewer]
+    # The person who prepared the bundle never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]

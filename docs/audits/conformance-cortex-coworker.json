@@ -1542,6 +1542,7 @@
                 "tools/dashboard/templates/idp/adrs.html",
                 "tools/dashboard/templates/idp/conformance.html",
                 "tools/dashboard/templates/idp/exemptions.html",
+                "tools/dashboard/templates/idp/finops_focus.html",
                 "tools/dashboard/templates/idp/golden_paths.html",
                 "tools/dashboard/templates/idp/standards.html"
               ],
@@ -2823,6 +2824,129 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "finops_focus read-only, tool_authorization tier 'read'",
+            "finops_focus_prepare mutating, approval tier 'unknown' (default_tier) halts"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-FIN-01 -> finops.focus.read -> tests/test_osx_cop_05_finops.py::test_the_schema_is_pinned_by_file_and_by_schema_digest, tests/test_osx_cop_05_finops.py::test_the_config_is_declared_and_one_that_breaks_a_rule_is_refused",
+            "PM-FIN-02 -> finops.focus.read -> tests/test_osx_cop_05_finops.py::test_the_synthetic_export_reads_csv_json_and_json_lines_alike, tests/test_osx_cop_05_finops.py::test_a_row_that_fails_the_pinned_schema_refuses_the_whole_export",
+            "PM-FIN-03 -> finops.focus.bundle -> tests/test_osx_cop_05_finops.py::test_the_bundle_totals_and_digest_recompute_by_icos_algorithm, tests/test_osx_cop_05_finops.py::test_a_tampered_or_off_contract_bundle_does_not_verify, tests/test_osx_cop_05_finops.py::test_a_draft_has_no_publication",
+            "PM-FIN-04 -> finops.focus.publish -> tests/test_osx_cop_05_finops.py::test_publishing_binds_the_digest_and_is_never_the_preparers, tests/test_osx_cop_05_finops.py::test_a_self_publication_is_refused_and_never_counts, tests/test_osx_cop_05_finops.py::test_an_off_contract_prepared_bundle_is_never_published, tests/test_osx_cop_05_finops.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_osx_cop_05_finops.py::test_the_template_is_declared, tests/test_osx_cop_05_ambient.py::test_a_focus_bundle_prepared_and_published_on_the_platform_database",
+            "PM-FIN-05 -> if.finops.focus.console, finops.focus.twin, if.finops.focus.mcp -> tests/test_osx_cop_05_finops.py::test_the_routes_and_the_page, tests/test_osx_cop_05_finops.py::test_the_twin_observes_bundles_with_threads_and_replays, tests/test_osx_cop_05_finops.py::test_a_self_published_or_off_contract_bundle_is_a_finding_and_counts_for_nothing, tests/test_osx_cop_05_finops.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read, tests/test_osx_cop_05_finops.py::test_the_mcp_tools_read_and_only_draft, tests/test_osx_cop_05_finops.py::test_no_cloud_vendor_training_or_certification_content"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "idp.idp_api_finops_focus_prepare called from tools/dashboard/templates/idp/finops_focus.html",
+            "idp.idp_api_finops_focus_publish called from tools/dashboard/templates/idp/finops_focus.html",
+            "nav links /idp/finops/focus",
+            "page /idp/finops/focus renders idp/finops_focus.html",
+            "registry entry 'idp'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/finops_focus.html"
+              ],
+              "endpoint": "idp.idp_api_finops_focus",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/finops/focus",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/finops_focus.html"
+              ],
+              "endpoint": "idp.idp_api_finops_focus_bundle",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/idp/api/finops/focus/<event_id>/bundle",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/finops_focus.html"
+              ],
+              "endpoint": "idp.idp_api_finops_focus_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/finops/focus/<event_id>/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/finops_focus.html"
+              ],
+              "endpoint": "idp.idp_api_finops_focus_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/finops/focus/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/finops_focus.html"
+              ],
+              "endpoint": "idp.idp_api_finops_focus_preview",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/finops/focus/preview",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "idp.idp_finops_focus_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/idp/finops/focus",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "idp.idp_api_finops_focus_publish (declared (tools/idp/blueprint.py: \"A person, never the preparer, publishes a prepared FOCUS bundle to ICDEV[OS], or refuses it.\")) -> template decl-wft-finops-focus-publish (args/workflow_hitl_templates/finops-focus-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "idp",
+      "key": "finops.focus",
+      "label": "FinOps: FOCUS cost bundles per workload for ICDEV[OS]'s Cloud CoP"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
             "aiify_promotions read-only, tool_authorization tier 'read'"
           ],
           "gaps": [],
@@ -3651,6 +3775,7 @@
       "tools/dashboard/templates/idp/adrs.html",
       "tools/dashboard/templates/idp/conformance.html",
       "tools/dashboard/templates/idp/exemptions.html",
+      "tools/dashboard/templates/idp/finops_focus.html",
       "tools/dashboard/templates/idp/golden_paths.html",
       "tools/dashboard/templates/idp/standards.html",
       "tools/dashboard/templates/includes/_chat_action_card.html",
@@ -3678,8 +3803,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 28,
-    "features_conforming": 28,
+    "features": 29,
+    "features_conforming": 29,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3835,6 +3960,13 @@
         "twin": 0,
         "workflow": 0
       },
+      "finops.focus": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
       "mdz.aiify": {
         "ai_native": 0,
         "architecture": 0,
@@ -3886,11 +4018,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 175,
-    "routes_by_id": 149,
-    "routes_observed": 132,
-    "writes_by_id": 73,
-    "writes_observed": 73
+    "routes": 181,
+    "routes_by_id": 154,
+    "routes_observed": 136,
+    "writes_by_id": 75,
+    "writes_observed": 75
   },
   "tool": "feature_audit",
   "version": 1

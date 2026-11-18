@@ -682,6 +682,10 @@ _THREAD_TABLES = {
     "wf_step": ("rls", "wf_decision_steps", "step_id",
                 ("event_id", "step_id", "event", "template_id", "surface", "subject", "actor", "actor_role",
                  "decision", "reason", "created_at")),
+    # osx-cop-05: one event in the FOCUS cost bundles (prepared, published, refused).
+    "finops_focus": ("core", "finops_focus_events", "event_id",
+                     ("event_id", "period", "event", "actor", "actor_kind", "actor_role", "step_id",
+                      "reason", "content_digest", "row_hash", "created_at")),
 }
 #: Thread kinds whose ref is an integer row id.
 _INT_REFS = ("ace_audit", "ace_event", "aiify_decision", "audit_trail")
