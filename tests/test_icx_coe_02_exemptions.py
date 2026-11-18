@@ -584,7 +584,8 @@ def test_the_twin_reports_expired_and_migrated_exemptions_with_threads(coe_db):
     soon = _request(component="coe02-soon", expires=_d(3))
     _grant(soon)
     adapter = governance.adapter_for("idp")
-    assert adapter.observes[:3] == ("coe.standards", "coe.exemptions", "coe.adrs")  # icx-coe-03 adds coe.conformance
+    # icx-coe-03: and its conformance bundles
+    assert adapter.observes == ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance")
     env = governance.observe(adapter)
     assert env["extra"]["recorded"] is True
     found = {x["rule_id"]: x for x in env["violations"]}

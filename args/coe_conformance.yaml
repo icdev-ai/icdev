@@ -18,6 +18,8 @@ version: 1
 #                   path_env  an environment variable that overrides path
 #                   ref       the main branch as that checkout knows it
 #   ci            the CI system whose run records are passed in as a snapshot (never fetched live)
+#   ci_workflow   the repo's main CI workflow by name: a `gh run list` export that carries other workflows
+#                 too keeps only this one's runs (another workflow's success never masks a failed main run)
 #   standards     the standard ids, or id prefixes ending in '*', that APPLY to this repo. Every other
 #                 standard in the register is listed for the repo as not applicable, never scored.
 #                 Extending a repo's list is the owner's decision (D-COE-3).
@@ -30,6 +32,7 @@ repos:
     remote: "github:icdev-ai/icdev"
     git: {path: ".", path_env: ICDEV_COE_REPO_IT, ref: origin/main}
     ci: github-actions
+    ci_workflow: "ICDEV CI"
     standards: ["ENG-*"]
     exemption_repo: icdev
   os:
@@ -45,6 +48,7 @@ repos:
     remote: "github:icdev-ai/icdev_ft"
     git: {path: "~/icdev_ft", path_env: ICDEV_COE_REPO_FT, ref: origin/main}
     ci: github-actions
+    ci_workflow: "ICDEV[FT] CI"
     # No engineering standard in the register is declared for ICDEV[FT] yet: every one is listed
     # as not applicable. The owner decides which apply (D-COE-3).
     standards: []

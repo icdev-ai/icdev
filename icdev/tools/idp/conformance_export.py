@@ -51,7 +51,9 @@ def sources_from_args(repo: str, as_of: str, *, git: Path | None, ci: Path | Non
         src["git"], src["read"]["git"] = dora.check_git(_load(git)), "snapshot"
         src["missing"].pop("git", None)
     if ci is not None:
-        src["ci"], src["read"]["ci"] = dora.normalise_ci(_load(ci)), "snapshot"
+        rc = conformance.repo_config(repo)
+        src["ci"] = dora.normalise_ci(_load(ci), repo=rc["key"], workflow=str(rc.get("ci_workflow") or ""))
+        src["read"]["ci"] = "snapshot"
         src["missing"].pop("ci", None)
     if board is not None:
         src["board"], src["read"]["board"] = dora.normalise_board(_load(board)), "snapshot"

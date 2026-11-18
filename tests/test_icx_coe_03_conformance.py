@@ -375,6 +375,13 @@ def test_ci_and_board_snapshots_normalise_and_refuse_garbage():
     ci = dora.normalise_ci(gh, repo="it", fetched_at=AS_OF)
     assert ci["schema"] == dora.CI_SCHEMA and [r["sha"] for r in ci["runs"]] == ["a" * 40], "only main's runs"
     assert dora.normalise_ci(ci) == ci
+    mixed = gh + [{"headSha": "a" * 40, "conclusion": "success", "updatedAt": "2026-11-02T00:00:00Z",
+                   "headBranch": "main", "workflowName": "Docs"},
+                  {"headSha": "a" * 40, "conclusion": "failure", "updatedAt": "2026-11-01T00:30:00Z",
+                   "headBranch": "main", "workflowName": "ICDEV CI"}]
+    only = dora.normalise_ci(mixed, workflow="ICDEV CI")
+    assert [r["conclusion"] for r in only["runs"]] == ["success", "failure"] and only["workflow"] == "ICDEV CI", \
+        "another workflow's success never masks the main CI run"
     board = dora.normalise_board(planted_board())
     assert [t["id"] for t in board["tasks"]] == ["abc-def-05", "abc-def-07"]
     for bad in ({"schema": "nope"}, "text", [{"conclusion": "success"}]):
@@ -597,6 +604,8 @@ def test_the_routes_and_the_page(seeded, synthetic_card, sources_dir):
     v = prep.get(f"/idp/api/conformance/it?as_of={AS_OF}").get_json()
     assert v["bundle"]["as_of"] == AS_OF and v["ledger"]["next"] == ["prepare"]
     assert prep.get("/idp/api/conformance/zz").status_code == 404
+    bad = prep.get("/idp/api/conformance/it?as_of=yesterday")
+    assert bad.status_code == 400 and bad.get_json()["code"] == "as_of", "a date that is not one is refused"
     assert prep.get("/idp/api/conformance/it/bundle").get_json()["code"] == "unpublished"
     r = prep.post("/idp/api/conformance/it/prepare", json={"as_of": AS_OF})
     assert r.status_code == 201, r.get_data(as_text=True)

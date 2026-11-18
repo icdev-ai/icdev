@@ -44,10 +44,11 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import subprocess  # nosec B404 — git show, fixed arguments, never a shell
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -113,6 +114,18 @@ def _today() -> str:
 
 def _text(v: Any) -> str:
     return str(v if v is not None else "").strip()
+
+
+def _as_of(value: Any) -> str:
+    """An as-of date (YYYY-MM-DD), today when none is given; anything else is refused, never guessed at."""
+    text = _text(value) or _today()
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})(?:T[0-9:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$", text)
+    try:
+        if m is None:
+            raise ValueError(text)
+        return date.fromisoformat(m.group(1)).isoformat()
+    except ValueError:
+        raise ConformanceRefused(400, "as_of", f"as_of must be a date, YYYY-MM-DD, not {text!r}") from None
 
 
 # ── configuration ────────────────────────────────────────────────────────────
@@ -209,7 +222,9 @@ def read_sources(repo: str, as_of: str, *, cfg: Optional[dict] = None) -> dict:
             out["missing"]["git"] = f"{rc['name']} is not readable here ({exc}); set {(rc.get('git') or {}).get('path_env')}"
     else:
         out["missing"]["git"] = f"no git snapshot {snap.name}, and live git reads are off (ICDEV_COE_LIVE_GIT=0)"
-    for kind, norm in (("ci", dora.normalise_ci), ("board", dora.normalise_board)):
+    for kind, norm in (("ci", lambda doc: dora.normalise_ci(doc, repo=rc["key"],
+                                                            workflow=_text(rc.get("ci_workflow")))),
+                       ("board", dora.normalise_board)):
         f = d / f"{rc['key']}.{kind}.json"
         if not f.is_file():
             out["missing"][kind] = f"no {kind} snapshot {f.name} under {d.name}/ (passed in, never fetched live)"
@@ -478,7 +493,7 @@ def build(repo: str, *, as_of: Optional[str] = None, at: Optional[str] = None, c
 
     cfg = cfg or load_config()
     rc = repo_config(repo, cfg)
-    as_of = (as_of or _today())[:10]
+    as_of = _as_of(as_of)
     src = sources if sources is not None else read_sources(rc["key"], as_of, cfg=cfg)
     register = standards.register_view()
     stds, cards = standard_results(rc["key"], as_of, cfg=cfg, register=register)

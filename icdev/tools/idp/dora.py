@@ -225,11 +225,14 @@ def check_git(snap: dict) -> dict:
 # ── CI and board ─────────────────────────────────────────────────────────────
 
 
-def normalise_ci(doc: Any, *, source: str = "", repo: str = "", fetched_at: str = "") -> dict:
+def normalise_ci(doc: Any, *, source: str = "", repo: str = "", fetched_at: str = "",
+                 workflow: str = "") -> dict:
     """A CI snapshot as ``icdev-it/ci-runs/v1``: ``runs: [{sha, conclusion, finished_at}]`` on main.
 
     Accepts the normalised form itself, or a ``gh run list --json headSha,conclusion,updatedAt,headBranch``
-    export (a list), keeping only runs on main / master. Anything else is refused, never guessed at.
+    export (a list), keeping only runs on main / master, and only ``workflow``'s runs when the export names
+    workflows (``workflowName``): another workflow's success never masks a failed main run. Anything else is
+    refused, never guessed at.
     """
     if isinstance(doc, dict) and doc.get("schema") == CI_SCHEMA:
         runs = doc.get("runs") or []
@@ -237,8 +240,10 @@ def normalise_ci(doc: Any, *, source: str = "", repo: str = "", fetched_at: str 
     elif isinstance(doc, list):
         runs = [{"sha": r.get("headSha"), "conclusion": r.get("conclusion"),
                  "finished_at": r.get("updatedAt") or r.get("createdAt")}
-                for r in doc if isinstance(r, dict) and str(r.get("headBranch") or "main") in ("main", "master")]
-        meta = {"source": source or "github-actions", "repo": repo, "fetched_at": fetched_at}
+                for r in doc if isinstance(r, dict) and str(r.get("headBranch") or "main") in ("main", "master")
+                and (not workflow or r.get("workflowName") in (None, workflow))]
+        meta = {"source": source or "github-actions", "repo": repo, "fetched_at": fetched_at,
+                **({"workflow": workflow} if workflow else {})}
     else:
         raise SourceError(f"not a {CI_SCHEMA} snapshot nor a gh run list export")
     out = []
