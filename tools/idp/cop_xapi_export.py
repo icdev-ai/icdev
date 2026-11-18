@@ -6,7 +6,7 @@ exported for ICDEV[OS]: a person who did not prepare it took the declared step d
 /idp/cop-tracks. The export is two files, because the batch schema admits no extra field:
 
     icos-cop-academy.json               the batch, exactly as prepared (what ICDEV[OS] imports)
-    icos-cop-academy.publication.json   its publication (icdev-cop-academy-publication/v1, PROPOSED to ICDEV[OS])
+    icos-cop-academy.publication.json   its publication (icos-cop-academy-publication/v1, ICDEV[OS]'s contract)
 
 Usage:
     python tools/idp/cop_xapi_export.py --published --out <dir>      # the newest published batch, both files

@@ -173,7 +173,7 @@ requirements:
       nothing. Publishing or refusing is a person's declared step (decl-wft-cop-academy-xapi-publish),
       with a reason, bound to the digest read, refused to the preparer, to a service key, to an agent
       and to a role that does not hold it. Only a published batch is exported, with its publication
-      (icdev-cop-academy-publication/v1, proposed to ICDEV[OS]) beside it; verifying an export checks
+      (icos-cop-academy-publication/v1, ICDEV[OS]'s contract) beside it; verifying an export checks
       both schemas, the digest, the separation and the ledger's published row on an intact chain.
     type: functional
     priority: high

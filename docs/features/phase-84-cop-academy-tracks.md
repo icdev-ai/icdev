@@ -34,14 +34,16 @@ Statements are derived from that ledger alone, one per learner and path (xAPI 1.
   `progressed` (`result.completion` false, so ICDEV[OS] never reads it as complete);
 * object: the path's activity id; timestamp: the pass that made it so; id: a UUIDv5 over path, account, verb and time.
 
-They leave as one `icos-cop-academy/v1` batch, ICDEV[OS]'s schema as drafted in osx-cop-01 (contract 1.194.0, not yet
+They leave as one `icos-cop-academy/v1` batch, ICDEV[OS]'s schema as drafted in osx-cop-01 (contract 1.195.0, not yet
 merged there), vendored and pinned at `context/icos/cop-academy-statements.schema.json`. Its `content_digest` is
 SHA-256 over the canonical JSON of the batch without the digest, as ICDEV[OS] recomputes it.
 
 Publishing is a person's declared step (`decl-wft-cop-academy-xapi-publish`): anyone, or an agent as a draft, prepares
 the batch (recorded whole at its digest, deciding nothing); a person who did not prepare it publishes it or refuses,
 with a reason, bound to that digest. The batch schema admits no extra field, so the publication travels beside it
-(`icdev-cop-academy-publication/v1`, `context/icos/cop-academy-publication.schema.json`, PROPOSED for ICDEV[OS] to pin).
+(`icos-cop-academy-publication/v1`, `context/icos/cop-academy-publication.schema.json`: ICDEV[IT] proposed it and
+ICDEV[OS] adopted it in osx-cop-07 under its own name, and refuses a batch without it, published at another digest, or
+published by its preparer).
 `tools/idp/cop_xapi_export.py --published --out <dir>` writes both; `--verify <dir> --ledger` checks both schemas, the
 digest, the separation and the ledger; the page's "Verify the published export" does the same.
 

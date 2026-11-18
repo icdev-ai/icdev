@@ -32,8 +32,8 @@ the paths it reports on (all four: a path nobody completed is reported as such),
 **Publishing is a person's decision** (``decl-wft-cop-academy-xapi-publish``). Anyone signed in, or an agent as a
 draft, PREPARES the batch, which records it whole at its digest. A person who did not prepare it PUBLISHES it, or
 refuses, with a reason, bound to that digest. The batch schema admits no extra field, so the publication travels
-BESIDE it (``icdev-cop-academy-publication/v1``, ``context/icos/cop-academy-publication.schema.json``, PROPOSED to
-ICDEV[OS] to pin): who signed, who prepared, the step, the ledger row and its hash. :func:`verify` checks both
+BESIDE it (``icos-cop-academy-publication/v1``, ``context/icos/cop-academy-publication.schema.json``, ICDEV[OS]'s
+schema as adopted in osx-cop-07, pinned): who signed, who prepared, the step, the ledger row and its hash. :func:`verify` checks both
 against their schemas, the digest, the separation and the ledger.
 
 CLI: ``tools/idp/cop_xapi_export.py``.
@@ -62,14 +62,14 @@ BASE_DIR = repo_root(__file__)
 CONFIG_RELPATH = "args/academy_cop_tracks.yaml"
 SCHEMA = "icos-cop-academy/v1"
 SCHEMA_RELPATH = "context/icos/cop-academy-statements.schema.json"
-#: ICDEV[OS]'s batch schema as drafted in osx-cop-01 (its contract 1.194.0, not yet merged there), vendored
-#: verbatim. A changed file is refused, never silently used: re-pin when ICDEV[OS] publishes it.
-SCHEMA_SHA256 = "6c107da01ba99b9d6e4676862d5d9fd706dd7c0cc17b2ca767e4039616594989"
-SCHEMA_CONTRACT = "1.194.0 (draft)"
-PUBLICATION_SCHEMA = "icdev-cop-academy-publication/v1"
+#: ICDEV[OS]'s batch schema as drafted in osx-cop-01 and osx-cop-07 (its contract 1.195.0, not yet merged there),
+#: vendored verbatim. A changed file is refused, never silently used: re-pin when ICDEV[OS] publishes it.
+SCHEMA_SHA256 = "89966bdae51a33aef68347b539e43b6b33a3dad8e72c8b8560e1842824729028"
+SCHEMA_CONTRACT = "1.195.0 (draft)"
+PUBLICATION_SCHEMA = "icos-cop-academy-publication/v1"
 PUBLICATION_RELPATH = "context/icos/cop-academy-publication.schema.json"
-#: ICDEV[IT]'s PROPOSED publication schema, pinned the same way.
-PUBLICATION_SHA256 = "7fe3def3055bfac8fa9a5435ed06e751d0f0865e5034c2b73d760fbecff0dbef"
+#: ICDEV[OS]'s publication schema (osx-cop-07 adopted ICDEV[IT]'s proposal under its own name), pinned the same way.
+PUBLICATION_SHA256 = "9fef09ec0630f0ffbac52f14ae24bd7dc698cb84ceed34a17eb0c094ed08654b"
 PRODUCER_SYSTEM = "icdev-it"
 PRODUCER_TOOL = "icdev-it/cop_xapi_export"
 CLASSIFICATION = "CUI // SP-CTI"

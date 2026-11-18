@@ -259,7 +259,10 @@ def test_the_schemas_are_pinned(monkeypatch, tmp_path):
     t.publication_schema()
     readme = (ROOT / "context/icos/README.md").read_text(encoding="utf-8")
     assert t.SCHEMA_SHA256 in readme and t.PUBLICATION_SHA256 in readme
-    assert "PROPOSED" in readme and '"x-icos-contract": "proposed"' in (ROOT / t.PUBLICATION_RELPATH).read_text()
+    pub = json.loads((ROOT / t.PUBLICATION_RELPATH).read_text(encoding="utf-8"))
+    assert pub["$id"] == "urn:icdev-os:contract:cop-academy-publication:1", "ICDEV[OS] owns the publication's contract"
+    assert pub["properties"]["schema"]["const"] == t.PUBLICATION_SCHEMA == "icos-cop-academy-publication/v1"
+    assert pub["x-icos-contract"] in t.SCHEMA_CONTRACT
     (tmp_path / "context/icos").mkdir(parents=True)
     for rel in (t.SCHEMA_RELPATH, t.PUBLICATION_RELPATH):
         (tmp_path / rel).write_text((ROOT / rel).read_text(encoding="utf-8").replace("Apache", "Apache "),

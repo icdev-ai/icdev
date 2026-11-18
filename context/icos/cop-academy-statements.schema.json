@@ -262,6 +262,6 @@
   ],
   "title": "Statements",
   "type": "object",
-  "x-icos-contract": "1.194.0",
+  "x-icos-contract": "1.195.0",
   "x-license": "Apache-2.0"
 }

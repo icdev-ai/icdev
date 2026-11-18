@@ -32,27 +32,29 @@ it. ICDEV[OS] recomputes the digest on import and refuses a mismatch, a bundle n
 preparer. To take a newer contract: copy the new schema, update the digest in `conformance.SCHEMA_SHA256`,
 `conformance.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_coe_03_conformance.py`.
 
-## The Academy's xAPI batch (icx-cop-01; ICDEV[OS] draft, osx-cop-01)
+## The Academy's xAPI batch and its publication (icx-cop-01; ICDEV[OS] drafts, osx-cop-01 and osx-cop-07)
 
 `cop-academy-statements.schema.json` is ICDEV[OS]'s `icos-cop-academy/v1` batch schema
-(`urn:icdev-os:contract:cop-academy-statements:1`), copied verbatim from ICDEV[OS]'s osx-cop-01 work as DRAFTED there
-(`contracts/schemas/cop-academy-statements.schema.json`, contract version 1.194.0, not yet merged on ICDEV[OS]'s main
-when this was vendored), SHA-256 `6c107da01ba99b9d6e4676862d5d9fd706dd7c0cc17b2ca767e4039616594989`. One batch of xAPI
+(`urn:icdev-os:contract:cop-academy-statements:1`), copied verbatim from ICDEV[OS]'s osx-cop-07 work as DRAFTED there
+(`contracts/schemas/cop-academy-statements.schema.json`, contract version 1.195.0, not yet merged on ICDEV[OS]'s main
+when this was vendored), SHA-256 `89966bdae51a33aef68347b539e43b6b33a3dad8e72c8b8560e1842824729028`. One batch of xAPI
 statements from the FORGE Academy's Community of Practice tracks: the producer and the time, the learning paths it
 reports on, the statements (a pseudonymous `account` actor, an ADL verb, the path's activity id
 `urn:icdev:academy:path:<path id>`, `result.completion`/`success`, the timestamp) and `content_digest`, SHA-256 over the
 canonical JSON of the batch without `content_digest` (ICDEV[OS] recomputes it). It is licensed Apache-2.0 (`LICENSE`,
 `NOTICE` here), unlike the rest of this repository.
 
-`cop-academy-publication.schema.json` (`icdev-cop-academy-publication/v1`) is PROPOSED by ICDEV[IT] for ICDEV[OS] to pin;
-it is not in ICDEV[OS]'s contract yet (`x-icos-contract: proposed`), SHA-256
-`7fe3def3055bfac8fa9a5435ed06e751d0f0865e5034c2b73d760fbecff0dbef`. The batch schema admits no extra field, so a
-batch's publication (a person who did not prepare it took `decl-wft-cop-academy-xapi-publish`, bound to the batch's
-`content_digest`) travels BESIDE it, as `icos-cop-academy.publication.json` next to `icos-cop-academy.json`
-(`tools/idp/cop_xapi_export.py --published --out <dir>`). Proposed to ICDEV[OS]: refuse a batch with no publication, a
-publication at another digest, and one signed by its preparer.
+`cop-academy-publication.schema.json` is ICDEV[OS]'s `icos-cop-academy-publication/v1` schema
+(`urn:icdev-os:contract:cop-academy-publication:1`), copied verbatim from ICDEV[OS]'s osx-cop-07 work as DRAFTED there
+(contract version 1.195.0, not yet merged), SHA-256 `9fef09ec0630f0ffbac52f14ae24bd7dc698cb84ceed34a17eb0c094ed08654b`.
+ICDEV[IT] proposed it here (icx-cop-01, as `icdev-cop-academy-publication/v1`); ICDEV[OS] adopted it with the same
+fields and constraints under its own name. The batch schema admits no extra field, so a batch's publication (a person
+who did not prepare it took `decl-wft-cop-academy-xapi-publish`, bound to the batch's `content_digest`) travels BESIDE
+it, as `icos-cop-academy.publication.json` next to `icos-cop-academy.json`
+(`tools/idp/cop_xapi_export.py --published --out <dir>`). ICDEV[OS] imports the pair and refuses a batch with no
+publication, a publication at another digest, one signed by its preparer, and one that fails this schema.
 
 `tools/idp/cop_tracks.py` validates every batch against the first and every publication against the second, and refuses
 to run if either file's digest is not the one pinned (`cop_tracks.SCHEMA_SHA256`, `cop_tracks.PUBLICATION_SHA256`).
-When ICDEV[OS] publishes its contract: copy the schema it publishes, update the digest in `cop_tracks.SCHEMA_SHA256`,
-`cop_tracks.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_cop_01_tracks.py`.
+When ICDEV[OS] publishes its contract: copy the schemas it publishes, update the digests in `cop_tracks.SCHEMA_SHA256`,
+`cop_tracks.PUBLICATION_SHA256`, `cop_tracks.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_cop_01_tracks.py`.

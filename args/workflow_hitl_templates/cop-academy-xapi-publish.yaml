@@ -16,7 +16,7 @@ effect: >-
   produced_at). cop_academy_events appends a published or refused event on the bundle
   chain, bound to that step and chained to the row before it. Only a published batch is
   exported for ICDEV[OS] (tools/idp/cop_xapi_export.py --published), with its
-  publication beside it (icdev-cop-academy-publication/v1).
+  publication beside it (icos-cop-academy-publication/v1, ICDEV[OS]'s contract).
 approval_policy: any_one
 kickback_limit: 1
 stages:
