@@ -1,0 +1,208 @@
+# CUI // SP-CTI
+# ICDEV platform model: FORGE Academy tracks per Community of Practice, with xAPI out to
+# ICDEV[OS] (icx-cop-01) -- card 7 of the CoE / CoP programme. Owner decision (2026-11-17, "CoP
+# home: split"): ICDEV[IT] hosts the hubs and the Academy learning paths; ICDEV[OS] holds the
+# marked knowledge and links these paths by id. No cloud-vendor training or certification content.
+#
+# Four tracks, one per CoP, each mission on this platform's own patterns; answers graded on the
+# server; every attempt on the learner's own append-only, hash-chained record; xAPI statements
+# derived from that record alone (pseudonymous account actor, ADL verbs, the path's activity id);
+# one icos-cop-academy/v1 batch against ICDEV[OS]'s pinned schema, published by a person who did
+# not prepare it, its publication beside it.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the
+# header of args/platform_model/cortex.yaml.
+
+component: idp
+project_id: icdev-platform
+
+elements:
+  - id: cop.tracks
+    type: sysml_element
+    kind: block
+    name: The four Community of Practice tracks and their missions (declared; answers never leave the server)
+    features: [cop.academy]
+    code:
+      - args/academy_cop_tracks.yaml
+      - tools/idp/cop_tracks.py::load_config
+      - tools/idp/cop_tracks.py::config_problems
+      - tools/idp/cop_tracks.py::public_tracks
+      - tools/idp/cop_tracks.py::find_mission
+
+  - id: cop.attempts
+    type: sysml_element
+    kind: block
+    name: Server-side grading and each learner's append-only, hash-chained record
+    features: [cop.academy]
+    code:
+      - tools/idp/cop_tracks.py::grade
+      - tools/idp/cop_tracks.py::attempt
+      - tools/idp/cop_tracks.py::pseudonym
+      - tools/idp/cop_tracks.py::chain
+      - tools/db/migrations/20261118104743_cop_academy_events/up.py
+
+  - id: cop.xapi
+    type: sysml_element
+    kind: block
+    name: xAPI statements from the ledger alone, and the icos-cop-academy/v1 batch
+    features: [cop.academy]
+    code:
+      - tools/idp/cop_tracks.py::completions
+      - tools/idp/cop_tracks.py::statements
+      - tools/idp/cop_tracks.py::build
+      - tools/idp/cop_tracks.py::content_digest
+      - tools/idp/cop_tracks.py::validate
+      - tools/idp/cop_tracks.py::schema
+      - context/icos/cop-academy-statements.schema.json
+
+  - id: cop.publish
+    type: sysml_element
+    kind: block
+    name: Prepare, then a person publishes; the publication beside the batch, and its verification
+    features: [cop.academy]
+    code:
+      - tools/idp/cop_tracks.py::prepare
+      - tools/idp/cop_tracks.py::publish
+      - tools/idp/cop_tracks.py::builders
+      - tools/idp/cop_tracks.py::published
+      - tools/idp/cop_tracks.py::verify
+      - tools/idp/cop_xapi_export.py::export_published
+      - tools/idp/cop_xapi_export.py::verify_dir
+      - context/icos/cop-academy-publication.schema.json
+      - args/workflow_hitl_templates/cop-academy-xapi-publish.yaml
+
+  - id: cop.twin
+    type: sysml_element
+    kind: block
+    name: The Developer Portal twin observes cop.academy, threaded to the ledger
+    features: [cop.academy]
+    code:
+      - tools/idp/cop_tracks.py::twin_evidence
+      - tools/idp/cop_tracks.py::twin_judge
+      - tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin
+
+  - id: if.cop.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /idp/cop-tracks and its routes
+    features: [cop.academy]
+    code:
+      - tools/dashboard/templates/idp/cop_tracks.html
+      - tools/idp/blueprint.py::idp_cop_tracks_page
+      - tools/idp/blueprint.py::idp_api_cop_tracks
+      - tools/idp/blueprint.py::idp_api_cop_mission_attempt
+      - tools/idp/blueprint.py::idp_api_cop_xapi_prepare
+      - tools/idp/blueprint.py::idp_api_cop_xapi_publish
+      - tools/idp/blueprint.py::idp_api_cop_xapi_published
+
+  - id: if.cop.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP read and draft-only prepare for the Academy's xAPI batch
+    features: [cop.academy]
+    code:
+      - tools/mcp/gap_handlers.py::handle_cop_academy
+      - tools/mcp/gap_handlers.py::handle_cop_academy_xapi_prepare
+
+requirements:
+  - id: PM-COP-01
+    title: One track per Community of Practice, on this platform's own patterns, citing files that exist
+    text: >-
+      args/academy_cop_tracks.yaml declares exactly one track per CoP (engineering/AIDLC, AI and
+      data, application, cloud), whose ids are the learning path ids ICDEV[OS]'s charters link. Each
+      mission teaches one of this platform's patterns and cites the files a learner reads, every one
+      of which exists; each question has one right answer among its options. A config that breaks a
+      rule is refused, never half-read. There is no cloud-vendor training or certification content.
+    type: functional
+    priority: high
+    features: [cop.academy]
+    elements: [cop.tracks]
+    controls: [AT-2, AT-3]
+    tests:
+      - tests/test_icx_cop_01_tracks.py::test_four_tracks_one_per_cop_on_our_own_patterns
+      - tests/test_icx_cop_01_tracks.py::test_every_reading_exists_and_every_question_has_one_right_answer
+      - tests/test_icx_cop_01_tracks.py::test_a_bad_config_is_refused_never_half_read
+
+  - id: PM-COP-02
+    title: A mission is graded on the server and recorded on the learner's own append-only chain
+    text: >-
+      A learner's answers are graded against the declared key, which no route, page or agent
+      receives; a missing or malformed answer is wrong. Only a signed-in person attempts, never a
+      service key or an agent. Every attempt (attempted, or completed when passed) is appended to
+      the learner's own hash-chained record in cop_academy_events, keeping the answers' digest and
+      not the answers; the record is append-only on SQLite and PostgreSQL.
+    type: functional
+    priority: high
+    features: [cop.academy]
+    elements: [cop.attempts]
+    controls: [AT-4, AU-9, AU-10]
+    tests:
+      - tests/test_icx_cop_01_tracks.py::test_answers_never_leave_the_server
+      - tests/test_icx_cop_01_tracks.py::test_grading_is_on_the_server_and_a_wrong_or_missing_answer_fails
+      - tests/test_icx_cop_01_tracks.py::test_an_attempt_is_a_persons_and_recorded_on_their_own_chain
+      - tests/test_icx_cop_01_tracks.py::test_the_ledger_is_append_only_and_hash_chained
+      - tests/test_icx_cop_01_ambient.py::test_a_learner_completes_a_path_and_a_batch_is_published_on_the_platform_database
+
+  - id: PM-COP-03
+    title: Standard xAPI statements from the ledger alone, in an icos-cop-academy/v1 batch against the pinned schema
+    text: >-
+      Per learner and path, a statement is derived from intact learner chains only: completed (ADL
+      verb; every mission of the path as declared now passed; result completion and success true) or
+      progressed (result completion false, never read as complete). The actor is a pseudonymous
+      account (a random name kept once), never a name or a mailbox; the object is the path's activity
+      id (urn:icdev:academy:path:<id>); the timestamp is the pass that made it so; the id is a
+      deterministic UUIDv5. The batch validates against ICDEV[OS]'s schema, vendored and pinned by
+      SHA-256, and its content_digest is SHA-256 over its canonical content without the digest, as
+      ICDEV[OS] recomputes it; it is deterministic given the ledger and produced_at.
+    type: interface
+    priority: high
+    features: [cop.academy]
+    elements: [cop.xapi]
+    controls: [AT-4, CM-2, SA-8]
+    tests:
+      - tests/test_icx_cop_01_tracks.py::test_statements_are_standard_xapi_derived_from_the_ledger_alone
+      - tests/test_icx_cop_01_tracks.py::test_a_learner_whose_record_does_not_verify_reports_nothing
+      - tests/test_icx_cop_01_tracks.py::test_the_batch_meets_the_pinned_icos_schema_and_its_digest
+      - tests/test_icx_cop_01_tracks.py::test_the_schemas_are_pinned
+      - tests/test_icx_cop_01_tracks.py::test_the_batch_is_deterministic_given_the_ledger_and_the_time
+
+  - id: PM-COP-04
+    title: A batch is published by a person who did not prepare it, bound to its digest, and the export verifies
+    text: >-
+      Preparing (anyone, or an agent's draft) records the batch whole at its digest and decides
+      nothing. Publishing or refusing is a person's declared step (decl-wft-cop-academy-xapi-publish),
+      with a reason, bound to the digest read, refused to the preparer, to a service key, to an agent
+      and to a role that does not hold it. Only a published batch is exported, with its publication
+      (icdev-cop-academy-publication/v1, proposed to ICDEV[OS]) beside it; verifying an export checks
+      both schemas, the digest, the separation and the ledger's published row on an intact chain.
+    type: functional
+    priority: high
+    features: [cop.academy]
+    elements: [cop.publish]
+    controls: [AC-5, AU-10, SA-8]
+    tests:
+      - tests/test_icx_cop_01_tracks.py::test_publish_is_a_persons_step_never_the_preparers_bound_to_the_digest
+      - tests/test_icx_cop_01_tracks.py::test_an_agent_only_drafts
+      - tests/test_icx_cop_01_tracks.py::test_the_export_carries_its_publication_and_verifies
+      - tests/test_icx_cop_01_ambient.py::test_a_learner_completes_a_path_and_a_batch_is_published_on_the_platform_database
+
+  - id: PM-COP-05
+    title: The CoP learning paths page, the twin with threads, and MCP read and draft
+    text: >-
+      /idp/cop-tracks, linked from the nav, the Developer Portal and the FORGE Academy, shows the four
+      paths, a mission's questions, the statements the ledger supports and the batch ledger, and
+      offers the attempt, prepare and publish steps and the export's verification by endpoint id.
+      The Developer Portal twin observes cop.academy: nothing published is unverified; statements a
+      published batch lacks, a batch waiting on a person, one too old for ICDEV[OS], one off its
+      contract and one published by its preparer are findings threaded to their ledger row, and an
+      observation replays. MCP cop_academy reads (never an answer); cop_academy_xapi_prepare only drafts.
+    type: functional
+    priority: medium
+    features: [cop.academy]
+    elements: [if.cop.console, cop.twin, if.cop.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_icx_cop_01_tracks.py::test_the_routes_and_the_page
+      - tests/test_icx_cop_01_tracks.py::test_the_twin_observes_with_threads_and_replays
+      - tests/test_icx_cop_01_tracks.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read
+      - tests/test_icx_cop_01_tracks.py::test_the_mcp_tools_read_and_only_prepare

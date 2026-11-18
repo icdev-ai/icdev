@@ -1,0 +1,310 @@
+<!-- CUI // SP-CTI — FORGE Academy tracks per Community of Practice, with xAPI out to ICDEV[OS] (icx-cop-01) -->
+{% extends "base.html" %}
+{% block title %}CoP learning paths — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .std-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .std-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .std-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .std-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .std-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .std-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .std-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .std-card th, .std-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .std-card th { color: var(--text-secondary); font-weight: 600; }
+  .std-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .std-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .std-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .std-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .std-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .std-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .std-btn.deny { border-color: var(--status-red); }
+  .std-btn[aria-pressed="true"] { border-width: 2px; font-weight: 600; }
+  .std-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .std-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .std-wrap input[type="text"] { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .std-wrap fieldset { border: 1px solid var(--border-color); border-radius: 5px; margin: 8px 0; padding: 6px 10px; }
+  .std-wrap legend { font-size: 13px; color: var(--text-primary); padding: 0 4px; }
+  .std-wrap .cp-opt { display: flex; gap: 6px; align-items: flex-start; font-size: 13px; color: var(--text-primary); margin: 3px 0; }
+  .std-wrap .cp-opt label { display: inline; font-size: 13px; color: var(--text-primary); margin: 0; }
+  .cp-tracks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .cp-track { border: 1px solid var(--border-color); border-radius: 5px; padding: 10px 12px; }
+  .cp-track ul { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
+  .cp-track li { margin: 4px 0; }
+  .std-wrap code { color: var(--text-primary); word-break: break-all; }
+  /* Link colour per theme, at AA contrast on the card and the page in each (axe, e2e). */
+  .std-wrap { --std-link: #8cc4ff; }
+  html[data-theme="light"] .std-wrap { --std-link: #0d4f9e; }
+  .std-wrap a, .std-wrap .std-link { color: var(--std-link); text-decoration: underline; }
+</style>
+
+<div class="std-wrap">
+  <nav aria-label="Breadcrumb" class="std-help"><a href="{{ url_for('idp.idp_portal') }}">Developer Portal</a> /
+    <a href="{{ url_for('idp.idp_standards_page') }}">Engineering standards</a> / CoP learning paths</nav>
+  <h1>Community of Practice learning paths</h1>
+  <p class="std-help" id="cp-help">
+    FORGE Academy tracks, one per Community of Practice: engineering (AIDLC), AI and data, application, and cloud.
+    Every mission teaches one of <b>this platform's own patterns</b> and cites the files to read
+    (<code>{{ view.get('config', {}).get('path', 'args/academy_cop_tracks.yaml') }}</code>). Your answers are
+    graded <b>on the server</b> against the declared key, which never reaches this page, and every attempt is kept on
+    your own append-only, hash-chained record. From that record alone the platform derives standard <b>xAPI</b>
+    statements, one per learner and path: <i>completed</i> when every mission of the path is passed, <i>progressed</i>
+    (never read as complete) before then. A learner is a <b>pseudonymous account</b>, never a name or a mailbox.
+    ICDEV[OS]'s CoP charters link these paths by id. The statements go to ICDEV[OS] as one
+    <code>{{ view.get('schema', {}).get('batch', 'icos-cop-academy/v1') }}</code> batch: anyone prepares it, and a
+    person who did not prepare it publishes it (<code>{{ template }}</code>), bound to its digest. The engineering
+    standards these missions teach are on the <a href="{{ url_for('idp.idp_standards_page') }}">standards register</a>
+    and the <a href="{{ url_for('idp.idp_conformance_page') }}">standards scorecards</a>.
+  </p>
+  {% if error %}<p class="std-msg">The Academy ledger could not be read: {{ error }}</p>{% endif %}
+
+  <div class="std-card">
+    <h2>Learning paths</h2>
+    <div class="cp-tracks" id="cp-tracks"></div>
+  </div>
+
+  <div class="std-card" id="cp-mission">
+    <h2>Mission</h2>
+    <div id="cp-mission-body" class="std-help">Open a mission to read it and answer its questions.</div>
+    <div class="std-msg" id="cp-attempt-msg" role="status"></div>
+  </div>
+
+  <div class="std-card">
+    <h2>xAPI statements</h2>
+    <p class="std-help">What the next batch would carry, derived from the ledger now. Your account is marked.</p>
+    <table id="cp-statements">
+      <thead><tr><th scope="col">Learner (account)</th><th scope="col">Verb</th><th scope="col">Learning path (activity)</th><th scope="col">Result</th><th scope="col">Timestamp</th><th scope="col">Statement id</th></tr></thead>
+      <tbody id="cp-statements-body"><tr><td colspan="6">No statement yet.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="std-card" id="cp-bundle">
+    <h2>xAPI batch for ICDEV[OS]</h2>
+    <p class="std-help">Preparing records the batch, as the ledger supports it now, at its digest. It decides nothing.
+      A person who did not prepare it then publishes it to ICDEV[OS] or refuses it, with a reason. Only a published
+      batch leaves, with its publication beside it.</p>
+    <div id="cp-ledger" class="std-help"></div>
+    <p><button type="button" class="std-btn" id="cp-prepare">Prepare batch</button></p>
+    <div class="std-msg" id="cp-prepare-msg" role="status"></div>
+    <div id="cp-publish"></div>
+    <div class="std-msg" id="cp-publish-msg" role="status"></div>
+    <div id="cp-published" class="std-help"></div>
+    <p><button type="button" class="std-btn" id="cp-verify">Verify the published export</button></p>
+    <div class="std-msg" id="cp-verify-result" role="status"></div>
+  </div>
+
+  <div class="std-card" id="cp-twin">
+    <h2>Twin</h2>
+    <p class="std-help">The Developer Portal's governance twin observes the tracks and the batches (<code>cop.academy</code>): nothing published is
+      unverified (ICDEV[OS] reads every path as unverified), statements a published batch does not carry are a
+      finding, and so is a batch waiting too long for a person or one too old for ICDEV[OS]. Each finding carries its
+      thread to the ledger row it rests on. Recorded observations and their replay are on the
+      <a href="/twin-observatory/governance">governance twins</a> page.</p>
+    <p><button type="button" class="std-btn" id="cp-twin-observe">Observe now</button></p>
+    <div id="cp-twin-body" class="std-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var view = {{ view|tojson }};
+  var current = null;   // the open mission
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  var TAGS = {completed: ['ok', 'completed'], progressed: ['wait', 'progressed'], none: ['', 'not started'],
+              passed: ['ok', 'passed'], verified: ['ok', 'verified'], unverified: ['wait', 'UNVERIFIED'],
+              pass: ['ok', 'pass'], warn: ['wait', 'warn'], fail: ['no', 'fail'], unknown: ['wait', 'unknown']};
+  function tag(st) {
+    var t = TAGS[st] || ['', st || 'none'];
+    return '<span class="std-tag ' + t[0] + '" data-status="' + esc(st) + '">' + esc(t[1]) + '</span>';
+  }
+  function short(d) { return d ? String(d).slice(0, 16) : ''; }
+  function mission(id) {
+    for (var i = 0; i < view.tracks.length; i++) {
+      for (var j = 0; j < view.tracks[i].missions.length; j++) {
+        if (view.tracks[i].missions[j].id === id) return {track: view.tracks[i], mission: view.tracks[i].missions[j]};
+      }
+    }
+    return null;
+  }
+
+  function renderTracks() {
+    var prog = view.progress || {};
+    document.getElementById('cp-tracks').innerHTML = (view.tracks || []).map(function (t) {
+      var p = prog[t.id] || {passed: [], of: t.missions.length, state: 'none'};
+      return '<section class="cp-track" data-track="' + esc(t.id) + '" aria-label="' + esc(t.name) + '"><h3>' + esc(t.name) + '</h3>' +
+        '<div class="std-help">Path <code>' + esc(t.id) + '</code> &middot; ' + tag(p.state) + ' ' + esc(p.passed.length) + ' of ' + esc(p.of) + '</div><ul>' +
+        t.missions.map(function (m) {
+          var done = p.passed.indexOf(m.id) >= 0;
+          return '<li data-mission-row="' + esc(m.id) + '">' + (done ? tag('passed') + ' ' : '') +
+            '<button type="button" class="std-link" data-mission="' + esc(m.id) + '">' + esc(m.title) + '</button></li>';
+        }).join('') + '</ul></section>';
+    }).join('') || '<p>No track is declared.</p>';
+  }
+
+  function renderMission(id) {
+    var found = mission(id);
+    if (!found) return;
+    current = id;
+    var m = found.mission;
+    document.getElementById('cp-mission-body').innerHTML =
+      '<h3 id="cp-mission-title">' + esc(m.title) + '</h3><p class="std-help">' + esc(found.track.name) + ' &middot; pattern <code>' + esc(m.pattern) + '</code></p>' +
+      '<p class="std-help">' + esc(m.summary) + '</p><p class="std-help">Read: ' + m.reading.map(function (r) { return '<code>' + esc(r) + '</code>'; }).join(', ') + '</p>' +
+      m.questions.map(function (q) {
+        return '<fieldset data-question="' + esc(q.id) + '"><legend>' + esc(q.prompt) + '</legend>' +
+          q.options.map(function (o, i) {
+            var oid = 'cp-' + m.id + '-' + q.id + '-' + i;
+            return '<div class="cp-opt"><input type="radio" name="cp-' + esc(q.id) + '" id="' + esc(oid) + '" value="' + i + '">' +
+              '<label for="' + esc(oid) + '">' + esc(o) + '</label></div>';
+          }).join('') + '</fieldset>';
+      }).join('') + '<p><button type="button" class="std-btn" id="cp-submit">Submit answers</button></p>';
+    document.getElementById('cp-attempt-msg').textContent = '';
+    document.getElementById('cp-submit').addEventListener('click', submit);
+  }
+
+  function renderStatements() {
+    var me = view.learner;
+    document.getElementById('cp-statements-body').innerHTML = (view.statements || []).map(function (s) {
+      var verb = s.verb.id.split('/').pop();
+      var mine = me && s.actor.account.name === me;
+      var res = s.result || {};
+      return '<tr data-statement="' + esc(s.id) + '" data-verb="' + esc(verb) + '" data-object="' + esc(s.object.id) + '"' + (mine ? ' data-mine="true"' : '') + '>' +
+        '<td><code>' + esc(s.actor.account.name) + '</code>' + (mine ? ' <b>(you)</b>' : '') + '</td><td>' + tag(verb) + ' <code>' + esc(s.verb.id) + '</code></td>' +
+        '<td><code>' + esc(s.object.id) + '</code></td><td>completion ' + esc(res.completion) + (res.success != null ? ', success ' + esc(res.success) : '') + '</td>' +
+        '<td>' + esc(s.timestamp) + '</td><td><code>' + esc(s.id) + '</code></td></tr>';
+    }).join('') || '<tr><td colspan="6">No statement yet: nobody has passed a mission.</td></tr>';
+  }
+
+  function renderLedger() {
+    var l = view.ledger || {};
+    var p = l.prepared, pub = l.published;
+    document.getElementById('cp-ledger').innerHTML =
+      (p ? 'Newest prepared: <code id="cp-prepared-digest">' + esc(p.content_digest) + '</code> by ' + esc(p.actor) + ' at ' + esc(p.created_at) +
+        (p.decided ? ' (' + esc(p.decided.event) + ' by ' + esc(p.decided.actor) + ')' : ' <span class="std-tag wait">waiting for a person</span>') : 'No batch has been prepared.') +
+      '<br>' + (pub ? 'Newest published: <code>' + esc(short(pub.content_digest)) + '</code> by ' + esc(pub.actor) + ' (step <code>' + esc(pub.step_id) + '</code>)' : 'No batch has been published: ICDEV[OS] reads every learning path as unverified.') +
+      (l.chain && l.chain.intact === false ? '<br><b>The ledger does not verify:</b> ' + esc(l.chain.problems[0].problem) : '');
+    var box = document.getElementById('cp-publish');
+    if (p && !p.decided) {
+      box.innerHTML = '<h3>Your step</h3><p class="std-help">May not publish it: <b id="cp-builders">' + esc(Object.keys(l.builders || {}).join(', ')) + '</b>. A reason is required. Bound to digest <code>' +
+        esc(short(p.content_digest)) + '</code>.</p><label for="cp-reason">Reason</label><input type="text" id="cp-reason" autocomplete="off">' +
+        '<p><button type="button" class="std-btn" data-publish="publish">Publish to ICDEV[OS]</button> <button type="button" class="std-btn deny" data-publish="refuse">Refuse</button></p>';
+    } else {
+      box.innerHTML = '';
+    }
+  }
+
+  function render() { renderTracks(); renderStatements(); renderLedger(); if (current) {
+    var row = document.querySelector('[data-mission-row="' + current + '"]'); if (row) row.setAttribute('data-open', 'true'); } }
+
+  function reload() {
+    return getJson(icdevFetch('idp.idp_api_cop_tracks')).then(function (res) { if (res.ok) { view = res.j; render(); } });
+  }
+
+  function submit() {
+    var found = mission(current);
+    var msg = document.getElementById('cp-attempt-msg');
+    var answers = {};
+    found.mission.questions.forEach(function (q) {
+      var c = document.querySelector('input[name="cp-' + q.id + '"]:checked');
+      if (c) answers[q.id] = parseInt(c.value, 10);
+    });
+    getJson(icdevFetch('idp.idp_api_cop_mission_attempt', {mission_id: current}, postInit({answers: answers}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      var o = res.j;
+      msg.textContent = (o.passed ? 'Passed ' : 'Not passed ') + o.score + ' of ' + o.total + (o.passed ? '' : ' (wrong: ' + o.wrong.join(', ') + ')') +
+        '. Recorded as ' + o.event + ' (' + o.event_id + ') for account ' + o.learner + '.' +
+        (o.statement ? ' Your statement on this path: ' + o.statement.verb.id.split('/').pop() + '.' : '');
+      reload();
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var mid = t.getAttribute('data-mission');
+    if (mid) { renderMission(mid); return; }
+    var dec = t.getAttribute('data-publish');
+    if (dec) {
+      var msg = document.getElementById('cp-publish-msg');
+      var reason = ((document.getElementById('cp-reason') || {}).value || '').trim();
+      if (!reason) { msg.textContent = 'A reason is required.'; return; }
+      var p = view.ledger.prepared;
+      getJson(icdevFetch('idp.idp_api_cop_xapi_publish', {}, postInit({decision: dec, reason: reason, digest: p.content_digest}))).then(function (res) {
+        if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+        var o = res.j;
+        msg.textContent = 'Recorded: the batch ' + o.event + ' by ' + o.decided_by + ' (step ' + o.step.step_id + ').';
+        if (o.published) {
+          var b = o.published.batch, pu = o.published.publication;
+          document.getElementById('cp-published').innerHTML = '<p id="cp-published-batch">Published batch <code>' + esc(b.schema) + '</code>, ' + esc(b.statements.length) +
+            ' statement(s), digest <code id="cp-published-digest">' + esc(b.content_digest) + '</code>, signed by <span id="cp-signed-by">' + esc(pu.signed_by) + '</span> at ' + esc(pu.decided_at) +
+            ', prepared by ' + esc(pu.prepared_by) + '. <a id="cp-published-link" href="' + esc(icdevRoute('idp.idp_api_cop_xapi_published')) + '">The batch and its publication, as exported</a>.</p>';
+        }
+        reload();
+      });
+      return;
+    }
+    var th = t.getAttribute('data-thread');
+    if (th) {
+      getJson(icdevFetch('idp.idp_api_standards_twin', {}, {}, {thread: th})).then(function (res) {
+        var rec = res.j.record || {};
+        document.getElementById('cp-thread').innerHTML = res.j.resolved
+          ? '<p id="cp-thread-resolved">Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.event || '') + ' ' + esc(rec.mission_id || rec.path_id || '') +
+            ' by ' + esc(rec.actor || '') + ' (account ' + esc(rec.learner || '') + ') ' + esc(rec.created_at || '') + '</p>'
+          : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';
+      });
+    }
+  });
+
+  document.getElementById('cp-prepare').addEventListener('click', function () {
+    var msg = document.getElementById('cp-prepare-msg');
+    getJson(icdevFetch('idp.idp_api_cop_xapi_prepare', {}, postInit({note: 'prepared on /idp/cop-tracks'}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not prepared (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Prepared the batch ' + res.j.content_digest + ' (' + res.j.statements + ' statement(s)) as ' + res.j.prepared_by + '. A person who did not prepare it publishes it.';
+      reload();
+    });
+  });
+
+  document.getElementById('cp-verify').addEventListener('click', function () {
+    var box = document.getElementById('cp-verify-result');
+    getJson(icdevFetch('idp.idp_api_cop_xapi_published')).then(function (res) {
+      if (!res.ok) { box.textContent = 'Nothing to verify (' + (res.j.code || 'error') + '): ' + (res.j.error || ''); return; }
+      var v = res.j.verify;
+      box.innerHTML = v.ok
+        ? '<span id="cp-verify-ok">The export verifies</span>: batch digest <code>' + esc(v.content_digest) + '</code> against the pinned schemas, published by a person who did not prepare it, on an intact ledger.'
+        : 'The export does NOT verify: ' + esc(v.errors.join('; '));
+    });
+  });
+
+  document.getElementById('cp-twin-observe').addEventListener('click', function () {
+    var box = document.getElementById('cp-twin-body');
+    getJson(icdevFetch('idp.idp_api_standards_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j;
+      var checks = (env.extra && env.extra.checks) || [];
+      var vs = (env.violations || []).filter(function (f) { return String(f.rule_id).indexOf('cop.academy') === 0; });
+      checks = checks.filter(function (c) { return String(c.id).indexOf('cop.academy') === 0; });
+      box.innerHTML = '<p id="cp-twin-verdict">Developer Portal twin: verdict ' + tag(env.verdict) + ' coverage ' + esc(env.coverage_score) + '; ' + esc(vs.length) + ' CoP finding(s).</p>' +
+        '<ul>' + checks.map(function (c) { return '<li data-check="' + esc(c.id) + '">' + tag(c.status) + ' ' + esc(c.label) + (c.reason ? ': ' + esc(c.reason) : '') + '</li>'; }).join('') + '</ul>' +
+        '<ul>' + vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
+            ' &middot; thread <button type="button" class="std-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
+        }).join('') + '</ul><div id="cp-thread"></div>';
+    });
+  });
+
+  render();
+})();
+</script>
+{% endblock %}

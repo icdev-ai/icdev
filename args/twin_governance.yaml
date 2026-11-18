@@ -84,3 +84,9 @@ engineering_standards:
   golden_paths:
     waiting_warn_days: 14
     drift_stale_days: 30
+  # icx-cop-01: the FORGE Academy CoP tracks and their xAPI batches (tools/idp/cop_tracks.py). A
+  # prepared batch waiting this long for a person, or a published batch this old (ICDEV[OS] counts
+  # one past 30 days for nothing), is a finding (args/academy_cop_tracks.yaml publish sets the defaults).
+  cop_academy:
+    waiting_warn_days: 7
+    stale_days: 25

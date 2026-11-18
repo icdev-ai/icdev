@@ -66,6 +66,17 @@ threaded to the ledger row (``coe_golden_path:<event id>``):
 * ``coe.golden_path.drift`` (high) / ``.drift_stale`` (medium) / ``.drift_old`` (low);
 * ``coe.golden_path.bootstrap_only`` / ``.awaiting_publish`` / ``.declares_retired_standard``
   (low), ``.self_published`` / ``.chain_broken`` (critical).
+
+icx-cop-01 observes ``cop.academy`` too (``tools/idp/cop_tracks.py`` holds the
+evidence and judgement): the FORGE Academy's Community of Practice tracks and the
+xAPI batches prepared and published for ICDEV[OS], in ``cop_academy_events``.
+Nothing published is an unverified check, never a pass (ICDEV[OS] reads every
+learning path as unverified). Findings, each threaded to the ledger row
+(``cop_academy:<event id>``):
+
+* ``cop.academy.unreported`` (low) statements the newest published batch lacks;
+* ``cop.academy.awaiting_publish`` (low) / ``.stale`` (medium) /
+  ``.off_contract`` (high) / ``.self_published`` / ``.chain_broken`` (critical).
 """
 from __future__ import annotations
 
@@ -87,7 +98,7 @@ from tools.twin_core.registry import register_twin
 class EngineeringStandardsTwin(GovernanceTwinAdapter):
     canvas_key = "idp"
     display_name = "Engineering standards register"
-    observes = ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance", "coe.golden_paths")
+    observes = ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance", "coe.golden_paths", "cop.academy")
 
     def replay(self, observation_id: str) -> dict:
         """Re-judge a recorded observation from its evidence (see governance.replay)."""
@@ -104,6 +115,10 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
         ev["conformance"] = conformance.twin_evidence()
         # icx-coe-04: the golden paths against the standards in force.
         ev["golden_paths"] = golden_paths.twin_evidence()
+        # icx-cop-01: the FORGE Academy CoP tracks and their xAPI batches for ICDEV[OS].
+        from tools.idp import cop_tracks
+
+        ev["cop_academy"] = cop_tracks.twin_evidence()
         return ev
 
     def _collect_standards(self) -> dict:
@@ -259,6 +274,15 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
             c, f, s = golden_paths.twin_judge(evidence["golden_paths"] or {},
                                               policy.get("golden_paths") or {},
                                               evidence.get("observed_at") or "")
+            checks += c
+            findings += f
+            extra_summary.update(s)
+        if "cop_academy" in evidence:
+            from tools.idp import cop_tracks
+
+            c, f, s = cop_tracks.twin_judge(evidence["cop_academy"] or {},
+                                            policy.get("cop_academy") or {},
+                                            evidence.get("observed_at") or "")
             checks += c
             findings += f
             extra_summary.update(s)

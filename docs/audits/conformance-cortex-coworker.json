@@ -1168,6 +1168,7 @@
             {
               "by_id": [
                 "tools/dashboard/templates/idp/adrs.html",
+                "tools/dashboard/templates/idp/cop_tracks.html",
                 "tools/dashboard/templates/idp/exemptions.html",
                 "tools/dashboard/templates/idp/golden_paths.html",
                 "tools/dashboard/templates/idp/standards.html"
@@ -1541,6 +1542,7 @@
               "by_id": [
                 "tools/dashboard/templates/idp/adrs.html",
                 "tools/dashboard/templates/idp/conformance.html",
+                "tools/dashboard/templates/idp/cop_tracks.html",
                 "tools/dashboard/templates/idp/exemptions.html",
                 "tools/dashboard/templates/idp/golden_paths.html",
                 "tools/dashboard/templates/idp/standards.html"
@@ -1617,6 +1619,7 @@
               "by_id": [
                 "tools/dashboard/templates/idp/adrs.html",
                 "tools/dashboard/templates/idp/conformance.html",
+                "tools/dashboard/templates/idp/cop_tracks.html",
                 "tools/dashboard/templates/idp/exemptions.html",
                 "tools/dashboard/templates/idp/golden_paths.html"
               ],
@@ -1726,6 +1729,130 @@
       "component": "twin_observatory",
       "key": "conformance.audit",
       "label": "Feature conformance audit (this tool)"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "cop_academy read-only, tool_authorization tier 'read'",
+            "cop_academy_xapi_prepare mutating, approval tier 'unknown' (default_tier) halts"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-COP-01 -> cop.tracks -> tests/test_icx_cop_01_tracks.py::test_four_tracks_one_per_cop_on_our_own_patterns, tests/test_icx_cop_01_tracks.py::test_every_reading_exists_and_every_question_has_one_right_answer, tests/test_icx_cop_01_tracks.py::test_a_bad_config_is_refused_never_half_read",
+            "PM-COP-02 -> cop.attempts -> tests/test_icx_cop_01_tracks.py::test_answers_never_leave_the_server, tests/test_icx_cop_01_tracks.py::test_grading_is_on_the_server_and_a_wrong_or_missing_answer_fails, tests/test_icx_cop_01_tracks.py::test_an_attempt_is_a_persons_and_recorded_on_their_own_chain, tests/test_icx_cop_01_tracks.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_icx_cop_01_ambient.py::test_a_learner_completes_a_path_and_a_batch_is_published_on_the_platform_database",
+            "PM-COP-03 -> cop.xapi -> tests/test_icx_cop_01_tracks.py::test_statements_are_standard_xapi_derived_from_the_ledger_alone, tests/test_icx_cop_01_tracks.py::test_a_learner_whose_record_does_not_verify_reports_nothing, tests/test_icx_cop_01_tracks.py::test_the_batch_meets_the_pinned_icos_schema_and_its_digest, tests/test_icx_cop_01_tracks.py::test_the_schemas_are_pinned, tests/test_icx_cop_01_tracks.py::test_the_batch_is_deterministic_given_the_ledger_and_the_time",
+            "PM-COP-04 -> cop.publish -> tests/test_icx_cop_01_tracks.py::test_publish_is_a_persons_step_never_the_preparers_bound_to_the_digest, tests/test_icx_cop_01_tracks.py::test_an_agent_only_drafts, tests/test_icx_cop_01_tracks.py::test_the_export_carries_its_publication_and_verifies, tests/test_icx_cop_01_ambient.py::test_a_learner_completes_a_path_and_a_batch_is_published_on_the_platform_database",
+            "PM-COP-05 -> if.cop.console, cop.twin, if.cop.mcp -> tests/test_icx_cop_01_tracks.py::test_the_routes_and_the_page, tests/test_icx_cop_01_tracks.py::test_the_twin_observes_with_threads_and_replays, tests/test_icx_cop_01_tracks.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read, tests/test_icx_cop_01_tracks.py::test_the_mcp_tools_read_and_only_prepare"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "idp.idp_api_cop_mission_attempt called from tools/dashboard/templates/idp/cop_tracks.html",
+            "idp.idp_api_cop_xapi_prepare called from tools/dashboard/templates/idp/cop_tracks.html",
+            "idp.idp_api_cop_xapi_publish called from tools/dashboard/templates/idp/cop_tracks.html",
+            "nav links /idp/cop-tracks",
+            "page /idp/cop-tracks renders idp/cop_tracks.html",
+            "registry entry 'idp'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/cop_tracks.html"
+              ],
+              "endpoint": "idp.idp_api_cop_tracks",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/cop-tracks",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/cop_tracks.html"
+              ],
+              "endpoint": "idp.idp_api_cop_mission_attempt",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/cop-tracks/missions/<mission_id>/attempt",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/cop_tracks.html"
+              ],
+              "endpoint": "idp.idp_api_cop_xapi_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/cop-tracks/xapi/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/cop_tracks.html"
+              ],
+              "endpoint": "idp.idp_api_cop_xapi_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/cop-tracks/xapi/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/cop_tracks.html"
+              ],
+              "endpoint": "idp.idp_api_cop_xapi_published",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/cop-tracks/xapi/published",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "idp.idp_cop_tracks_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/idp/cop-tracks",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "idp.idp_api_cop_xapi_publish (declared (tools/idp/blueprint.py: \"A person, never the preparer, publishes the prepared xAPI batch to ICDEV[OS], or refuses it.\")) -> template decl-wft-cop-academy-xapi-publish (args/workflow_hitl_templates/cop-academy-xapi-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "idp",
+      "key": "cop.academy",
+      "label": "Communities of Practice: FORGE Academy tracks, xAPI to ICDEV[OS]"
     },
     {
       "cells": {
@@ -3650,6 +3777,7 @@
       "tools/dashboard/templates/document_intelligence/explorer.html",
       "tools/dashboard/templates/idp/adrs.html",
       "tools/dashboard/templates/idp/conformance.html",
+      "tools/dashboard/templates/idp/cop_tracks.html",
       "tools/dashboard/templates/idp/exemptions.html",
       "tools/dashboard/templates/idp/golden_paths.html",
       "tools/dashboard/templates/idp/standards.html",
@@ -3678,8 +3806,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 28,
-    "features_conforming": 28,
+    "features": 29,
+    "features_conforming": 29,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3752,6 +3880,13 @@
         "workflow": 0
       },
       "conformance.audit": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "cop.academy": {
         "ai_native": 0,
         "architecture": 0,
         "gui": 0,
@@ -3886,11 +4021,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 175,
-    "routes_by_id": 149,
-    "routes_observed": 132,
-    "writes_by_id": 73,
-    "writes_observed": 73
+    "routes": 181,
+    "routes_by_id": 154,
+    "routes_observed": 137,
+    "writes_by_id": 76,
+    "writes_observed": 76
   },
   "tool": "feature_audit",
   "version": 1

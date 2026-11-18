@@ -677,6 +677,11 @@ _THREAD_TABLES = {
     "coe_golden_path": ("core", "coe_golden_path_events", "event_id",
                         ("event_id", "path_id", "version", "event", "actor", "actor_kind", "actor_role",
                          "step_id", "reason", "entry_digest", "row_hash", "created_at")),
+    # icx-cop-01: one event in the FORGE Academy CoP ledger (a learner's attempt or completion, or an
+    # xAPI batch prepared, published or refused).
+    "cop_academy": ("core", "cop_academy_events", "event_id",
+                    ("event_id", "scope", "event", "actor", "actor_kind", "actor_role", "learner", "path_id",
+                     "mission_id", "step_id", "reason", "content_digest", "row_hash", "created_at")),
     # icx-coe-04: one declared decision step (its rows in wf_decision_steps), the thread a service
     # scaffolded on a golden path gives its findings.
     "wf_step": ("rls", "wf_decision_steps", "step_id",

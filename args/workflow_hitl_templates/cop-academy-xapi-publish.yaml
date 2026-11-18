@@ -1,0 +1,33 @@
+# CUI // SP-CTI
+id: decl-wft-cop-academy-xapi-publish
+name: "FORGE Academy xAPI: a person publishes the prepared batch of CoP learning statements to ICDEV[OS], or refuses it (prepare -> publish)"
+description: >-
+  An xAPI batch (icos-cop-academy/v1) is the evidence ICDEV[OS]'s Communities of
+  Practice judge their learning paths by: per pseudonymous learner and path, a
+  completed or progressed statement derived from the Academy ledger alone. Leaving
+  the factory is a release, so a person attests it. Anyone, or an agent, prepares the
+  batch on /idp/cop-tracks, which records it whole at its digest and decides nothing.
+  A person who did not prepare it reads it and publishes it or refuses, with a reason,
+  bound to that digest. Nothing publishes itself, and a newer batch needs a new step.
+decides: [idp.idp_api_cop_xapi_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject:
+  "cop_academy:xapi"; payload: the batch's content digest, the prepared event and its
+  produced_at). cop_academy_events appends a published or refused event on the bundle
+  chain, bound to that step and chained to the row before it. Only a published batch is
+  exported for ICDEV[OS] (tools/idp/cop_xapi_export.py --published), with its
+  publication beside it (icdev-cop-academy-publication/v1).
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: prepare
+    step_type: automated
+    description: Someone (a person, or an agent's draft) built the batch from the ledger and recorded it at its digest.
+  - name: publish
+    step_type: manual
+    role: academy_publisher
+    holders: [admin, isso, reviewer]
+    # The person who prepared the batch never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]

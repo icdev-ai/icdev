@@ -78,6 +78,14 @@ Golden paths (icx-coe-04, tools/idp/golden_paths.py):
   POST /idp/api/golden-paths/<path_id>/drift      Run and record a version's drift check (decides nothing)
   POST /idp/api/golden-paths/<path_id>/publish    A person publishes or refuses a version (declared step)
   POST /idp/api/golden-paths/<path_id>/retire     A person retires or keeps a version (declared step)
+
+FORGE Academy tracks per Community of Practice (icx-cop-01, tools/idp/cop_tracks.py):
+  GET  /idp/cop-tracks                            The four CoP learning paths, their missions, the statements
+  GET  /idp/api/cop-tracks                        JSON: tracks (no answers), my progress, statements, ledger
+  POST /idp/api/cop-tracks/missions/<id>/attempt  A learner's answers, graded on the server (a person only)
+  POST /idp/api/cop-tracks/xapi/prepare           Build and record the xAPI batch at its digest (decides nothing)
+  POST /idp/api/cop-tracks/xapi/publish           A person publishes or refuses it (declared step)
+  GET  /idp/api/cop-tracks/xapi/published         The newest published batch, its publication, verified
 """
 from __future__ import annotations
 
@@ -998,3 +1006,115 @@ def idp_api_golden_path_retire(path_id: str):
     except golden_paths.GoldenPathRefused as exc:
         return _golden_refused(exc)
     return jsonify(out)
+
+
+# ---------------------------------------------------------------------------
+# FORGE Academy tracks per Community of Practice, with xAPI out to ICDEV[OS] (icx-cop-01)
+# ---------------------------------------------------------------------------
+#
+# Who decides: a learner's answers are graded on the server against the declared key, which no
+# route returns; that is a grade, not a decision. Anyone (or an agent, as a draft) prepares the
+# xAPI batch, which records it at its digest and decides nothing. Publishing it to ICDEV[OS] is a
+# person's declared step (decl-wft-cop-academy-xapi-publish), never the preparer's.
+
+
+def _cop_refused(exc):
+    return jsonify(exc.to_dict()), exc.status
+
+
+@bp.route("/cop-tracks")
+def idp_cop_tracks_page():
+    """The four Community of Practice learning paths, their missions, the xAPI statements and the batch."""
+    from tools.idp import cop_tracks
+    from tools.workflow_hitl.declared import current_actor
+
+    try:
+        view = cop_tracks.view(current_actor())
+        error = ""
+    except Exception as exc:  # noqa: BLE001 — an unreadable ledger is said, not hidden
+        logger.warning("idp cop tracks: unreadable: %s", exc)
+        view = {"tracks": [], "progress": {}, "statements": [], "ledger": {}}
+        error = str(exc)
+    return render_template("idp/cop_tracks.html", view=view, error=error, template=cop_tracks.TEMPLATE)
+
+
+@bp.route("/api/cop-tracks")
+def idp_api_cop_tracks():
+    """JSON: the tracks (questions, never answers), the caller's progress, the statements, the bundle ledger."""
+    from tools.idp import cop_tracks
+    from tools.workflow_hitl.declared import current_actor
+
+    try:
+        return jsonify(cop_tracks.view(current_actor()))
+    except cop_tracks.CopRefused as exc:
+        return _cop_refused(exc)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"the Academy ledger could not be read: {exc}"}), 503
+
+
+@bp.route("/api/cop-tracks/missions/<mission_id>/attempt", methods=["POST"])
+def idp_api_cop_mission_attempt(mission_id: str):
+    """A learner's answers to one mission, graded on the server and recorded on their own chain.
+
+    Body: ``{answers: {question id: option index}}``. A signed-in person only; a grade, not a decision.
+    """
+    from tools.idp import cop_tracks
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = cop_tracks.attempt(mission_id, data.get("answers"), current_actor())
+    except cop_tracks.CopRefused as exc:
+        return _cop_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/cop-tracks/xapi/prepare", methods=["POST"])
+def idp_api_cop_xapi_prepare():
+    """Prepare the xAPI batch: build it from the ledger and record it at its digest. Decides nothing.
+
+    Body: ``{note}``. Anyone signed in; a service key is recorded as an agent.
+    """
+    from tools.idp import cop_tracks
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = cop_tracks.prepare(current_actor(), note=str(data.get("note") or ""))
+    except cop_tracks.CopRefused as exc:
+        return _cop_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/cop-tracks/xapi/publish", methods=["POST"])
+def idp_api_cop_xapi_publish():
+    """A person, never the preparer, publishes the prepared xAPI batch to ICDEV[OS], or refuses it.
+
+    Body: ``{decision: publish|refuse, reason, digest}``. The person's step of
+    decl-wft-cop-academy-xapi-publish, bound to the digest of the prepared batch read.
+    """
+    from tools.idp import cop_tracks
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = cop_tracks.publish(decision=str(data.get("decision") or ""), reason=str(data.get("reason") or ""),
+                                 read_digest=str(data.get("digest") or ""), actor=current_actor())
+    except cop_tracks.CopRefused as exc:
+        return _cop_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/cop-tracks/xapi/published")
+def idp_api_cop_xapi_published():
+    """The newest PUBLISHED batch (icos-cop-academy/v1, as ICDEV[OS] imports it), its publication, and whether
+    both verify against the pinned schemas and the ledger."""
+    from tools.idp import cop_tracks
+
+    try:
+        pub = cop_tracks.published()
+        if pub is None:
+            return jsonify({"error": "no xAPI batch has been published", "code": "unpublished"}), 404
+        return jsonify({**pub, "verify": cop_tracks.verify_published()})
+    except cop_tracks.CopRefused as exc:
+        return _cop_refused(exc)

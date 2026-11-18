@@ -2421,3 +2421,35 @@ coe_golden_paths:
     The drift check scaffolds into a temporary tree laid over the checkout and never writes to a
     database or to the repo. The standards that apply to a path are derived from the register and
     args/coe_conformance.yaml, never listed by hand.
+
+
+# FORGE Academy tracks per Community of Practice, xAPI out to ICDEV[OS] (icx-cop-01)
+#
+# Enforced by tools/idp/cop_tracks.py and the declared template
+# args/workflow_hitl_templates/cop-academy-xapi-publish.yaml; tested in
+# tests/test_icx_cop_01_*.py (gated: core.d/icx-cop-01.txt). The batch is validated against
+# ICDEV[OS]'s schema, vendored and pinned (context/icos/cop-academy-statements.schema.json), and its
+# publication against the proposed one (context/icos/cop-academy-publication.schema.json).
+cop_academy:
+  blocking:
+    - answer_leaves_server          # no route, page or MCP tool returns a question's answer
+    - attempt_by_non_person         # a service key or an agent never attempts a mission
+    - statement_without_ledger      # a statement is derived from an intact learner chain only
+    - progressed_read_as_complete   # progressed carries result.completion false
+    - learner_identified            # the actor is a pseudonymous account, never a name or a mailbox
+    - preparer_publishes            # the preparer never publishes (separate_from: builders)
+    - step_by_non_person            # a service key or agent prepares a draft; it never publishes
+    - publish_on_stale_digest       # the prepared batch changed since the person read it
+    - batch_off_schema              # a batch that does not meet the pinned schema, or whose digest is not its content's
+    - schema_unpinned               # a vendored or proposed schema changed without re-pinning
+    - unpublished_export            # only a published batch is exported, its publication beside it
+    - chain_broken                  # a chain that does not verify blocks any new event on it
+  warning:
+    - nothing_published             # twin: cop.academy.published unverified (never passed)
+    - unreported_statements         # twin: cop.academy.unreported
+    - awaiting_publish              # twin: cop.academy.awaiting_publish
+    - batch_stale                   # twin: cop.academy.stale (ICDEV[OS] counts one past 30 days for nothing)
+    - batch_off_contract            # twin: cop.academy.off_contract
+  note: >
+    No cloud-vendor training or certification content (owner, 2026-11-17): every mission teaches
+    this platform's own patterns and cites the files a learner reads.
