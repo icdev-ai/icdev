@@ -1349,6 +1349,26 @@ components:
     links:
     - label: Decisions
       href: /decisions/
+- key: data_discovery
+  kind: core_extension
+  display_name: Data Discovery Export
+  description: What the Data Design Canvas found in a source (types, counts, PII flags by pattern name, rule-based
+    anomalies, quality results, catalogue entries; metadata only, never a datum), exported to ICDEV[OS] as one
+    icos-discovery/v1 bundle per declared source (osx-cap-02). Anyone prepares a bundle; a person who did not prepare
+    it publishes it (decl-wft-data-discovery-publish). Always on, because the decisions are.
+  env_flag: ICDEV_DATA_DISCOVERY_ENABLED
+  default_enabled: true
+  module: tools.data_canvas.discovery_blueprint
+  blueprint_attr: discovery_bp
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Data Discovery Export
+    links:
+    - label: Data Discovery Export
+      href: /data-discovery/
 - key: forecast
   kind: core_extension
   display_name: TimesFM Forecasting

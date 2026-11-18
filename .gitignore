@@ -366,3 +366,5 @@ data/rag/*.db-wal
 tests/e2e/fixtures/.mdz05_capacity.yaml
 # icx-coe-03: the synthetic delivery sources the e2e seed writes for the conformance page
 tests/e2e/fixtures/.coe03_sources/
+# osx-cap-02: the synthetic source the e2e seed writes for the data discovery export
+tests/e2e/fixtures/.cap02i_source.db

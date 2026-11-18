@@ -1050,6 +1050,10 @@ jobs:
       # read: a CI checkout is shallow, and ICDEV[OS] and ICDEV[FT] are not on the runner.
       ICDEV_COE_SOURCES_DIR: ${{ github.workspace }}/tests/e2e/fixtures/.coe03_sources
       ICDEV_COE_LIVE_GIT: "0"
+      # osx-cap-02: the data discovery export page declares one SYNTHETIC source for the e2e
+      # journey (tests/e2e/data_discovery_export.spec.ts). Honoured only for a file under tests/;
+      # the shipped args/data_discovery_export.yaml declares none.
+      ICDEV_DISCOVERY_SOURCES_E2E: tests/e2e/fixtures/discovery_sources.yaml
       # icx-cnf-08: this job has no model. Say so, so every AI-assist path takes its
       # deterministic fallback at once instead of waiting on providers that are not there
       # (the ACE profile page's preview never answered within the test's 30 s).

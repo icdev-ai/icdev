@@ -84,3 +84,10 @@ engineering_standards:
   golden_paths:
     waiting_warn_days: 14
     drift_stale_days: 30
+
+# osx-cap-02: the data discovery export twin (tools/twin_core/adapters/data_discovery.py). A prepared
+# icos-discovery/v1 bundle waiting this long for a person, or a source whose newest published bundle
+# is this old, is a finding (args/data_discovery_export.yaml publish sets the defaults; these win).
+data_discovery:
+  waiting_warn_days: 7
+  stale_days: 14

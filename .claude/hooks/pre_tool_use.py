@@ -700,6 +700,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # icx-coe-03, migration 20261118024513: the conformance bundle ledger (prepared, then a
         # person publishes or refuses), hash-chained per repo. Only a published bundle leaves.
         "coe_conformance_events",
+        # osx-cap-02, migration 20261118113000: the data discovery export ledger (a source's
+        # icos-discovery/v1 bundle prepared, then a person publishes or refuses), hash-chained.
+        "data_discovery_export_events",
         # icx-coe-04, migration 20261118070149: the golden path ledger (seeded, proposed,
         # drift-checked, then a person publishes, refuses or retires), hash-chained per path.
         "coe_golden_path_events",

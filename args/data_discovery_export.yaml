@@ -1,0 +1,23 @@
+# CUI // SP-CTI
+# Data discovery export (osx-cap-02): the sources whose Data Design Canvas profiles ICDEV[IT]
+# exports to ICDEV[OS] as icos-discovery/v1 bundles (tools/data_canvas/discovery_bundle.py).
+#
+# Each source names the key ICDEV[OS] declares it by (args/discovery.yaml there: ICOS marks a
+# bundle by ITS config, never by what the bundle claims), a name, and the design whose stored
+# Explore profiles, quality rules and runs describe it -- by design id, or by design name (the
+# newest design of that name). A source's catalogue entries are the data-mesh products with an
+# input port whose source_system is the source key.
+#
+# None is declared here: no source of this deployment is exported until one is reviewed and listed.
+# A test or e2e run may name another file with ICDEV_DISCOVERY_SOURCES_E2E, honoured only for a
+# path under tests/.
+#
+#   sources:
+#     - {key: <icos source key>, name: "<display name>", design: "<design name>"}   # or design_id: <id>
+sources: []
+
+# A prepared bundle waiting this long for a person, or a source whose newest published bundle is
+# this old, is a finding of the data discovery twin.
+publish:
+  waiting_warn_days: 7
+  stale_days: 14
