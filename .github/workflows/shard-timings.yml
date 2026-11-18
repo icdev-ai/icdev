@@ -56,6 +56,29 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # The tool imports `tools.ci.gated_test_list`, and importing anything
+      # under `tools` runs `tools/__init__.py`, which imports LLMRouter ->
+      # `tools.logging.icdev_logger` -> `icdev.core.paths`. `icdev.core` is not
+      # in this tree: it ships in the `icdev-core` DISTRIBUTION (xcore-cut-02),
+      # pinned in requirements.txt. This job installed nothing, so every run
+      # from the day `icdev_logger` started importing `icdev.core.paths` died in
+      # "Rebuild the snapshot" with `ModuleNotFoundError: No module named
+      # 'icdev.core.paths'` (runs 41465669755, 42642894991, 43890161317), the
+      # committed snapshot stopped moving, and the live-snapshot test in
+      # tests/ci/test_shard_timings.py drifted down to exactly 50% coverage.
+      # Install exactly what the Test job installs, so the tool imports in the
+      # same environment the shards it measures ran in. No `|| true` on the
+      # requirements: an install failure must red this job, not let it fail
+      # later for a misleading reason.
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          pip install -r requirements.txt
+          pip install -e . 2>/dev/null || true
+          python -c "import icdev.core.paths"
 
       - name: Pick the run to read
         id: pick

@@ -207,3 +207,36 @@ class TestAgainstTheLiveSnapshot:
         assert len(overlap) >= 0.5 * len(gated), (
             f"only {len(overlap)} of {len(gated)} gated targets are measured — "
             "the snapshot has gone stale; run the shard-timings workflow")
+
+
+class TestTheRefreshWorkflowCanImportItsTool:
+    """The refresh ran green on nothing for weeks: `shard-timings.yml` installed
+    no dependencies, and `tools/ci/shard_timings.py` reaches `icdev.core.paths`
+    (the `icdev-core` distribution) through `tools/__init__.py`. Every scheduled
+    run from 2026-11-02 died with ModuleNotFoundError before writing a byte,
+    and the snapshot drifted to exactly 50% coverage of the gated list.
+    """
+
+    def _steps(self):
+        import yaml
+        doc = yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / "shard-timings.yml").read_text(encoding="utf-8"))
+        return doc["jobs"]["refresh"]["steps"]
+
+    def test_requirements_are_installed_before_the_tool_runs(self):
+        steps = self._steps()
+        runs = [str(s.get("run", "")) for s in steps]
+        install = next((i for i, r in enumerate(runs)
+                        if "pip install -r requirements.txt" in r), None)
+        tool = next((i for i, r in enumerate(runs) if "tools/ci/shard_timings.py" in r), None)
+        assert tool is not None, "the workflow no longer runs shard_timings.py"
+        assert install is not None and install < tool, (
+            "shard-timings.yml must `pip install -r requirements.txt` before it runs "
+            "tools/ci/shard_timings.py -- `icdev.core` is not in this tree")
+
+    def test_the_install_is_not_swallowed(self):
+        for s in self._steps():
+            for line in str(s.get("run", "")).splitlines():
+                if "pip install -r requirements.txt" in line:
+                    assert "|| true" not in line, (
+                        "a swallowed requirements install fails later, for the wrong reason")
