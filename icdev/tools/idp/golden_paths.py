@@ -592,8 +592,67 @@ def _piece(name: str, ok: bool, why: str = "") -> dict:
     return {"piece": name, "ok": bool(ok), "why": "" if ok else why}
 
 
+#: osx-cop-04: the twelve sections of an arc42 description, by name and in order (arc42 template 9.1, October 2026,
+#: https://arc42.org/overview; CC BY-SA 4.0). Only the names are arc42's; the template's guidance is ICDEV's own.
+ARC42_SECTIONS = ("Introduction and goals", "Constraints", "Context and scope", "Solution strategy",
+                  "Building block view", "Runtime view", "Deployment view", "Crosscutting concepts",
+                  "Architectural decisions", "Quality requirements", "Risks and technical debt", "Glossary")
+#: osx-cop-04: the C4 model's levels a scaffold draws (https://c4model.com: context, container, component; code is
+#: the source itself) and the supplementary views it names.
+C4_VIEWS = ("Level 1: System context", "Level 2: Containers", "Level 3: Components", "Supplementary: Deployment",
+            "Supplementary: Dynamic")
+
+
+def architecture_record_problems(root: Path, key: str, adr_id: str) -> list[str]:
+    """Why a service's architecture records do not hold (osx-cop-04): its C4 views and arc42 description are there,
+    arc42's twelve sections in order, section 9 LINKS the service's ADR record, and neither document holds a decision
+    of its own -- the ADR record (tools/idp/adrs.py) is the ONE place a decision is kept. Empty: they hold."""
+    import re
+
+    from tools.idp import adrs
+
+    why: list[str] = []
+    base = root / "docs" / "architecture" / key
+    docs = {n: base / f"{n}.md" for n in ("c4", "arc42")}
+    text = {n: p.read_text(encoding="utf-8") if p.is_file() else None for n, p in docs.items()}
+    for n, t in text.items():
+        if t is None:
+            why.append(f"docs/architecture/{key}/{n}.md is missing")
+    link = f"../../reference/adrs/{adr_id}.md"
+    if text["arc42"] is not None:
+        heads = re.findall(r"^## (\d+)\. (.+?)\s*$", text["arc42"], flags=re.M)
+        if [(int(n), h) for n, h in heads] != list(enumerate(ARC42_SECTIONS, 1)):
+            why.append(f"the arc42 description does not carry the twelve sections in order: {[h for _, h in heads]}")
+        sec9 = re.search(r"^## 9\. .*?$(.*?)(?=^## 10\. |\Z)", text["arc42"], flags=re.M | re.S)
+        if sec9 is None or link not in sec9.group(1):
+            why.append(f"section 9 of the arc42 description does not link the ADR record {adr_id} ({link})")
+    if text["c4"] is not None:
+        missing = [v for v in C4_VIEWS if f"## {v}" not in text["c4"]]
+        if missing:
+            why.append(f"the C4 views lack {missing}")
+    rec_dir = root / "docs" / "reference" / "adrs"
+    stem = re.escape(adr_id.rsplit("-", 1)[0])
+    mine = sorted(p.name for p in rec_dir.glob("D-*.md") if re.fullmatch(rf"{stem}-\d+\.md", p.name)) if rec_dir.is_dir() else []
+    if mine != [f"{adr_id}.md"]:
+        why.append(f"the service has exactly one ADR record, {adr_id}.md, written by tools/idp/adrs.py: found {mine}")
+    for n, t in text.items():
+        if t is not None and (t.lstrip().startswith("---\n") or re.search(r"^(id|status|supersedes):\s", t, flags=re.M)):
+            why.append(f"{n}.md carries ADR front matter: a decision is recorded only as an ADR record")
+    if f"{adr_id}.md" in mine:
+        rec = adrs.read_record(rec_dir / f"{adr_id}.md")
+        for n, t in text.items():
+            if t is None:
+                continue
+            for field in ("decision", "context", "consequences"):
+                body = str(rec.get(field) or "").strip()
+                if len(body) >= 40 and body in t:
+                    why.append(f"{n}.md copies the ADR record's {field}: link {adr_id}, never duplicate it")
+    return why
+
+
 def _pieces(overlay: Path, v: dict, feature: dict) -> list[dict]:
-    """The scaffold's own parts, each checked: contract, SBOM, AI-BOM, control map, OTel, ADR, declaration."""
+    """The scaffold's own parts, each checked: contract, SBOM, AI-BOM, control map, OTel, ADR, the architecture
+    records (C4 and arc42, linking the ADR, never copying it; osx-cop-04), declaration."""
     from tools.idp import adrs
 
     key, out = v["key"], []
@@ -642,6 +701,8 @@ def _pieces(overlay: Path, v: dict, feature: dict) -> list[dict]:
                           f"accepts one) {'; '.join(errs)}"))
     except Exception as exc:  # noqa: BLE001
         out.append(_piece("adr", False, f"unreadable: {exc}"))
+    arch = architecture_record_problems(overlay, key, adr_id)                    # osx-cop-04
+    out.append(_piece("architecture_records", not arch, "; ".join(arch)))
     try:
         decl = yaml.safe_load((overlay / f"tools/{key}/service.yaml").read_text(encoding="utf-8"))
         out.append(_piece("scorecard_declaration",
