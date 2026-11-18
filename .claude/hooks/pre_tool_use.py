@@ -700,6 +700,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # icx-coe-03, migration 20261118024513: the conformance bundle ledger (prepared, then a
         # person publishes or refuses), hash-chained per repo. Only a published bundle leaves.
         "coe_conformance_events",
+        # osx-cop-05, migration 20261118143737: the FOCUS cost bundle ledger (prepared, then a
+        # person publishes or refuses), hash-chained per billing month. Only a published bundle leaves.
+        "finops_focus_events",
         # icx-coe-04, migration 20261118070149: the golden path ledger (seeded, proposed,
         # drift-checked, then a person publishes, refuses or retires), hash-chained per path.
         "coe_golden_path_events",

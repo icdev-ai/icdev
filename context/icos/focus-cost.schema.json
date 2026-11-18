@@ -1,0 +1,1006 @@
+{
+  "$defs": {
+    "Focus": {
+      "additionalProperties": false,
+      "description": "The FOCUS version and dataset the rows conform to (FOCUS metadata FocusVersion).",
+      "properties": {
+        "dataset": {
+          "const": "CostAndUsage",
+          "title": "dataset"
+        },
+        "version": {
+          "pattern": "^1\\.[0-9]+$",
+          "title": "version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "dataset"
+      ],
+      "title": "Focus",
+      "type": "object"
+    },
+    "FocusRow": {
+      "additionalProperties": false,
+      "description": "One FOCUS 1.4 Cost and Usage row: every mandatory column, typed as FOCUS types it; a custom column only with the x_ prefix FOCUS requires.",
+      "patternProperties": {
+        "^x_[A-Za-z0-9_]{1,64}$": {}
+      },
+      "properties": {
+        "AllocatedMethodDetails": {
+          "description": "FOCUS 1.4 Allocated Method Details (conditional)",
+          "title": "AllocatedMethodDetails",
+          "type": [
+            "object",
+            "array",
+            "null"
+          ]
+        },
+        "AllocatedMethodId": {
+          "description": "FOCUS 1.4 Allocated Method ID (conditional)",
+          "maxLength": 2048,
+          "title": "AllocatedMethodId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "AllocatedResourceId": {
+          "description": "FOCUS 1.4 Allocated Resource ID (conditional)",
+          "maxLength": 2048,
+          "title": "AllocatedResourceId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "AllocatedResourceName": {
+          "description": "FOCUS 1.4 Allocated Resource Name (conditional)",
+          "maxLength": 2048,
+          "title": "AllocatedResourceName",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "AllocatedTags": {
+          "description": "FOCUS 1.4 Allocated Tags (conditional)",
+          "title": "AllocatedTags",
+          "type": [
+            "object",
+            "array",
+            "null"
+          ]
+        },
+        "AvailabilityZone": {
+          "description": "FOCUS 1.4 Availability Zone (conditional)",
+          "maxLength": 2048,
+          "title": "AvailabilityZone",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "BilledCost": {
+          "description": "FOCUS 1.4 Billed Cost (mandatory)",
+          "title": "BilledCost",
+          "type": "number"
+        },
+        "BillingAccountId": {
+          "description": "FOCUS 1.4 Billing Account ID (mandatory)",
+          "maxLength": 2048,
+          "title": "BillingAccountId",
+          "type": "string"
+        },
+        "BillingAccountName": {
+          "description": "FOCUS 1.4 Billing Account Name (mandatory)",
+          "maxLength": 2048,
+          "title": "BillingAccountName",
+          "type": "string"
+        },
+        "BillingAccountType": {
+          "description": "FOCUS 1.4 Billing Account Type (conditional)",
+          "maxLength": 2048,
+          "title": "BillingAccountType",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "BillingCurrency": {
+          "description": "FOCUS 1.4 Billing Currency (mandatory)",
+          "maxLength": 2048,
+          "title": "BillingCurrency",
+          "type": "string"
+        },
+        "BillingPeriodEnd": {
+          "description": "FOCUS 1.4 Billing Period End (mandatory)",
+          "format": "date-time",
+          "title": "BillingPeriodEnd",
+          "type": "string"
+        },
+        "BillingPeriodStart": {
+          "description": "FOCUS 1.4 Billing Period Start (mandatory)",
+          "format": "date-time",
+          "title": "BillingPeriodStart",
+          "type": "string"
+        },
+        "CapacityReservationId": {
+          "description": "FOCUS 1.4 Capacity Reservation ID (conditional)",
+          "maxLength": 2048,
+          "title": "CapacityReservationId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "CapacityReservationStatus": {
+          "description": "FOCUS 1.4 Capacity Reservation Status (conditional)",
+          "enum": [
+            "Used",
+            "Unused",
+            null
+          ],
+          "maxLength": 2048,
+          "title": "CapacityReservationStatus",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ChargeCategory": {
+          "description": "FOCUS 1.4 Charge Category (mandatory)",
+          "enum": [
+            "Usage",
+            "Purchase",
+            "Tax",
+            "Credit",
+            "Adjustment"
+          ],
+          "maxLength": 2048,
+          "title": "ChargeCategory",
+          "type": "string"
+        },
+        "ChargeClass": {
+          "description": "FOCUS 1.4 Charge Class (mandatory)",
+          "maxLength": 2048,
+          "title": "ChargeClass",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ChargeDescription": {
+          "description": "FOCUS 1.4 Charge Description (mandatory)",
+          "maxLength": 2048,
+          "title": "ChargeDescription",
+          "type": "string"
+        },
+        "ChargeFrequency": {
+          "description": "FOCUS 1.4 Charge Frequency (optional)",
+          "enum": [
+            "One-Time",
+            "Recurring",
+            "Usage-Based"
+          ],
+          "maxLength": 2048,
+          "title": "ChargeFrequency",
+          "type": "string"
+        },
+        "ChargePeriodEnd": {
+          "description": "FOCUS 1.4 Charge Period End (mandatory)",
+          "format": "date-time",
+          "title": "ChargePeriodEnd",
+          "type": "string"
+        },
+        "ChargePeriodStart": {
+          "description": "FOCUS 1.4 Charge Period Start (mandatory)",
+          "format": "date-time",
+          "title": "ChargePeriodStart",
+          "type": "string"
+        },
+        "CommitmentDiscountCategory": {
+          "description": "FOCUS 1.4 Commitment Discount Category (conditional)",
+          "enum": [
+            "Spend",
+            "Usage",
+            null
+          ],
+          "maxLength": 2048,
+          "title": "CommitmentDiscountCategory",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "CommitmentDiscountId": {
+          "description": "FOCUS 1.4 Commitment Discount ID (conditional)",
+          "maxLength": 2048,
+          "title": "CommitmentDiscountId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "CommitmentDiscountName": {
+          "description": "FOCUS 1.4 Commitment Discount Name (conditional)",
+          "maxLength": 2048,
+          "title": "CommitmentDiscountName",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "CommitmentDiscountQuantity": {
+          "description": "FOCUS 1.4 Commitment Discount Quantity (conditional)",
+          "title": "CommitmentDiscountQuantity",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "CommitmentDiscountStatus": {
+          "description": "FOCUS 1.4 Commitment Discount Status (conditional)",
+          "enum": [
+            "Used",
+            "Unused",
+            null
+          ],
+          "maxLength": 2048,
+          "title": "CommitmentDiscountStatus",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "CommitmentDiscountType": {
+          "description": "FOCUS 1.4 Commitment Discount Type (conditional)",
+          "maxLength": 2048,
+          "title": "CommitmentDiscountType",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "CommitmentDiscountUnit": {
+          "description": "FOCUS 1.4 Commitment Discount Unit (conditional)",
+          "maxLength": 2048,
+          "title": "CommitmentDiscountUnit",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "CommitmentProgramEligibilityDetails": {
+          "description": "FOCUS 1.4 Commitment Program Eligibility Details (conditional)",
+          "title": "CommitmentProgramEligibilityDetails",
+          "type": [
+            "object",
+            "array",
+            "null"
+          ]
+        },
+        "ConsumedQuantity": {
+          "description": "FOCUS 1.4 Consumed Quantity (conditional)",
+          "title": "ConsumedQuantity",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ConsumedUnit": {
+          "description": "FOCUS 1.4 Consumed Unit (conditional)",
+          "maxLength": 2048,
+          "title": "ConsumedUnit",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ContractApplied": {
+          "description": "FOCUS 1.4 Contract Applied (conditional)",
+          "title": "ContractApplied",
+          "type": [
+            "object",
+            "array",
+            "null"
+          ]
+        },
+        "ContractedCost": {
+          "description": "FOCUS 1.4 Contracted Cost (mandatory)",
+          "title": "ContractedCost",
+          "type": "number"
+        },
+        "ContractedUnitPrice": {
+          "description": "FOCUS 1.4 Contracted Unit Price (conditional)",
+          "title": "ContractedUnitPrice",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "EffectiveCost": {
+          "description": "FOCUS 1.4 Effective Cost (mandatory)",
+          "title": "EffectiveCost",
+          "type": "number"
+        },
+        "HostProviderName": {
+          "description": "FOCUS 1.4 Host Provider Name (mandatory)",
+          "maxLength": 2048,
+          "title": "HostProviderName",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "InvoiceDetailId": {
+          "description": "FOCUS 1.4 Invoice Detail ID (conditional)",
+          "maxLength": 2048,
+          "title": "InvoiceDetailId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "InvoiceId": {
+          "description": "FOCUS 1.4 Invoice ID (conditional)",
+          "maxLength": 2048,
+          "title": "InvoiceId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "InvoiceIssuerName": {
+          "description": "FOCUS 1.4 Invoice Issuer Name (mandatory)",
+          "maxLength": 2048,
+          "title": "InvoiceIssuerName",
+          "type": "string"
+        },
+        "ListCost": {
+          "description": "FOCUS 1.4 List Cost (mandatory)",
+          "title": "ListCost",
+          "type": "number"
+        },
+        "ListUnitPrice": {
+          "description": "FOCUS 1.4 List Unit Price (conditional)",
+          "title": "ListUnitPrice",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "PricingCategory": {
+          "description": "FOCUS 1.4 Pricing Category (conditional)",
+          "enum": [
+            "Standard",
+            "Committed",
+            "Dynamic",
+            "Other",
+            null
+          ],
+          "maxLength": 2048,
+          "title": "PricingCategory",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "PricingCurrency": {
+          "description": "FOCUS 1.4 Pricing Currency (conditional)",
+          "maxLength": 2048,
+          "title": "PricingCurrency",
+          "type": "string"
+        },
+        "PricingCurrencyContractedUnitPrice": {
+          "description": "FOCUS 1.4 Pricing Currency Contracted Unit Price (conditional)",
+          "title": "PricingCurrencyContractedUnitPrice",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "PricingCurrencyEffectiveCost": {
+          "description": "FOCUS 1.4 Pricing Currency Effective Cost (conditional)",
+          "title": "PricingCurrencyEffectiveCost",
+          "type": "number"
+        },
+        "PricingCurrencyListUnitPrice": {
+          "description": "FOCUS 1.4 Pricing Currency List Unit Price (conditional)",
+          "title": "PricingCurrencyListUnitPrice",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "PricingQuantity": {
+          "description": "FOCUS 1.4 Pricing Quantity (mandatory)",
+          "title": "PricingQuantity",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "PricingUnit": {
+          "description": "FOCUS 1.4 Pricing Unit (mandatory)",
+          "maxLength": 2048,
+          "title": "PricingUnit",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "RegionId": {
+          "description": "FOCUS 1.4 Region ID (conditional)",
+          "maxLength": 2048,
+          "title": "RegionId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "RegionName": {
+          "description": "FOCUS 1.4 Region Name (conditional)",
+          "maxLength": 2048,
+          "title": "RegionName",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ResourceId": {
+          "description": "FOCUS 1.4 Resource ID (conditional)",
+          "maxLength": 2048,
+          "title": "ResourceId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ResourceName": {
+          "description": "FOCUS 1.4 Resource Name (conditional)",
+          "maxLength": 2048,
+          "title": "ResourceName",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ResourceType": {
+          "description": "FOCUS 1.4 Resource Type (conditional)",
+          "maxLength": 2048,
+          "title": "ResourceType",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ServiceCategory": {
+          "description": "FOCUS 1.4 Service Category (mandatory)",
+          "enum": [
+            "AI and Machine Learning",
+            "Analytics",
+            "Business Applications",
+            "Compute",
+            "Databases",
+            "Developer Tools",
+            "Multicloud",
+            "Identity",
+            "Integration",
+            "Internet of Things",
+            "Management and Governance",
+            "Media",
+            "Migration",
+            "Mobile",
+            "Networking",
+            "Security",
+            "Storage",
+            "Web",
+            "Other"
+          ],
+          "maxLength": 2048,
+          "title": "ServiceCategory",
+          "type": "string"
+        },
+        "ServiceName": {
+          "description": "FOCUS 1.4 Service Name (mandatory)",
+          "maxLength": 2048,
+          "title": "ServiceName",
+          "type": "string"
+        },
+        "ServiceProviderName": {
+          "description": "FOCUS 1.4 Service Provider Name (mandatory)",
+          "maxLength": 2048,
+          "title": "ServiceProviderName",
+          "type": "string"
+        },
+        "ServiceSubcategory": {
+          "description": "FOCUS 1.4 Service Subcategory (optional)",
+          "enum": [
+            "AI Platforms",
+            "Bots",
+            "Generative AI",
+            "Machine Learning",
+            "Natural Language Processing",
+            "Other (AI and Machine Learning)",
+            "Analytics Platforms",
+            "Business Intelligence",
+            "Data Processing",
+            "Search",
+            "Streaming Analytics",
+            "Other (Analytics)",
+            "Productivity and Collaboration",
+            "Other (Business Applications)",
+            "Containers",
+            "End User Computing",
+            "Quantum Compute",
+            "Serverless Compute",
+            "Virtual Machines",
+            "Other (Compute)",
+            "Caching",
+            "Data Warehouses",
+            "Ledger Databases",
+            "NoSQL Databases",
+            "Relational Databases",
+            "Time Series Databases",
+            "Other (Databases)",
+            "Developer Platforms",
+            "Continuous Integration and Deployment",
+            "Development Environments",
+            "Source Code Management",
+            "Quality Assurance",
+            "Other (Developer Tools)",
+            "Identity and Access Management",
+            "Other (Identity)",
+            "API Management",
+            "Messaging",
+            "Workflow Orchestration",
+            "Other (Integration)",
+            "IoT Analytics",
+            "IoT Platforms",
+            "Other (Internet of Things)",
+            "Architecture",
+            "Compliance",
+            "Cost Management",
+            "Data Governance",
+            "Disaster Recovery",
+            "Endpoint Management",
+            "Observability",
+            "Support",
+            "Other (Management and Governance)",
+            "Content Creation",
+            "Gaming",
+            "Media Streaming",
+            "Mixed Reality",
+            "Other (Media)",
+            "Data Migration",
+            "Resource Migration",
+            "Other (Migration)",
+            "Other (Mobile)",
+            "Multicloud Integration",
+            "Other (Multicloud)",
+            "Application Networking",
+            "Content Delivery",
+            "Network Connectivity",
+            "Network Infrastructure",
+            "Network Routing",
+            "Network Security",
+            "Other (Networking)",
+            "Secret Management",
+            "Security Posture Management",
+            "Threat Detection and Response",
+            "Other (Security)",
+            "Backup Storage",
+            "Block Storage",
+            "File Storage",
+            "Object Storage",
+            "Storage Platforms",
+            "Other (Storage)",
+            "Application Platforms",
+            "Other (Web)",
+            "Other (Other)"
+          ],
+          "maxLength": 2048,
+          "title": "ServiceSubcategory",
+          "type": "string"
+        },
+        "SkuId": {
+          "description": "FOCUS 1.4 Sku ID (conditional)",
+          "maxLength": 2048,
+          "title": "SkuId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "SkuMeter": {
+          "description": "FOCUS 1.4 Sku Meter (conditional)",
+          "maxLength": 2048,
+          "title": "SkuMeter",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "SkuPriceDetails": {
+          "description": "FOCUS 1.4 Sku Price Details (conditional)",
+          "title": "SkuPriceDetails",
+          "type": [
+            "object",
+            "array",
+            "null"
+          ]
+        },
+        "SkuPriceId": {
+          "description": "FOCUS 1.4 Sku Price ID (conditional)",
+          "maxLength": 2048,
+          "title": "SkuPriceId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "SubAccountId": {
+          "description": "FOCUS 1.4 Sub Account ID (conditional)",
+          "maxLength": 2048,
+          "title": "SubAccountId",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "SubAccountName": {
+          "description": "FOCUS 1.4 Sub Account Name (conditional)",
+          "maxLength": 2048,
+          "title": "SubAccountName",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "SubAccountType": {
+          "description": "FOCUS 1.4 Sub Account Type (conditional)",
+          "maxLength": 2048,
+          "title": "SubAccountType",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "Tags": {
+          "description": "FOCUS 1.4 Tags (conditional)",
+          "title": "Tags",
+          "type": [
+            "object",
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "BilledCost",
+        "BillingAccountId",
+        "BillingAccountName",
+        "BillingCurrency",
+        "BillingPeriodEnd",
+        "BillingPeriodStart",
+        "ChargeCategory",
+        "ChargeClass",
+        "ChargeDescription",
+        "ChargePeriodEnd",
+        "ChargePeriodStart",
+        "ContractedCost",
+        "EffectiveCost",
+        "HostProviderName",
+        "InvoiceIssuerName",
+        "ListCost",
+        "PricingQuantity",
+        "PricingUnit",
+        "ServiceCategory",
+        "ServiceName",
+        "ServiceProviderName"
+      ],
+      "title": "FocusRow",
+      "type": "object"
+    },
+    "Period": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "format": "date-time",
+          "title": "end",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "title": "start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "title": "Period",
+      "type": "object"
+    },
+    "Pin": {
+      "additionalProperties": false,
+      "description": "The ICOS schema the producer validated against: its schema_digest (the contract file without its version stamp). ICOS refuses a bundle pinned to another.",
+      "properties": {
+        "schema": {
+          "const": "icos-focus-cost/v1",
+          "title": "schema"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "sha256"
+      ],
+      "title": "Pin",
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "system",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "tool",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "system",
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    },
+    "Publication": {
+      "additionalProperties": false,
+      "description": "A person's publication in ICDEV[IT]'s declared step, bound to the bundle's content_digest; never the person who prepared it. A bundle with no publication is a draft and counts for nothing.",
+      "properties": {
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "content_digest",
+          "type": "string"
+        },
+        "decided_at": {
+          "format": "date-time",
+          "title": "decided_at",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "event_id",
+          "type": "string"
+        },
+        "prepared_by": {
+          "minLength": 1,
+          "title": "prepared_by",
+          "type": "string"
+        },
+        "role": {
+          "title": "role",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signed_by": {
+          "minLength": 1,
+          "title": "signed_by",
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "title": "step_id",
+          "type": "string"
+        },
+        "template": {
+          "minLength": 1,
+          "title": "template",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signed_by",
+        "step_id",
+        "decided_at",
+        "template",
+        "content_digest",
+        "prepared_by"
+      ],
+      "title": "Publication",
+      "type": "object"
+    },
+    "Unattributed": {
+      "additionalProperties": false,
+      "properties": {
+        "billed_cost": {
+          "description": "a decimal with exactly six places, as a string",
+          "pattern": "^-?[0-9]+\\.[0-9]{6}$",
+          "title": "amount",
+          "type": "string"
+        },
+        "effective_cost": {
+          "description": "a decimal with exactly six places, as a string",
+          "pattern": "^-?[0-9]+\\.[0-9]{6}$",
+          "title": "amount",
+          "type": "string"
+        },
+        "rows": {
+          "minimum": 0,
+          "title": "rows",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rows",
+        "effective_cost",
+        "billed_cost"
+      ],
+      "title": "Unattributed",
+      "type": "object"
+    },
+    "WorkloadTotal": {
+      "additionalProperties": false,
+      "description": "A workload's total over the rows whose Tags name it; ICOS recomputes it.",
+      "properties": {
+        "billed_cost": {
+          "description": "a decimal with exactly six places, as a string",
+          "pattern": "^-?[0-9]+\\.[0-9]{6}$",
+          "title": "amount",
+          "type": "string"
+        },
+        "effective_cost": {
+          "description": "a decimal with exactly six places, as a string",
+          "pattern": "^-?[0-9]+\\.[0-9]{6}$",
+          "title": "amount",
+          "type": "string"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9-]{1,39}$",
+          "title": "key",
+          "type": "string"
+        },
+        "rows": {
+          "minimum": 0,
+          "title": "rows",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "rows",
+        "effective_cost",
+        "billed_cost"
+      ],
+      "title": "WorkloadTotal",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:focus-cost:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A FOCUS cost bundle from ICDEV[IT]'s FinOps, per workload, for ICOS's Cloud CoP (osx-cop-05).",
+  "properties": {
+    "billing_period": {
+      "$ref": "#/$defs/Period"
+    },
+    "classification": {
+      "description": "what the producer claims; carried as a claim only -- ICOS marks the bundle by its own config",
+      "title": "classification",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "content_digest": {
+      "description": "SHA-256 over the canonical JSON (keys sorted, separators ',' and ':') of the bundle without content_digest, publication and produced_at",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "content_digest",
+      "type": "string"
+    },
+    "currency": {
+      "description": "ISO 4217; every row's BillingCurrency",
+      "pattern": "^[A-Z]{3}$",
+      "title": "currency",
+      "type": "string"
+    },
+    "focus": {
+      "$ref": "#/$defs/Focus"
+    },
+    "pin": {
+      "$ref": "#/$defs/Pin"
+    },
+    "produced_at": {
+      "format": "date-time",
+      "title": "produced_at",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "publication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Publication"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "rows": {
+      "items": {
+        "$ref": "#/$defs/FocusRow"
+      },
+      "maxItems": 20000,
+      "title": "rows",
+      "type": "array"
+    },
+    "schema": {
+      "const": "icos-focus-cost/v1",
+      "title": "schema"
+    },
+    "service_tag": {
+      "description": "the Tags key that names a row's workload",
+      "maxLength": 64,
+      "minLength": 2,
+      "title": "service_tag",
+      "type": "string"
+    },
+    "unattributed": {
+      "$ref": "#/$defs/Unattributed"
+    },
+    "workloads": {
+      "description": "the workloads this bundle REPORTS on (one listed with no rows reports zero)",
+      "items": {
+        "$ref": "#/$defs/WorkloadTotal"
+      },
+      "title": "workloads",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema",
+    "producer",
+    "produced_at",
+    "focus",
+    "pin",
+    "billing_period",
+    "currency",
+    "service_tag",
+    "rows",
+    "workloads",
+    "unattributed",
+    "publication",
+    "content_digest"
+  ],
+  "title": "FocusCost",
+  "type": "object",
+  "x-icos-contract": "1.195.0",
+  "x-license": "Apache-2.0"
+}

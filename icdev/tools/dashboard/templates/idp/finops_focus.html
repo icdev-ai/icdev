@@ -1,0 +1,285 @@
+<!-- CUI // SP-CTI — FOCUS cost bundles for ICDEV[OS]'s Cloud CoP (osx-cop-05) -->
+{% extends "base.html" %}
+{% block title %}FOCUS cost bundles — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .ff-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .ff-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .ff-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .ff-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .ff-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .ff-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .ff-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ff-card th, .ff-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .ff-card th { color: var(--text-secondary); font-weight: 600; }
+  .ff-card td.num, .ff-card th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ff-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .ff-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .ff-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .ff-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .ff-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .ff-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .ff-btn.deny { border-color: var(--status-red); }
+  .ff-btn[aria-pressed="true"] { border-width: 2px; font-weight: 600; }
+  .ff-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .ff-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .ff-wrap input { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .ff-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .ff-wrap code { color: var(--text-primary); word-break: break-all; }
+  /* Link colour per theme, at AA contrast on the card and the page in each (axe, e2e). */
+  .ff-wrap { --ff-link: #8cc4ff; }
+  html[data-theme="light"] .ff-wrap { --ff-link: #0d4f9e; }
+  .ff-wrap a, .ff-wrap .ff-link { color: var(--ff-link); text-decoration: underline; }
+</style>
+
+<div class="ff-wrap">
+  <nav aria-label="Breadcrumb" class="ff-help"><a href="{{ url_for('idp.idp_portal') }}">Developer Portal</a> / FOCUS cost bundles</nav>
+  <h1>FOCUS cost bundles</h1>
+  <p class="ff-help" id="ff-help">
+    What each declared workload costs, read from a provider's FOCUS {{ view.get('config', {}).get('focus_version', '1.4') }}
+    Cost and Usage export and handed to ICDEV[OS]'s Cloud CoP as one <code>{{ view.get('schema', {}).get('id', 'icos-focus-cost/v1') }}</code>
+    bundle. Every row is validated against ICDEV[OS]'s pinned schema (<code>{{ view.get('schema', {}).get('path', '') }}</code>,
+    schema digest <code id="ff-pin">{{ view.get('schema', {}).get('digest', '') }}</code>, contract
+    {{ view.get('schema', {}).get('contract', '') }}, a <b>draft</b> until ICDEV[OS] merges it); one row that fails
+    <b>refuses the whole export</b>, named, so nothing is half read. A row belongs to the workload its
+    <code>Tags["{{ view.get('config', {}).get('tag_key', '') }}"]</code> names; a row that names no declared workload is
+    <b>unattributed</b>, shown, never dropped. Totals are the rows' effective and billed cost, to six places. Anyone
+    prepares a bundle, which records it at its digest and decides nothing; a person who did not prepare it publishes
+    it to ICDEV[OS] or refuses it, with a reason (<code>{{ template }}</code>). Only a published bundle leaves.
+    Declared in <code>{{ view.get('config', {}).get('path', 'args/finops_focus.yaml') }}</code>.
+  </p>
+  {% if error %}<p class="ff-msg" id="ff-error">The FOCUS ledger could not be read: {{ error }}</p>{% endif %}
+
+  <div class="ff-card">
+    <h2>FOCUS export</h2>
+    <div class="ff-row" id="ff-exports" role="group" aria-label="FOCUS export">
+      {% for x in view.get('exports') or [] %}
+      <button type="button" class="ff-btn" data-export="{{ x.name }}" aria-pressed="false">{{ x.name }}</button>
+      {% else %}
+      <span class="ff-help">No FOCUS export is in the exports directory.</span>
+      {% endfor %}
+    </div>
+    <div class="ff-msg" id="ff-summary" aria-live="polite">Pick an export to read it.</div>
+  </div>
+
+  <div class="ff-card">
+    <h2>Cost per workload</h2>
+    <table id="ff-workloads">
+      <caption class="ff-help">The draft bundle's totals, in its currency, over the export's billing period.</caption>
+      <thead><tr><th scope="col">Workload</th><th scope="col" class="num">Rows</th><th scope="col" class="num">Effective cost</th><th scope="col" class="num">Billed cost</th></tr></thead>
+      <tbody id="ff-workloads-body"><tr><td colspan="4">Not read yet.</td></tr></tbody>
+    </table>
+    <p><button type="button" class="ff-btn" id="ff-prepare">Prepare bundle</button></p>
+    <div class="ff-msg" id="ff-prepare-msg" role="status"></div>
+  </div>
+
+  <div class="ff-card" id="ff-ledger">
+    <h2>Prepared, published and refused</h2>
+    <p class="ff-help">One hash-chained history per billing month (<code>finops_focus_events</code>, append-only). A
+      month's newest prepared bundle waits for a person who did not prepare it.</p>
+    <div id="ff-chain" class="ff-help"></div>
+    <div id="ff-publish"></div>
+    <div class="ff-msg" id="ff-publish-msg" role="status"></div>
+    <div id="ff-published" class="ff-help"></div>
+    <table id="ff-events">
+      <thead><tr><th scope="col">Month</th><th scope="col">Event</th><th scope="col">By</th><th scope="col">Digest</th><th scope="col">Step</th><th scope="col">Reason</th><th scope="col">At</th></tr></thead>
+      <tbody id="ff-events-body"><tr><td colspan="7">Loading.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="ff-card" id="ff-twin">
+    <h2>Twin</h2>
+    <p class="ff-help">The Developer Portal's governance twin observes the bundles: with nothing published, every
+      workload's cost is <b>unverified</b>, never zero; a bundle its preparer published, or one ICDEV[OS] would refuse,
+      counts for nothing and is a finding; so is one waiting too long for a person, or unattributed rows. Each finding
+      carries its thread to the ledger row it rests on. Recorded observations and their replay are on the
+      <a href="/twin-observatory/governance">governance twins</a> page.</p>
+    <p><button type="button" class="ff-btn" id="twin-observe">Observe now</button></p>
+    <div id="ff-twin-body" class="ff-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var initial = {{ view|tojson }};
+  var ledger = initial;
+  var current = null;   // the export's name
+  var draft = null;     // the preview: {export, bundle}
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  function tag(cls, text, st) {
+    return '<span class="ff-tag ' + cls + '" data-status="' + esc(st || text) + '">' + esc(text) + '</span>';
+  }
+  function short(d) { return d ? String(d).slice(0, 16) : ''; }
+  var NAMES = {};
+  ((initial.config || {}).workloads || []).forEach(function (w) { NAMES[w.key] = w.name; });
+
+  function renderDraft(v) {
+    draft = v;
+    var b = v.bundle;
+    document.getElementById('ff-summary').innerHTML =
+      '<b>' + esc(v.export.name) + '</b>: ' + esc(v.export.rows) + ' FOCUS ' + esc(b.focus.version) + ' rows, billing period ' +
+      esc(b.billing_period.start) + ' to ' + esc(b.billing_period.end) + ', ' + esc(b.currency) +
+      ' &middot; draft bundle digest <code id="ff-digest">' + esc(b.content_digest) + '</code>' +
+      ' &middot; pinned to <code>' + esc(short(b.pin.sha256)) + '</code> ' + tag('wait', 'draft', 'draft');
+    var cur = esc(b.currency);
+    var rows = (b.workloads || []).map(function (w) {
+      return '<tr data-workload="' + esc(w.key) + '" data-rows="' + esc(w.rows) + '"><th scope="row">' + esc(w.key) +
+        (NAMES[w.key] ? '<br><span class="ff-help">' + esc(NAMES[w.key]) + '</span>' : '') + '</th>' +
+        '<td class="num">' + esc(w.rows) + '</td><td class="num" data-effective="' + esc(w.effective_cost) + '">' + esc(w.effective_cost) + ' ' + cur +
+        '</td><td class="num">' + esc(w.billed_cost) + ' ' + cur + '</td></tr>';
+    });
+    var u = b.unattributed;
+    rows.push('<tr data-unattributed="true" data-rows="' + esc(u.rows) + '"><th scope="row">Unattributed' +
+      '<br><span class="ff-help">rows whose Tags name no declared workload</span></th><td class="num">' + esc(u.rows) +
+      '</td><td class="num" data-effective="' + esc(u.effective_cost) + '">' + esc(u.effective_cost) + ' ' + cur + '</td><td class="num">' +
+      esc(u.billed_cost) + ' ' + cur + '</td></tr>');
+    document.getElementById('ff-workloads-body').innerHTML = rows.join('');
+  }
+
+  function renderLedger(v) {
+    ledger = v;
+    var months = v.months || [];
+    var ch = v.chain || {};
+    document.getElementById('ff-chain').innerHTML = esc(ch.rows || 0) + ' ledger row(s) in ' + esc(months.length) + ' billing month(s); ' +
+      (ch.intact === false ? '<b>the ledger does not verify:</b> ' + esc(ch.problems[0].problem) : 'the hash chain verifies.');
+    var events = [];
+    months.forEach(function (m) { (m.history || []).forEach(function (h) { events.push(h); }); });
+    events.sort(function (a, b) { return a.created_at < b.created_at ? 1 : -1; });
+    var CLS = {prepared: 'wait', published: 'ok', refused: 'no'};
+    document.getElementById('ff-events-body').innerHTML = events.map(function (h) {
+      return '<tr data-event="' + esc(h.event_id) + '" data-kind="' + esc(h.event) + '"><td>' + esc(h.period) + '</td><td>' + tag(CLS[h.event] || '', h.event) +
+        (h.actor_kind !== 'person' ? ' <span class="ff-tag">' + esc(h.actor_kind) + '</span>' : '') + '</td><td>' + esc(h.actor) + '</td>' +
+        '<td><code>' + esc(short(h.content_digest)) + '</code></td><td><code>' + esc(h.step_id || '') + '</code></td><td>' + esc(h.reason) + '</td><td>' + esc(h.created_at) + '</td></tr>';
+    }).join('') || '<tr><td colspan="7">No bundle has been prepared: ICDEV[OS] reads every workload\'s cost as unverified.</td></tr>';
+    var waiting = months.filter(function (m) { return m.prepared && !m.prepared.decided; });
+    var box = document.getElementById('ff-publish');
+    box.innerHTML = waiting.map(function (m) {
+      var p = m.prepared;
+      return '<div data-waiting="' + esc(p.event_id) + '"><h3>Your step: ' + esc(m.period) + '</h3><p class="ff-help">Prepared by <b>' + esc(p.actor) +
+        '</b> at ' + esc(p.created_at) + ' from <code>' + esc(((p.detail || {}).export || {}).name || '') + '</code>, digest <code class="ff-waiting-digest">' +
+        esc(p.content_digest) + '</code> <span class="ff-tag wait">waiting for a person</span>. May not publish it: <b>' + esc(Object.keys(m.builders || {}).join(', ')) +
+        '</b>. A reason is required.</p><label for="ff-reason-' + esc(p.event_id) + '">Reason</label><input id="ff-reason-' + esc(p.event_id) + '" class="ff-reason" autocomplete="off">' +
+        '<p><button type="button" class="ff-btn" data-publish="publish" data-event-id="' + esc(p.event_id) + '">Publish to ICDEV[OS]</button> ' +
+        '<button type="button" class="ff-btn deny" data-publish="refuse" data-event-id="' + esc(p.event_id) + '">Refuse</button></p></div>';
+    }).join('');
+    var pubs = [];
+    months.forEach(function (m) { (m.published || []).forEach(function (p) { pubs.push(p); }); });
+    pubs.sort(function (a, b) { return a.created_at < b.created_at ? 1 : -1; });
+    var el = document.getElementById('ff-published');
+    if (pubs.length && !document.getElementById('ff-published-bundle')) {
+      var p = pubs[0];
+      el.innerHTML = '<p id="ff-newest-published">Newest published: <code>' + esc(short(p.content_digest)) + '</code> of ' + esc(p.period) + ' by ' + esc(p.actor) +
+        ' (prepared by ' + esc(p.prepared_by) + ', step <code>' + esc(p.step_id) + '</code>). <a href="' +
+        esc(icdevRoute('idp.idp_api_finops_focus_bundle', {event_id: p.event_id})) + '">The bundle as ICDEV[OS] imports it</a>.</p>';
+    }
+  }
+
+  function reloadLedger() {
+    return getJson(icdevFetch('idp.idp_api_finops_focus')).then(function (res) { if (res.ok) renderLedger(res.j); });
+  }
+
+  function load(name) {
+    current = name;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-export]'), function (el) {
+      el.setAttribute('aria-pressed', el.getAttribute('data-export') === name ? 'true' : 'false');
+    });
+    document.getElementById('ff-summary').textContent = 'Reading ' + name + '...';
+    return getJson(icdevFetch('idp.idp_api_finops_focus_preview', {}, {}, {export: name})).then(function (res) {
+      if (!res.ok) {
+        draft = null;
+        document.getElementById('ff-workloads-body').innerHTML = '<tr><td colspan="4">Nothing read: the export is refused.</td></tr>';
+        document.getElementById('ff-summary').innerHTML = '<span id="ff-refused">Refused (' + esc(res.j.code || 'error') + '): ' + esc(res.j.error || 'refused') + '</span>';
+        return;
+      }
+      renderDraft(res.j);
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var x = t.getAttribute('data-export');
+    if (x) { document.getElementById('ff-prepare-msg').textContent = ''; load(x); return; }
+    var dec = t.getAttribute('data-publish');
+    if (!dec) return;
+    var id = t.getAttribute('data-event-id');
+    var msg = document.getElementById('ff-publish-msg');
+    var reason = ((document.getElementById('ff-reason-' + id) || {}).value || '').trim();
+    if (!reason) { msg.textContent = 'A reason is required.'; return; }
+    var digestEl = t.closest('[data-waiting]').querySelector('.ff-waiting-digest');
+    getJson(icdevFetch('idp.idp_api_finops_focus_publish', {event_id: id},
+                       postInit({decision: dec, reason: reason, digest: (digestEl.textContent || '').trim()}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      var o = res.j;
+      msg.textContent = 'Recorded: the ' + o.period + ' bundle ' + o.event + ' by ' + o.decided_by + ' (step ' + o.step.step_id + ').';
+      if (o.bundle) {
+        document.getElementById('ff-published').innerHTML = '<p id="ff-published-bundle">Published bundle <code>' + esc(o.bundle.schema) + '</code>, digest <code id="ff-published-digest">' +
+          esc(o.bundle.content_digest) + '</code>, signed by ' + esc(o.bundle.publication.signed_by) + ' (prepared by ' + esc(o.bundle.publication.prepared_by) + ') at ' +
+          esc(o.bundle.publication.decided_at) + '. <a id="ff-bundle-link" href="' + esc(icdevRoute('idp.idp_api_finops_focus_bundle', {event_id: o.event_id})) +
+          '">The bundle as ICDEV[OS] imports it</a>.</p>';
+      }
+      reloadLedger();
+    });
+  });
+
+  document.getElementById('ff-prepare').addEventListener('click', function () {
+    var msg = document.getElementById('ff-prepare-msg');
+    if (!current || !draft) { msg.textContent = 'Read an export first.'; return; }
+    getJson(icdevFetch('idp.idp_api_finops_focus_prepare', {}, postInit({export: current, note: 'prepared on /idp/finops/focus'}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not prepared (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Prepared the ' + res.j.period + ' bundle ' + res.j.content_digest + ' as ' + res.j.prepared_by + '. A person who did not prepare it publishes it.';
+      reloadLedger();
+    });
+  });
+
+  document.getElementById('twin-observe').addEventListener('click', function () {
+    var box = document.getElementById('ff-twin-body');
+    getJson(icdevFetch('idp.idp_api_standards_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j;
+      var mine = function (id) { return String(id || '').indexOf('finops.focus') === 0; };
+      var checks = ((env.extra || {}).checks || []).filter(function (c) { return mine(c.id); });
+      var vs = (env.violations || []).filter(function (f) { return mine(f.rule_id); });
+      var ST = {verified: 'ok', unverified: 'wait', failed: 'no'};
+      box.innerHTML = '<p id="ff-twin-verdict">' + esc(checks.length) + ' FOCUS check(s), ' + esc(vs.length) + ' finding(s).</p>' +
+        '<ul id="ff-twin-checks">' + checks.map(function (c) {
+          return '<li data-check="' + esc(c.id) + '" data-status="' + esc(c.status) + '">' + tag(ST[c.status] || '', c.status) + ' ' + esc(c.label || c.id) +
+            (c.status !== 'verified' && c.reason ? ': ' + esc(c.reason) : '') + '</li>';
+        }).join('') + '</ul><ul id="ff-twin-findings">' + vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
+            ' &middot; thread <button type="button" class="ff-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
+        }).join('') + '</ul><div id="ff-thread"></div>';
+    });
+  });
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var th = t.getAttribute && t.getAttribute('data-thread');
+    if (!th) return;
+    getJson(icdevFetch('idp.idp_api_standards_twin', {}, {}, {thread: th})).then(function (res) {
+      var rec = res.j.record || {};
+      document.getElementById('ff-thread').innerHTML = res.j.resolved
+        ? '<p id="ff-thread-resolved">Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.period || '') + ' ' + esc(rec.event || '') +
+          ' by ' + esc(rec.actor || '') + ' ' + esc(rec.created_at || '') + ', digest <code>' + esc(short(rec.content_digest)) + '</code></p>'
+        : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';
+    });
+  });
+
+  renderLedger(initial);
+  var first = document.querySelector('[data-export]');
+  if (first) load(first.getAttribute('data-export'));
+})();
+</script>
+{% endblock %}

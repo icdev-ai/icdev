@@ -7802,6 +7802,30 @@ python tools/idp/golden_paths.py --drift --path model-service --keep .tmp/golden
 python tools/idp/golden_paths.py --seed
 ```
 
+
+### FOCUS cost bundles for ICDEV[OS]'s Cloud CoP (osx-cop-05)
+
+A provider's FOCUS 1.4 Cost and Usage export (CSV, JSON array or JSON lines, in
+`args/finops_focus.yaml` `exports.dir`) becomes one `icos-focus-cost/v1` bundle for
+ICDEV[OS]: every row validated against ICDEV[OS]'s pinned schema
+(`context/icos/focus-cost.schema.json`; one failing row refuses the export), each declared
+workload's total and the unattributed rows. A bundle is prepared on `/idp/finops/focus`
+(or by an agent through MCP) and published only by a person who did not prepare it.
+
+```bash
+# The DRAFT bundle of an export, deterministic given the export, the config and --at
+python tools/finops/focus_bundle.py --export tests/fixtures/finops/focus_1_4_sample.csv --at 2026-11-18T00:00:00Z --out .tmp/focus/draft.json
+
+# A PUBLISHED bundle (its publication or prepared event id, or latest), as ICDEV[OS] imports it
+python tools/finops/focus_bundle.py --published latest --out .tmp/focus/bundle.json
+
+# Would ICDEV[OS] import this file? (exit 1 with every reason it would not)
+python tools/finops/focus_bundle.py --verify .tmp/focus/bundle.json
+
+# The exports in the declared directory, and each billing month's ledger state
+python tools/finops/focus_bundle.py --list
+```
+
 ### Component Scorer (idp-score-01)
 
 The complement to the scorecard above: where `tools/idp/scorecard.py` grades a

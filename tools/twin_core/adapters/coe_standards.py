@@ -66,6 +66,16 @@ threaded to the ledger row (``coe_golden_path:<event id>``):
 * ``coe.golden_path.drift`` (high) / ``.drift_stale`` (medium) / ``.drift_old`` (low);
 * ``coe.golden_path.bootstrap_only`` / ``.awaiting_publish`` / ``.declares_retired_standard``
   (low), ``.self_published`` / ``.chain_broken`` (critical).
+
+osx-cop-05 observes ``finops.focus`` too (``tools/finops/focus_bundle.py`` holds the
+evidence and judgement): the FOCUS cost bundles FinOps hands ICDEV[OS]'s Cloud CoP, in
+``finops_focus_events``. With nothing published, the bundle and every declared
+workload's cost are unverified checks, never a pass; a self-published or off-contract
+newest bundle counts for nothing. Findings, each threaded to the ledger row
+(``finops_focus:<event id>``):
+
+* ``finops.focus.self_published`` / ``.chain_broken`` (critical), ``.off_contract`` (high);
+* ``finops.focus.stale`` (medium), ``.unattributed`` / ``.awaiting_publish`` (low).
 """
 from __future__ import annotations
 
@@ -87,7 +97,8 @@ from tools.twin_core.registry import register_twin
 class EngineeringStandardsTwin(GovernanceTwinAdapter):
     canvas_key = "idp"
     display_name = "Engineering standards register"
-    observes = ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance", "coe.golden_paths")
+    observes = ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance", "coe.golden_paths",
+                "finops.focus")
 
     def replay(self, observation_id: str) -> dict:
         """Re-judge a recorded observation from its evidence (see governance.replay)."""
@@ -104,6 +115,10 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
         ev["conformance"] = conformance.twin_evidence()
         # icx-coe-04: the golden paths against the standards in force.
         ev["golden_paths"] = golden_paths.twin_evidence()
+        # osx-cop-05: the FOCUS cost bundles FinOps hands ICDEV[OS]'s Cloud CoP.
+        from tools.finops import focus_bundle
+
+        ev["finops_focus"] = focus_bundle.twin_evidence()
         return ev
 
     def _collect_standards(self) -> dict:
@@ -258,6 +273,15 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
 
             c, f, s = golden_paths.twin_judge(evidence["golden_paths"] or {},
                                               policy.get("golden_paths") or {},
+                                              evidence.get("observed_at") or "")
+            checks += c
+            findings += f
+            extra_summary.update(s)
+        if "finops_focus" in evidence:
+            from tools.finops import focus_bundle
+
+            c, f, s = focus_bundle.twin_judge(evidence["finops_focus"] or {},
+                                              policy.get("finops_focus") or {},
                                               evidence.get("observed_at") or "")
             checks += c
             findings += f

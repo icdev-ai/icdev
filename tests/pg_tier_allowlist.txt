@@ -149,3 +149,6 @@ tests/test_icx_coe_03_ambient.py
 # (PL/pgSQL append-only triggers, UNIQUE(path_id, prev_hash)) and the decl-wft-coe-golden-path-publish step in
 # wf_decision_steps.
 tests/test_icx_coe_04_ambient.py
+# osx-cop-05: a FOCUS cost bundle prepared and published on the ambient PG: finops_focus_events (PL/pgSQL
+# append-only triggers, UNIQUE(period, prev_hash)) and the decl-wft-finops-focus-publish step in wf_decision_steps.
+tests/test_osx_cop_05_ambient.py

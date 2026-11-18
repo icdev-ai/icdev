@@ -59,8 +59,8 @@ def test_every_template_is_well_formed_and_decides_its_own_surfaces():
     # icx-ace-01 auto-dispatch; icx-mdz-01 five modernisation; icx-mdz-03 process review; icx-mdz-05 capacity review;
     # icx-mdz-06 survivor IV&V sign-off; icx-coe-01 the standards lifecycle (review, adopt, deprecate);
     # icx-coe-02 exemption grant and renew, ADR accept and supersede; icx-coe-03 conformance bundle publish;
-    # icx-coe-04 golden path publish and retire
-    assert len(templates) == 27
+    # icx-coe-04 golden path publish and retire; osx-cop-05 FOCUS cost bundle publish
+    assert len(templates) == 28
     owners = {}
     for tid, tmpl in templates.items():
         assert declared.validate_template(tmpl) == [], tid
@@ -96,6 +96,8 @@ def test_every_template_is_well_formed_and_decides_its_own_surfaces():
         "idp.idp_api_conformance_publish",
         # icx-coe-04: a golden path version is published or retired by a person, never its author
         "idp.idp_api_golden_path_publish", "idp.idp_api_golden_path_retire",
+        # osx-cop-05: a person (never the preparer) publishes a FOCUS cost bundle to ICDEV[OS]
+        "idp.idp_api_finops_focus_publish",
     }
     assert declared.manual_stage(templates["decl-wft-cortex-award"])["separate_from"] == "proposer"
 
@@ -114,10 +116,10 @@ def test_a_malformed_template_is_named():
 def test_seed_is_idempotent_and_never_a_canvas_default(declared, wf_db):
     first = declared.seed_declared_templates()
     second = declared.seed_declared_templates()
-    assert len(first["seeded"]) == 27 and second == {"seeded": [], "updated": []}
+    assert len(first["seeded"]) == 28 and second == {"seeded": [], "updated": []}
     rows = _rows(wf_db, "SELECT id, is_default, is_system FROM wf_templates "
                         "WHERE id LIKE 'decl-wft-%'")
-    assert len(rows) == 27 and all(r[1] == 0 and r[2] == 1 for r in rows)
+    assert len(rows) == 28 and all(r[1] == 0 and r[2] == 1 for r in rows)
 
 
 # ── take_step ────────────────────────────────────────────────────────────────
@@ -610,7 +612,7 @@ def test_the_decisions_page_lists_and_decides(wf_db):
     assert as_pm.post(f"/decisions/api/steps/{prop['step_id']}/decide",
                       json={"decision": "accept"}).status_code == 409
     templates = as_pm.get("/decisions/api/templates").get_json()["templates"]
-    assert len(templates) == 27  # icx-mdz-05, icx-mdz-06: 1 each; icx-coe-01: 3; icx-coe-02: 4; icx-coe-03: 1; icx-coe-04: 2
+    assert len(templates) == 28  # icx-mdz-05, icx-mdz-06: 1 each; icx-coe-01: 3; icx-coe-02: 4; icx-coe-03: 1; icx-coe-04: 2; osx-cop-05: 1
 
 
 def test_the_mcp_tool_reads_and_never_decides(wf_db):
@@ -618,7 +620,7 @@ def test_the_mcp_tool_reads_and_never_decides(wf_db):
     from tools.mcp.tool_registry import READ_ONLY_DECLARATIONS, tool_authorization
 
     out = handle_workflow_decision_steps({"status": "pending"})
-    assert out["steps"] == [] and len(out["templates"]) == 27  # icx-coe-02: exemptions and ADRs; icx-coe-03: publish; icx-coe-04: golden paths
+    assert out["steps"] == [] and len(out["templates"]) == 28  # icx-coe-02: exemptions and ADRs; icx-coe-03: publish; icx-coe-04: golden paths; osx-cop-05: FOCUS
     assert READ_ONLY_DECLARATIONS["workflow_decision_steps"] is True
     assert tool_authorization("workflow_decision_steps")["tier"] == "read"
 
