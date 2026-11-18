@@ -2046,6 +2046,8 @@ components:
       href: /idp/exemptions
     - label: Architecture Decisions
       href: /idp/adrs
+    - label: Standards Scorecards
+      href: /idp/conformance
   iqe:
     adapter_module: tools.iqe.adapters.idp
     collections:

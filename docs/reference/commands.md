@@ -7751,6 +7751,32 @@ python tools/idp/adrs.py --show D-COE-2 --json
 python tools/idp/adrs.py --export D-COE-2
 ```
 
+### Standards scorecards and conformance bundles (icx-coe-03)
+
+Each repo declared in `args/coe_conformance.yaml` (ICDEV[IT] `it`, ICDEV[OS] `os`,
+ICDEV[FT] `ft`) is scored against the engineering standards in force that apply to
+it, with its delivery evidence (DORA four keys plus AI-assisted rework, from the git
+history of main, a CI-run snapshot and a board export), and exported as one
+`icos-conformance/v1` bundle for ICDEV[OS] (draft schema
+`context/icos/conformance.schema.json`). A bundle is prepared on `/idp/conformance`
+(or by an agent through MCP) and published only by a person who did not prepare it.
+
+```bash
+# A repo's bundle, deterministic given its inputs (a draft unless a person published this content)
+python tools/idp/conformance_export.py --repo it --out .tmp/coe --as-of 2026-11-17 --at 2026-11-17T00:00:00Z
+python tools/idp/conformance_export.py --repo os --out .tmp/coe --ci os.ci.json
+python tools/idp/conformance_export.py --repo it --out .tmp/coe --ci it.ci.json --board it.board.json
+
+# The newest PUBLISHED bundle, as ICDEV[OS] imports it
+python tools/idp/conformance_export.py --repo it --published --out .tmp/coe
+
+# Write the git history read live to the sources dir (args/coe_conformance.yaml sources_dir)
+python tools/idp/conformance_export.py --repo ft --snapshot
+
+# Delivery evidence alone, from one checkout
+python tools/idp/dora.py --repo-path . --ref origin/main --at 2026-11-17 --json
+```
+
 ### Component Scorer (idp-score-01)
 
 The complement to the scorecard above: where `tools/idp/scorecard.py` grades a

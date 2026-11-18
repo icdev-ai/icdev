@@ -1,0 +1,306 @@
+<!-- CUI // SP-CTI — Scorecards against adopted standards, delivery evidence, conformance bundles (icx-coe-03) -->
+{% extends "base.html" %}
+{% block title %}Standards scorecards — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .std-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .std-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .std-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .std-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .std-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .std-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .std-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .std-card th, .std-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .std-card th { color: var(--text-secondary); font-weight: 600; }
+  .std-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .std-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .std-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .std-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .std-tag.boot { background: var(--status-blue-bg); border-color: var(--status-blue); }
+  .std-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .std-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .std-btn.deny { border-color: var(--status-red); }
+  .std-btn[aria-pressed="true"] { border-width: 2px; font-weight: 600; }
+  .std-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .std-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .std-wrap input { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .std-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .std-row > div { min-width: 200px; }
+  .std-wrap code { color: var(--text-primary); word-break: break-all; }
+  /* Link colour per theme, at AA contrast on the card and the page in each (axe, e2e). */
+  .std-wrap { --std-link: #8cc4ff; }
+  html[data-theme="light"] .std-wrap { --std-link: #0d4f9e; }
+  .std-wrap a, .std-wrap .std-link { color: var(--std-link); text-decoration: underline; }
+</style>
+
+<div class="std-wrap">
+  <nav aria-label="Breadcrumb" class="std-help"><a href="{{ url_for('idp.idp_portal') }}">Developer Portal</a> /
+    <a href="{{ url_for('idp.idp_standards_page') }}">Engineering standards</a> / Standards scorecards</nav>
+  <h1>Standards scorecards and conformance bundles</h1>
+  <p class="std-help" id="cf-help">
+    Each repo is scored against the <a href="{{ url_for('idp.idp_standards_page') }}">engineering standards</a> that
+    are <b>in force</b> and declared for it (<code>{{ view.get('config', {}).get('path', 'args/coe_conformance.yaml') }}</code>).
+    A standard checked by a scorecard rule is scored <b>by machine</b> across every service the rule applies to, with
+    the live <a href="{{ url_for('idp.idp_exemptions_page') }}">exemptions</a> applied; an <b>expired exemption
+    fails</b> it. A standard checked by a manual evidence step shows <b>needs evidence</b>: a person reads it, and it is
+    never passed. A standard that is not adopted is listed, not scored. Delivery evidence is the DORA four keys and the
+    rework rate of AI-assisted work, each with its window, its sample size and the digests of its sources. A metric
+    with no data is <b>unverified</b>, never zero. Each repo's results go to ICDEV[OS] as one signed
+    <code>icos-conformance/v1</code> bundle: anyone prepares it, and a person who did not prepare it publishes it
+    (<code>{{ template }}</code>), bound to its digest. Decisions behind the standards are on the
+    <a href="{{ url_for('idp.idp_adrs_page') }}">ADRs</a> page; the component ladder is on the
+    <a href="{{ url_for('idp.idp_scorecards_page') }}">portal scorecard</a>.
+  </p>
+  {% if error %}<p class="std-msg">The conformance ledger could not be read: {{ error }}</p>{% endif %}
+
+  <div class="std-card">
+    <h2>Repo</h2>
+    <div class="std-row" id="cf-repos" role="group" aria-label="Repo">
+      {% for r in view.get('repos') or [] %}
+      <button type="button" class="std-btn" data-repo="{{ r.key }}" aria-pressed="false">{{ r.name }}</button>
+      {% endfor %}
+    </div>
+    <div class="std-row">
+      <div><label for="cf-asof">As of (YYYY-MM-DD, blank for today)</label><input id="cf-asof" autocomplete="off"></div>
+      <div><button type="button" class="std-btn" id="cf-reload">Grade again</button></div>
+    </div>
+    <div class="std-msg" id="cf-summary" aria-live="polite">Pick a repo to grade it.</div>
+  </div>
+
+  <div class="std-card">
+    <h2>Standards</h2>
+    <table id="cf-standards">
+      <thead><tr><th scope="col">Standard</th><th scope="col">State</th><th scope="col">Check</th><th scope="col">Status</th><th scope="col">Services</th><th scope="col">Why</th></tr></thead>
+      <tbody id="cf-standards-body"><tr><td colspan="6">Not graded yet.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="std-card">
+    <h2>Exemptions that touch this repo</h2>
+    <table id="cf-exemptions">
+      <thead><tr><th scope="col">Exemption</th><th scope="col">Scope</th><th scope="col">Waives</th><th scope="col">State</th><th scope="col">Expires</th></tr></thead>
+      <tbody id="cf-exemptions-body"><tr><td colspan="5">Not graded yet.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="std-card">
+    <h2>Delivery evidence</h2>
+    <p class="std-help" id="cf-window">The DORA four keys and AI-assisted rework over the window, from the declared sources.</p>
+    <table id="cf-metrics">
+      <thead><tr><th scope="col">Metric</th><th scope="col">Value</th><th scope="col">Sample size</th><th scope="col">Window</th><th scope="col">Status</th><th scope="col">Sources / why</th></tr></thead>
+      <tbody id="cf-metrics-body"><tr><td colspan="6">Not graded yet.</td></tr></tbody>
+    </table>
+    <div id="cf-sources" class="std-help"></div>
+  </div>
+
+  <div class="std-card">
+    <h2>Architecture decisions</h2>
+    <div id="cf-adrs" class="std-help">Not graded yet.</div>
+  </div>
+
+  <div class="std-card" id="cf-bundle">
+    <h2>Conformance bundle</h2>
+    <p class="std-help">Preparing records the repo's bundle, as graded now, at its digest. It decides nothing. A person
+      who did not prepare it then publishes it to ICDEV[OS] or refuses it, with a reason. Only a published bundle
+      leaves.</p>
+    <div id="cf-ledger" class="std-help"></div>
+    <p><button type="button" class="std-btn" id="cf-prepare">Prepare bundle</button></p>
+    <div class="std-msg" id="cf-prepare-msg" role="status"></div>
+    <div id="cf-publish"></div>
+    <div class="std-msg" id="cf-publish-msg" role="status"></div>
+    <div id="cf-published" class="std-help"></div>
+  </div>
+
+  <div class="std-card" id="cf-twin">
+    <h2>Twin</h2>
+    <p class="std-help">The Developer Portal's governance twin observes the bundles: a repo with no published bundle is
+      unverified, a published bundle that carries a failing standard, an expired exemption or an unverified metric is a
+      finding, and so is one waiting too long for a person. Each finding carries its thread to the ledger row it rests
+      on. Recorded observations and their replay are on the <a href="/twin-observatory/governance">governance twins</a> page.</p>
+    <p><button type="button" class="std-btn" id="twin-observe">Observe now</button></p>
+    <div id="cf-twin-body" class="std-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var repos = {{ (view.get('repos') or [])|tojson }};
+  var current = null;   // the repo key
+  var view = null;      // the repo's view: {bundle, ledger}
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  var STATUS = {pass: ['ok', 'pass (machine)'], fail: ['no', 'fail'], needs_evidence: ['wait', 'needs evidence'],
+                unverified: ['wait', 'UNVERIFIED'], not_scored: ['', 'not scored'], not_applicable: ['', 'not applicable'],
+                measured: ['ok', 'measured'], active: ['ok', 'active'], expired: ['no', 'expired'],
+                expiring: ['wait', 'expiring'], pending: ['wait', 'pending']};
+  function tag(st) {
+    var t = STATUS[st] || ['', st || 'none'];
+    return '<span class="std-tag ' + t[0] + '" data-status="' + esc(st) + '">' + esc(t[1]) + '</span>';
+  }
+  function short(d) { return d ? String(d).slice(0, 16) : ''; }
+  function checkText(c) {
+    if (c.kind === 'scorecard_rule') return 'scorecard rule <code>' + esc(c.scorecard) + ' / ' + esc(c.rule) + '</code>';
+    if (c.kind === 'manual_evidence') return 'manual evidence: ' + esc(c.name);
+    return 'no check';
+  }
+  function num(m) {
+    if (m.value == null) return '&mdash;';
+    if (m.unit === 'ratio') return esc((m.value * 100).toFixed(1)) + '%';
+    if (m.unit === 'hours') return esc(m.value) + ' h';
+    return esc(m.value) + ' / week';
+  }
+  var LABELS = {deployment_frequency: 'Deployment frequency', lead_time: 'Lead time for changes',
+                change_failure_rate: 'Change failure rate', time_to_restore: 'Time to restore',
+                ai_rework_rate: 'Rework rate, AI-assisted'};
+
+  function render(v) {
+    view = v;
+    var b = v.bundle;
+    document.getElementById('cf-summary').innerHTML =
+      '<b>' + esc(b.repo.name) + '</b> as of <b>' + esc(b.as_of) + '</b> &middot; head <code>' + esc(short(b.repo.head) || 'not read') + '</code>' +
+      ' &middot; bundle digest <code id="cf-digest">' + esc(b.content_digest) + '</code>' +
+      ' &middot; standards: ' + Object.keys(b.summary.standards).filter(function (k) { return b.summary.standards[k]; })
+        .map(function (k) { return tag(k) + ' ' + esc(b.summary.standards[k]); }).join(' ');
+    var cards = {};
+    (b.scorecards || []).forEach(function (c) { cards[c.standard_id] = c; });
+    document.getElementById('cf-standards-body').innerHTML = (b.standards || []).map(function (s) {
+      var c = cards[s.id];
+      var svc = c ? esc(c.services.passing) + ' pass / ' + esc(c.services.applicable) + (c.services.failing ? ', ' + esc(c.services.failing) + ' fail' : '') +
+        (c.services.exempt ? ', ' + esc(c.services.exempt) + ' exempt' : '') + (c.services.expired ? ', <b>' + esc(c.services.expired) + ' expired exemption</b>' : '') : '';
+      return '<tr data-std="' + esc(s.id) + '" data-status="' + esc(s.status) + '"><td><a href="' + esc(s.href) + '">' + esc(s.id) + '</a><br>' + esc(s.title) + '</td>' +
+        '<td>' + esc(s.state) + (s.adopted_by_kind === 'bootstrap' ? ' <span class="std-tag boot">seeded</span>' : '') + '</td>' +
+        '<td>' + checkText(s.check) + '</td><td>' + tag(s.status) + '</td><td>' + svc + '</td><td>' + esc(s.why) + '</td></tr>';
+    }).join('') || '<tr><td colspan="6">The register has no standard.</td></tr>';
+    document.getElementById('cf-exemptions-body').innerHTML = (b.exemptions || []).map(function (x) {
+      return '<tr data-ex="' + esc(x.exemption_key) + '" data-state="' + esc(x.state) + '"><td><a href="' + esc(x.href) + '">' + esc(x.exemption_key) + '</a></td>' +
+        '<td>' + esc(x.scope) + ': ' + esc(x.rule) + ' on ' + esc(x.component) + '</td><td>' + esc((x.standard_ids || []).join(', ')) + '</td>' +
+        '<td>' + tag(x.state) + '</td><td>' + esc(x.expires_on || 'none') + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">No exemption touches this repo.</td></tr>';
+    var d = b.delivery;
+    document.getElementById('cf-window').innerHTML = 'Window: <b>' + esc(d.window.days) + ' days</b> ending ' + esc(d.window.as_of) +
+      ' (' + esc(d.window.start) + ' to ' + esc(d.window.end) + '). Definitions digest <code>' + esc(short(d.definitions_digest)) + '</code>; rework within ' +
+      esc(d.definitions.rework_days) + ' days.';
+    document.getElementById('cf-metrics-body').innerHTML = Object.keys(LABELS).map(function (k) {
+      var m = d.metrics[k];
+      return '<tr data-metric="' + esc(k) + '" data-status="' + esc(m.status) + '"><td>' + esc(LABELS[k]) + '</td><td>' + num(m) + '</td>' +
+        '<td data-sample="' + esc(m.sample_size) + '">n = ' + esc(m.sample_size) + '</td><td>' + esc(m.window_days) + ' days</td><td>' + tag(m.status) + '</td>' +
+        '<td>' + (m.status === 'measured' ? (m.sources || []).map(function (s) { return '<code>' + esc(short(s)) + '</code>'; }).join(' ') : esc(m.why)) + '</td></tr>';
+    }).join('');
+    document.getElementById('cf-sources').innerHTML = 'Sources: ' + (d.sources || []).map(function (s) {
+      return '<span data-source="' + esc(s.kind) + '">' + esc(s.kind) + (s.digest ? ' <code>' + esc(short(s.digest)) + '</code>' : ' <b>missing</b> (' + esc(s.missing) + ')') + '</span>';
+    }).join(' &middot; ');
+    var a = b.adrs;
+    document.getElementById('cf-adrs').innerHTML = esc(a.total) + ' ADR records (' + Object.keys(a.by_status).map(function (k) { return esc(k) + ' ' + esc(a.by_status[k]); }).join(', ') +
+      '). Linked to this repo\'s standards: ' + ((a.linked || []).map(function (x) { return '<a href="' + esc(x.href) + '">' + esc(x.id) + '</a> (' + esc(x.status) + ')'; }).join(', ') || 'none') + '.';
+    renderLedger(v.ledger);
+  }
+
+  function renderLedger(l) {
+    var p = l.prepared, pub = l.published;
+    document.getElementById('cf-ledger').innerHTML =
+      (p ? 'Newest prepared: <code id="cf-prepared-digest">' + esc(short(p.content_digest)) + '</code> by ' + esc(p.actor) + ' at ' + esc(p.created_at) +
+        (p.decided ? ' (' + esc(p.decided.event) + ' by ' + esc(p.decided.actor) + ')' : ' <span class="std-tag wait">waiting for a person</span>') : 'No bundle of this repo has been prepared.') +
+      '<br>' + (pub ? 'Newest published: <code>' + esc(short(pub.content_digest)) + '</code> by ' + esc(pub.actor) + ' (step <code>' + esc(pub.step_id) + '</code>)' : 'No bundle of this repo has been published: ICDEV[OS] reads it as unverified.') +
+      (l.chain && l.chain.intact === false ? '<br><b>The ledger does not verify:</b> ' + esc(l.chain.problems[0].problem) : '');
+    var box = document.getElementById('cf-publish');
+    if (p && !p.decided) {
+      var who = Object.keys(l.builders || {});
+      box.innerHTML = '<h3>Your step</h3><p class="std-help">May not publish it: <b>' + esc(who.join(', ')) + '</b>. A reason is required. Bound to digest <code>' +
+        esc(short(p.content_digest)) + '</code>.</p><label for="cf-reason">Reason</label><input id="cf-reason" autocomplete="off">' +
+        '<p><button type="button" class="std-btn" data-publish="publish">Publish to ICDEV[OS]</button> <button type="button" class="std-btn deny" data-publish="refuse">Refuse</button></p>';
+    } else {
+      box.innerHTML = '';
+    }
+  }
+
+  function load(key) {
+    current = key;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-repo]'), function (el) {
+      el.setAttribute('aria-pressed', el.getAttribute('data-repo') === key ? 'true' : 'false');
+    });
+    var asOf = (document.getElementById('cf-asof').value || '').trim();
+    document.getElementById('cf-summary').textContent = 'Grading ' + key + '...';
+    return getJson(icdevFetch('idp.idp_api_conformance_repo', {repo: key}, {}, asOf ? {as_of: asOf} : {})).then(function (res) {
+      if (!res.ok) { document.getElementById('cf-summary').textContent = 'Not graded (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      render(res.j);
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var r = t.getAttribute('data-repo');
+    if (r) { document.getElementById('cf-prepare-msg').textContent = ''; document.getElementById('cf-publish-msg').textContent = ''; load(r); return; }
+    var dec = t.getAttribute('data-publish');
+    if (!dec || !view) return;
+    var msg = document.getElementById('cf-publish-msg');
+    var reason = ((document.getElementById('cf-reason') || {}).value || '').trim();
+    if (!reason) { msg.textContent = 'A reason is required.'; return; }
+    var p = view.ledger.prepared;
+    getJson(icdevFetch('idp.idp_api_conformance_publish', {repo: current}, postInit({decision: dec, reason: reason, digest: p.content_digest}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      var o = res.j;
+      msg.textContent = 'Recorded: ' + o.repo + ' bundle ' + o.event + ' by ' + o.decided_by + ' (step ' + o.step.step_id + ').';
+      if (o.bundle) {
+        document.getElementById('cf-published').innerHTML = '<p id="cf-published-bundle">Published bundle <code>' + esc(o.bundle.schema) + '</code>, digest <code id="cf-published-digest">' +
+          esc(o.bundle.content_digest) + '</code>, signed by ' + esc(o.bundle.publication.signed_by) + ' at ' + esc(o.bundle.publication.decided_at) +
+          '. <a id="cf-bundle-link" href="' + esc(icdevRoute('idp.idp_api_conformance_bundle', {repo: current})) + '">The bundle as ICDEV[OS] imports it</a>.</p>';
+      }
+      getJson(icdevFetch('idp.idp_api_conformance_repo', {repo: current})).then(function (res2) { if (res2.ok) renderLedger(res2.j.ledger); view = res2.ok ? res2.j : view; });
+    });
+  });
+
+  document.getElementById('cf-prepare').addEventListener('click', function () {
+    var msg = document.getElementById('cf-prepare-msg');
+    if (!current) { msg.textContent = 'Pick a repo first.'; return; }
+    var asOf = (document.getElementById('cf-asof').value || '').trim();
+    getJson(icdevFetch('idp.idp_api_conformance_prepare', {repo: current}, postInit({as_of: asOf, note: 'prepared on /idp/conformance'}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not prepared (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Prepared ' + res.j.repo + ' bundle ' + res.j.content_digest + ' as ' + res.j.prepared_by + '. A person who did not prepare it publishes it.';
+      load(current);
+    });
+  });
+  document.getElementById('cf-reload').addEventListener('click', function () { if (current) load(current); });
+
+  document.getElementById('twin-observe').addEventListener('click', function () {
+    var box = document.getElementById('cf-twin-body');
+    getJson(icdevFetch('idp.idp_api_standards_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j;
+      var vs = (env.violations || []).filter(function (f) { return String(f.rule_id).indexOf('coe.conformance') === 0; });
+      box.innerHTML = '<p id="cf-twin-verdict">Verdict ' + tag(env.verdict) + ' coverage ' + esc(env.coverage_score) + ', ' + esc(vs.length) + ' conformance finding(s).</p>' +
+        '<ul>' + vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
+            ' &middot; thread <button type="button" class="std-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
+        }).join('') + '</ul><div id="cf-thread"></div>';
+    });
+  });
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var th = t.getAttribute && t.getAttribute('data-thread');
+    if (!th) return;
+    getJson(icdevFetch('idp.idp_api_standards_twin', {}, {}, {thread: th})).then(function (res) {
+      var rec = res.j.record || {};
+      document.getElementById('cf-thread').innerHTML = res.j.resolved
+        ? '<p id="cf-thread-resolved">Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.repo || '') + ' ' + esc(rec.event || '') +
+          ' by ' + esc(rec.actor || '') + ' ' + esc(rec.created_at || '') + ', digest <code>' + esc(short(rec.content_digest)) + '</code></p>'
+        : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';
+    });
+  });
+
+  if (repos.length) load(repos[0].key);
+})();
+</script>
+{% endblock %}

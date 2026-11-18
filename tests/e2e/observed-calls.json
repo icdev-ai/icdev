@@ -444,6 +444,17 @@
     "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
    ]
   },
+  "GET idp.idp_api_conformance_repo": {
+   "endpoint": "idp.idp_api_conformance_repo",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "score, see evidence and unverified, prepare, refuse the preparer, publish, see the bundle, open the twin thread",
+    "the standards scorecards page in the dark theme has no axe violations",
+    "the standards scorecards page in the light theme has no axe violations"
+   ]
+  },
   "GET idp.idp_api_exemption": {
    "endpoint": "idp.idp_api_exemption",
    "method": "GET",
@@ -491,6 +502,15 @@
    "test": false,
    "tests": [
     "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
+   ]
+  },
+  "GET idp.idp_conformance_page": {
+   "endpoint": "idp.idp_conformance_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "score, see evidence and unverified, prepare, refuse the preparer, publish, see the bundle, open the twin thread"
    ]
   },
   "GET idp.idp_exemptions_page": {
@@ -1049,6 +1069,24 @@
    "test": false,
    "tests": [
     "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "POST idp.idp_api_conformance_prepare": {
+   "endpoint": "idp.idp_api_conformance_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "score, see evidence and unverified, prepare, refuse the preparer, publish, see the bundle, open the twin thread"
+   ]
+  },
+  "POST idp.idp_api_conformance_publish": {
+   "endpoint": "idp.idp_api_conformance_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "score, see evidence and unverified, prepare, refuse the preparer, publish, see the bundle, open the twin thread"
    ]
   },
   "POST idp.idp_api_exemption_decide": {

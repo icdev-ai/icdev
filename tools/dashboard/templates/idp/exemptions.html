@@ -46,7 +46,8 @@
     decides nothing. Granting (<code>{{ templates.grant }}</code>) and renewing (<code>{{ templates.renew }}</code>)
     are a person's declared steps, with a reason, bound to the exemption's digest. The requester never grants their
     own. Nothing renews by itself. Revoking is a stop: immediate, with a reason. See the effect on the
-    <a href="{{ url_for('idp.idp_scorecards_page') }}">scorecard</a>.
+    <a href="{{ url_for('idp.idp_scorecards_page') }}">scorecard</a> and on the
+    <a href="{{ url_for('idp.idp_conformance_page') }}">standards scorecards</a> per repo.
   </p>
 
   <div class="std-card" id="ex-summary" aria-live="polite"></div>

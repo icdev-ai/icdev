@@ -697,6 +697,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # (seeded / proposed / accepted / returned / superseded / deprecated), hash-chained
         # per ADR. idp_rule_exemptions (above) gained its triggers in the same migration.
         "coe_adr_events",
+        # icx-coe-03, migration 20261118024513: the conformance bundle ledger (prepared, then a
+        # person publishes or refuses), hash-chained per repo. Only a published bundle leaves.
+        "coe_conformance_events",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
         # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)

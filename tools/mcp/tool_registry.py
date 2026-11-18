@@ -9182,6 +9182,31 @@ RESOURCE_REGISTRY = {
             "required": ["id", "title", "context", "decision", "consequences"],
         },
     },
+    # -- scorecards against adopted standards, conformance bundles (icx-coe-03) -
+    "coe_conformance": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_conformance",
+        "description": "Read the Engineering CoE scorecards per repo (/idp/conformance): ICDEV[IT], ICDEV[OS] and ICDEV[FT] (args/coe_conformance.yaml). With no repo: each repo's newest prepared and published icos-conformance/v1 bundle (digest, who prepared it, who published it). With repo: that repo graded now -- every engineering standard with its status (pass or fail by machine from an IDP scorecard rule with the live exemptions applied, an expired exemption failing it; needs_evidence for a manual evidence step, never passed; not_scored when not adopted; not_applicable when not declared for the repo; unverified when nothing was measured), the exemptions with expiry, the delivery evidence (DORA deployment frequency, lead time, change failure rate, time to restore, and the rework rate of AI-assisted deployments, each with window, sample size and source digests; no data is unverified, never zero) and the linked ADRs. published=true returns the newest published bundle as ICDEV[OS] imports it. Read-only: prepares and publishes nothing.",
+        "input_schema": {"type": "object", "properties": {
+            "repo": {"type": "string", "description": "it, os or ft"},
+            "as_of": {"type": "string", "description": "Grade as of this date (YYYY-MM-DD)"},
+            "published": {"type": "boolean", "description": "Return the newest published bundle of repo"}}},
+    },
+    "coe_conformance_prepare": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_conformance_prepare",
+        "description": "Prepare a repo's icos-conformance/v1 bundle as a DRAFT, recorded as the agent's (agent:<name>): it is built from the register, the exemption log and the declared delivery sources and recorded at its digest. It decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or refuses it on /idp/conformance, a declared step an agent cannot take. Give repo (it, os or ft) and optionally as_of (YYYY-MM-DD).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The preparing agent's name (recorded as agent:<name>)"},
+                "repo": {"type": "string"}, "as_of": {"type": "string"}, "note": {"type": "string"},
+            },
+            "required": ["repo"],
+        },
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -9901,6 +9926,10 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "coe_exemption_request":                    False,
     "coe_adrs":                                 True,
     "coe_adr_propose":                          False,
+    # icx-coe-03: conformance bundles. The read grades and reads; prepare records a draft
+    # bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
+    "coe_conformance":                          True,
+    "coe_conformance_prepare":                  False,
 })
 
 

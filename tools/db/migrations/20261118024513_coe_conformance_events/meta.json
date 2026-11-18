@@ -1,0 +1,7 @@
+{
+  "description": "conformance bundle ledger: prepared, then a person publishes or refuses; append-only and hash-chained (icx-coe-03)",
+  "date": "2026-11-18",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

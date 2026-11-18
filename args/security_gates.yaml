@@ -2359,3 +2359,34 @@ coe_adrs:
   note: >
     The 676 ADRs migrated from the flat log were recorded by the labelled bootstrap identity
     (args/coe_records.yaml adrs.seed_identity), never a person's signature.
+
+
+# Scorecards against adopted standards, delivery evidence, conformance bundles (icx-coe-03)
+#
+# Enforced by tools/idp/conformance.py, tools/idp/dora.py and the declared template
+# args/workflow_hitl_templates/coe-conformance-publish.yaml; tested in
+# tests/test_icx_coe_03_*.py (gated: core.d/icx-coe-03.txt). The bundle is validated against
+# the pinned draft schema context/icos/conformance.schema.json before it is recorded.
+coe_conformance:
+  blocking:
+    - manual_step_scored_as_pass     # a manual evidence step is needs_evidence, never pass
+    - expired_exemption_passes       # an expired exemption FAILS the standard whose rule it waived
+    - unadopted_standard_scored      # a standard not in force is listed (not_scored), never scored
+    - metric_without_data_valued     # no data is unverified (value null, why given), never zero
+    - preparer_publishes             # the preparer never publishes (separate_from: builders)
+    - step_by_non_person             # a service key or agent prepares a draft; it never publishes
+    - publish_on_stale_digest        # the prepared bundle changed since the person read it
+    - bundle_off_schema              # a bundle that does not meet the pinned draft, or whose digest is not its content's
+    - schema_unpinned                # context/icos/conformance.schema.json changed without re-pinning
+    - chain_broken                   # a ledger row that does not verify blocks any new event for that repo
+  warning:
+    - repo_unpublished               # twin: coe.conformance.<repo> unverified (never passed)
+    - standard_failing               # twin: coe.conformance.standard_failing
+    - exemption_expired_in_bundle    # twin: coe.conformance.expired_exemption
+    - metric_unverified              # twin: coe.conformance.metric_unverified
+    - bundle_stale                   # twin: coe.conformance.stale
+    - awaiting_publish               # twin: coe.conformance.awaiting_publish
+  note: >
+    Delivery metrics are computed from declared sources only (git history of main, a CI-run
+    snapshot passed in, a board export), never the live board and never a live CI fetch.
+    Outcomes, not adoption counts.

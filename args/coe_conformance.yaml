@@ -1,0 +1,110 @@
+# CUI // SP-CTI
+# Engineering CoE: scorecards against adopted standards, delivery evidence, and the conformance bundle
+# per repo (icx-coe-03). Read by tools/idp/conformance.py and tools/idp/dora.py. Why: docs/reference/adrs.md,
+# D-COE-3.
+#
+# NOTHING HERE IS A RESULT. This file declares which repos are scored, which standards apply to each,
+# where each repo's delivery history is read from, and how every delivery metric is defined. Every
+# number in a bundle is computed from those declared sources; a metric with no data is UNVERIFIED,
+# never zero and never passed.
+
+version: 1
+
+# The repos that get a scorecard and a bundle. Keys are what --repo takes.
+#   name          the repo's name in the ecosystem
+#   remote        where it lives (said in the bundle; never fetched by tests)
+#   git           where its history is read from when no snapshot is given:
+#                   path      a checkout on this host ("." is this repo)
+#                   path_env  an environment variable that overrides path
+#                   ref       the main branch as that checkout knows it
+#   ci            the CI system whose run records are passed in as a snapshot (never fetched live)
+#   ci_workflow   the repo's main CI workflow by name: a `gh run list` export that carries other workflows
+#                 too keeps only this one's runs (another workflow's success never masks a failed main run)
+#   standards     the standard ids, or id prefixes ending in '*', that APPLY to this repo. Every other
+#                 standard in the register is listed for the repo as not applicable, never scored.
+#                 Extending a repo's list is the owner's decision (D-COE-3).
+#   exemption_repo  the repo name exemptions use for scope 'repo' (args/coe_records.yaml repos)
+#   pinned_files  files in the repo's args/ that standards pin by sha256; the bundle reports each
+#                 file's digest at the ref read, beside the pin, so a drift is visible
+repos:
+  it:
+    name: "ICDEV[IT]"
+    remote: "github:icdev-ai/icdev"
+    git: {path: ".", path_env: ICDEV_COE_REPO_IT, ref: origin/main}
+    ci: github-actions
+    ci_workflow: "ICDEV CI"
+    standards: ["ENG-*"]
+    exemption_repo: icdev
+  os:
+    name: "ICDEV[OS]"
+    remote: "gitlab:icdev/icdev_os"
+    git: {path: "~/icdev_os", path_env: ICDEV_COE_REPO_OS, ref: gitlab/main}
+    ci: gitlab-ci
+    standards: ["ICOS-*"]
+    exemption_repo: icdev_os
+    pinned_files: [args/interfaces.yaml, args/controls.yaml]
+  ft:
+    name: "ICDEV[FT]"
+    remote: "github:icdev-ai/icdev_ft"
+    git: {path: "~/icdev_ft", path_env: ICDEV_COE_REPO_FT, ref: origin/main}
+    ci: github-actions
+    ci_workflow: "ICDEV[FT] CI"
+    # No engineering standard in the register is declared for ICDEV[FT] yet: every one is listed
+    # as not applicable. The owner decides which apply (D-COE-3).
+    standards: []
+    exemption_repo: icdev_ft
+
+# Where snapshots of each repo's sources live: <repo>.git.json, <repo>.ci.json, <repo>.board.json
+# (tools/idp/conformance_export.py --snapshot writes the git one; CI and board snapshots are exported
+# or fetched and passed in). ICDEV_COE_SOURCES_DIR overrides it. A missing CI or board snapshot is a
+# missing source: the metrics that need it are unverified. Git is read live from the declared
+# checkout when there is no git snapshot, unless ICDEV_COE_LIVE_GIT=0.
+sources_dir: data/coe/sources
+
+# Delivery evidence: the DORA four keys plus rework of AI-assisted work, each over one window ending
+# on the bundle's as-of date (the window is the days BEFORE and including it, in UTC).
+delivery:
+  window_days: 30
+  # A DEPLOYMENT is one merge commit on the main branch's first-parent line: every repo here practises
+  # trunk-based delivery, so a merge to main is the release (as tools/idp/delivery_events.py says).
+  #
+  # deployment_frequency  deployments in the window per week (deployments / window_days * 7).
+  # lead_time             hours from the earliest authored commit the merge brought in to the merge
+  #                       itself; the median (p50) is the value, p90 beside it. A merge that brought
+  #                       no commit of its own is left out of the sample.
+  # change_failure_rate   the share of deployments with an observed outcome that failed. An outcome is
+  #                       observed when the CI snapshot has a completed run on main for the merge's sha
+  #                       (its latest completed run counts). A deployment FAILED when that run failed,
+  #                       or when a later commit on main reverted one of its commits within
+  #                       failure_window_days. Cancelled and skipped runs are no outcome.
+  # time_to_restore       hours from each failed deployment to the first later deployment whose
+  #                       outcome is success (or to the revert that undid it, if sooner); the median.
+  # ai_rework_rate        the share of AI-assisted deployments that needed rework within rework_days:
+  #                       a later commit on main reverted one of their commits, or a later deployment
+  #                       carried the same card id (a follow-up), or a board card depending on that
+  #                       card completed (the board export). Only deployments at least rework_days
+  #                       before the as-of date are in the sample: a younger one has not had its
+  #                       chance to be reworked yet.
+  failure_window_days: 7
+  rework_days: 7
+  # AI-ASSISTED: a commit the merge brought in (or the merge itself) carries a Co-Authored-By trailer
+  # whose address matches this pattern. A machine co-author signs as a no-reply address; a person's
+  # address is never one. Matched case-insensitively against the address between < and >.
+  ai_coauthor_address: '^noreply@'
+  # A card id, in a merge's subject, its branch name or the subjects of the commits it brought in
+  # (icx-coe-03, osx-int-06, ...). The first match is the deployment's card.
+  card_id: '\b([a-z]{2,6}-[a-z0-9]{2,10}-[0-9]{2,3})\b'
+  # A revert, as git writes it.
+  revert: 'This reverts commit ([0-9a-f]{7,40})'
+  # A CI run concluded with one of these is an outcome; anything else is not.
+  ci_success: [success]
+  ci_failure: [failure, failed, timed_out]
+
+# Publishing a repo's bundle to ICDEV[OS] is a person's declared step
+# (args/workflow_hitl_templates/coe-conformance-publish.yaml), never the preparer's. ICDEV[OS] imports
+# only a published bundle (osx-coe-01).
+publish:
+  # A prepared bundle still waiting for a person after this many days is a finding; a repo whose
+  # newest published bundle is older than stale_days is one too.
+  waiting_warn_days: 7
+  stale_days: 14

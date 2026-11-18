@@ -61,6 +61,14 @@ ADRs as records (icx-coe-02, tools/idp/adrs.py):
   POST /idp/api/adrs/propose                     A draft (anyone; decides nothing)
   POST /idp/api/adrs/<adr_id>/accept             A person accepts or returns (declared step)
   POST /idp/api/adrs/<adr_id>/supersede          A person supersedes or deprecates (declared step)
+
+Scorecards against adopted standards and conformance bundles (icx-coe-03, tools/idp/conformance.py):
+  GET  /idp/conformance                          Per repo: standards scored, delivery evidence, the bundle
+  GET  /idp/api/conformance                      JSON: every declared repo and its ledger state
+  GET  /idp/api/conformance/<repo>               JSON: the repo's bundle as it would be prepared now (?as_of=)
+  POST /idp/api/conformance/<repo>/prepare       Build and record a bundle at its digest (decides nothing)
+  POST /idp/api/conformance/<repo>/publish       A person publishes or refuses it (declared step)
+  GET  /idp/api/conformance/<repo>/bundle        The newest published bundle, with its publication
 """
 from __future__ import annotations
 
@@ -745,3 +753,106 @@ def idp_api_adr_supersede(adr_id: str):
     except adrs.AdrRefused as exc:
         return _adr_refused(exc)
     return jsonify(out)
+
+
+# ---------------------------------------------------------------------------
+# Scorecards against adopted standards, delivery evidence, conformance bundles (icx-coe-03)
+# ---------------------------------------------------------------------------
+#
+# Who decides: anyone (or an agent, as a draft) prepares a repo's bundle, which records
+# it at its digest and decides nothing. Publishing it to ICDEV[OS] is a person's declared
+# step (decl-wft-coe-conformance-publish), never the preparer's, bound to that digest.
+
+
+def _conformance_refused(exc):
+    return jsonify(exc.to_dict()), exc.status
+
+
+@bp.route("/conformance")
+def idp_conformance_page():
+    """Scorecards per repo against the adopted standards, delivery evidence, and each repo's bundle."""
+    from tools.idp import conformance
+
+    try:
+        view = conformance.repos_view()
+        error = ""
+    except Exception as exc:  # noqa: BLE001 — an unreadable ledger is said, not hidden
+        logger.warning("idp conformance: ledger unreadable: %s", exc)
+        view = {"repos": [], "chain": {}, "config": {}}
+        error = str(exc)
+    return render_template("idp/conformance.html", view=view, error=error,
+                           template=conformance.TEMPLATE)
+
+
+@bp.route("/api/conformance")
+def idp_api_conformance():
+    """JSON: every declared repo and its ledger state (the newest prepared and published bundle)."""
+    from tools.idp import conformance
+
+    try:
+        return jsonify(conformance.repos_view())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"the conformance ledger could not be read: {exc}"}), 503
+
+
+@bp.route("/api/conformance/<repo>")
+def idp_api_conformance_repo(repo: str):
+    """One repo's scorecard and delivery evidence as a bundle would carry them now (``?as_of=``), and its ledger."""
+    from tools.idp import conformance
+
+    try:
+        return jsonify(conformance.repo_view(repo, as_of=(flask_request.args.get("as_of") or None)))
+    except conformance.ConformanceRefused as exc:
+        return _conformance_refused(exc)
+
+
+@bp.route("/api/conformance/<repo>/prepare", methods=["POST"])
+def idp_api_conformance_prepare(repo: str):
+    """Prepare a repo's bundle: build it and record it at its digest. Anyone signed in; it decides nothing.
+
+    Body: ``{as_of, note}``. A service key is recorded as an agent.
+    """
+    from tools.idp import conformance
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = conformance.prepare(repo, current_actor(), as_of=(str(data.get("as_of") or "") or None),
+                                  note=str(data.get("note") or ""))
+    except conformance.ConformanceRefused as exc:
+        return _conformance_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/conformance/<repo>/publish", methods=["POST"])
+def idp_api_conformance_publish(repo: str):
+    """A person, never the preparer, publishes a repo's prepared bundle to ICDEV[OS], or refuses it.
+
+    Body: ``{decision: publish|refuse, reason, digest}``. The person's step of
+    decl-wft-coe-conformance-publish, bound to the digest of the prepared bundle read.
+    """
+    from tools.idp import conformance
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = conformance.publish(repo, decision=str(data.get("decision") or ""),
+                                  reason=str(data.get("reason") or ""),
+                                  read_digest=str(data.get("digest") or ""), actor=current_actor())
+    except conformance.ConformanceRefused as exc:
+        return _conformance_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/conformance/<repo>/bundle")
+def idp_api_conformance_bundle(repo: str):
+    """The repo's newest PUBLISHED bundle (icos-conformance/v1), with its publication, as ICDEV[OS] imports it."""
+    from tools.idp import conformance
+
+    try:
+        b = conformance.published_bundle(repo)
+    except conformance.ConformanceRefused as exc:
+        return _conformance_refused(exc)
+    if b is None:
+        return jsonify({"error": f"no bundle of {repo} has been published", "code": "unpublished"}), 404
+    return jsonify(b)

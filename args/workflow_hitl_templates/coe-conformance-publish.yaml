@@ -1,0 +1,34 @@
+# CUI // SP-CTI
+id: decl-wft-coe-conformance-publish
+name: "Conformance bundles: a person publishes a repo's prepared bundle to ICDEV[OS], or refuses it (prepare -> publish)"
+description: >-
+  A conformance bundle (icos-conformance/v1) is the evidence ICDEV[OS]'s enterprise
+  twin judges the Engineering CoE by: one repo's standards and their status, the
+  scorecard results with evidence, the exemptions with expiry, the delivery metrics
+  and the linked ADRs. Leaving the factory is a release, so a person attests it.
+  Anyone, or an agent, prepares a repo's bundle on /idp/conformance, which records it
+  at its digest and decides nothing. A person who did not prepare it reads it and
+  publishes it or refuses, with a reason, bound to that digest. Nothing publishes
+  itself, and a newer bundle needs a new step.
+decides: [idp.idp_api_conformance_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject:
+  "conformance:<repo>"; payload: the repo, the bundle's content digest, the prepared
+  event and the as-of date). coe_conformance_events appends a published or refused
+  event bound to that step and chained to the row before it. Only a published bundle
+  carries its publication (who, the step, when, the digest), and only a published
+  bundle is exported for ICDEV[OS] (tools/idp/conformance_export.py --published).
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: prepare
+    step_type: automated
+    description: Someone (a person, or an agent's draft) built the repo's bundle and recorded it at its digest.
+  - name: publish
+    step_type: manual
+    role: conformance_publisher
+    holders: [admin, isso, reviewer]
+    # The person who prepared the bundle never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]

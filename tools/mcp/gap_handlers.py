@@ -5128,3 +5128,55 @@ def handle_coe_adr_propose(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_coe_adr_propose: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_coe_conformance(args: dict) -> dict:
+    """MCP (icx-coe-03): the CoE scorecards per repo, one repo graded now, or its newest published bundle.
+
+    Read-only: every standard's status against the repo (a scorecard rule by machine,
+    a manual step needs evidence, never passed), the exemptions with expiry, the
+    delivery evidence (unverified when there is no data) and the linked ADRs.
+    Prepares and publishes nothing.
+    """
+    try:
+        from tools.idp import conformance
+
+        repo = str(args.get("repo") or "").strip()
+        if not repo:
+            return {"classification": CORTEX_CLASSIFICATION, "repos": conformance.repos_view()}
+        try:
+            if args.get("published"):
+                b = conformance.published_bundle(repo)
+                if b is None:
+                    return {"error": f"no bundle of {repo} has been published", "code": "unpublished"}
+                return {"classification": CORTEX_CLASSIFICATION, "bundle": b}
+            return {"classification": CORTEX_CLASSIFICATION,
+                    "repo": conformance.repo_view(repo, as_of=str(args.get("as_of") or "") or None)}
+        except conformance.ConformanceRefused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_coe_conformance: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_coe_conformance_prepare(args: dict) -> dict:
+    """MCP (icx-coe-03): an agent prepares a repo's conformance bundle as a DRAFT, recorded as ``agent:<id>``.
+
+    Preparing decides nothing and nothing leaves: a person who did not prepare it
+    publishes it to ICDEV[OS] or refuses it on /idp/conformance
+    (decl-wft-coe-conformance-publish).
+    """
+    try:
+        from tools.idp import conformance
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = conformance.prepare(str(args.get("repo") or ""), {"id": f"agent:{agent}", "role": "service"},
+                                      as_of=str(args.get("as_of") or "") or None, note=str(args.get("note") or ""))
+        except conformance.ConformanceRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who did not prepare it publishes it or refuses it on /idp/conformance"}
+    except Exception as exc:
+        logger.warning("handle_coe_conformance_prepare: %s", exc)
+        return {"error": str(exc)}
