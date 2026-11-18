@@ -356,6 +356,7 @@ tables:
   coa_definitions: it
   coa_records: it
   coe_adr_events: it
+  coe_conformance_events: it
   coe_standard_events: it
   column_mask_audit: it
   companion_sync_audit: it

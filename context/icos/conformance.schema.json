@@ -1,0 +1,1513 @@
+{
+  "$defs": {
+    "Adrs": {
+      "additionalProperties": false,
+      "description": "A summary of ICDEV[IT]'s ADR records (icx-coe-02): every status count, and the ADRs linked to the standards that apply to this repo, each with a link.",
+      "properties": {
+        "by_status": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": "By Status",
+          "type": "object"
+        },
+        "href": {
+          "title": "Href",
+          "type": "string"
+        },
+        "linked": {
+          "items": {
+            "$ref": "#/$defs/LinkedAdr"
+          },
+          "title": "Linked",
+          "type": "array"
+        },
+        "total": {
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "by_status",
+        "linked"
+      ],
+      "title": "Adrs",
+      "type": "object"
+    },
+    "Check": {
+      "description": "A standard's check-as-code: an IDP scorecard rule (scored by machine), a named manual evidence step (a person reads it; never passed), or none (a wish: never scored).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "scorecard_rule",
+              "title": "Kind"
+            },
+            "rule": {
+              "minLength": 1,
+              "title": "Rule",
+              "type": "string"
+            },
+            "scorecard": {
+              "minLength": 1,
+              "title": "Scorecard",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "scorecard",
+            "rule"
+          ],
+          "title": "ScorecardRuleCheck",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "manual_evidence",
+              "title": "Kind"
+            },
+            "name": {
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            },
+            "procedure": {
+              "title": "Procedure",
+              "type": "string"
+            },
+            "produced_by": {
+              "title": "Produced By",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "name",
+            "procedure"
+          ],
+          "title": "ManualEvidenceCheck",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "none",
+              "title": "Kind"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "title": "NoCheck",
+          "type": "object"
+        }
+      ],
+      "title": "Check"
+    },
+    "Definitions": {
+      "additionalProperties": false,
+      "description": "How every metric is defined (ICDEV[IT] args/coe_conformance.yaml delivery), carried and digested.",
+      "properties": {
+        "ai_coauthor_address": {
+          "title": "Ai Coauthor Address",
+          "type": "string"
+        },
+        "card_id": {
+          "title": "Card Id",
+          "type": "string"
+        },
+        "ci_failure": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ci Failure",
+          "type": "array"
+        },
+        "ci_success": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ci Success",
+          "type": "array"
+        },
+        "failure_window_days": {
+          "minimum": 0,
+          "title": "Failure Window Days",
+          "type": "integer"
+        },
+        "revert": {
+          "title": "Revert",
+          "type": "string"
+        },
+        "rework_days": {
+          "minimum": 0,
+          "title": "Rework Days",
+          "type": "integer"
+        },
+        "window_days": {
+          "minimum": 1,
+          "title": "Window Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "window_days",
+        "failure_window_days",
+        "rework_days",
+        "ai_coauthor_address",
+        "card_id",
+        "revert",
+        "ci_success",
+        "ci_failure"
+      ],
+      "title": "Definitions",
+      "type": "object"
+    },
+    "Delivery": {
+      "additionalProperties": false,
+      "description": "Delivery evidence: the DORA four keys (deployment frequency, lead time for changes, change failure rate, time to restore) and the rework rate of AI-assisted deployments, computed deterministically from the declared sources. Outcomes, not adoption counts.",
+      "properties": {
+        "definitions": {
+          "$ref": "#/$defs/Definitions"
+        },
+        "definitions_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Definitions Digest",
+          "type": "string"
+        },
+        "metrics": {
+          "additionalProperties": false,
+          "properties": {
+            "ai_rework_rate": {
+              "$ref": "#/$defs/Metric"
+            },
+            "change_failure_rate": {
+              "$ref": "#/$defs/Metric"
+            },
+            "deployment_frequency": {
+              "$ref": "#/$defs/Metric"
+            },
+            "lead_time": {
+              "$ref": "#/$defs/Metric"
+            },
+            "time_to_restore": {
+              "$ref": "#/$defs/Metric"
+            }
+          },
+          "required": [
+            "deployment_frequency",
+            "lead_time",
+            "change_failure_rate",
+            "time_to_restore",
+            "ai_rework_rate"
+          ],
+          "title": "Metrics",
+          "type": "object"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/Source"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "window": {
+          "$ref": "#/$defs/Window"
+        }
+      },
+      "required": [
+        "window",
+        "definitions",
+        "definitions_digest",
+        "sources",
+        "metrics"
+      ],
+      "title": "Delivery",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "Where the result came from: the IDP collection and adapter, the rule's IQE expression (paste it into the IQE widget to get the passing set back), the scorecard file, the date it was graded and the scorecard's exemption gate.",
+      "properties": {
+        "adapter_module": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Adapter Module"
+        },
+        "collection": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collection"
+        },
+        "evaluated_on": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluated On"
+        },
+        "exemption_gate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exemption Gate"
+        },
+        "expression": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expression"
+        },
+        "source_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Path"
+        }
+      },
+      "required": [],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Exemption": {
+      "additionalProperties": false,
+      "description": "An exemption that touches this repo (icx-coe-02), judged as of the bundle's date. Every exemption expires; one past its expiry is expired and fails the rule it waived.",
+      "properties": {
+        "approved_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved By"
+        },
+        "component": {
+          "title": "Component",
+          "type": "string"
+        },
+        "exemption_key": {
+          "minLength": 1,
+          "title": "Exemption Key",
+          "type": "string"
+        },
+        "expires_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires On"
+        },
+        "href": {
+          "title": "Href",
+          "type": "string"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "requested_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested By"
+        },
+        "rule": {
+          "title": "Rule",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "rule",
+            "service",
+            "standard",
+            "repo"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "scope_ref": {
+          "title": "Scope Ref",
+          "type": "string"
+        },
+        "scorecard": {
+          "title": "Scorecard",
+          "type": "string"
+        },
+        "standard_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Standard Ids",
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "active",
+            "expiring",
+            "expired",
+            "renewal_pending",
+            "denied",
+            "revoked",
+            "inert"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "exemption_key",
+        "scorecard",
+        "scope",
+        "state",
+        "expires_on"
+      ],
+      "title": "Exemption",
+      "type": "object"
+    },
+    "FileDigest": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "title": "FileDigest",
+      "type": "object"
+    },
+    "LinkedAdr": {
+      "additionalProperties": false,
+      "properties": {
+        "href": {
+          "title": "Href",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "standards": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Standards",
+          "type": "array"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "standards",
+        "href"
+      ],
+      "title": "LinkedAdr",
+      "type": "object"
+    },
+    "Metric": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "unverified"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "why"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "measured"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "sample_size": {
+                "minimum": 1
+              },
+              "value": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      ],
+      "description": "One delivery metric over the window. A metric with no data is UNVERIFIED: value null and why says what is missing, never zero and never passed. sources are the digests of the sources it used.",
+      "properties": {
+        "detail": {
+          "additionalProperties": {
+            "type": [
+              "number",
+              "integer",
+              "string"
+            ]
+          },
+          "title": "Detail",
+          "type": "object"
+        },
+        "key": {
+          "enum": [
+            "deployment_frequency",
+            "lead_time",
+            "change_failure_rate",
+            "time_to_restore",
+            "ai_rework_rate"
+          ],
+          "title": "Key",
+          "type": "string"
+        },
+        "sample_size": {
+          "minimum": 0,
+          "title": "Sample Size",
+          "type": "integer"
+        },
+        "sources": {
+          "items": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "unverified"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "unit": {
+          "enum": [
+            "per_week",
+            "hours",
+            "ratio"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "why": {
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        },
+        "window_days": {
+          "minimum": 0,
+          "title": "Window Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key",
+        "status",
+        "value",
+        "unit",
+        "window_days",
+        "sample_size",
+        "sources"
+      ],
+      "title": "Metric",
+      "type": "object"
+    },
+    "Pin": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Commit"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "standard_id": {
+          "title": "Standard Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "standard_id",
+        "sha256"
+      ],
+      "title": "Pin",
+      "type": "object"
+    },
+    "PinnedFile": {
+      "additionalProperties": false,
+      "description": "A file in the repo that a standard pins by SHA-256 (ICDEV[OS]'s args/), its digest at the ref read beside each pin: drifted when they differ.",
+      "properties": {
+        "drifted": {
+          "title": "Drifted",
+          "type": "boolean"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "pins": {
+          "items": {
+            "$ref": "#/$defs/Pin"
+          },
+          "title": "Pins",
+          "type": "array"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "why": {
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "pins",
+        "drifted"
+      ],
+      "title": "PinnedFile",
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    },
+    "Publication": {
+      "additionalProperties": false,
+      "description": "A person's publication of the bundle, taken in ICDEV[IT]'s declared step (decl-wft-coe-conformance-publish), bound to the bundle's content_digest; never the person who prepared it. A bundle with no publication is a draft nobody published: ICDEV[OS] reads it as unverified.",
+      "properties": {
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "decided_at": {
+          "format": "date-time",
+          "title": "Decided At",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "prepared_by": {
+          "minLength": 1,
+          "title": "Prepared By",
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "signed_by": {
+          "minLength": 1,
+          "title": "Signed By",
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "title": "Step Id",
+          "type": "string"
+        },
+        "template": {
+          "minLength": 1,
+          "title": "Template",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signed_by",
+        "step_id",
+        "decided_at",
+        "template",
+        "content_digest",
+        "prepared_by"
+      ],
+      "title": "Publication",
+      "type": "object"
+    },
+    "Register": {
+      "additionalProperties": false,
+      "description": "ICDEV[IT]'s standards register (icx-coe-01) the standards were read from: its seed file's digest and whether its append-only, hash-chained lifecycle ledger verified.",
+      "properties": {
+        "chain_intact": {
+          "title": "Chain Intact",
+          "type": "boolean"
+        },
+        "ledger_rows": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ledger Rows"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "chain_intact"
+      ],
+      "title": "Register",
+      "type": "object"
+    },
+    "Repo": {
+      "additionalProperties": false,
+      "description": "The repo the bundle describes, the main-branch ref its history was read at and that ref's head (null when no history was read), and how each delivery source was read (live from a checkout, or a snapshot).",
+      "properties": {
+        "head": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{40}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Head"
+        },
+        "key": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "read": {
+          "additionalProperties": false,
+          "properties": {
+            "board": {
+              "enum": [
+                "live",
+                "snapshot"
+              ],
+              "title": "Board",
+              "type": "string"
+            },
+            "ci": {
+              "enum": [
+                "live",
+                "snapshot"
+              ],
+              "title": "Ci",
+              "type": "string"
+            },
+            "git": {
+              "enum": [
+                "live",
+                "snapshot"
+              ],
+              "title": "Git",
+              "type": "string"
+            }
+          },
+          "title": "Read",
+          "type": "object"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "remote": {
+          "title": "Remote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "name",
+        "ref",
+        "head",
+        "read"
+      ],
+      "title": "Repo",
+      "type": "object"
+    },
+    "ScorecardResult": {
+      "additionalProperties": false,
+      "description": "A machine-scored standard across every service its rule applies to: the services passing, failing and exempt under a live exemption; an EXPIRED exemption is listed and fails the rule.",
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "exempt": {
+          "items": {
+            "$ref": "#/$defs/ServiceWaiver"
+          },
+          "title": "Exempt",
+          "type": "array"
+        },
+        "expired": {
+          "items": {
+            "$ref": "#/$defs/ServiceWaiver"
+          },
+          "title": "Expired",
+          "type": "array"
+        },
+        "failing": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failing",
+          "type": "array"
+        },
+        "rule": {
+          "title": "Rule",
+          "type": "string"
+        },
+        "scorecard": {
+          "title": "Scorecard",
+          "type": "string"
+        },
+        "services": {
+          "$ref": "#/$defs/Services"
+        },
+        "standard_id": {
+          "title": "Standard Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "unverified"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "why": {
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "standard_id",
+        "scorecard",
+        "rule",
+        "status",
+        "why",
+        "services",
+        "failing",
+        "exempt",
+        "expired",
+        "evidence"
+      ],
+      "title": "ScorecardResult",
+      "type": "object"
+    },
+    "ServiceWaiver": {
+      "additionalProperties": false,
+      "properties": {
+        "component": {
+          "title": "Component",
+          "type": "string"
+        },
+        "exemption_key": {
+          "title": "Exemption Key",
+          "type": "string"
+        },
+        "expires_on": {
+          "title": "Expires On",
+          "type": "string"
+        }
+      },
+      "required": [
+        "component",
+        "exemption_key",
+        "expires_on"
+      ],
+      "title": "ServiceWaiver",
+      "type": "object"
+    },
+    "Services": {
+      "additionalProperties": false,
+      "properties": {
+        "applicable": {
+          "minimum": 0,
+          "title": "Applicable",
+          "type": "integer"
+        },
+        "exempt": {
+          "minimum": 0,
+          "title": "Exempt",
+          "type": "integer"
+        },
+        "expired": {
+          "minimum": 0,
+          "title": "Expired",
+          "type": "integer"
+        },
+        "failing": {
+          "minimum": 0,
+          "title": "Failing",
+          "type": "integer"
+        },
+        "passing": {
+          "minimum": 0,
+          "title": "Passing",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "applicable",
+        "passing",
+        "failing",
+        "exempt",
+        "expired"
+      ],
+      "title": "Services",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "description": "One declared delivery source: the git history of main (icdev-it/git-history/v1), CI run records (icdev-it/ci-runs/v1, always a snapshot passed in) or a board export (icdev-it/board-export/v1). digest is SHA-256 over the canonical JSON of the source as read; null, with missing saying why, when it was not read.",
+      "properties": {
+        "cards": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cards"
+        },
+        "digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Digest"
+        },
+        "exported_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exported At"
+        },
+        "fetched_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fetched At"
+        },
+        "head": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Head"
+        },
+        "kind": {
+          "enum": [
+            "git",
+            "ci",
+            "board"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "missing": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Missing"
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ref"
+        },
+        "runs": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runs"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema"
+        },
+        "system": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "System"
+        }
+      },
+      "required": [
+        "kind",
+        "digest"
+      ],
+      "title": "Source",
+      "type": "object"
+    },
+    "Standard": {
+      "additionalProperties": false,
+      "description": "One standard of the register, for this repo. Only a standard IN FORCE that APPLIES to the repo is scored: a scorecard rule is pass or fail by machine (an expired exemption fails it), or unverified when nothing was measured; a manual evidence step is needs_evidence, never pass. A standard not in force is not_scored (listed only); one the repo's declaration does not name is not_applicable.",
+      "properties": {
+        "adopted_by_kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "person",
+                "agent",
+                "bootstrap"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Adopted By Kind"
+        },
+        "applies": {
+          "title": "Applies",
+          "type": "boolean"
+        },
+        "check": {
+          "$ref": "#/$defs/Check"
+        },
+        "href": {
+          "title": "Href",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$",
+          "title": "Id",
+          "type": "string"
+        },
+        "in_force": {
+          "title": "In Force",
+          "type": "boolean"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "state": {
+          "title": "State",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "needs_evidence",
+            "unverified",
+            "not_scored",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "why": {
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "state",
+        "version",
+        "in_force",
+        "applies",
+        "check",
+        "status",
+        "why"
+      ],
+      "title": "Standard",
+      "type": "object"
+    },
+    "Summary": {
+      "additionalProperties": false,
+      "properties": {
+        "metrics_measured": {
+          "minimum": 0,
+          "title": "Metrics Measured",
+          "type": "integer"
+        },
+        "metrics_unverified": {
+          "items": {
+            "enum": [
+              "deployment_frequency",
+              "lead_time",
+              "change_failure_rate",
+              "time_to_restore",
+              "ai_rework_rate"
+            ],
+            "type": "string"
+          },
+          "title": "Metrics Unverified",
+          "type": "array"
+        },
+        "standards": {
+          "additionalProperties": false,
+          "properties": {
+            "fail": {
+              "minimum": 0,
+              "title": "Fail",
+              "type": "integer"
+            },
+            "needs_evidence": {
+              "minimum": 0,
+              "title": "Needs Evidence",
+              "type": "integer"
+            },
+            "not_applicable": {
+              "minimum": 0,
+              "title": "Not Applicable",
+              "type": "integer"
+            },
+            "not_scored": {
+              "minimum": 0,
+              "title": "Not Scored",
+              "type": "integer"
+            },
+            "pass": {
+              "minimum": 0,
+              "title": "Pass",
+              "type": "integer"
+            },
+            "unverified": {
+              "minimum": 0,
+              "title": "Unverified",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "pass",
+            "fail",
+            "needs_evidence",
+            "unverified",
+            "not_scored",
+            "not_applicable"
+          ],
+          "title": "Standards",
+          "type": "object"
+        }
+      },
+      "required": [
+        "standards",
+        "metrics_measured",
+        "metrics_unverified"
+      ],
+      "title": "Summary",
+      "type": "object"
+    },
+    "Window": {
+      "additionalProperties": false,
+      "description": "The UTC days ending on and including as_of: [start, end).",
+      "properties": {
+        "as_of": {
+          "format": "date",
+          "title": "As Of",
+          "type": "string"
+        },
+        "days": {
+          "minimum": 0,
+          "title": "Days",
+          "type": "integer"
+        },
+        "end": {
+          "format": "date-time",
+          "title": "End",
+          "type": "string"
+        },
+        "start": {
+          "format": "date-time",
+          "title": "Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "days",
+        "as_of"
+      ],
+      "title": "Window",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:conformance:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "DRAFT: to be adopted into the ICOS contract by osx-coe-01; then re-pinned. Drafted in ICDEV[IT] by icx-coe-03 (tools/idp/conformance.py), in the style of the icos-apptwin/v1 contract. One bundle per repo (ICDEV[IT], ICDEV[OS], ICDEV[FT]): the engineering standards and their status against the repo, the scorecard results with their evidence, the exemptions that touch it (with expiry), the delivery metrics (DORA four keys and AI-assisted rework, each with its window, sample size and source digests), a summary of the linked ADRs, and the producer, version and time. content_digest is SHA-256 over the canonical JSON (keys sorted, separators ',' and ':', no whitespace) of the bundle without content_digest, publication and produced_at; ICOS recomputes it. publication is a person's declared step bound to that digest. Nothing unreported is a pass: unverified is said, with why.",
+  "properties": {
+    "adrs": {
+      "$ref": "#/$defs/Adrs"
+    },
+    "as_of": {
+      "format": "date",
+      "title": "As Of",
+      "type": "string"
+    },
+    "classification": {
+      "title": "Classification",
+      "type": "string"
+    },
+    "config": {
+      "$ref": "#/$defs/FileDigest"
+    },
+    "content_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "delivery": {
+      "$ref": "#/$defs/Delivery"
+    },
+    "exemptions": {
+      "items": {
+        "$ref": "#/$defs/Exemption"
+      },
+      "title": "Exemptions",
+      "type": "array"
+    },
+    "pinned_files": {
+      "items": {
+        "$ref": "#/$defs/PinnedFile"
+      },
+      "title": "Pinned Files",
+      "type": "array"
+    },
+    "produced_at": {
+      "format": "date-time",
+      "title": "Produced At",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "publication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Publication"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "register": {
+      "$ref": "#/$defs/Register"
+    },
+    "repo": {
+      "$ref": "#/$defs/Repo"
+    },
+    "schema": {
+      "const": "icos-conformance/v1",
+      "title": "Schema"
+    },
+    "scorecards": {
+      "items": {
+        "$ref": "#/$defs/ScorecardResult"
+      },
+      "title": "Scorecards",
+      "type": "array"
+    },
+    "standards": {
+      "items": {
+        "$ref": "#/$defs/Standard"
+      },
+      "title": "Standards",
+      "type": "array"
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary"
+    }
+  },
+  "required": [
+    "schema",
+    "producer",
+    "produced_at",
+    "repo",
+    "as_of",
+    "standards",
+    "scorecards",
+    "exemptions",
+    "delivery",
+    "adrs",
+    "summary",
+    "publication",
+    "content_digest"
+  ],
+  "title": "Conformance",
+  "type": "object",
+  "x-icos-contract": "draft",
+  "x-license": "Apache-2.0"
+}

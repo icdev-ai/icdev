@@ -8,6 +8,11 @@
 # grant and renewal, an expired exemption FAILS) and ADRs as signed, versioned
 # records with the flat ADR log generated from them.
 #
+# icx-coe-03 adds scorecards per repo against the ADOPTED standards (machine-scored, or
+# needs evidence; an expired exemption fails), delivery evidence (DORA four keys plus
+# AI-assisted rework from declared sources; no data is unverified) and one
+# icos-conformance/v1 bundle per repo for ICDEV[OS], published by a person.
+#
 # requirement -> element -> code -> test (-> NIST control). Rules: see the
 # header of args/platform_model/cortex.yaml.
 
@@ -111,6 +116,50 @@ elements:
       - args/workflow_hitl_templates/coe-adr-accept.yaml
       - args/workflow_hitl_templates/coe-adr-supersede.yaml
 
+  - id: coe.conformance
+    type: sysml_element
+    kind: block
+    name: Scorecards per repo against the adopted standards, and the icos-conformance/v1 bundle
+    features: [coe.conformance]
+    code:
+      - args/coe_conformance.yaml
+      - tools/idp/conformance.py::standard_results
+      - tools/idp/conformance.py::exemption_rows
+      - tools/idp/conformance.py::adr_summary
+      - tools/idp/conformance.py::build
+      - tools/idp/conformance.py::content_digest
+      - tools/idp/conformance.py::validate
+      - tools/idp/conformance_export.py::export
+      - context/icos/conformance.schema.json
+
+  - id: coe.delivery
+    type: sysml_element
+    kind: block
+    name: Delivery evidence (DORA four keys and AI-assisted rework) from declared sources
+    features: [coe.conformance]
+    code:
+      - tools/idp/dora.py::read_git
+      - tools/idp/dora.py::normalise_ci
+      - tools/idp/dora.py::normalise_board
+      - tools/idp/dora.py::compute
+      - tools/idp/conformance.py::read_sources
+
+  - id: coe.publish
+    type: sysml_element
+    kind: block
+    name: Prepare, then a person publishes; append-only hash-chained conformance ledger
+    features: [coe.conformance]
+    code:
+      - tools/idp/conformance.py::prepare
+      - tools/idp/conformance.py::publish
+      - tools/idp/conformance.py::builders
+      - tools/idp/conformance.py::published_bundle
+      - tools/idp/conformance.py::chain
+      - tools/idp/conformance.py::replay
+      - tools/idp/conformance.py::twin_judge
+      - tools/db/migrations/20261118024513_coe_conformance_events/up.py
+      - args/workflow_hitl_templates/coe-conformance-publish.yaml
+
 interfaces:
   - id: if.coe.console
     type: sysml_element
@@ -157,6 +206,28 @@ interfaces:
       - tools/mcp/gap_handlers.py::handle_coe_exemption_request
       - tools/mcp/gap_handlers.py::handle_coe_adrs
       - tools/mcp/gap_handlers.py::handle_coe_adr_propose
+
+  - id: if.coe.conformance.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /idp/conformance and its routes
+    features: [coe.conformance]
+    code:
+      - tools/dashboard/templates/idp/conformance.html
+      - tools/idp/blueprint.py::idp_conformance_page
+      - tools/idp/blueprint.py::idp_api_conformance_repo
+      - tools/idp/blueprint.py::idp_api_conformance_prepare
+      - tools/idp/blueprint.py::idp_api_conformance_publish
+      - tools/idp/blueprint.py::idp_api_conformance_bundle
+
+  - id: if.coe.conformance.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP read and draft-only prepare for the conformance bundles
+    features: [coe.conformance]
+    code:
+      - tools/mcp/gap_handlers.py::handle_coe_conformance
+      - tools/mcp/gap_handlers.py::handle_coe_conformance_prepare
 
 requirements:
   - id: PM-COE-01
@@ -378,3 +449,108 @@ requirements:
       - tests/test_icx_coe_02_exemptions.py::test_the_mcp_tools_read_and_only_draft
       - tests/test_icx_coe_02_adrs.py::test_the_adr_routes_and_page
       - tests/test_icx_coe_02_adrs.py::test_the_twin_says_unverified_for_records_not_in_the_ledger
+
+  - id: PM-COE-11
+    title: Each repo is scored only against the adopted standards that apply to it
+    text: >-
+      Every standard in the register is listed for every repo declared in
+      args/coe_conformance.yaml. A standard in force that the repo's declaration names is
+      scored: a scorecard rule by machine across every service it applies to, with the
+      live exemptions applied, and an EXPIRED exemption fails it, named; a manual evidence
+      step is needs_evidence, never pass. A standard not in force is not_scored, one not
+      declared for the repo is not_applicable, and a check that measured nothing (no
+      service in scope, a scorecard that will not grade) is unverified.
+    type: functional
+    priority: high
+    features: [coe.conformance]
+    elements: [coe.conformance]
+    controls: [CA-2, CA-7]
+    tests:
+      - tests/test_icx_coe_03_conformance.py::test_an_adopted_scorecard_standard_is_scored_by_machine
+      - tests/test_icx_coe_03_conformance.py::test_a_manual_evidence_standard_needs_evidence_and_never_passes
+      - tests/test_icx_coe_03_conformance.py::test_an_expired_exemption_fails_the_standard
+      - tests/test_icx_coe_03_conformance.py::test_a_standard_not_adopted_is_listed_not_scored
+      - tests/test_icx_coe_03_conformance.py::test_unverified_when_nothing_is_measured
+
+  - id: PM-COE-12
+    title: Delivery evidence is computed from declared sources, and no data is unverified
+    text: >-
+      Deployment frequency, lead time for changes, change failure rate, time to restore and
+      the rework rate of AI-assisted deployments are computed deterministically from the git
+      history of main, a CI-run snapshot passed in and a board export, by the definitions in
+      args/coe_conformance.yaml. Each metric carries its window, sample size and source
+      digests. A metric with no data (a missing source, no deployment, no observed outcome,
+      no failure to restore from, no AI-assisted deployment old enough) is unverified, with
+      why: never zero, never passed. No commit text leaves a repo.
+    type: functional
+    priority: high
+    features: [coe.conformance]
+    elements: [coe.delivery]
+    controls: [CA-7, SI-4]
+    tests:
+      - tests/test_icx_coe_03_conformance.py::test_dora_definitions_on_a_planted_history
+      - tests/test_icx_coe_03_conformance.py::test_a_metric_with_no_data_is_unverified_never_zero
+      - tests/test_icx_coe_03_conformance.py::test_compute_is_deterministic_and_digests_its_sources
+      - tests/test_icx_coe_03_conformance.py::test_read_git_from_a_real_checkout
+      - tests/test_icx_coe_03_conformance.py::test_ci_and_board_snapshots_normalise_and_refuse_garbage
+
+  - id: PM-COE-13
+    title: One icos-conformance/v1 bundle per repo, against a pinned draft schema, deterministic
+    text: >-
+      Each repo's bundle carries its standards and their status, the scorecard results
+      with evidence, the exemptions with expiry, the delivery metrics, the linked ADRs and
+      the producer, version and time, and validates against
+      context/icos/conformance.schema.json (a DRAFT for osx-coe-01, pinned by SHA-256).
+      content_digest is the digest of its canonical content without produced_at and the
+      publication, so the export is byte for byte the same given its inputs. ICDEV[IT],
+      ICDEV[OS] and ICDEV[FT] are declared.
+    type: interface
+    priority: high
+    features: [coe.conformance]
+    elements: [coe.conformance]
+    controls: [CM-2, SA-8]
+    tests:
+      - tests/test_icx_coe_03_conformance.py::test_the_bundle_validates_against_the_draft_schema_and_its_digest
+      - tests/test_icx_coe_03_conformance.py::test_the_schema_is_pinned
+      - tests/test_icx_coe_03_conformance.py::test_the_export_is_deterministic_given_its_inputs
+      - tests/test_icx_coe_03_conformance.py::test_the_repos_and_definitions_are_declared
+
+  - id: PM-COE-14
+    title: A bundle is published by a person who did not prepare it, bound to its digest
+    text: >-
+      Preparing (anyone, or an agent's draft) records the bundle at its digest in the
+      append-only, hash-chained coe_conformance_events and decides nothing. Publishing or
+      refusing is a person's declared step (decl-wft-coe-conformance-publish), with a
+      reason, bound to the digest read, refused to the preparer, to a service key and to a
+      role that does not hold it. Only a published bundle carries its publication and
+      leaves for ICDEV[OS].
+    type: functional
+    priority: high
+    features: [coe.conformance]
+    elements: [coe.publish]
+    controls: [AC-5, AU-9, AU-10]
+    tests:
+      - tests/test_icx_coe_03_conformance.py::test_publishing_is_a_persons_step_never_the_preparers
+      - tests/test_icx_coe_03_conformance.py::test_the_ledger_is_append_only_and_hash_chained
+      - tests/test_icx_coe_03_ambient.py::test_a_bundle_prepared_and_published_on_the_platform_database
+
+  - id: PM-COE-15
+    title: The standards scorecards page, the twin with threads, and MCP read and draft
+    text: >-
+      /idp/conformance, linked from /idp/standards, /idp/exemptions, /idp/adrs, the portal
+      and the nav, shows each repo's standards, exemptions, delivery evidence (sample
+      sizes, unverified marked) and ADR links, and offers prepare and the publish step by
+      endpoint id. The idp twin observes coe.conformance: a repo with no published bundle
+      is unverified, a published failing standard, expired exemption or unverified metric
+      is a finding threaded to its ledger row, and an observation replays. MCP
+      coe_conformance reads; coe_conformance_prepare only drafts and halts at the gate.
+    type: functional
+    priority: medium
+    features: [coe.conformance]
+    elements: [if.coe.conformance.console, coe.twin, if.coe.conformance.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_icx_coe_03_conformance.py::test_the_routes_and_the_page
+      - tests/test_icx_coe_03_conformance.py::test_the_twin_observes_bundles_with_threads
+      - tests/test_icx_coe_03_conformance.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read
+      - tests/test_icx_coe_03_conformance.py::test_the_mcp_tools_read_and_only_prepare

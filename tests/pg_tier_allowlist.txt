@@ -141,3 +141,7 @@ tests/test_icx_coe_01_ambient.py
 # superseded, on the ambient PG: idp_rule_exemptions' new columns, chain index and PL/pgSQL append-only triggers,
 # coe_adr_events, and the decl-wft-coe-exemption-grant / decl-wft-coe-adr-* steps in wf_decision_steps.
 tests/test_icx_coe_02_ambient.py
+# icx-coe-03: a conformance bundle prepared and published on the ambient PG: coe_conformance_events
+# (PL/pgSQL append-only triggers, UNIQUE(repo, prev_hash)) and the decl-wft-coe-conformance-publish step in
+# wf_decision_steps.
+tests/test_icx_coe_03_ambient.py

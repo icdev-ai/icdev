@@ -668,6 +668,10 @@ _THREAD_TABLES = {
     "coe_adr": ("core", "coe_adr_events", "event_id",
                 ("event_id", "adr_id", "version", "event", "actor", "actor_kind", "step_id",
                  "reason", "entry_digest", "row_hash", "created_at")),
+    # icx-coe-03: one event in a repo's conformance bundles (prepared, published, refused).
+    "coe_conformance": ("core", "coe_conformance_events", "event_id",
+                        ("event_id", "repo", "event", "actor", "actor_kind", "actor_role", "step_id",
+                         "reason", "content_digest", "row_hash", "created_at")),
 }
 #: Thread kinds whose ref is an integer row id.
 _INT_REFS = ("ace_audit", "ace_event", "aiify_decision", "audit_trail")

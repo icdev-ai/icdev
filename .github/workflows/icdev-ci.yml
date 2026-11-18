@@ -1026,6 +1026,11 @@ jobs:
       # the Modernisation page offers "Approve capacity" for the e2e gate to see sent. Honoured only
       # for a file under tests/ (wave_schedule.capacity_path); the shipped args file stays empty.
       ICDEV_MODERNISATION_CAPACITY_E2E: ${{ github.workspace }}/tests/e2e/fixtures/.mdz05_capacity.yaml
+      # icx-coe-03: the conformance page reads its delivery sources (git, CI, board snapshots) from
+      # here; tests/e2e/fixtures/coe03_seed.py writes synthetic ones, dated from today. No live git
+      # read: a CI checkout is shallow, and ICDEV[OS] and ICDEV[FT] are not on the runner.
+      ICDEV_COE_SOURCES_DIR: ${{ github.workspace }}/tests/e2e/fixtures/.coe03_sources
+      ICDEV_COE_LIVE_GIT: "0"
       # icx-cnf-08: this job has no model. Say so, so every AI-assist path takes its
       # deterministic fallback at once instead of waiting on providers that are not there
       # (the ACE profile page's preview never answered within the test's 30 s).

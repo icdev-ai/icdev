@@ -364,3 +364,5 @@ data/rag/*.db-wal
 
 # icx-mdz-05: the team capacity the e2e modernisation seed writes for its synthetic app
 tests/e2e/fixtures/.mdz05_capacity.yaml
+# icx-coe-03: the synthetic delivery sources the e2e seed writes for the conformance page
+tests/e2e/fixtures/.coe03_sources/

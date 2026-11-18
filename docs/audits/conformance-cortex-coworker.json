@@ -982,6 +982,7 @@
           "routes": [
             {
               "by_id": [
+                "tools/dashboard/templates/idp/conformance.html",
                 "tools/dashboard/templates/idp/standards.html"
               ],
               "endpoint": "idp.idp_adrs_page",
@@ -1074,6 +1075,131 @@
       "component": "idp",
       "key": "coe.adrs",
       "label": "Engineering CoE: architecture decision records as signed, versioned records"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "coe_conformance read-only, tool_authorization tier 'read'",
+            "coe_conformance_prepare mutating, approval tier 'unknown' (default_tier) halts"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-COE-11 -> coe.conformance -> tests/test_icx_coe_03_conformance.py::test_an_adopted_scorecard_standard_is_scored_by_machine, tests/test_icx_coe_03_conformance.py::test_a_manual_evidence_standard_needs_evidence_and_never_passes, tests/test_icx_coe_03_conformance.py::test_an_expired_exemption_fails_the_standard, tests/test_icx_coe_03_conformance.py::test_a_standard_not_adopted_is_listed_not_scored, tests/test_icx_coe_03_conformance.py::test_unverified_when_nothing_is_measured",
+            "PM-COE-12 -> coe.delivery -> tests/test_icx_coe_03_conformance.py::test_dora_definitions_on_a_planted_history, tests/test_icx_coe_03_conformance.py::test_a_metric_with_no_data_is_unverified_never_zero, tests/test_icx_coe_03_conformance.py::test_compute_is_deterministic_and_digests_its_sources, tests/test_icx_coe_03_conformance.py::test_read_git_from_a_real_checkout, tests/test_icx_coe_03_conformance.py::test_ci_and_board_snapshots_normalise_and_refuse_garbage",
+            "PM-COE-13 -> coe.conformance -> tests/test_icx_coe_03_conformance.py::test_the_bundle_validates_against_the_draft_schema_and_its_digest, tests/test_icx_coe_03_conformance.py::test_the_schema_is_pinned, tests/test_icx_coe_03_conformance.py::test_the_export_is_deterministic_given_its_inputs, tests/test_icx_coe_03_conformance.py::test_the_repos_and_definitions_are_declared",
+            "PM-COE-14 -> coe.publish -> tests/test_icx_coe_03_conformance.py::test_publishing_is_a_persons_step_never_the_preparers, tests/test_icx_coe_03_conformance.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_icx_coe_03_ambient.py::test_a_bundle_prepared_and_published_on_the_platform_database",
+            "PM-COE-15 -> if.coe.conformance.console, coe.twin, if.coe.conformance.mcp -> tests/test_icx_coe_03_conformance.py::test_the_routes_and_the_page, tests/test_icx_coe_03_conformance.py::test_the_twin_observes_bundles_with_threads, tests/test_icx_coe_03_conformance.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read, tests/test_icx_coe_03_conformance.py::test_the_mcp_tools_read_and_only_prepare"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "idp.idp_api_conformance_prepare called from tools/dashboard/templates/idp/conformance.html",
+            "idp.idp_api_conformance_publish called from tools/dashboard/templates/idp/conformance.html",
+            "nav links /idp/conformance",
+            "page /idp/conformance renders idp/conformance.html",
+            "registry entry 'idp'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "idp.idp_api_conformance",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/idp/api/conformance",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/conformance.html"
+              ],
+              "endpoint": "idp.idp_api_conformance_repo",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/api/conformance/<repo>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/conformance.html"
+              ],
+              "endpoint": "idp.idp_api_conformance_bundle",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/idp/api/conformance/<repo>/bundle",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/conformance.html"
+              ],
+              "endpoint": "idp.idp_api_conformance_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/conformance/<repo>/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/conformance.html"
+              ],
+              "endpoint": "idp.idp_api_conformance_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/idp/api/conformance/<repo>/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/idp/adrs.html",
+                "tools/dashboard/templates/idp/exemptions.html",
+                "tools/dashboard/templates/idp/standards.html"
+              ],
+              "endpoint": "idp.idp_conformance_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/idp/conformance",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "idp.idp_api_conformance_publish (declared (tools/idp/blueprint.py: \"A person, never the preparer, publishes a repo's prepared bundle to ICDEV[OS], or refuses it.\")) -> template decl-wft-coe-conformance-publish (args/workflow_hitl_templates/coe-conformance-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "idp",
+      "key": "coe.conformance",
+      "label": "Engineering CoE: scorecards against standards, delivery evidence, conformance bundles"
     },
     {
       "cells": {
@@ -1193,6 +1319,7 @@
             },
             {
               "by_id": [
+                "tools/dashboard/templates/idp/conformance.html",
                 "tools/dashboard/templates/idp/standards.html"
               ],
               "endpoint": "idp.idp_exemptions_page",
@@ -1274,6 +1401,7 @@
             {
               "by_id": [
                 "tools/dashboard/templates/idp/adrs.html",
+                "tools/dashboard/templates/idp/conformance.html",
                 "tools/dashboard/templates/idp/exemptions.html",
                 "tools/dashboard/templates/idp/standards.html"
               ],
@@ -1348,6 +1476,7 @@
             {
               "by_id": [
                 "tools/dashboard/templates/idp/adrs.html",
+                "tools/dashboard/templates/idp/conformance.html",
                 "tools/dashboard/templates/idp/exemptions.html"
               ],
               "endpoint": "idp.idp_standards_page",
@@ -3379,6 +3508,7 @@
       "tools/dashboard/templates/coworkers/index.html",
       "tools/dashboard/templates/document_intelligence/explorer.html",
       "tools/dashboard/templates/idp/adrs.html",
+      "tools/dashboard/templates/idp/conformance.html",
       "tools/dashboard/templates/idp/exemptions.html",
       "tools/dashboard/templates/idp/standards.html",
       "tools/dashboard/templates/includes/_chat_action_card.html",
@@ -3406,8 +3536,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 26,
-    "features_conforming": 26,
+    "features": 27,
+    "features_conforming": 27,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3445,6 +3575,13 @@
         "workflow": 0
       },
       "coe.adrs": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "coe.conformance": {
         "ai_native": 0,
         "architecture": 0,
         "gui": 0,
@@ -3600,11 +3737,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 162,
-    "routes_by_id": 138,
-    "routes_observed": 122,
-    "writes_by_id": 67,
-    "writes_observed": 67
+    "routes": 168,
+    "routes_by_id": 143,
+    "routes_observed": 126,
+    "writes_by_id": 69,
+    "writes_observed": 69
   },
   "tool": "feature_audit",
   "version": 1

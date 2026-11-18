@@ -5007,6 +5007,29 @@ CREATE TABLE IF NOT EXISTS coe_adr_events (
 CREATE INDEX IF NOT EXISTS idx_coe_adr_events_adr ON coe_adr_events (adr_id, created_at);
 CREATE TRIGGER IF NOT EXISTS coe_adr_events_no_update BEFORE UPDATE ON coe_adr_events BEGIN SELECT RAISE(ABORT, 'coe_adr_events is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS coe_adr_events_no_delete BEFORE DELETE ON coe_adr_events BEGIN SELECT RAISE(ABORT, 'coe_adr_events is append-only'); END;
+
+-- icx-coe-03: the conformance bundle ledger (migration 20261118024513): prepared, then a person
+-- publishes or refuses. Same DDL; append-only.
+CREATE TABLE IF NOT EXISTS coe_conformance_events (
+    event_id        TEXT PRIMARY KEY,
+    repo            TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused')),
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent','bootstrap')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    content_digest  TEXT NOT NULL,
+    bundle_json     TEXT NOT NULL DEFAULT '',
+    detail_json     TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(repo, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_coe_conformance_events_repo ON coe_conformance_events (repo, created_at);
+CREATE TRIGGER IF NOT EXISTS coe_conformance_events_no_update BEFORE UPDATE ON coe_conformance_events BEGIN SELECT RAISE(ABORT, 'coe_conformance_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS coe_conformance_events_no_delete BEFORE DELETE ON coe_conformance_events BEGIN SELECT RAISE(ABORT, 'coe_conformance_events is append-only'); END;
 """
 
 

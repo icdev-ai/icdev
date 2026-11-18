@@ -610,6 +610,31 @@ features:
           file: tools/idp/blueprint.py
           text: "A person who wrote neither ADR supersedes an accepted ADR by its successor, or deprecates it."
 
+  # ── Engineering CoE: scorecards against standards, conformance bundles (icx-coe-03) ─
+  # Per repo (ICDEV[IT], ICDEV[OS], ICDEV[FT]): adopted standards scored by machine or
+  # shown as needing evidence, exemptions applied (an expired one fails), delivery
+  # evidence (DORA four keys and AI rework; no data is unverified), and one
+  # icos-conformance/v1 bundle. Preparing a bundle decides nothing; publishing it to
+  # ICDEV[OS] is a person's declared step (decl-wft-coe-conformance-publish), never
+  # the preparer's.
+  - key: coe.conformance
+    component: idp
+    label: "Engineering CoE: scorecards against standards, delivery evidence, conformance bundles"
+    endpoints:
+      - idp.idp_conformance_page
+      - idp.idp_api_conformance
+      - idp.idp_api_conformance_repo
+      - idp.idp_api_conformance_prepare
+      - idp.idp_api_conformance_publish
+      - idp.idp_api_conformance_bundle
+    mcp_tools: [coe_conformance, coe_conformance_prepare]
+    declared_decisions:
+      - id: coe.conformance.publish
+        endpoint: idp.idp_api_conformance_publish
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A person, never the preparer, publishes a repo's prepared bundle to ICDEV[OS], or refuses it."
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory

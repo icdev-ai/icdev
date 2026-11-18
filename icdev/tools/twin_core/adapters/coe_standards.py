@@ -43,6 +43,18 @@ icx-coe-02 adds the rest of the CoE's records on the same canvas, observing
 
 An ADR record the ledger has never seen is an unverified check, never a pass.
 Expiry is judged on the observation's date, so a replay judges the same.
+
+icx-coe-03 observes ``coe.conformance`` too (``tools/idp/conformance.py`` holds
+the evidence and judgement): each declared repo's conformance bundles, prepared
+and published, in ``coe_conformance_events``. A repo with no published bundle is
+an unverified check, never a pass. Findings, each threaded to the ledger row
+(``coe_conformance:<event id>``):
+
+* ``coe.conformance.standard_failing`` / ``.expired_exemption`` (high) what the
+                                  newest published bundle carries;
+* ``coe.conformance.metric_unverified`` (low) a delivery metric with no data;
+* ``coe.conformance.stale`` / ``.awaiting_publish`` / ``.self_published`` /
+  ``.chain_broken``.
 """
 from __future__ import annotations
 
@@ -64,7 +76,7 @@ from tools.twin_core.registry import register_twin
 class EngineeringStandardsTwin(GovernanceTwinAdapter):
     canvas_key = "idp"
     display_name = "Engineering standards register"
-    observes = ("coe.standards", "coe.exemptions", "coe.adrs")
+    observes = ("coe.standards", "coe.exemptions", "coe.adrs", "coe.conformance")
 
     def replay(self, observation_id: str) -> dict:
         """Re-judge a recorded observation from its evidence (see governance.replay)."""
@@ -72,11 +84,13 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
 
     def collect(self) -> dict:
         ev = self._collect_standards()
-        from tools.idp import adrs, exemptions
+        from tools.idp import adrs, conformance, exemptions
 
         # icx-coe-02: the exemptions and the ADRs, read the same way (never raising).
         ev["exemptions"] = exemptions.twin_evidence()
         ev["adrs"] = adrs.twin_evidence()
+        # icx-coe-03: the conformance bundles per repo.
+        ev["conformance"] = conformance.twin_evidence()
         return ev
 
     def _collect_standards(self) -> dict:
@@ -214,6 +228,15 @@ class EngineeringStandardsTwin(GovernanceTwinAdapter):
 
             c, f, s = adrs.twin_judge(evidence["adrs"] or {}, policy,
                                       evidence.get("observed_at") or "")
+            checks += c
+            findings += f
+            extra_summary.update(s)
+        if "conformance" in evidence:
+            from tools.idp import conformance
+
+            c, f, s = conformance.twin_judge(evidence["conformance"] or {},
+                                             policy.get("conformance") or {},
+                                             evidence.get("observed_at") or "")
             checks += c
             findings += f
             extra_summary.update(s)
