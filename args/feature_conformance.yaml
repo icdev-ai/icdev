@@ -550,6 +550,66 @@ features:
           file: tools/idp/blueprint.py
           text: "A steward, never the author, retires the standard in force, with a reason."
 
+  # ── Engineering CoE: exemptions that expire (icx-coe-02) ──────────────────
+  # Every exemption has a scope and an expiry; one past its expiry FAILS the
+  # scorecard and the CI check. Requesting and asking for a renewal decide
+  # nothing; granting and renewing are a person's declared steps
+  # (decl-wft-coe-exemption-grant / -renew), never the requester's. Revoking is a
+  # stop: immediate, with a stated reason; the audit does not read it as a
+  # decision, so it needs no entry here.
+  - key: coe.exemptions
+    component: idp
+    label: "Engineering CoE: scorecard exemptions that expire"
+    endpoints:
+      - idp.idp_exemptions_page
+      - idp.idp_api_exemptions
+      - idp.idp_api_exemption
+      - idp.idp_api_exemption_request
+      - idp.idp_api_exemption_decide
+      - idp.idp_api_exemption_renewal
+      - idp.idp_api_exemption_renew
+      - idp.idp_api_exemption_revoke
+    mcp_tools: [coe_exemptions, coe_exemption_request]
+    declared_decisions:
+      - id: coe.exemptions.grant
+        endpoint: idp.idp_api_exemption_decide
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A person, never the requester, grants an exemption request or denies it."
+      - id: coe.exemptions.renew
+        endpoint: idp.idp_api_exemption_renew
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A person, never the requester or the asker, renews an exemption or refuses."
+
+  # ── Engineering CoE: ADRs as records (icx-coe-02) ─────────────────────────
+  # One record per ADR (docs/reference/adrs/); docs/reference/adrs.md is generated
+  # from them. Proposing is a draft by anyone or an agent; accepting and
+  # superseding are a person's declared steps (decl-wft-coe-adr-accept /
+  # -supersede), never the author's.
+  - key: coe.adrs
+    component: idp
+    label: "Engineering CoE: architecture decision records as signed, versioned records"
+    endpoints:
+      - idp.idp_adrs_page
+      - idp.idp_api_adrs
+      - idp.idp_api_adr
+      - idp.idp_api_adr_propose
+      - idp.idp_api_adr_accept
+      - idp.idp_api_adr_supersede
+    mcp_tools: [coe_adrs, coe_adr_propose]
+    declared_decisions:
+      - id: coe.adrs.accept
+        endpoint: idp.idp_api_adr_accept
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A person, never the author, accepts a proposed ADR or returns it."
+      - id: coe.adrs.supersede
+        endpoint: idp.idp_api_adr_supersede
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A person who wrote neither ADR supersedes an accepted ADR by its successor, or deprecates it."
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory

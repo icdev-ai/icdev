@@ -693,6 +693,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # lifecycle ledger (seeded / proposed / reviewed / adopted / deprecated),
         # hash-chained per standard. A standard's status is the replay of its rows.
         "coe_standard_events",
+        # icx-coe-02, migration 20261118010237: the ADR records' lifecycle ledger
+        # (seeded / proposed / accepted / returned / superseded / deprecated), hash-chained
+        # per ADR. idp_rule_exemptions (above) gained its triggers in the same migration.
+        "coe_adr_events",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
         # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)

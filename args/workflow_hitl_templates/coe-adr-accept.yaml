@@ -1,0 +1,31 @@
+# CUI // SP-CTI
+id: decl-wft-coe-adr-accept
+name: "Architecture decision records: an architect who is not the author accepts or returns a proposal"
+description: >-
+  An ADR is proposed by anyone, or drafted by an agent, on /idp/adrs: its context,
+  decision and consequences, what it supersedes, and its links to platform-model
+  requirements and engineering standards. Proposing decides nothing. It is
+  accepted only when a person who is not its author accepts it, with a reason, at
+  the digest of the record they read; or it is returned to the author. Nothing
+  advances on its own.
+decides: [idp.idp_api_adr_accept]
+effect: >-
+  The decided step in wf_decision_steps is the signature (subject:
+  "adr:<id>@<version>"; payload: the id, version and record digest). The ADR
+  ledger appends an accepted or returned event to coe_adr_events, bound to that
+  step and chained to the row before it. An accepted ADR that names what it
+  supersedes does not by itself supersede it: that is decl-wft-coe-adr-supersede.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: Someone proposed the ADR (a person, or an agent's draft).
+  - name: accept
+    step_type: manual
+    role: architecture_steward
+    holders: [admin, isso, reviewer]
+    # The author is never the signer.
+    separate_from: builders
+    decisions: {accept: affirm, return: deny}
+    reason_required: [accept, return]

@@ -962,7 +962,6 @@ tests/test_icdev_evidence.py
 tests/test_idc_emit_page.py
 tests/test_idc_twin_phase1.py
 tests/test_idp_delivery_events.py
-tests/test_idp_exemptions.py
 tests/test_idp_gap_seeder.py
 tests/test_idp_score_history.py
 tests/test_idp_tenancy.py

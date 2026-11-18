@@ -1,0 +1,31 @@
+# CUI // SP-CTI
+id: decl-wft-coe-exemption-grant
+name: "Scorecard exemptions: a person grants or denies a request (request -> grant)"
+description: >-
+  An exemption waives a scorecard rule for a scope (a rule on a component, every
+  rule on a component, an engineering standard's rule, or a rule across a repo),
+  and it always expires. A request decides nothing. It applies only when a person
+  who did not request it grants it on /idp/exemptions, with a reason, at the
+  digest of the request they read. A request whose expiry is not after today
+  cannot be granted. Nothing advances on its own: a request waits for this step,
+  however long, and the old autoApprove switch is refused.
+decides: [idp.idp_api_exemption_decide]
+effect: >-
+  The decided step in wf_decision_steps is the grant (subject: "exemption:<key>";
+  payload: the key, the exemption digest, the expiry, the scope and the standards
+  it waives). The exemption log appends an approved or denied event to
+  idp_rule_exemptions, bound to that step and chained to the row before it.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: request
+    step_type: automated
+    description: Someone (a person, or an agent's draft) asked for the exemption, with a reason and an expiry.
+  - name: grant
+    step_type: manual
+    role: exemption_approver
+    holders: [admin, isso, reviewer]
+    # The requester is never the approver.
+    separate_from: builders
+    decisions: {grant: affirm, deny: deny}
+    reason_required: [grant, deny]

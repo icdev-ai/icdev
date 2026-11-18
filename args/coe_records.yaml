@@ -1,0 +1,42 @@
+# CUI // SP-CTI
+# Engineering CoE records: exemptions that expire, and ADRs as records (icx-coe-02).
+# Read by tools/idp/exemptions.py and tools/idp/adrs.py. Why: docs/reference/adrs.md, D-COE-2.
+
+version: 1
+
+exemptions:
+  # The breadth of a waiver. Every exemption names a scorecard and has ONE scope:
+  #   rule      one rule on one component (the original shape)
+  #   service   every rule of the scorecard on one component
+  #   standard  the rule an engineering standard's check names (args/engineering_standards.yaml),
+  #             on one component; the standard must be checked by a scorecard rule
+  #   repo      one rule on every component of a repo named below
+  scopes: [rule, service, standard, repo]
+  # The repos whose components the IDP scorecards grade. ICDEV[IT] grades its own.
+  repos: [icdev]
+  # Every exemption expires. A request with no expiry, an expiry not after today, or one further
+  # out than this is refused. Renewal is a person's declared step, never automatic.
+  max_expiry_days: 365
+  # The twin warns this many days before an active exemption expires.
+  expiring_warn_days: 14
+  # An exemption approved before expiry was mandatory, with none recorded, is given one this many
+  # days after the migration ran, by the labelled identity below (never a person), and the twin
+  # reports it until a person renews it or lets it lapse.
+  migration_grace_days: 30
+  migration_identity: "bootstrap:icx-coe-02-exemption-migration"
+
+adrs:
+  # One record per ADR: Markdown with YAML front matter; the body is the decision text.
+  records_dir: docs/reference/adrs
+  # The flat doc's prose and headings, with one `{{adr <ID>}}` line where each ADR reads.
+  layout: docs/reference/adrs/_layout.md
+  # GENERATED from the records and the layout: python tools/idp/adrs.py --write. A drift fails --check.
+  doc: docs/reference/adrs.md
+  statuses: [proposed, accepted, superseded, deprecated]
+  # The identity that recorded the migration of the flat doc into records, and that seeds them into
+  # the ledger. Not a person, never a signature.
+  seed_identity: "bootstrap:icx-coe-02-adr-migration"
+  # The flat doc as it stood when it was migrated (lossless round trip: tests/test_icx_coe_02_adrs.py).
+  migrated_from:
+    fixture: tests/fixtures/adrs_flat_20261117.md
+    commit: bbd0b5df6

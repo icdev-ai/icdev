@@ -205,6 +205,25 @@ jobs:
       - name: Component scoring sweep (dry run)
         working-directory: ${{ github.workspace }}
         run: python -m tools.quality.run_component_scoring --dry-run
+      # icx-coe-02. docs/reference/adrs.md is GENERATED from the ADR records in
+      # docs/reference/adrs/; a hand edit, or a record changed without --write,
+      # is drift and fails here. Exit codes: 0 in sync, 1 drifted or the records
+      # do not render. Do NOT add `|| true`.
+      - name: ADR records generate the flat ADR log
+        working-directory: ${{ github.workspace }}
+        run: python tools/idp/adrs.py --check
+      # icx-coe-02. Every exemption expires. This fails on an exemption past its
+      # expiry that nobody renewed or revoked, an approved one with no expiry, a
+      # grant written into args/scorecards/*.yaml (not a person's declared step)
+      # and an autoApprove switch. A CI checkout has no exemption log, so the
+      # step reads a throwaway SQLite database and says the log was not read;
+      # the file checks still run. Exit codes: 0 clean, 1 a finding.
+      - name: Exemption expiry gate
+        working-directory: ${{ github.workspace }}
+        env:
+          ICDEV_STORAGE_BACKEND: sqlite
+          ICDEV_DB_PATH: ${{ runner.temp }}/exemption-gate.db
+        run: python tools/idp/exemptions.py --check --gate
       # The gated test list lives in args/ci_test_files/core.txt, NOT here
       # (kax-conflict-07). It used to be a line-continuation chain in this file,
       # which made every task that added a test edit this hand-written workflow at

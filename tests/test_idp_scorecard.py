@@ -196,18 +196,34 @@ def test_filter_excludes_entity_from_score_and_ladder():
 def test_active_exemption_excludes_the_rule_without_crediting_it():
     """idp-score-04 semantics: an exemption removes the rule, it does not pass it.
 
-    The legacy list shape (`exemptions:` as a bare list of grants) is still
-    accepted, so this also pins backward compatibility of the YAML.
+    icx-coe-02: a grant applies only from the approval log, where a person's
+    declared step granted it, so the grant here is one the log would hold (the
+    log itself is exercised in tests/test_icx_coe_02_exemptions.py). The same
+    grant written into the YAML (the legacy bare-list shape, still parsed) is
+    read and reported as inert, never applied.
     """
-    exempted = BASE_YAML + """
+    import dataclasses
+
+    from tools.idp.scorecard import Exemption
+
+    grant = dict(identifier="has-owner", entity="bravo", reason="Vendor-managed component.",
+                 approved_by="platform-lead@example.mil", expires="2099-01-01")
+    in_yaml = _card(BASE_YAML + """
 exemptions:
 - identifier: has-owner
   entity: bravo
   reason: Vendor-managed component.
   approvedBy: platform-lead@example.mil
   expires: '2099-01-01'
-"""
-    report = evaluate(_card(exempted), conn=None, today="2026-08-02")
+""")
+    assert len(in_yaml.exemptions) == 1, "the legacy list shape still parses"
+    yaml_report = evaluate(in_yaml, conn=None, today="2026-08-02")
+    assert yaml_report["exemptions"]["active_count"] == 0
+    assert "declared step" in yaml_report["exemptions"]["inert"][0]["defect"]
+
+    logged = dataclasses.replace(_card(BASE_YAML),
+                                 exemptions=(Exemption(**grant, source="approval-log"),))
+    report = evaluate(logged, conn=None, today="2026-08-02")
 
     bravo = next(r for r in report["results"] if r["entity"] == "bravo")
     outcome = next(o for o in bravo["rules"] if o["identifier"] == "has-owner")
@@ -253,6 +269,9 @@ exemptions:
     outcome = next(o for o in bravo["rules"] if o["identifier"] == "has-owner")
     assert outcome["status"] == "fail"
     assert bravo["level"] == "Bronze"
+    # icx-coe-02: a YAML grant is inert before it is expired, so it does not fail the gate;
+    # an expired grant from the log FAILS it (tests/test_icx_coe_02_exemptions.py)
+    assert report["exemptions"]["gate"] == "pass"
 
 
 # ---------------------------------------------------------------------------

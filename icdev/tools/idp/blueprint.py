@@ -42,6 +42,25 @@ Engineering standards register (icx-coe-01, tools/idp/standards.py):
   POST /idp/api/standards/<standard_id>/adopt    A steward signs it into force (declared step)
   POST /idp/api/standards/<standard_id>/deprecate  A steward retires it (declared step)
   GET  /idp/api/standards-twin                   The register's twin observation, live, with threads
+                                                 (also the exemptions and the ADRs: canvas idp)
+
+Exemptions that expire (icx-coe-02, tools/idp/exemptions.py):
+  GET  /idp/exemptions                           Every exemption, its scope and expiry state
+  GET  /idp/api/exemptions                       JSON (``?as_of=`` looks ahead), with the gate
+  GET  /idp/api/exemptions/<ref>                 One exemption: history, chain, digest, next step
+  POST /idp/api/exemptions/request               A request (anyone; decides nothing)
+  POST /idp/api/exemptions/<ref>/decide          A person grants or denies (declared step)
+  POST /idp/api/exemptions/<ref>/renewal         Ask for a renewal (decides nothing)
+  POST /idp/api/exemptions/<ref>/renew           A person renews or refuses (declared step)
+  POST /idp/api/exemptions/<ref>/revoke          A stop: immediate, with a reason
+
+ADRs as records (icx-coe-02, tools/idp/adrs.py):
+  GET  /idp/adrs                                 Every ADR: status, links, lifecycle
+  GET  /idp/api/adrs                             JSON (records merged with the ledger; ``?q=``)
+  GET  /idp/api/adrs/<adr_id>                    One ADR: record, versions, history, next step
+  POST /idp/api/adrs/propose                     A draft (anyone; decides nothing)
+  POST /idp/api/adrs/<adr_id>/accept             A person accepts or returns (declared step)
+  POST /idp/api/adrs/<adr_id>/supersede          A person supersedes or deprecates (declared step)
 """
 from __future__ import annotations
 
@@ -441,3 +460,288 @@ def idp_api_standards_twin():
         return jsonify(governance.observe(governance.adapter_for("idp"), record=False))
     except Exception as exc:  # noqa: BLE001 — a twin that cannot observe says so
         return jsonify({"error": f"the standards twin could not observe: {exc}"}), 503
+
+
+# ---------------------------------------------------------------------------
+# Exemptions that expire (icx-coe-02)
+# ---------------------------------------------------------------------------
+#
+# Who decides: anyone (or an agent, as a draft) requests an exemption or asks
+# for a renewal; neither decides anything. Granting and renewing are a person's
+# declared steps (decl-wft-coe-exemption-grant / -renew), refused to the
+# requester and to whoever asked for the renewal, bound to the exemption digest.
+# Revoking is a stop: immediate, with a stated reason.
+
+
+def _exemption_refused(exc):
+    return jsonify(exc.to_dict()), exc.status
+
+
+@bp.route("/exemptions")
+def idp_exemptions_page():
+    """Scorecard exemptions: each with its scope, standards and expiry state; request, grant, renew."""
+    from tools.idp import exemptions
+
+    as_of = (flask_request.args.get("as_of") or "").strip()
+    try:
+        view = exemptions.exemptions_view(as_of=as_of)
+        error = ""
+    except Exception as exc:  # noqa: BLE001 — an unreadable log is said, not hidden
+        logger.warning("idp exemptions: log unreadable: %s", exc)
+        view = {"exemptions": [], "counts": {}, "gate": "unknown", "scopes": [], "repos": []}
+        error = str(exc)
+    try:
+        from tools.idp.scorecard import load_scorecards
+
+        cards = [{"key": c.key, "rules": [r.identifier for r in c.rules]} for c in load_scorecards()]
+    except Exception:  # noqa: BLE001
+        cards = []
+    return render_template("idp/exemptions.html", view=view, error=error, scorecards=cards,
+                           templates=dict(exemptions.TEMPLATES))
+
+
+@bp.route("/api/exemptions")
+def idp_api_exemptions():
+    """JSON: every exemption with its state (``?as_of=YYYY-MM-DD`` looks ahead), and the gate."""
+    from tools.idp import exemptions
+
+    try:
+        return jsonify(exemptions.exemptions_view(
+            as_of=(flask_request.args.get("as_of") or "").strip()))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"the exemption log could not be read: {exc}"}), 503
+
+
+@bp.route("/api/exemptions/<ref>")
+def idp_api_exemption(ref: str):
+    """One exemption: its state, history, chain, digest and the step it waits for."""
+    from tools.idp import exemptions
+
+    try:
+        return jsonify(exemptions.exemption_view(ref))
+    except exemptions.ExemptionError as exc:
+        return _exemption_refused(exc)
+
+
+@bp.route("/api/exemptions/request", methods=["POST"])
+def idp_api_exemption_request():
+    """Request an exemption. Anyone signed in; requesting decides nothing.
+
+    Body: ``{scorecard, rule, component, scope, scope_ref, standards, reason,
+    expires}``. Refused with no expiry, an expiry not after today or too far
+    out, an undeclared scope, or an unknown rule or standard.
+    """
+    from tools.idp import exemptions
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    actor = current_actor() or {}
+    standards = data.get("standards") or []
+    if isinstance(standards, str):
+        standards = [s for s in standards.replace(",", " ").split() if s]
+    try:
+        out = exemptions.request_exemption(
+            str(data.get("scorecard") or "component-readiness"), str(data.get("rule") or ""),
+            str(data.get("component") or ""), reason=str(data.get("reason") or ""),
+            requested_by=str(actor.get("id") or ""), expires=str(data.get("expires") or ""),
+            scope=str(data.get("scope") or "rule"), scope_ref=str(data.get("scope_ref") or ""),
+            standards=standards,
+            actor_kind="agent" if actor.get("role") == "service" else "person")
+    except exemptions.ExemptionError as exc:
+        return _exemption_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/exemptions/<ref>/decide", methods=["POST"])
+def idp_api_exemption_decide(ref: str):
+    """A person, never the requester, grants an exemption request or denies it.
+
+    Body: ``{decision: grant|deny, reason, digest}``. The person's step of
+    decl-wft-coe-exemption-grant, bound to the digest of the request read.
+    """
+    from tools.idp import exemptions
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = exemptions.decide_exemption(
+            exemptions.find_key(ref), decision=str(data.get("decision") or ""),
+            reason=str(data.get("reason") or ""), read_digest=str(data.get("digest") or ""),
+            actor=current_actor())
+    except exemptions.ExemptionError as exc:
+        return _exemption_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/exemptions/<ref>/renewal", methods=["POST"])
+def idp_api_exemption_renewal(ref: str):
+    """Ask for a granted exemption to run to a new expiry. Decides nothing.
+
+    Body: ``{expires, reason}``. The exemption keeps its expiry, and lapses on it,
+    until a person renews it.
+    """
+    from tools.idp import exemptions
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = exemptions.request_renewal(
+            exemptions.find_key(ref), expires=str(data.get("expires") or ""),
+            reason=str(data.get("reason") or ""), requested_by=current_actor() or {})
+    except exemptions.ExemptionError as exc:
+        return _exemption_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/exemptions/<ref>/renew", methods=["POST"])
+def idp_api_exemption_renew(ref: str):
+    """A person, never the requester or the asker, renews an exemption or refuses.
+
+    Body: ``{decision: renew|refuse, reason, digest}``. The person's step of
+    decl-wft-coe-exemption-renew, bound to the digest of the renewal read.
+    """
+    from tools.idp import exemptions
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = exemptions.renew_exemption(
+            exemptions.find_key(ref), decision=str(data.get("decision") or ""),
+            reason=str(data.get("reason") or ""), read_digest=str(data.get("digest") or ""),
+            actor=current_actor())
+    except exemptions.ExemptionError as exc:
+        return _exemption_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/exemptions/<ref>/revoke", methods=["POST"])
+def idp_api_exemption_revoke(ref: str):
+    """Withdraw an exemption or a request: a stop, immediate, with a stated reason.
+
+    Body: ``{reason}``. It only narrows (the rule applies again), so it takes no
+    declared step.
+    """
+    from tools.idp import exemptions
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = exemptions.revoke_by_key(exemptions.find_key(ref), revoked_by=current_actor() or {},
+                                       reason=str(data.get("reason") or ""))
+    except exemptions.ExemptionError as exc:
+        return _exemption_refused(exc)
+    return jsonify(out)
+
+
+# ---------------------------------------------------------------------------
+# ADRs as records (icx-coe-02)
+# ---------------------------------------------------------------------------
+#
+# Who decides: anyone (or an agent, as a draft) proposes an ADR. Accepting or
+# returning it, and superseding or deprecating it, are a person's declared steps
+# (decl-wft-coe-adr-accept / -supersede), never the author's.
+
+
+def _adr_refused(exc):
+    return jsonify(exc.to_dict()), exc.status
+
+
+@bp.route("/adrs")
+def idp_adrs_page():
+    """Architecture decision records: browse, see each one's lifecycle, propose, accept, supersede."""
+    from tools.idp import adrs
+
+    try:
+        view = adrs.adrs_view()
+        error = ""
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("idp adrs: records unreadable: %s", exc)
+        view = {"adrs": [], "counts": {}, "chain": {}, "doc": {}, "total": 0}
+        error = str(exc)
+    return render_template("idp/adrs.html", view=view, error=error,
+                           templates=dict(adrs.TEMPLATES))
+
+
+@bp.route("/api/adrs")
+def idp_api_adrs():
+    """JSON: every ADR (records merged with the ledger); ``?q=`` filters."""
+    from tools.idp import adrs
+
+    try:
+        return jsonify(adrs.adrs_view(query=(flask_request.args.get("q") or "")))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"the ADR records could not be read: {exc}"}), 503
+
+
+@bp.route("/api/adrs/<adr_id>")
+def idp_api_adr(adr_id: str):
+    """One ADR: its record, versions, history and the step it waits for."""
+    from tools.idp import adrs
+
+    try:
+        return jsonify(adrs.adr_view(adr_id))
+    except adrs.AdrRefused as exc:
+        return _adr_refused(exc)
+
+
+@bp.route("/api/adrs/propose", methods=["POST"])
+def idp_api_adr_propose():
+    """Propose an ADR as a draft. Anyone signed in; proposing decides nothing.
+
+    Body: ``{id, title, version, section, context, decision, consequences,
+    supersedes, requirements, standards, note}``.
+    """
+    from tools.idp import adrs
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = adrs.propose(adrs.entry_from_form(data), current_actor(),
+                           note=str(data.get("note") or ""))
+    except adrs.AdrRefused as exc:
+        return _adr_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/adrs/<adr_id>/accept", methods=["POST"])
+def idp_api_adr_accept(adr_id: str):
+    """A person, never the author, accepts a proposed ADR or returns it.
+
+    Body: ``{version, decision: accept|return, reason, digest}``. The person's
+    step of decl-wft-coe-adr-accept, bound to the record digest read.
+    """
+    from tools.idp import adrs
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = adrs.accept(adr_id, str(data.get("version") or ""),
+                          decision=str(data.get("decision") or ""),
+                          reason=str(data.get("reason") or ""),
+                          read_digest=str(data.get("digest") or ""), actor=current_actor())
+    except adrs.AdrRefused as exc:
+        return _adr_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/adrs/<adr_id>/supersede", methods=["POST"])
+def idp_api_adr_supersede(adr_id: str):
+    """A person who wrote neither ADR supersedes an accepted ADR by its successor, or deprecates it.
+
+    Body: ``{version, decision: supersede|deprecate, superseded_by, reason,
+    digest}``. The person's step of decl-wft-coe-adr-supersede.
+    """
+    from tools.idp import adrs
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = adrs.supersede(adr_id, str(data.get("version") or ""),
+                             decision=str(data.get("decision") or ""),
+                             reason=str(data.get("reason") or ""),
+                             read_digest=str(data.get("digest") or ""),
+                             superseded_by=str(data.get("superseded_by") or ""),
+                             actor=current_actor())
+    except adrs.AdrRefused as exc:
+        return _adr_refused(exc)
+    return jsonify(out)

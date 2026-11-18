@@ -1,0 +1,7 @@
+{
+  "description": "exemptions that expire (scope, mandatory expiry, digest, declared step, hash chain, append-only triggers) and the ADR records ledger (icx-coe-02)",
+  "date": "2026-11-18",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

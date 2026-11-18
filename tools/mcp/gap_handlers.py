@@ -5027,3 +5027,104 @@ def handle_coe_standard_propose(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_coe_standard_propose: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_coe_exemptions(args: dict) -> dict:
+    """MCP (icx-coe-02): scorecard exemptions that expire, or one with its history.
+
+    Read-only: every exemption's scope, the standards it waives, its expiry
+    state (active, expiring, expired, pending, renewal pending, denied, revoked)
+    and the gate (an expired exemption fails the scorecard). ``as_of`` looks
+    ahead. Grants, renews and revokes nothing.
+    """
+    try:
+        from tools.idp import exemptions
+
+        ref = str(args.get("ref") or "").strip()
+        if ref:
+            try:
+                return {"classification": CORTEX_CLASSIFICATION,
+                        "exemption": exemptions.exemption_view(ref)}
+            except exemptions.ExemptionError as exc:
+                return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION,
+                "exemptions": exemptions.exemptions_view(as_of=str(args.get("as_of") or ""))}
+    except Exception as exc:
+        logger.warning("handle_coe_exemptions: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_coe_exemption_request(args: dict) -> dict:
+    """MCP (icx-coe-02): an agent drafts an exemption REQUEST, recorded as ``agent:<id>``.
+
+    A request decides nothing: it waives no rule until a person who did not
+    request it grants it on /idp/exemptions (decl-wft-coe-exemption-grant), and
+    it needs an expiry like any other.
+    """
+    try:
+        from tools.idp import exemptions
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = exemptions.request_exemption(
+                str(args.get("scorecard") or "component-readiness"), str(args.get("rule") or ""),
+                str(args.get("component") or ""), reason=str(args.get("reason") or ""),
+                requested_by=f"agent:{agent}", expires=str(args.get("expires") or ""),
+                scope=str(args.get("scope") or "rule"), scope_ref=str(args.get("scope_ref") or ""),
+                standards=list(args.get("standards") or []), actor_kind="agent")
+        except exemptions.ExemptionError as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who did not request it grants or denies it on /idp/exemptions"}
+    except Exception as exc:
+        logger.warning("handle_coe_exemption_request: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_coe_adrs(args: dict) -> dict:
+    """MCP (icx-coe-02): the architecture decision records, or one ADR with its history.
+
+    Read-only: every ADR's status (records merged with the ledger), what it
+    supersedes, its links to platform-model requirements and engineering
+    standards, and whether the flat doc matches the records. Proposes, accepts
+    and supersedes nothing.
+    """
+    try:
+        from tools.idp import adrs
+
+        aid = str(args.get("adr_id") or "").strip()
+        if aid:
+            try:
+                return {"classification": CORTEX_CLASSIFICATION, "adr": adrs.adr_view(aid)}
+            except adrs.AdrRefused as exc:
+                return exc.to_dict()
+        view = adrs.adrs_view(query=str(args.get("q") or ""))
+        limit = max(1, min(int(args.get("limit") or 50), 500))
+        view["adrs"] = view["adrs"][:limit]
+        return {"classification": CORTEX_CLASSIFICATION, "register": view}
+    except Exception as exc:
+        logger.warning("handle_coe_adrs: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_coe_adr_propose(args: dict) -> dict:
+    """MCP (icx-coe-02): an agent proposes an ADR as a DRAFT, recorded as ``agent:<id>``.
+
+    A draft decides nothing: a person who is not its author accepts or returns
+    it, and later supersedes it, each a declared step on /idp/adrs.
+    """
+    try:
+        from tools.idp import adrs
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = adrs.propose(adrs.entry_from_form(dict(args)),
+                               {"id": f"agent:{agent}", "role": "service"},
+                               note=str(args.get("note") or ""))
+        except adrs.AdrRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who is not the author accepts or returns it on /idp/adrs"}
+    except Exception as exc:
+        logger.warning("handle_coe_adr_propose: %s", exc)
+        return {"error": str(exc)}

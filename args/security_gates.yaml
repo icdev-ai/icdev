@@ -2317,3 +2317,45 @@ engineering_standards:
     Seeds are recorded by the labelled bootstrap identity in seed_identity, never
     as a person's signature. args/standards_registry.yaml (the WG 22 citation
     catalog) is a different file and is cited, not changed.
+
+
+# Exemptions that expire, and ADRs as records (icx-coe-02)
+#
+# Enforced by tools/idp/exemptions.py, tools/idp/scorecard.py and tools/idp/adrs.py
+# and their declared templates (args/workflow_hitl_templates/coe-exemption-*.yaml,
+# coe-adr-*.yaml); tested in tests/test_icx_coe_02_*.py (gated: core.d/icx-coe-02.txt).
+# CI runs `python tools/idp/exemptions.py --check --gate` and `python tools/idp/adrs.py --check`.
+coe_exemptions:
+  blocking:
+    - exemption_without_expiry       # a request with no expiry, one not after today, or beyond max_expiry_days
+    - exemption_expired              # past its expiry: the scorecard's exemptions.gate fails, and the CI check
+    - exemption_in_config            # a grant written into scorecard YAML is not a person's step: inert, fails the check
+    - auto_approve_set               # autoApprove is refused at request and fails the check
+    - requester_grants_own           # grant or renew by the requester or the renewal's asker (separate_from: builders)
+    - step_by_non_person             # a service key or agent cannot grant or renew; it drafts
+    - step_on_stale_digest           # the exemption changed since the person read it
+    - unknown_scope_or_standard      # an undeclared scope, an unknown rule, a standard not in the register
+    - chain_broken                   # a log row that does not verify blocks any change to that exemption
+  warning:
+    - exemption_expiring             # twin: coe.exemption.expiring
+    - exemption_migrated             # twin: coe.exemption.migrated (an expiry given by the bootstrap migration)
+    - exemption_self_approved        # twin: coe.exemption.self_approved (legacy)
+  note: >
+    Expiry only removes an exemption; nothing renews by itself and no timer decides.
+    Approved exemptions with no expiry are given one by migration_identity, never granted again.
+coe_adrs:
+  blocking:
+    - doc_drift                      # docs/reference/adrs.md differs from what the records generate
+    - author_takes_own_step          # accept or supersede by the ADR's (or the successor's) author
+    - step_by_non_person             # an agent drafts; it never accepts or supersedes
+    - step_out_of_order              # accept needs proposed; supersede needs accepted and in force
+    - successor_not_accepted         # supersede names an accepted successor
+    - link_unknown                   # a link to a requirement or standard that does not exist
+    - chain_broken                   # a ledger row that does not verify blocks any change to that ADR
+  warning:
+    - record_not_in_ledger           # twin: coe.adrs.recorded unverified (never passed)
+    - ledger_not_exported            # twin: coe.adr.unexported
+    - proposal_waiting               # twin: coe.adr.proposed.waiting
+  note: >
+    The 676 ADRs migrated from the flat log were recorded by the labelled bootstrap identity
+    (args/coe_records.yaml adrs.seed_identity), never a person's signature.

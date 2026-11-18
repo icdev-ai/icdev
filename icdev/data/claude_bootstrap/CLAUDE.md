@@ -474,7 +474,7 @@ Detailed reference material (read on-demand, not loaded automatically):
 |------|----------|
 | [commands.md](docs/reference/commands.md) | All CLI commands for every ICDEV™ module |
 | [architecture.md](docs/reference/architecture.md) | Agents, MCP servers, languages, skills, deployment, scaling, installation |
-| [adrs.md](docs/reference/adrs.md) | All architecture decision records (D1–D360+) |
+| [adrs.md](docs/reference/adrs.md) | All architecture decision records (D1–D360+). GENERATED from one record per ADR in `docs/reference/adrs/`: add or change a record, then `python tools/idp/adrs.py --write` (CI fails on drift; icx-coe-02) |
 | [compliance-security.md](docs/reference/compliance-security.md) | Compliance frameworks, crosswalk, security gates, args config |
 | [subsystems.md](docs/reference/subsystems.md) | Innovation, Creative, Research engines; RICOAS; SaaS; Marketplace; CI/CD |
 | [goals.md](docs/reference/goals.md) | All existing goal workflows with descriptions |

@@ -57,8 +57,9 @@ def test_every_template_is_well_formed_and_decides_its_own_surfaces():
 
     templates = declared.load_templates()
     # icx-ace-01 auto-dispatch; icx-mdz-01 five modernisation; icx-mdz-03 process review; icx-mdz-05 capacity review;
-    # icx-mdz-06 survivor IV&V sign-off; icx-coe-01 the standards lifecycle (review, adopt, deprecate)
-    assert len(templates) == 20
+    # icx-mdz-06 survivor IV&V sign-off; icx-coe-01 the standards lifecycle (review, adopt, deprecate);
+    # icx-coe-02 exemption grant and renew, ADR accept and supersede
+    assert len(templates) == 24
     owners = {}
     for tid, tmpl in templates.items():
         assert declared.validate_template(tmpl) == [], tid
@@ -86,6 +87,10 @@ def test_every_template_is_well_formed_and_decides_its_own_surfaces():
         "migration_canvas.api_modernisation_ivv_signoff",
         # icx-coe-01: a steward (never the author) reviews, signs into force and deprecates a standard
         "idp.idp_api_standard_review", "idp.idp_api_standard_adopt", "idp.idp_api_standard_deprecate",
+        # icx-coe-02: a person (never the requester) grants and renews an exemption; a person (never the author)
+        # accepts and supersedes an ADR
+        "idp.idp_api_exemption_decide", "idp.idp_api_exemption_renew",
+        "idp.idp_api_adr_accept", "idp.idp_api_adr_supersede",
     }
     assert declared.manual_stage(templates["decl-wft-cortex-award"])["separate_from"] == "proposer"
 
@@ -104,10 +109,10 @@ def test_a_malformed_template_is_named():
 def test_seed_is_idempotent_and_never_a_canvas_default(declared, wf_db):
     first = declared.seed_declared_templates()
     second = declared.seed_declared_templates()
-    assert len(first["seeded"]) == 20 and second == {"seeded": [], "updated": []}
+    assert len(first["seeded"]) == 24 and second == {"seeded": [], "updated": []}
     rows = _rows(wf_db, "SELECT id, is_default, is_system FROM wf_templates "
                         "WHERE id LIKE 'decl-wft-%'")
-    assert len(rows) == 20 and all(r[1] == 0 and r[2] == 1 for r in rows)
+    assert len(rows) == 24 and all(r[1] == 0 and r[2] == 1 for r in rows)
 
 
 # ── take_step ────────────────────────────────────────────────────────────────
@@ -600,7 +605,7 @@ def test_the_decisions_page_lists_and_decides(wf_db):
     assert as_pm.post(f"/decisions/api/steps/{prop['step_id']}/decide",
                       json={"decision": "accept"}).status_code == 409
     templates = as_pm.get("/decisions/api/templates").get_json()["templates"]
-    assert len(templates) == 20  # icx-mdz-05: capacity review; icx-mdz-06: IV&V sign-off; icx-coe-01: 3
+    assert len(templates) == 24  # icx-mdz-05, icx-mdz-06: 1 each; icx-coe-01: 3; icx-coe-02: 4
 
 
 def test_the_mcp_tool_reads_and_never_decides(wf_db):
@@ -608,7 +613,7 @@ def test_the_mcp_tool_reads_and_never_decides(wf_db):
     from tools.mcp.tool_registry import READ_ONLY_DECLARATIONS, tool_authorization
 
     out = handle_workflow_decision_steps({"status": "pending"})
-    assert out["steps"] == [] and len(out["templates"]) == 20  # icx-coe-01: the standards lifecycle
+    assert out["steps"] == [] and len(out["templates"]) == 24  # icx-coe-02: exemptions and ADRs
     assert READ_ONLY_DECLARATIONS["workflow_decision_steps"] is True
     assert tool_authorization("workflow_decision_steps")["tier"] == "read"
 
