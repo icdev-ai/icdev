@@ -33,9 +33,20 @@ import sys
 from pathlib import Path
 
 # Ensure repo root is on sys.path so `tools.builder` is importable when run directly.
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if REPO_ROOT.name == "icdev":
-    REPO_ROOT = REPO_ROOT.parent
+def repo_root_of(file: str | Path) -> Path:
+    """The repo this file belongs to: three levels up, or four from the icdev/ mirror.
+
+    The mirror (<repo>/icdev/tools/cli/scaffold.py) climbs one more level. Decided by what is THERE,
+    never by the directory's name alone: a checkout that is itself named `icdev` (CI's
+    /home/runner/work/icdev/icdev) must not climb out of the repo (icx-coe-04).
+    """
+    root = Path(file).resolve().parent.parent.parent
+    if root.name == "icdev" and (root.parent / "tools" / "cli" / "scaffold.py").is_file():
+        return root.parent
+    return root
+
+
+REPO_ROOT = repo_root_of(__file__)
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
@@ -177,7 +188,8 @@ def scaffold_service(key: str, display_name: str, out_dir: Path, *, path_id: str
     entry = gp.path_entry(path_id, config)
     if not re.match(r"^[a-z][a-z0-9_]{1,40}$", key):
         return {"success": False, "errors": [f"key {key!r}: snake_case, 2 to 41 characters"]}
-    template_dir = BASE_DIR / entry["template"]
+    # The template is resolved where the path was declared (the root args/golden_paths.yaml was read from).
+    template_dir = gp.BASE_DIR / entry["template"]
     variables = {
         "key": key, "display_name": display_name,
         "env_flag": _derive_env_flag(key, env_flag),

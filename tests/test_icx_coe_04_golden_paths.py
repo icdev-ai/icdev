@@ -453,3 +453,20 @@ def test_the_mcp_tools_read_and_only_propose(gp, seeded):
     assert READ_ONLY_DECLARATIONS["coe_golden_paths"] is True and READ_ONLY_DECLARATIONS["coe_golden_path_propose"] is False
     assert tool_authorization("coe_golden_paths")["tier"] == "read"
     assert tool_authorization("coe_golden_path_propose")["tier"] != "read"
+
+
+def test_the_scaffold_finds_its_repo_in_a_checkout_named_icdev_and_from_the_mirror(tmp_path):
+    """CI checks out into /home/runner/work/icdev/icdev: a checkout NAMED icdev is the repo, not the mirror."""
+    from tools.cli.scaffold import repo_root_of
+
+    ci = tmp_path / "work" / "icdev" / "icdev"
+    (ci / "tools" / "cli").mkdir(parents=True)
+    (ci / "tools" / "cli" / "scaffold.py").write_text("", encoding="utf-8")
+    assert repo_root_of(ci / "tools" / "cli" / "scaffold.py") == ci.resolve()
+    mirror = ci / "icdev" / "tools" / "cli"
+    mirror.mkdir(parents=True)
+    (mirror / "scaffold.py").write_text("", encoding="utf-8")
+    assert repo_root_of(mirror / "scaffold.py") == ci.resolve(), "the icdev/ mirror climbs to its repo"
+    plain = tmp_path / "wt" / "tools" / "cli"
+    plain.mkdir(parents=True)
+    assert repo_root_of(plain / "scaffold.py") == (tmp_path / "wt").resolve()

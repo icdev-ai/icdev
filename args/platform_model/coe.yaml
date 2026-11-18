@@ -669,6 +669,7 @@ requirements:
     controls: [SA-3, SA-8, CM-8]
     tests:
       - tests/test_icx_coe_04_golden_paths.py::test_scaffold_service_renders_every_piece_and_registers_it_as_text
+      - tests/test_icx_coe_04_golden_paths.py::test_the_scaffold_finds_its_repo_in_a_checkout_named_icdev_and_from_the_mirror
 
   - id: PM-COE-18
     title: The drift check scores the scaffold with the IDP scorecard and feature_audit
