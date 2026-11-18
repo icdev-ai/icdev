@@ -205,7 +205,8 @@ def test_the_drift_check_passes_the_scaffold_machine_pass_manual_needs_evidence(
     t = r["tests"]
     assert t["red_first"] and t["green"]["rc"] == 0 and t["red"]["rc"] != 0
     assert all(p["ok"] for p in r["pieces"]) and {p["piece"] for p in r["pieces"]} == {
-        "contract", "sbom", "ai_bom", "control_map", "otel", "adr", "scorecard_declaration"}
+        "contract", "sbom", "ai_bom", "control_map", "otel", "adr", "architecture_records",   # osx-cop-04
+        "scorecard_declaration"}
     assert r["seconds"] < 120, "the drift check stays fast enough for CI"
 
 

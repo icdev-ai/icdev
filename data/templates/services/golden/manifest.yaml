@@ -9,7 +9,8 @@
 # rendered here: the snippets under .golden/ are spliced into them by golden_paths.register(), the
 # same text splice `icdev scaffold canvas` uses for the registry, so no reviewed comment is lost.
 # The SBOM, the AI-BOM and the ADR record are produced after rendering by the existing generators
-# (tools/compliance/sbom_generator.py, tools/security/ai_bom_generator.py, tools/idp/adrs.py).
+# (tools/compliance/sbom_generator.py, tools/security/ai_bom_generator.py, tools/idp/adrs.py). The C4 views and the
+# arc42 description (osx-cop-04) are rendered here and link that ADR record; they never copy it.
 name: golden
 kind: service
 description: >-
@@ -105,6 +106,12 @@ files:
     dest: "tests/test_{{ key }}.py"
   - src: e2e.spec.ts.j2
     dest: "tests/e2e/{{ key }}.spec.ts"
+  # osx-cop-04: the architecture records a service carries beside its ADR record: C4 views and an arc42 description.
+  # Section 9 of the arc42 document LINKS the ADR record (written by tools/idp/adrs.py); neither holds a decision.
+  - src: c4.md.j2
+    dest: "docs/architecture/{{ key }}/c4.md"
+  - src: arc42.md.j2
+    dest: "docs/architecture/{{ key }}/arc42.md"
   - src: registry_entry.yaml.j2
     dest: ".golden/component_registry.yaml"
   - src: feature_entry.yaml.j2
