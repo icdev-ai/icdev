@@ -14,17 +14,20 @@ a wave's `depends_on` and `undated_reason`, and an IV&V's `area_status`, `findin
 file's digest is not the pinned one. To take a newer contract: copy the new schema, update the digest in
 `apptwin_export.SCHEMA_SHA256` and this file, and run `tests/test_icx_apptwin_export.py`.
 
-## The conformance bundle (DRAFT, icx-coe-03)
+## The conformance bundle (icx-coe-03; adopted by ICDEV[OS] in osx-coe-01)
 
-`conformance.schema.json` is the `icos-conformance/v1` bundle schema (`urn:icdev-os:contract:conformance:1`), one
-bundle per repo of the ecosystem (ICDEV[IT], ICDEV[OS], ICDEV[FT]): the engineering standards and their status, the
-scorecard results with evidence, the exemptions with expiry, the delivery metrics (DORA four keys and AI-assisted
-rework, each with its window, sample size and source digests), the linked ADRs, and the producer, version and time.
-It is a DRAFT, written here in the style of `apptwin.schema.json` and licensed the same way: ICDEV[OS] adopts it into
-its published contract in osx-coe-01, and then this copy is replaced by the vendored one and re-pinned.
+`conformance.schema.json` is ICDEV[OS]'s `icos-conformance/v1` bundle schema (`urn:icdev-os:contract:conformance:1`), copied
+verbatim from the ICDEV[OS] published contract (`contracts/schemas/conformance.schema.json`, contract version 1.193.0,
+SHA-256 `e90251a5def88fd538ca5e465f0073a0bb0db9d2c3fee5395863000b768210e2`). ICDEV[IT] drafted it in icx-coe-03; ICDEV[OS]
+adopted it byte for byte but two lines: its `description` says ICDEV[OS] owns it (no DRAFT note), and `x-icos-contract` is
+the contract version, not `draft`. One bundle per repo of the ecosystem (ICDEV[IT], ICDEV[OS], ICDEV[FT]): the engineering
+standards and their status, the scorecard results with evidence, the exemptions with expiry, the delivery metrics (DORA four
+keys and AI-assisted rework, each with its window, sample size and source digests), the linked ADRs, and the producer,
+version and time. It is licensed Apache-2.0 (`LICENSE`, `NOTICE` here), unlike the rest of this repository.
 
-`tools/idp/conformance.py` validates every bundle against it and refuses to run if the file's digest is not the one
-pinned in `conformance.SCHEMA_SHA256`. `content_digest` is SHA-256 over the canonical JSON of the bundle without
-`content_digest`, `publication` and `produced_at`; `publication` is a person's declared step
-(`decl-wft-coe-conformance-publish`) bound to it. To change the draft: edit it, update the digest in
-`conformance.SCHEMA_SHA256`, and run `tests/test_icx_coe_03_conformance.py`.
+`tools/idp/conformance.py` validates every bundle against it and refuses to run if the file's digest is not the one pinned
+in `conformance.SCHEMA_SHA256`. `content_digest` is SHA-256 over the canonical JSON of the bundle without `content_digest`,
+`publication` and `produced_at`; `publication` is a person's declared step (`decl-wft-coe-conformance-publish`) bound to
+it. ICDEV[OS] recomputes the digest on import and refuses a mismatch, a bundle nobody published, and one published by its
+preparer. To take a newer contract: copy the new schema, update the digest in `conformance.SCHEMA_SHA256`,
+`conformance.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_coe_03_conformance.py`.

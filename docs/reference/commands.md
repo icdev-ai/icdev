@@ -7757,7 +7757,7 @@ Each repo declared in `args/coe_conformance.yaml` (ICDEV[IT] `it`, ICDEV[OS] `os
 ICDEV[FT] `ft`) is scored against the engineering standards in force that apply to
 it, with its delivery evidence (DORA four keys plus AI-assisted rework, from the git
 history of main, a CI-run snapshot and a board export), and exported as one
-`icos-conformance/v1` bundle for ICDEV[OS] (draft schema
+`icos-conformance/v1` bundle for ICDEV[OS] (its contract schema, vendored and pinned,
 `context/icos/conformance.schema.json`). A bundle is prepared on `/idp/conformance`
 (or by an agent through MCP) and published only by a person who did not prepare it.
 

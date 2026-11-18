@@ -1405,7 +1405,7 @@
   "$id": "urn:icdev-os:contract:conformance:1",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "DRAFT: to be adopted into the ICOS contract by osx-coe-01; then re-pinned. Drafted in ICDEV[IT] by icx-coe-03 (tools/idp/conformance.py), in the style of the icos-apptwin/v1 contract. One bundle per repo (ICDEV[IT], ICDEV[OS], ICDEV[FT]): the engineering standards and their status against the repo, the scorecard results with their evidence, the exemptions that touch it (with expiry), the delivery metrics (DORA four keys and AI-assisted rework, each with its window, sample size and source digests), a summary of the linked ADRs, and the producer, version and time. content_digest is SHA-256 over the canonical JSON (keys sorted, separators ',' and ':', no whitespace) of the bundle without content_digest, publication and produced_at; ICOS recomputes it. publication is a person's declared step bound to that digest. Nothing unreported is a pass: unverified is said, with why.",
+  "description": "Owned by ICDEV[OS] (osx-coe-01); exported by ICDEV[IT] (tools/idp/conformance.py), in the style of the icos-apptwin/v1 contract. One bundle per repo (ICDEV[IT], ICDEV[OS], ICDEV[FT]): the engineering standards and their status against the repo, the scorecard results with their evidence, the exemptions that touch it (with expiry), the delivery metrics (DORA four keys and AI-assisted rework, each with its window, sample size and source digests), a summary of the linked ADRs, and the producer, version and time. content_digest is SHA-256 over the canonical JSON (keys sorted, separators ',' and ':', no whitespace) of the bundle without content_digest, publication and produced_at; ICOS recomputes it. publication is a person's declared step bound to that digest. Nothing unreported is a pass: unverified is said, with why.",
   "properties": {
     "adrs": {
       "$ref": "#/$defs/Adrs"
@@ -1508,6 +1508,6 @@
   ],
   "title": "Conformance",
   "type": "object",
-  "x-icos-contract": "draft",
+  "x-icos-contract": "1.193.0",
   "x-license": "Apache-2.0"
 }

@@ -495,12 +495,12 @@ requirements:
       - tests/test_icx_coe_03_conformance.py::test_ci_and_board_snapshots_normalise_and_refuse_garbage
 
   - id: PM-COE-13
-    title: One icos-conformance/v1 bundle per repo, against a pinned draft schema, deterministic
+    title: One icos-conformance/v1 bundle per repo, against the pinned ICOS contract, deterministic
     text: >-
       Each repo's bundle carries its standards and their status, the scorecard results
       with evidence, the exemptions with expiry, the delivery metrics, the linked ADRs and
       the producer, version and time, and validates against
-      context/icos/conformance.schema.json (a DRAFT for osx-coe-01, pinned by SHA-256).
+      context/icos/conformance.schema.json (ICDEV[OS]'s contract 1.193.0, vendored, pinned by SHA-256).
       content_digest is the digest of its canonical content without produced_at and the
       publication, so the export is byte for byte the same given its inputs. ICDEV[IT],
       ICDEV[OS] and ICDEV[FT] are declared.

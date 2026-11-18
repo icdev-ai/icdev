@@ -27,7 +27,7 @@ declared sources, each metric with its window, sample size and source digests; n
 exemptions that touch the repo (with expiry), the delivery metrics, the ADRs linked to the repo's standards,
 the producer, version and time. ``content_digest`` is SHA-256 over the canonical JSON of the bundle without
 ``content_digest``, ``publication`` and ``produced_at`` (:func:`content_digest`): ICDEV[OS] recomputes it.
-Validated against the draft schema (pinned by SHA-256 here) before it is returned.
+Validated against ICDEV[OS]'s published schema (vendored, pinned by SHA-256 here) before it is returned.
 
 **Publishing is a person's decision** (``decl-wft-coe-conformance-publish``). A bundle leaving the factory is
 evidence ICDEV[OS] will judge the CoE by, so someone attests it: anyone (or an agent) PREPARES a bundle, which
@@ -67,9 +67,11 @@ BASE_DIR = repo_root(__file__)
 CONFIG_RELPATH = "args/coe_conformance.yaml"
 SCHEMA = "icos-conformance/v1"
 SCHEMA_RELPATH = "context/icos/conformance.schema.json"
-#: The digest of the DRAFT schema (to be adopted into the ICOS contract by osx-coe-01, then re-pinned). A
-#: changed file is refused, never silently used.
-SCHEMA_SHA256 = "7776e0252f5fef90519cde392f2214689686603e8410c7f3cad886a9804e9762"
+#: The digest of ICDEV[OS]'s published schema (contracts/schemas/conformance.schema.json, contract
+#: SCHEMA_CONTRACT), vendored verbatim: ICOS adopted the icx-coe-03 draft in osx-coe-01. A changed file is
+#: refused, never silently used.
+SCHEMA_SHA256 = "e90251a5def88fd538ca5e465f0073a0bb0db9d2c3fee5395863000b768210e2"
+SCHEMA_CONTRACT = "1.193.0"
 PRODUCER = "icdev-it/conformance_export"
 CLASSIFICATION = "CUI // SP-CTI"
 TABLE = "coe_conformance_events"
@@ -454,13 +456,13 @@ def schema() -> dict:
     raw = (BASE_DIR / SCHEMA_RELPATH).read_bytes()
     got = hashlib.sha256(raw).hexdigest()
     if got != SCHEMA_SHA256:
-        raise ConformanceRefused(500, "schema", f"{SCHEMA_RELPATH} is not the pinned draft (sha256 {got}, "
+        raise ConformanceRefused(500, "schema", f"{SCHEMA_RELPATH} is not the pinned ICOS contract (sha256 {got}, "
                                                 f"pinned {SCHEMA_SHA256})")
     return json.loads(raw)
 
 
 def validate(bundle: dict) -> list[str]:
-    """The bundle's errors against the draft schema, then its own digest. Empty: ICDEV[OS] would take it."""
+    """The bundle's errors against the ICOS contract's schema, then its own digest. Empty: ICDEV[OS] would take it."""
     import jsonschema
 
     v = jsonschema.Draft202012Validator(schema(), format_checker=jsonschema.FormatChecker())
@@ -528,7 +530,7 @@ def build(repo: str, *, as_of: Optional[str] = None, at: Optional[str] = None, c
     if check:
         errors = validate(bundle)
         if errors:
-            raise ConformanceRefused(500, "contract", "the bundle does not meet the icos-conformance/v1 draft: "
+            raise ConformanceRefused(500, "contract", "the bundle does not meet the icos-conformance/v1 contract: "
                                                       + "; ".join(errors[:10]))
     return bundle
 
