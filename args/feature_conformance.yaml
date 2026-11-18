@@ -514,6 +514,42 @@ features:
           file: tools/dashboard/templates/migration_canvas/modernisation.html
           text: '<div class="mdz-card" id="mdz-bundle">'
 
+  # ── Engineering CoE: the standards register (icx-coe-01) ──────────────────
+  # One entry per standard (args/engineering_standards.yaml seeds; status is the
+  # replay of coe_standard_events). Propose is a draft by anyone or an agent; a
+  # steward who is not the author reviews, signs into force and deprecates, each
+  # a declared step (decl-wft-coe-standard-review / -adopt / -deprecate). The idp
+  # blueprint's other routes are the portal's own and are not listed here.
+  - key: coe.standards
+    component: idp
+    label: "Engineering CoE: standards register with a lifecycle"
+    endpoints:
+      - idp.idp_standards_page
+      - idp.idp_api_standards
+      - idp.idp_api_standard
+      - idp.idp_api_standard_propose
+      - idp.idp_api_standard_review
+      - idp.idp_api_standard_adopt
+      - idp.idp_api_standard_deprecate
+      - idp.idp_api_standards_twin
+    mcp_tools: [coe_standards, coe_standard_propose]
+    declared_decisions:
+      - id: coe.standards.review
+        endpoint: idp.idp_api_standard_review
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A steward, never the author, endorses a proposed standard or returns it."
+      - id: coe.standards.adopt
+        endpoint: idp.idp_api_standard_adopt
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A steward, never the author, signs a reviewed standard into force, or refuses it."
+      - id: coe.standards.deprecate
+        endpoint: idp.idp_api_standard_deprecate
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A steward, never the author, retires the standard in force, with a reason."
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory

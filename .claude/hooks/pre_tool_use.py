@@ -689,6 +689,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Cortex finding. A decision is a new row, never an edit.
         "wf_decision_steps",
         "cortex_finding_adjudications",
+        # icx-coe-01, migration 20261117231010: the engineering standards register's
+        # lifecycle ledger (seeded / proposed / reviewed / adopted / deprecated),
+        # hash-chained per standard. A standard's status is the replay of its rows.
+        "coe_standard_events",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
         # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)

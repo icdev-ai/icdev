@@ -9096,6 +9096,35 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    # -- engineering standards register (icx-coe-01) ---------------------------
+    "coe_standards": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_standards",
+        "description": "Read ICDEV's engineering standards register (/idp/standards): every standard with its owner role, state (proposed, reviewed, adopted, refused, returned, deprecated, superseded), the version in force and who put it there (a person's signed step, or the labelled bootstrap identity that seeded a standard already enforced by machine, never a signature), and whether its check-as-code resolves (an IDP scorecard rule or a named manual evidence step; a standard without one is a wish and cannot be adopted). Give standard_id for one standard's versions, sources (with sha256 of repo files), full hash-chained history and the step it waits for. Read-only: proposes, reviews, adopts and deprecates nothing.",
+        "input_schema": {"type": "object", "properties": {"standard_id": {"type": "string", "description": "One standard, e.g. ENG-RED-FIRST"}}},
+    },
+    "coe_standard_propose": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_coe_standard_propose",
+        "description": "Propose an engineering standard as a DRAFT, recorded as the agent's (actor kind agent). A draft decides nothing: a steward who is not its author reviews it, signs it into force and later deprecates it, each a person's declared step on /idp/standards; an agent can take none of them. Give id (ENG-...), title, version, owner (a role), scope, sources (repo paths, catalog:<key> or https URLs) and a check: check_kind scorecard_rule with scorecard and rule, or manual_evidence with evidence_name, evidence_procedure and produced_by. A draft with no check is accepted and marked: it cannot be adopted.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The proposing agent's name (recorded as agent:<name>)"},
+                "id": {"type": "string"}, "title": {"type": "string"}, "version": {"type": "string"},
+                "owner": {"type": "string", "description": "The owning role, e.g. developer, isso, admin"},
+                "scope": {"type": "string"},
+                "sources": {"type": "array", "items": {"type": "string"}, "description": "One reference each: a repo path, catalog:<key> or an https URL"},
+                "check_kind": {"type": "string", "enum": ["", "scorecard_rule", "manual_evidence"]},
+                "scorecard": {"type": "string"}, "rule": {"type": "string"},
+                "evidence_name": {"type": "string"}, "evidence_procedure": {"type": "string"},
+                "produced_by": {"type": "string"}, "note": {"type": "string"},
+            },
+            "required": ["id", "title", "version", "owner", "scope", "sources"],
+        },
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -9804,6 +9833,11 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "modernisation_features":                   True,
     "modernisation_wave_schedule":              True,
     "modernisation_survivor_ivv":               True,
+    # icx-coe-01: the engineering standards register. The read reads the register
+    # and the ledger; the propose tool writes a draft (one ledger row) and decides
+    # nothing, so it is not read-only and halts at the approval gate's default tier.
+    "coe_standards":                            True,
+    "coe_standard_propose":                     False,
 })
 
 

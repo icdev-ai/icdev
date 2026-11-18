@@ -2040,6 +2040,8 @@ components:
       href: /idp/catalog
     - label: Scorecards
       href: /idp/scorecards
+    - label: Engineering Standards
+      href: /idp/standards
   iqe:
     adapter_module: tools.iqe.adapters.idp
     collections:

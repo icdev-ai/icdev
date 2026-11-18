@@ -4977,3 +4977,53 @@ def handle_twin_governance(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_twin_governance: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_coe_standards(args: dict) -> dict:
+    """MCP (icx-coe-01): the engineering standards register, or one standard with its history.
+
+    Read-only: every standard's state, the version in force and who put it there
+    (a person's signed step or the labelled bootstrap seed), and whether its
+    check-as-code resolves. Proposes, reviews, adopts and deprecates nothing.
+    """
+    try:
+        from tools.idp import standards
+
+        sid = str(args.get("standard_id") or "").strip()
+        if sid:
+            try:
+                return {"classification": CORTEX_CLASSIFICATION,
+                        "standard": standards.standard_view(sid)}
+            except standards.StandardRefused as exc:
+                return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "register": standards.register_view()}
+    except Exception as exc:
+        logger.warning("handle_coe_standards: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_coe_standard_propose(args: dict) -> dict:
+    """MCP (icx-coe-01): an agent proposes an engineering standard as a DRAFT.
+
+    Recorded as ``agent:<agent_id>`` (actor kind agent). A draft decides nothing:
+    review, adoption and deprecation are a person's declared steps on
+    /idp/standards, and declared.take_step refuses anyone who is not a person.
+    """
+    try:
+        from tools.idp import standards
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        data = dict(args)
+        if isinstance(data.get("sources"), list):
+            data["sources"] = "\n".join(str(s) for s in data["sources"])
+        try:
+            out = standards.propose(standards.entry_from_form(data),
+                                    {"id": f"agent:{agent}", "role": "service"},
+                                    note=str(args.get("note") or ""))
+        except standards.StandardRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a steward who is not the author reviews it on /idp/standards"}
+    except Exception as exc:
+        logger.warning("handle_coe_standard_propose: %s", exc)
+        return {"error": str(exc)}

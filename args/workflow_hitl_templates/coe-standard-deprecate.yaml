@@ -1,0 +1,28 @@
+# CUI // SP-CTI
+id: decl-wft-coe-standard-deprecate
+name: "Engineering standards: a steward deprecates a standard in force (adopt -> deprecate)"
+description: >-
+  A standard in force is retired only by a steward who is not its author, on
+  /idp/standards, with a reason and (where one exists) the standard that
+  supersedes it. Deprecation keeps the whole history: the ledger is
+  append-only, and a deprecated standard is shown with every event that led
+  there.
+decides: [idp.idp_api_standard_deprecate]
+effect: >-
+  The decided step in wf_decision_steps is the deprecation (subject:
+  "standard:<id>@<version>"; payload: the id, version, entry digest and
+  superseded_by). The register appends a deprecated event to
+  coe_standard_events, bound to that step.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: adopted
+    step_type: automated
+    description: The standard is in force (an adopted or seeded-adopted event in coe_standard_events).
+  - name: deprecate
+    step_type: manual
+    role: standards_steward
+    holders: [admin, isso, reviewer]
+    separate_from: builders
+    decisions: {deprecate: affirm}
+    reason_required: [deprecate]

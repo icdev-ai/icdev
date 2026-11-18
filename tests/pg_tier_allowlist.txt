@@ -133,3 +133,7 @@ tests/test_icx_mdz_05_ambient.py
 # icx-mdz-06: a survivor IV&V result written to the append-only audit_trail and read back, a person's
 # decl-wft-mdz-survivor-ivv-signoff step in wf_decision_steps, and the builders read from both, on the ambient PG.
 tests/test_icx_mdz_06_ambient.py
+# icx-coe-01: an engineering standard proposed, reviewed, adopted and deprecated on the ambient PG: the
+# coe_standard_events ledger (PL/pgSQL append-only triggers, UNIQUE(standard_id, prev_hash)) and the three
+# decl-wft-coe-standard-* steps in wf_decision_steps.
+tests/test_icx_coe_01_ambient.py

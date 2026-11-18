@@ -1,0 +1,236 @@
+# CUI // SP-CTI
+# Engineering standards register (icx-coe-01). Read by tools/idp/standards.py.
+#
+# ONE ENTRY PER STANDARD: what ICDEV's engineering holds itself to, who owns it,
+# where it comes from, what it applies to, and how it is checked.
+#
+#   id          ENG-* (an ICDEV standard) or ICOS-* (a reference to an ICDEV[OS] one)
+#   version     the entry's version; a revision is a new version, proposed again
+#   owner       the dashboard ROLE accountable for it (one of owner_roles below)
+#   sources     where it comes from, by REFERENCE, never a copy:
+#                 {path: <file in this repo>}          its sha256 is recorded with each event
+#                 {catalog: <key>}                     an entry of args/standards_registry.yaml
+#                 {url: <https URL>}                   an external publication
+#                 {repo, commit, path, sha256}         a file in another repo, pinned at a commit
+#   scope       what it applies to, in plain words
+#   check       the check-as-code, exactly one of:
+#                 {scorecard_rule: {scorecard, rule}}  an existing IDP scorecard rule (args/scorecards/)
+#                 {manual_evidence: {name, procedure, produced_by?}}
+#                                                      a named evidence step a person reads; produced_by
+#                                                      is the file that produces the evidence (must exist)
+#               A standard without a check is a wish: adoption refuses it.
+#   seed        how the entry enters the ledger the first time `--seed` runs:
+#                 adopted   only when its check resolves; recorded by the labelled
+#                           bootstrap identity below, NEVER as a person's signature
+#                 proposed  a draft that waits for review like any other
+#
+# STATUS IS NOT HERE. proposed / reviewed / adopted / deprecated, with dates, is the
+# replay of the append-only ledger coe_standard_events, written only by the declared
+# steps (args/workflow_hitl_templates/coe-standard-*.yaml) and by --seed. This file
+# is the reviewed seed; a new standard is proposed on /idp/standards, not added here.
+#
+# This register does NOT replace args/standards_registry.yaml. That file is the WG 22
+# citation catalog (external standards and their control ids, read by
+# tools/writing/standards_validator.py to check citations in prose). An engineering
+# standard here may name a catalog entry as a source ({catalog: <key>}); the catalog
+# itself is unchanged. Why two files: docs/reference/adrs.md, D-COE-1.
+
+version: 1
+
+# The labelled identity that records a seed. Not a person, never a signature.
+seed_identity: "bootstrap:icx-coe-01-seed"
+
+# Roles that may own a standard (each a dashboard role in tools/dashboard/auth.py).
+owner_roles: [admin, isso, pm, developer, reviewer, ciso, auditor]
+
+standards:
+
+  # ── ICDEV[IT]'s own gates, already enforced by machine ──────────────────────
+
+  - id: ENG-SEC-GATES
+    title: A change merges only through the security gates
+    version: "1.0"
+    owner: isso
+    scope: >-
+      Every change to ICDEV[IT] main. The blocking conditions in
+      args/security_gates.yaml hold (CAT1 STIG, critical vulnerabilities, failed
+      tests, missing markings), and CI's Security Scan job (bandit high/high,
+      domain-leak gate, dependency audit) is green on the pull request's head.
+    sources:
+      - path: args/security_gates.yaml
+      - path: .github/workflows/icdev-ci.yml
+      - catalog: OWASP_TOP_10
+      - catalog: NIST_SP_800-53
+    check:
+      manual_evidence:
+        name: Security Scan job green on the head commit
+        procedure: >-
+          Open the pull request's CI run and read the Security Scan job for the
+          head commit: bandit, the domain-leak gate and the dependency audit all
+          passed. A skipped or cancelled job is not evidence.
+        produced_by: .github/workflows/icdev-ci.yml
+    seed: adopted
+
+  - id: ENG-RED-FIRST
+    title: A changed test goes red on the merge base before it is trusted
+    version: "1.0"
+    owner: developer
+    scope: >-
+      Every test file a pull request adds or modifies. It must fail on the merge
+      base with only that file applied and pass on the branch; an exemption needs
+      a written reason in args/red_first_gate.yaml, never an advisory mode.
+    sources:
+      - path: tools/ci/red_first_gate.py
+      - path: args/red_first_gate.yaml
+    check:
+      manual_evidence:
+        name: red-first-proof artifact
+        procedure: >-
+          Read the red-first-proof artifact the Test Gates job uploads for the
+          pull request (python tools/ci/red_first_gate.py --gate): every changed
+          test file is listed as red on the merge base and green on the branch.
+        produced_by: tools/ci/red_first_gate.py
+    seed: adopted
+
+  - id: ENG-COHERENCE
+    title: A change adds no new coherence failure
+    version: "1.0"
+    owner: developer
+    scope: >-
+      Every change. python tools/workflow/coherence_checker.py --all --gate shows
+      no failure the base did not have; a count in a gate file may only go down.
+    sources:
+      - path: tools/workflow/coherence_checker.py
+    check:
+      manual_evidence:
+        name: Coherence run with no new failures
+        procedure: >-
+          Run python tools/workflow/coherence_checker.py --all --gate on the
+          branch and on its base against a scratch database, and compare the
+          failing checks: the branch adds none.
+        produced_by: tools/workflow/coherence_checker.py
+    seed: adopted
+
+  - id: ENG-FIVE-RULES
+    title: Every audited feature meets the five rules
+    version: "1.0"
+    owner: admin
+    scope: >-
+      Every feature in args/feature_conformance.yaml: a console page, a declared
+      workflow for every decision a person takes, a twin that observes it with
+      threads, platform-model requirements traced to tests, and a read-only MCP
+      capability. Enforcement is fail and the census ceiling is 0.
+    sources:
+      - path: tools/conformance/feature_audit.py
+      - path: args/feature_conformance.yaml
+    check:
+      manual_evidence:
+        name: feature_audit --check passes
+        procedure: >-
+          Run python tools/conformance/feature_audit.py --check: exit 0, no
+          open gap, no stale reason, and the committed doc and census current.
+        produced_by: tools/conformance/feature_audit.py
+    seed: adopted
+
+  - id: ENG-GUARD-HOOKS
+    title: The guard hooks are never bypassed or neutralised
+    version: "1.0"
+    owner: isso
+    scope: >-
+      Every tool call an agent makes in this repository. The PreToolUse hook's
+      checks run unwrapped (no shell neutraliser), a check is stood down only by
+      its named switch, and a check is armed only after a fire-rate survey.
+    sources:
+      - path: .claude/hooks/pre_tool_use.py
+      - path: .claude/settings.json
+      - path: tools/hooks/fire_rate_survey.py
+    check:
+      manual_evidence:
+        name: Hook wiring and fire-rate survey
+        procedure: >-
+          Read .claude/settings.json: the PreToolUse hook is wired with no
+          neutraliser; then run python tools/hooks/fire_rate_survey.py --json and
+          read each check's fire rate against the transcripts.
+        produced_by: tools/hooks/fire_rate_survey.py
+    seed: adopted
+
+  - id: ENG-PAGE-COMPLETENESS
+    title: A dashboard page ships with all eight of its parts
+    version: "1.0"
+    owner: developer
+    scope: >-
+      Every canvas in args/component_registry.yaml: template, icdev mirror,
+      route, backing module, constants, migration, nav link and IQE integration.
+    sources:
+      - path: args/scorecards/component-readiness.yaml
+      - path: tools/config/component_registry.py
+    check:
+      scorecard_rule:
+        scorecard: component-readiness
+        rule: completeness-gate
+    seed: adopted
+
+  - id: ENG-E2E-SPEC
+    title: A component is proven by a browser journey
+    version: "1.0"
+    owner: developer
+    scope: >-
+      Every registered component: at least one Playwright spec under tests/e2e
+      exercises it in the dashboard.
+    sources:
+      - path: args/scorecards/component-readiness.yaml
+    check:
+      scorecard_rule:
+        scorecard: component-readiness
+        rule: e2e-spec
+    seed: adopted
+
+  # ── ICDEV[OS] registers, by reference (pinned, never copied) ────────────────
+  # ICOS owns these. Whether ICDEV[IT] adopts them as its own is the owner's
+  # decision, so they enter as proposals.
+
+  - id: ICOS-INTERFACES
+    title: Every interface is registered, linked and verified (ICDEV[OS] CO-18)
+    version: "1.0"
+    owner: admin
+    scope: >-
+      Every schema, API, gateway or plugin config ICDEV[IT] exchanges with
+      ICDEV[OS] (today the icos-apptwin/v1 bundle under context/icos/): it has a
+      register entry in ICDEV[OS] naming its syntax, standards with links, docs
+      and tests.
+    sources:
+      - repo: icdev-os
+        commit: 57445d3f34dba2f9fdeed2cdfbd33545cbca2981
+        path: args/interfaces.yaml
+        sha256: 37b64e366b67099eb03f748fc3fbfb4f55060a86981895c3c10f1016e69ee7ba
+    check:
+      manual_evidence:
+        name: ICDEV[OS] coherence CO-18 green at the pinned commit
+        procedure: >-
+          In ICDEV[OS] at the pinned commit, run python
+          tools/workflow/coherence_checker.py and read CO-18; confirm the
+          interfaces register file still hashes to the pinned sha256.
+    seed: proposed
+
+  - id: ICOS-CONTROLS
+    title: Security frameworks are mapped to evidence, never claimed (ICDEV[OS] CO-15)
+    version: "1.0"
+    owner: isso
+    scope: >-
+      Every control ICDEV[IT] reports to ICDEV[OS]: implemented only with a test
+      that exists, partial or gap saying what is missing, and nothing called
+      compliant.
+    sources:
+      - repo: icdev-os
+        commit: 57445d3f34dba2f9fdeed2cdfbd33545cbca2981
+        path: args/controls.yaml
+        sha256: 09b41590f2ae77d17c460ecc29fb77afc70c5ba0a92fd93e92b0a905b9b219cb
+      - catalog: NIST_SP_800-53
+    check:
+      manual_evidence:
+        name: ICDEV[OS] coherence CO-15 green at the pinned commit
+        procedure: >-
+          In ICDEV[OS] at the pinned commit, run python
+          tools/workflow/coherence_checker.py and read CO-15; confirm the
+          controls register file still hashes to the pinned sha256.
+    seed: proposed

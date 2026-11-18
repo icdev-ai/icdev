@@ -415,6 +415,44 @@
     "Cortex findings: adjudicate an open finding with a reason"
    ]
   },
+  "GET idp.idp_api_standard": {
+   "endpoint": "idp.idp_api_standard",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate",
+    "the page in the dark theme has no axe violations",
+    "the page in the light theme has no axe violations"
+   ]
+  },
+  "GET idp.idp_api_standards": {
+   "endpoint": "idp.idp_api_standards",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
+   ]
+  },
+  "GET idp.idp_api_standards_twin": {
+   "endpoint": "idp.idp_api_standards_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
+   ]
+  },
+  "GET idp.idp_standards_page": {
+   "endpoint": "idp.idp_standards_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
+   ]
+  },
   "GET migration_api_legacy.list_assessments": {
    "endpoint": "migration_api_legacy.list_assessments",
    "method": "GET",
@@ -926,6 +964,42 @@
    "test": false,
    "tests": [
     "Cortex findings: adjudicate an open finding with a reason"
+   ]
+  },
+  "POST idp.idp_api_standard_adopt": {
+   "endpoint": "idp.idp_api_standard_adopt",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
+   ]
+  },
+  "POST idp.idp_api_standard_deprecate": {
+   "endpoint": "idp.idp_api_standard_deprecate",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
+   ]
+  },
+  "POST idp.idp_api_standard_propose": {
+   "endpoint": "idp.idp_api_standard_propose",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
+   ]
+  },
+  "POST idp.idp_api_standard_review": {
+   "endpoint": "idp.idp_api_standard_review",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
    ]
   },
   "POST migration_api_legacy.record_strategy": {

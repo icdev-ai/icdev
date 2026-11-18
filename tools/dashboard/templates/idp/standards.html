@@ -1,0 +1,290 @@
+<!-- CUI // SP-CTI — Engineering standards register: browse, lifecycle, take a step (icx-coe-01) -->
+{% extends "base.html" %}
+{% block title %}Engineering Standards — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .std-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .std-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .std-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .std-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .std-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .std-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .std-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .std-card th, .std-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .std-card th { color: var(--text-secondary); font-weight: 600; }
+  .std-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .std-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .std-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .std-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .std-tag.boot { background: var(--status-blue-bg); border-color: var(--status-blue); }
+  .std-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .std-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .std-btn.deny { border-color: var(--status-red); }
+  .std-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .std-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .std-wrap input, .std-wrap select, .std-wrap textarea { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .std-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0 14px; }
+  .std-wrap code { color: var(--text-primary); }
+  /* Link colour per theme, at AA contrast on the card and the page in each (axe, e2e). */
+  .std-wrap { --std-link: #8cc4ff; }
+  html[data-theme="light"] .std-wrap { --std-link: #0d4f9e; }
+  .std-wrap a, .std-wrap .std-link { color: var(--std-link); text-decoration: underline; }
+</style>
+
+<div class="std-wrap">
+  <nav aria-label="Breadcrumb" class="std-help"><a href="{{ url_for('idp.idp_portal') }}">Developer Portal</a> / Engineering standards</nav>
+  <h1>Engineering standards</h1>
+  <p class="std-help" id="std-help">
+    What ICDEV's engineering holds itself to: one entry per standard, with its owner (a role), its sources (by
+    reference, never copied), its scope and its <b>check-as-code</b> (an IDP scorecard rule, or a named manual
+    evidence step). The life of a standard is <b>propose &rarr; review &rarr; adopt &rarr; deprecate</b>. Anyone,
+    or an agent, may propose a draft; proposing decides nothing. A steward who is not the author reviews it
+    (<code>{{ templates.review }}</code>), signs it into force (<code>{{ templates.adopt }}</code>) and later retires it
+    (<code>{{ templates.deprecate }}</code>): each is a person's declared step, with a reason, bound to the entry's digest.
+    <b>A standard without a check is a wish</b>: adoption refuses it. Nothing advances on its own. Status is the
+    replay of an append-only, hash-chained ledger. Seeds already enforced by machine were recorded by a labelled
+    bootstrap identity, which is never a person's signature. The citation catalog
+    (<code>args/standards_registry.yaml</code>) is a different file and is cited, not copied.
+  </p>
+
+  <div class="std-card" id="std-summary" aria-live="polite"></div>
+
+  <div class="std-card">
+    <h2>The register</h2>
+    <table id="std-table">
+      <thead><tr><th scope="col">Standard</th><th scope="col">Title</th><th scope="col">Owner</th><th scope="col">State</th><th scope="col">In force</th><th scope="col">Check</th><th scope="col">Recorded by</th></tr></thead>
+      <tbody id="std-body"></tbody>
+    </table>
+  </div>
+
+  <div class="std-card" id="std-detail">
+    <h2>Standard</h2>
+    <p class="std-help" id="std-detail-body">Pick a standard to see its versions, its history and the step it waits for.</p>
+    <div class="std-msg" id="std-step-msg" role="status"></div>
+  </div>
+
+  <div class="std-card" id="std-propose">
+    <h2>Propose a standard</h2>
+    <p class="std-help">A draft. It is reviewed and signed by a steward who is not you. Sources go one per line:
+      a repo path, <code>catalog:&lt;key&gt;</code> for an entry of the citation catalog, or an https URL.</p>
+    <div class="std-grid">
+      <div><label for="p-id">Id (e.g. ENG-ADR-RECORDS)</label><input id="p-id" autocomplete="off"></div>
+      <div><label for="p-version">Version</label><input id="p-version" value="1.0" autocomplete="off"></div>
+      <div><label for="p-title">Title</label><input id="p-title" autocomplete="off"></div>
+      <div><label for="p-owner">Owner (role)</label>
+        <select id="p-owner">{% for r in (view.get('register') or {}).get('owner_roles', []) %}<option value="{{ r }}">{{ r }}</option>{% endfor %}</select></div>
+    </div>
+    <label for="p-scope">Scope</label><textarea id="p-scope" rows="2"></textarea>
+    <label for="p-sources">Sources (one per line)</label><textarea id="p-sources" rows="2"></textarea>
+    <div class="std-grid">
+      <div><label for="p-check">Check-as-code</label>
+        <select id="p-check">
+          <option value="">none (cannot be adopted)</option>
+          <option value="scorecard_rule">IDP scorecard rule</option>
+          <option value="manual_evidence">Named manual evidence step</option>
+        </select></div>
+      <div><label for="p-scorecard">Scorecard (for a rule)</label><input id="p-scorecard" value="component-readiness" autocomplete="off"></div>
+      <div><label for="p-rule">Rule identifier</label><input id="p-rule" autocomplete="off"></div>
+      <div><label for="p-ev-name">Evidence step name</label><input id="p-ev-name" autocomplete="off"></div>
+    </div>
+    <label for="p-ev-proc">Evidence procedure (what a person reads, and where)</label><textarea id="p-ev-proc" rows="2"></textarea>
+    <label for="p-ev-by">Evidence produced by (repo path, optional)</label><input id="p-ev-by" autocomplete="off">
+    <label for="p-note">Note to the reviewer</label><input id="p-note" autocomplete="off">
+    <p><button type="button" class="std-btn" id="p-submit">Propose draft</button></p>
+    <div class="std-msg" id="std-propose-msg" role="status"></div>
+  </div>
+
+  <div class="std-card" id="std-twin">
+    <h2>Twin</h2>
+    <p class="std-help">The register's governance twin judges the ledger: a broken chain, a standard in force whose
+      check no longer resolves, a source changed since adoption, a seed only a bootstrap identity recorded, a draft
+      waiting. Each finding carries its thread to the ledger row it rests on. Recorded observations and their
+      replay are on the <a href="/twin-observatory/governance">governance twins</a> page.</p>
+    <p><button type="button" class="std-btn" id="twin-observe">Observe now</button></p>
+    <div id="std-twin-body" class="std-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var initial = {{ view|tojson }};
+  var loadError = {{ error|tojson }};
+  var current = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  /* One call per step, each naming its route by id. */
+  var STEPS = {
+    review: function (id, body) { return getJson(icdevFetch('idp.idp_api_standard_review', {standard_id: id}, postInit(body))); },
+    adopt: function (id, body) { return getJson(icdevFetch('idp.idp_api_standard_adopt', {standard_id: id}, postInit(body))); },
+    deprecate: function (id, body) { return getJson(icdevFetch('idp.idp_api_standard_deprecate', {standard_id: id}, postInit(body))); }
+  };
+  function stateTag(st) {
+    var cls = {adopted: 'ok', deprecated: 'no', refused: 'no', returned: 'no', superseded: 'no',
+               proposed: 'wait', reviewed: 'wait'}[st] || '';
+    return '<span class="std-tag ' + cls + '" data-state="' + esc(st) + '">' + esc(st || 'none') + '</span>';
+  }
+  function checkTag(c) {
+    if (!c) return '';
+    return c.resolved ? '<span class="std-tag ok">' + esc(c.why) + '</span>'
+                      : '<span class="std-tag no" data-wish="1">' + esc(c.why) + '</span>';
+  }
+  function byTag(who, kind) {
+    if (!who) return '';
+    return kind === 'bootstrap' ? '<span class="std-tag boot" title="a labelled bootstrap identity, not a person">' + esc(who) + ' (bootstrap, not a signature)</span>'
+         : esc(who) + (kind === 'agent' ? ' (agent)' : '');
+  }
+
+  function renderRegister(v) {
+    var c = v.counts || {};
+    var chain = v.chain || {};
+    document.getElementById('std-summary').innerHTML =
+      (loadError ? '<p class="std-msg">The register could not be read: ' + esc(loadError) + '</p>' : '') +
+      '<b>' + esc((v.standards || []).length) + '</b> standards: ' +
+      Object.keys(c).sort().map(function (k) { return stateTag(k) + ' ' + esc(c[k]); }).join(' &middot; ') +
+      ' &middot; ledger ' + (chain.intact === false ? '<span class="std-tag no" id="std-chain">chain broken</span>' : '<span class="std-tag ok" id="std-chain">hash chain intact</span>') +
+      ' (' + esc(chain.rows) + ' events)' +
+      ((v.unseeded || []).length ? ' &middot; not yet seeded: ' + esc(v.unseeded.join(', ')) + ' (<code>python tools/idp/standards.py --seed</code>)' : '');
+    document.getElementById('std-body').innerHTML = (v.standards || []).map(function (s) {
+      return '<tr data-std="' + esc(s.id) + '"><td><button type="button" class="std-link" data-open="' + esc(s.id) + '">' + esc(s.id) + '</button></td>' +
+        '<td>' + esc(s.title) + '</td><td>' + esc(s.owner) + '</td><td>' + stateTag(s.state) + ' ' + esc(s.latest_version) + '</td>' +
+        '<td>' + (s.in_force ? esc(s.in_force) : '&mdash;') + '</td><td>' + checkTag(s.check) + '</td>' +
+        '<td>' + byTag(s.adopted_by || s.author, s.adopted_by ? s.adopted_kind : s.author_kind) + '</td></tr>';
+    }).join('') || '<tr><td colspan="7">No standard is recorded yet.</td></tr>';
+  }
+
+  function loadRegister() {
+    return getJson(icdevFetch('idp.idp_api_standards')).then(function (res) {
+      if (res.ok) { loadError = ''; renderRegister(res.j); }
+      else { loadError = res.j.error || 'unreadable'; renderRegister({}); }
+    });
+  }
+
+  function stepControls(d) {
+    var nx = d.next || [];
+    if (!nx.length) return '<p class="std-help" id="std-no-step">No step waits on this version (' + esc(d.state) + ').</p>';
+    var who = Object.keys(d.builders || {});
+    var out = '<h3>Your step</h3><p class="std-help">' + (who.length ? 'May not take it: <b>' + esc(who.join(', ')) + '</b> (' + esc(d.builders[who[0]]) + '). ' : '') +
+      'A reason is required. Bound to digest <code>' + esc(String(d.entry_digest).slice(0, 16)) + '</code>.</p>' +
+      '<label for="std-reason">Reason</label><input id="std-reason" autocomplete="off">';
+    if (nx[0] === 'review') {
+      out += '<p><button type="button" class="std-btn" data-step="review" data-decision="endorse">Endorse for adoption</button> ' +
+             '<button type="button" class="std-btn deny" data-step="review" data-decision="return">Return to author</button></p>';
+    } else if (nx[0] === 'adopt') {
+      out += '<p><button type="button" class="std-btn" data-step="adopt" data-decision="sign">Sign: adopt</button> ' +
+             '<button type="button" class="std-btn deny" data-step="adopt" data-decision="refuse">Refuse</button></p>';
+    } else if (nx[0] === 'deprecate') {
+      out += '<label for="std-superseded">Superseded by (optional standard id)</label><input id="std-superseded" autocomplete="off">' +
+             '<p><button type="button" class="std-btn deny" data-step="deprecate" data-decision="deprecate">Deprecate</button></p>';
+    }
+    return out;
+  }
+
+  function renderDetail(d) {
+    current = d;
+    var e = d.entry || {};
+    var check = e.check ? Object.keys(e.check)[0] : null;
+    var body = '<h3 id="std-detail-title">' + esc(d.id) + ' ' + esc(d.latest_version) + ': ' + esc(d.title) + '</h3>' +
+      '<p>' + stateTag(d.state) + (d.in_force ? ' in force: ' + esc(d.in_force) : ' not in force') +
+      (d.adopted_by ? ' &middot; adopted by ' + byTag(d.adopted_by, d.adopted_kind) + ' ' + esc(d.adopted_at) : '') + '</p>' +
+      '<p class="std-help">Owner <b>' + esc(e.owner) + '</b>. Scope: ' + esc(e.scope) + '</p>' +
+      '<p>Check: ' + checkTag(d.check) + (check ? ' <code>' + esc(JSON.stringify(e.check[check])) + '</code>' : '') + '</p>' +
+      '<h3>Sources</h3><ul id="std-sources">' + (d.sources || []).map(function (s) {
+        return '<li>' + esc(s.kind) + ': <code>' + esc(s.path || s.catalog || s.url || '') + '</code>' +
+          (s.repo ? ' in ' + esc(s.repo) + '@' + esc(String(s.commit).slice(0, 12)) : '') +
+          (s.sha256 ? ' sha256 <code>' + esc(String(s.sha256).slice(0, 16)) + '</code>' : (s.kind === 'path' ? ' <span class="std-tag no">missing</span>' : '')) + '</li>';
+      }).join('') + '</ul>' +
+      '<h3>History</h3><table id="std-history"><thead><tr><th scope="col">When</th><th scope="col">Version</th><th scope="col">Event</th><th scope="col">By</th><th scope="col">Step</th><th scope="col">Reason</th></tr></thead><tbody>' +
+      (d.history || []).map(function (h) {
+        return '<tr data-event="' + esc(h.event) + '" id="ev-' + esc(h.event_id) + '"><td>' + esc(h.created_at) + '</td><td>' + esc(h.version) + '</td><td>' + stateTag(h.event === 'seeded' ? 'seeded ' + h.state : h.event) + '</td>' +
+          '<td>' + byTag(h.actor, h.actor_kind) + '</td><td><code>' + esc(h.step_id || '') + '</code></td><td>' + esc(h.reason) + '</td></tr>';
+      }).join('') + '</tbody></table>' +
+      (d.chain && d.chain.intact === false ? '<p class="std-msg">This history does not verify: ' + esc(d.chain.problems[0].problem) + '</p>' : '') +
+      stepControls(d);
+    document.getElementById('std-detail-body').innerHTML = body;
+    document.getElementById('std-detail-body').className = '';
+  }
+
+  function openStandard(id) {
+    return getJson(icdevFetch('idp.idp_api_standard', {standard_id: id})).then(function (res) {
+      if (!res.ok) { document.getElementById('std-step-msg').textContent = res.j.error || 'not found'; return; }
+      renderDetail(res.j);
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var open = t.getAttribute('data-open');
+    if (open) { document.getElementById('std-step-msg').textContent = ''; openStandard(open); return; }
+    var step = t.getAttribute('data-step');
+    if (!step || !current) return;
+    var msg = document.getElementById('std-step-msg');
+    var reason = (document.getElementById('std-reason') || {}).value || '';
+    if (!reason.trim()) { msg.textContent = 'A reason is required.'; return; }
+    var body = {version: current.latest_version, decision: t.getAttribute('data-decision'),
+                reason: reason.trim(), digest: current.entry_digest};
+    if (step === 'deprecate') body.superseded_by = ((document.getElementById('std-superseded') || {}).value || '').trim();
+    var id = current.id;
+    STEPS[step](id, body).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || res.j.workflow_refused && 'workflow' || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Recorded: ' + id + ' ' + res.j.version + ' is now ' + res.j.state + ' (step ' + res.j.decision_step.step_id + ').';
+      loadRegister(); openStandard(id);
+    });
+  });
+
+  document.getElementById('p-submit').addEventListener('click', function () {
+    var v = function (id) { return (document.getElementById(id) || {}).value || ''; };
+    var msg = document.getElementById('std-propose-msg');
+    getJson(icdevFetch('idp.idp_api_standard_propose', {}, postInit({
+      id: v('p-id'), version: v('p-version'), title: v('p-title'), owner: v('p-owner'), scope: v('p-scope'),
+      sources: v('p-sources'), check_kind: v('p-check'), scorecard: v('p-scorecard'), rule: v('p-rule'),
+      evidence_name: v('p-ev-name'), evidence_procedure: v('p-ev-proc'), produced_by: v('p-ev-by'), note: v('p-note')
+    }))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not proposed: ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Proposed ' + res.j.standard_id + ' ' + res.j.version + ' as a draft' +
+        (res.j.check && !res.j.check.resolved ? ' (no check: it cannot be adopted until it has one)' : '') + '.';
+      loadRegister(); openStandard(res.j.standard_id);
+    });
+  });
+
+  document.getElementById('twin-observe').addEventListener('click', function () {
+    var box = document.getElementById('std-twin-body');
+    getJson(icdevFetch('idp.idp_api_standards_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j;
+      var vs = env.violations || [];
+      box.innerHTML = '<p id="std-twin-verdict">Verdict ' + stateTag(env.verdict) + ' coverage ' + esc(env.coverage_score) + ', ' + esc(vs.length) + ' finding(s).</p>' +
+        '<ul>' + vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
+            ' &middot; thread <button type="button" class="std-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
+        }).join('') + '</ul><div id="std-thread"></div>';
+    });
+  });
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var th = t.getAttribute && t.getAttribute('data-thread');
+    if (!th) return;
+    getJson(icdevFetch('idp.idp_api_standards_twin', {}, {}, {thread: th})).then(function (res) {
+      var rec = res.j.record || {};
+      document.getElementById('std-thread').innerHTML = res.j.resolved
+        ? '<p>Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.standard_id || rec.path || '') + ' ' + esc(rec.event || '') + ' by ' + esc(rec.actor || '') + ' ' + esc(rec.created_at || '') + '</p>'
+        : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';
+    });
+  });
+
+  renderRegister(initial);
+})();
+</script>
+{% endblock %}

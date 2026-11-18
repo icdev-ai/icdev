@@ -1,0 +1,193 @@
+# CUI // SP-CTI
+# ICDEV platform model: the engineering standards register, on the IDP (icx-coe-01) --
+# the first card of the Engineering CoE programme. One entry per standard, a
+# declared lifecycle (propose -> review -> adopt -> deprecate), a standard without
+# a check refused at adoption, seeds by reference.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the
+# header of args/platform_model/cortex.yaml.
+
+component: idp
+project_id: icdev-platform
+
+elements:
+  - id: coe.register
+    type: sysml_element
+    kind: block
+    name: Engineering standards register (one entry per standard, seeds by reference)
+    features: [coe.standards]
+    code:
+      - args/engineering_standards.yaml
+      - tools/idp/standards.py::load_register
+      - tools/idp/standards.py::normalise
+      - tools/idp/standards.py::validate_entry
+      - tools/idp/standards.py::validate_register
+      - tools/idp/standards.py::pin_sources
+      - tools/idp/standards.py::catalog_keys
+      - tools/idp/standards.py::seed
+
+  - id: coe.check
+    type: sysml_element
+    kind: block
+    name: Check-as-code resolution (an IDP scorecard rule or a named manual evidence step)
+    features: [coe.standards]
+    code:
+      - tools/idp/standards.py::resolve_check
+      - tools/idp/scorecard.py::load_scorecards
+      - args/scorecards/component-readiness.yaml
+
+  - id: coe.lifecycle
+    type: sysml_element
+    kind: block
+    name: Lifecycle through declared steps, author never the signer, append-only hash-chained ledger
+    features: [coe.standards]
+    code:
+      - tools/idp/standards.py::propose
+      - tools/idp/standards.py::review
+      - tools/idp/standards.py::adopt
+      - tools/idp/standards.py::deprecate
+      - tools/idp/standards.py::builders
+      - tools/idp/standards.py::chain
+      - tools/idp/standards.py::replay
+      - tools/workflow_hitl/declared.py::take_step
+      - tools/db/migrations/20261117231010_coe_standard_events/up.py
+      - args/workflow_hitl_templates/coe-standard-review.yaml
+      - args/workflow_hitl_templates/coe-standard-adopt.yaml
+      - args/workflow_hitl_templates/coe-standard-deprecate.yaml
+
+  - id: coe.twin
+    type: sysml_element
+    kind: block
+    name: Engineering standards governance twin (canvas idp)
+    features: [coe.standards]
+    code:
+      - tools/twin_core/adapters/coe_standards.py::EngineeringStandardsTwin
+      - tools/twin_core/governance.py::resolve_thread
+
+interfaces:
+  - id: if.coe.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /idp/standards and its routes
+    features: [coe.standards]
+    code:
+      - tools/dashboard/templates/idp/standards.html
+      - tools/idp/blueprint.py::idp_standards_page
+      - tools/idp/blueprint.py::idp_api_standard_propose
+      - tools/idp/blueprint.py::idp_api_standard_adopt
+
+  - id: if.coe.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP read and draft-only propose for the register
+    features: [coe.standards]
+    code:
+      - tools/mcp/gap_handlers.py::handle_coe_standards
+      - tools/mcp/gap_handlers.py::handle_coe_standard_propose
+
+requirements:
+  - id: PM-COE-01
+    title: One entry per standard, sources by reference, the citation catalog untouched
+    text: >-
+      Each engineering standard has an id, version, owner (a dashboard role),
+      sources, scope and a check-as-code. A source is a repo path (its sha256
+      recorded with each event), a key of the WG 22 citation catalog, an https
+      URL, or a file in another repo pinned at a commit with its digest; nothing
+      is copied. args/standards_registry.yaml and its reader are unchanged.
+      ICDEV[OS]'s interfaces and controls registers are referenced, pinned, and
+      enter as proposals.
+    type: functional
+    priority: high
+    features: [coe.standards]
+    elements: [coe.register]
+    controls: [CM-2, SA-8]
+    tests:
+      - tests/test_icx_coe_01_standards.py::test_the_register_validates_and_seeds_by_reference
+      - tests/test_icx_coe_01_standards.py::test_every_owner_role_is_a_dashboard_role
+      - tests/test_icx_coe_01_standards.py::test_the_citation_catalog_is_untouched_and_its_reader_still_validates
+      - tests/test_icx_coe_01_standards.py::test_a_malformed_draft_is_refused
+
+  - id: PM-COE-02
+    title: A standard without a check is a wish, and adoption refuses it
+    text: >-
+      A check resolves only when its IDP scorecard rule exists under
+      args/scorecards/, or its manual evidence step is named, says what a person
+      does, and any file it names exists. Adoption refuses an entry whose check
+      does not resolve before any step is taken, and a seed enters adopted only
+      when its check resolves.
+    type: functional
+    priority: high
+    features: [coe.standards]
+    elements: [coe.check, coe.lifecycle]
+    controls: [CA-2, SA-11]
+    tests:
+      - tests/test_icx_coe_01_standards.py::test_a_check_resolves_only_when_it_exists
+      - tests/test_icx_coe_01_standards.py::test_adoption_refuses_a_standard_without_a_check
+      - tests/test_icx_coe_01_standards.py::test_a_seed_without_a_check_cannot_enter_adopted
+
+  - id: PM-COE-03
+    title: The lifecycle is declared steps, the author never signs, nothing advances by itself
+    text: >-
+      Propose is a draft by anyone or an agent. Review, adoption and deprecation
+      are a steward's declared steps (decl-wft-coe-standard-review, -adopt,
+      -deprecate), each with a reason, bound to the entry digest read and
+      refused to the version's author (separate_from builders). Each needs the
+      state before it. An agent takes no step. A newer adopted version
+      supersedes the one in force.
+    type: functional
+    priority: high
+    features: [coe.standards]
+    elements: [coe.lifecycle]
+    controls: [AC-5, AU-10]
+    tests:
+      - tests/test_icx_coe_01_standards.py::test_propose_review_adopt_deprecate_with_history
+      - tests/test_icx_coe_01_standards.py::test_the_author_is_never_the_reviewer_or_the_signer
+      - tests/test_icx_coe_01_standards.py::test_a_steward_role_is_needed_and_a_reason
+      - tests/test_icx_coe_01_standards.py::test_nothing_advances_out_of_order_and_a_step_is_bound_to_the_digest
+      - tests/test_icx_coe_01_standards.py::test_an_agent_only_drafts
+      - tests/test_icx_coe_01_standards.py::test_a_new_version_supersedes_the_one_in_force
+      - tests/test_icx_coe_01_ambient.py::test_the_lifecycle_on_the_platform_database
+
+  - id: PM-COE-04
+    title: Status is the replay of an append-only, hash-chained ledger; seeds are labelled
+    text: >-
+      coe_standard_events is append-only (triggers on SQLite and PostgreSQL);
+      each row carries the hash of its standard's previous row and
+      UNIQUE(standard_id, prev_hash) stops a fork. A row that does not verify is
+      named and the register refuses to change that standard. Seeds are written
+      by the labelled bootstrap identity, never a person, idempotently.
+    type: functional
+    priority: high
+    features: [coe.standards]
+    elements: [coe.lifecycle, coe.register]
+    controls: [AU-9, AU-10]
+    tests:
+      - tests/test_icx_coe_01_standards.py::test_the_ledger_is_append_only_and_a_forged_row_breaks_the_chain
+      - tests/test_icx_coe_01_standards.py::test_two_events_cannot_follow_the_same_one
+      - tests/test_icx_coe_01_standards.py::test_seeds_are_recorded_by_the_bootstrap_identity_never_a_person
+      - tests/test_icx_coe_01_ambient.py::test_the_lifecycle_on_the_platform_database
+
+  - id: PM-COE-05
+    title: The console, the twin with threads, and an MCP read and draft-only propose
+    text: >-
+      /idp/standards (linked from the Developer Portal and the Canvases nav)
+      lists the register, shows a standard's versions and history, offers the
+      step it waits for and the propose form, calling its routes by endpoint id.
+      The idp governance twin judges the ledger (broken chain, a check no longer
+      resolving, a source drifted since adoption, bootstrap-only adoption, a
+      waiting draft, an unrecorded seed); every finding's thread resolves to its
+      ledger row, an unreadable source is unverified, and an observation
+      replays. MCP coe_standards reads; coe_standard_propose only drafts and
+      halts at the approval gate.
+    type: functional
+    priority: medium
+    features: [coe.standards]
+    elements: [if.coe.console, coe.twin, if.coe.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_icx_coe_01_standards.py::test_the_routes_take_the_lifecycle_and_refuse_what_they_must
+      - tests/test_icx_coe_01_standards.py::test_the_page_renders_the_register_and_its_controls
+      - tests/test_icx_coe_01_standards.py::test_the_twin_observes_with_threads_that_resolve_and_replays
+      - tests/test_icx_coe_01_standards.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read
+      - tests/test_icx_coe_01_standards.py::test_the_mcp_tools_read_and_only_draft
+      - tests/test_icx_coe_01_standards.py::test_the_cli_validates_and_lists
