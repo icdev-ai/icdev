@@ -417,7 +417,9 @@ def test_the_bundle_validates_against_the_draft_schema_and_its_digest(seeded, sy
 
     c = _c()
     sch = c.schema()
-    assert sch["description"].startswith("DRAFT: to be adopted into the ICOS contract by osx-coe-01; then re-pinned")
+    # osx-coe-01: ICDEV[OS] adopted the draft; this is its published copy, vendored verbatim and pinned
+    assert sch["description"].startswith("Owned by ICDEV[OS] (osx-coe-01)") and "DRAFT" not in sch["description"]
+    assert sch["x-icos-contract"] == c.SCHEMA_CONTRACT == "1.193.0"
     assert sch["$id"] == "urn:icdev-os:contract:conformance:1" and sch["x-license"] == "Apache-2.0"
     jsonschema.Draft202012Validator.check_schema(sch)
     bundles = {r: c.build(r, as_of=AS_OF, at="2026-11-17T12:00:00Z") for r in ("it", "os", "ft")}

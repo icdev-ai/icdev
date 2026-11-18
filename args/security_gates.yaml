@@ -2366,7 +2366,7 @@ coe_adrs:
 # Enforced by tools/idp/conformance.py, tools/idp/dora.py and the declared template
 # args/workflow_hitl_templates/coe-conformance-publish.yaml; tested in
 # tests/test_icx_coe_03_*.py (gated: core.d/icx-coe-03.txt). The bundle is validated against
-# the pinned draft schema context/icos/conformance.schema.json before it is recorded.
+# the pinned ICOS contract schema context/icos/conformance.schema.json before it is recorded.
 coe_conformance:
   blocking:
     - manual_step_scored_as_pass     # a manual evidence step is needs_evidence, never pass
@@ -2376,7 +2376,7 @@ coe_conformance:
     - preparer_publishes             # the preparer never publishes (separate_from: builders)
     - step_by_non_person             # a service key or agent prepares a draft; it never publishes
     - publish_on_stale_digest        # the prepared bundle changed since the person read it
-    - bundle_off_schema              # a bundle that does not meet the pinned draft, or whose digest is not its content's
+    - bundle_off_schema              # a bundle that does not meet the pinned ICOS contract, or whose digest is not its content's
     - schema_unpinned                # context/icos/conformance.schema.json changed without re-pinning
     - chain_broken                   # a ledger row that does not verify blocks any new event for that repo
   warning:
