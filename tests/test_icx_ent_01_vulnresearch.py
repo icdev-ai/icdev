@@ -828,3 +828,27 @@ def test_a_measurement_whose_tools_did_not_all_run_is_unverified(vr, monkeypatch
     monkeypatch.setattr(pov, "EXECUTOR", lambda: LocalDouble())
     ok = benchmark.measure(tid, REGISTRANT, use_model=False)
     assert ok["status"] == "measured" and ok["scores"]["false_positive_rate"] == 0.0
+
+
+def test_kev_is_unverified_unless_the_feed_is_populated_and_fresh(vr):
+    """An empty or stale KEV feed never says "not in KEV": the flag is null (unverified)."""
+    from datetime import datetime, timedelta, timezone
+
+    from tools.vulnresearch import discovery
+
+    conn = sqlite3.connect(str(vr))
+    conn.execute("CREATE TABLE IF NOT EXISTS sg_cve_feed (cve_id TEXT PRIMARY KEY, is_kev INTEGER DEFAULT 0, "
+                 "updated_at TEXT)")
+    conn.commit()
+    kev, why = discovery._kev(["CVE-2019-10906"])
+    assert kev is None and "empty" in why
+    old = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    conn.execute("INSERT INTO sg_cve_feed VALUES ('CVE-2021-44228', 1, ?)", (old,))
+    conn.commit()
+    kev, why = discovery._kev(["CVE-2019-10906"])
+    assert kev is None and "stale" in why, "a stale feed is unverified, never 'not in KEV'"
+    conn.execute("UPDATE sg_cve_feed SET updated_at = ?", (datetime.now(timezone.utc).isoformat(),))
+    conn.commit()
+    conn.close()
+    kev, why = discovery._kev(["CVE-2019-10906", "CVE-2021-44228"])
+    assert kev == {"CVE-2021-44228"} and why == ""

@@ -111,14 +111,29 @@ def sast(scoped: dict, idx: dict, cfg: dict) -> tuple[dict, list[dict]]:
     return status, cands
 
 
-def _kev(ids: list[str]) -> tuple[Optional[set], str]:
-    if not ids:
-        return set(), ""
+def _kev(ids: list[str], max_age_days: Optional[float] = None) -> tuple[Optional[set], str]:
+    """``(the ids in CISA KEV, why not read)``. ``None`` -- UNVERIFIED, never "not in KEV" -- unless the KEV feed
+    (``sg_cve_feed``, filled by tools/strategos/cisa_kev_importer.py) has KEV rows refreshed within
+    ``sca.kev_max_age_days``."""
+    from datetime import datetime, timezone
+
+    if max_age_days is None:
+        max_age_days = float(((targets.load_config().get("sca") or {}).get("kev_max_age_days")) or 7)
     try:
         from tools.db.storage import get_connection
 
         conn = get_connection()
         try:
+            n, newest = conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sg_cve_feed WHERE is_kev = 1").fetchone()
+            if not n:
+                return None, "KEV not read: the feed is empty (run tools/strategos/cisa_kev_importer.py)"
+            ts = datetime.fromisoformat(str(newest).replace("Z", "+00:00").replace(" ", "T"))
+            ts = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - ts).total_seconds() / 86400
+            if age > max_age_days:
+                return None, f"KEV not read: the feed is stale ({age:.0f} days old, limit {max_age_days:.0f})"
+            if not ids:
+                return set(), ""
             rows = conn.execute(f"SELECT cve_id FROM sg_cve_feed WHERE is_kev = 1 AND cve_id IN "  # nosec B608
                                 f"({', '.join(['%s'] * len(ids))})", tuple(ids)).fetchall()
         finally:

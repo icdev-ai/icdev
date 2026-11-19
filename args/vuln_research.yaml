@@ -83,6 +83,10 @@ fuzz:
   # the entry point on a fuzz input is a crash.
   expected_exceptions: [ValueError]
 
+sca:
+  # A KEV flag is claimed only from a feed refreshed within this many days; otherwise it is null (unverified).
+  kev_max_age_days: 7
+
 review:
   # Agentic source review through Cortex governance and the LLM router
   # (llm_function vuln_source_review). It only proposes candidates.
