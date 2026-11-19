@@ -62,7 +62,12 @@ async function sends(page: Page, method: string, re: RegExp, act: () => Promise<
 }
 
 async function pick(page: Page, tid: string) {
-  await sends(page, 'GET', new RegExp(`^/vulnresearch/api/targets/${tid}$`), () => page.locator(`[data-target="${tid}"]`).click());
+  // Wait for the target's own response, not just its request: the page also loads the newest target as it
+  // opens, and a step typed before the picked target has rendered would be typed into the page it replaces.
+  const res = page.waitForResponse(r => r.request().method() === 'GET' &&
+    new RegExp(`^/vulnresearch/api/targets/${tid}$`).test(new URL(r.url()).pathname), { timeout: T });
+  await page.locator(`[data-target="${tid}"]`).click();
+  await res;
   await expect(page.locator(`[data-target="${tid}"]`)).toHaveAttribute('aria-pressed', 'true');
 }
 

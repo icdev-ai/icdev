@@ -309,14 +309,22 @@
     } else { box.innerHTML = ''; }
   }
 
+  var loads = 0;   // only the newest load renders: an older response landing later never overwrites it
+  var KEEP = ['vr-reason', 'vr-revoke-reason', 'vr-review-reason', 'vr-publish-reason'];
   function load(tid) {
     current = tid;
+    var mine = ++loads;
     Array.prototype.forEach.call(document.querySelectorAll('[data-target]'), function (el) {
       el.setAttribute('aria-pressed', el.getAttribute('data-target') === tid ? 'true' : 'false');
     });
     return getJson(icdevFetch('vulnresearch.vr_api_target', {tid: tid})).then(function (res) {
+      if (mine !== loads) return;
       if (!res.ok) { document.getElementById('vr-target-summary').textContent = 'Not read (' + (res.j.code || 'error') + '): ' + (res.j.error || ''); return; }
+      // A refresh never throws away what a person was typing in a step's reason.
+      var typed = {};
+      KEEP.forEach(function (id) { var el = document.getElementById(id); if (el && el.value) typed[id] = el.value; });
       renderTarget(res.j);
+      Object.keys(typed).forEach(function (id) { var el = document.getElementById(id); if (el && !el.value) el.value = typed[id]; });
     });
   }
   function say(id, res, ok) {
