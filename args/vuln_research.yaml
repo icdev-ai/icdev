@@ -28,8 +28,8 @@ version: 1
 scope:
   # Repo-relative (or absolute) roots a target may live under. Default: the
   # synthetic benchmark only, and the operator's own target checkouts under
-  # data/ (never committed). ICDEV_VR_ALLOWED_ROOTS (os.pathsep-separated) ADDS
-  # roots for a test or e2e run on scratch; it never removes these.
+  # data/ (never committed). Nothing else adds a root: no environment variable,
+  # flag or request (a change here is a reviewed config change).
   allowed_roots:
     - context/vulnresearch/benchmark
     - data/vulnresearch/targets

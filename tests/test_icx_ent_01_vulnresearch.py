@@ -113,6 +113,22 @@ def vr(wf_db, monkeypatch, tmp_path):
     return wf_db
 
 
+def allow_root(monkeypatch, root, **extra):
+    """Add ``root`` to scope.allowed_roots for this test only, by patching the config read (never the environment)."""
+    from tools.vulnresearch import targets
+
+    real = targets.load_config
+
+    def patched(path=None):
+        cfg = real(path)
+        cfg["scope"]["allowed_roots"] = list(cfg["scope"]["allowed_roots"]) + [str(root)]
+        for k, v in extra.items():
+            cfg[k] = v
+        return cfg
+
+    monkeypatch.setattr(targets, "load_config", patched)
+
+
 def _bench(**kw):
     from tools.vulnresearch import targets
 
@@ -183,7 +199,7 @@ def test_a_changed_revoked_or_expired_target_is_refused(vr, tmp_path, monkeypatc
 
     tree = tmp_path / "roots" / "t1"
     shutil.copytree(ROOT / BENCH, tree)
-    monkeypatch.setenv("ICDEV_VR_ALLOWED_ROOTS", str(tmp_path / "roots"))
+    allow_root(monkeypatch, tmp_path / "roots")
     r = targets.register(REGISTRANT, name="copy", root=str(tree), reason="test (synthetic)", src_root="src")
     targets.authorise(r["target_id"], decision="authorise", reason="ok", read_digest=r["content_digest"],
                       actor=AUTHORISER)
@@ -715,3 +731,14 @@ def test_the_dependency_audit_never_runs_a_targets_build_code(vr, tmp_path, monk
     (tmp_path / "pyproject.toml").write_text("[build-system]\nrequires = ['setuptools']\n")
     status, _ = discovery.sca({"root": tmp_path})
     assert status["ran"] is False and "pyproject" in status["note"], "a build backend is never invoked"
+
+
+def test_the_environment_never_widens_the_scope_allowlist(vr, tmp_path, monkeypatch):
+    from tools.vulnresearch import targets
+
+    (tmp_path / "x.py").write_text("def f(a):\n    return a\n")
+    monkeypatch.setenv("ICDEV_VR_ALLOWED_ROOTS", str(tmp_path))
+    with pytest.raises(targets.TargetRefused) as exc:
+        targets.register(REGISTRANT, name="env", root=str(tmp_path), reason="no")
+    assert exc.value.code == "out_of_scope", "a root is allowed only by args/vuln_research.yaml"
+    assert str(tmp_path) not in {str(r) for r in targets.allowed_roots(targets.load_config())}

@@ -57,9 +57,8 @@ def _text(v: Any) -> str:
 
 
 def allowed_roots(cfg: dict) -> list[Path]:
+    # Only the reviewed config allows a root: no environment variable, flag or request can add one.
     roots = [Path(r) for r in ((cfg.get("scope") or {}).get("allowed_roots") or [])]
-    extra = os.environ.get("ICDEV_VR_ALLOWED_ROOTS", "")
-    roots += [Path(r) for r in extra.split(os.pathsep) if r.strip()]
     return [(r if r.is_absolute() else BASE_DIR / r).resolve() for r in roots]
 
 
