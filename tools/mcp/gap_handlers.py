@@ -5234,3 +5234,45 @@ def handle_coe_golden_path_propose(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_coe_golden_path_propose: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_vulnresearch_status(args: dict) -> dict:
+    """MCP (icx-ent-01): read vulnerability discovery. Sealed PoVs are never returned. Changes nothing."""
+    try:
+        from tools.vulnresearch import benchmark, bundle, discovery, patches, targets
+
+        tid = str(args.get("target_id") or "").strip()
+        if not tid:
+            return {"classification": CORTEX_CLASSIFICATION, "targets": targets.targets_view(),
+                    "measurement": benchmark.latest()}
+        try:
+            return {"classification": CORTEX_CLASSIFICATION, "target": targets.state(tid),
+                    "runs": discovery.runs(tid)[:3], "patches": patches.patches_for(tid),
+                    "bundle": bundle.ledger_view(tid)}
+        except targets.TargetRefused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_vulnresearch_status: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_vulnresearch_prepare(args: dict) -> dict:
+    """MCP (icx-ent-01): an agent prepares a target's findings bundle as a DRAFT, recorded as ``agent:<id>``.
+
+    Preparing decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or
+    refuses it on /vulnresearch/ (decl-wft-vr-findings-publish).
+    """
+    try:
+        from tools.vulnresearch import bundle
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = bundle.prepare(str(args.get("target_id") or ""), {"id": f"agent:{agent}", "role": "service"},
+                                 note=str(args.get("note") or ""))
+        except bundle.BundleRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who did not prepare it publishes it or refuses it on /vulnresearch/"}
+    except Exception as exc:
+        logger.warning("handle_vulnresearch_prepare: %s", exc)
+        return {"error": str(exc)}

@@ -669,6 +669,37 @@
     "the conformance page shows each route named by id and seen in e2e"
    ]
   },
+  "GET vulnresearch.vr_api_target": {
+   "endpoint": "vulnresearch.vr_api_target",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread",
+    "the vulnerability discovery page in the dark theme has no axe violations",
+    "the vulnerability discovery page in the light theme has no axe violations"
+   ]
+  },
+  "GET vulnresearch.vr_api_twin": {
+   "endpoint": "vulnresearch.vr_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread",
+    "the vulnerability discovery page in the dark theme has no axe violations",
+    "the vulnerability discovery page in the light theme has no axe violations"
+   ]
+  },
+  "GET vulnresearch.vr_page": {
+   "endpoint": "vulnresearch.vr_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
   "GET workflow_canvas.api_observed_drafts": {
    "endpoint": "workflow_canvas.api_observed_drafts",
    "method": "GET",
@@ -1287,6 +1318,87 @@
    "test": false,
    "tests": [
     "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
+   ]
+  },
+  "POST vulnresearch.vr_api_bundle_prepare": {
+   "endpoint": "vulnresearch.vr_api_bundle_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_bundle_publish": {
+   "endpoint": "vulnresearch.vr_api_bundle_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_measure": {
+   "endpoint": "vulnresearch.vr_api_measure",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_patch_propose": {
+   "endpoint": "vulnresearch.vr_api_patch_propose",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_patch_review": {
+   "endpoint": "vulnresearch.vr_api_patch_review",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_run": {
+   "endpoint": "vulnresearch.vr_api_run",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_target_authorise": {
+   "endpoint": "vulnresearch.vr_api_target_authorise",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_target_register": {
+   "endpoint": "vulnresearch.vr_api_target_register",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_target_revoke": {
+   "endpoint": "vulnresearch.vr_api_target_revoke",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
    ]
   },
   "POST workflow_canvas.api_cleanup_processify_tasks": {

@@ -1,0 +1,824 @@
+{
+  "$defs": {
+    "Finding": {
+      "additionalProperties": false,
+      "description": "A confirmed finding: its PoV fired in the sandbox and its benign control did not.",
+      "properties": {
+        "cwe": {
+          "pattern": "^CWE-[0-9]+$",
+          "type": "string"
+        },
+        "file": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "finding_id": {
+          "pattern": "^vrf-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "function": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "line": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "module": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "patch": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/Patch"
+            }
+          ]
+        },
+        "pov": {
+          "additionalProperties": false,
+          "description": "The proof of vulnerability, SEALED: its digest, oracle and replay outcomes. The inputs never leave ICDEV[IT].",
+          "properties": {
+            "digest": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "sandbox_pov"
+            },
+            "oracle": {
+              "enum": [
+                "file_created",
+                "opened",
+                "returned",
+                "exception"
+              ],
+              "type": "string"
+            },
+            "recipe": {
+              "type": "string"
+            },
+            "replays": {
+              "additionalProperties": false,
+              "properties": {
+                "control": {
+                  "const": "not_reproduced"
+                },
+                "pov": {
+                  "const": "reproduced"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "control",
+                "pov",
+                "reason"
+              ],
+              "type": "object"
+            },
+            "sealed": {
+              "const": true
+            }
+          },
+          "required": [
+            "digest",
+            "kind",
+            "oracle",
+            "recipe",
+            "replays",
+            "sealed"
+          ],
+          "type": "object"
+        },
+        "severity": {
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ],
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "enum": [
+              "sast",
+              "sca",
+              "agent",
+              "fuzz"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "status": {
+          "const": "confirmed"
+        },
+        "weakness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cwe",
+        "file",
+        "finding_id",
+        "function",
+        "line",
+        "module",
+        "patch",
+        "pov",
+        "severity",
+        "sources",
+        "status",
+        "weakness"
+      ],
+      "type": "object"
+    },
+    "Patch": {
+      "additionalProperties": false,
+      "description": "A patch PROPOSAL whose PoV now fails and whose tests pass, and a person's review (decl-wft-vr-patch-review). Never applied by ICDEV[IT].",
+      "properties": {
+        "applied": {
+          "const": false
+        },
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "diff_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "proposed_by": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "provenance": {
+          "enum": [
+            "person",
+            "modelled"
+          ],
+          "type": "string"
+        },
+        "review": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "decided_at": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "decided_by": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "decision": {
+                  "enum": [
+                    "accept",
+                    "reject"
+                  ],
+                  "type": "string"
+                },
+                "step_id": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "decided_at",
+                "decided_by",
+                "decision",
+                "step_id"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "validation": {
+          "additionalProperties": false,
+          "properties": {
+            "pov_fails_after": {
+              "const": true
+            },
+            "tests_pass": {
+              "const": true
+            }
+          },
+          "required": [
+            "pov_fails_after",
+            "tests_pass"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "applied",
+        "content_digest",
+        "diff_digest",
+        "event_id",
+        "proposed_by",
+        "provenance",
+        "review",
+        "validation"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:findings:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "DRAFT by ICDEV[IT] (icx-ent-01) for ICDEV[OS] to adopt into its contract (osx-ent-07, the vulnerability twin); not yet in its contract. One target's AI-assisted vulnerability discovery: the target at its tree digest and the person's authorisation to test it; the newest discovery run and how it was isolated; every CONFIRMED finding, each with the digest and replay outcomes of its sealed proof of vulnerability (never the PoV itself) and its patch proposal and review; the dropped candidates counted by reason; the dependency advisories carried as UNPROVEN with their KEV flag; and the pipeline's measured false-positive and false-negative rates on a labelled benchmark. A finding exists only with a PoV that discriminated in the sandbox. content_digest is SHA-256 over the canonical JSON (keys sorted, no whitespace) of the bundle without content_digest and produced_at. The bundle admits no extra field: its publication (icdev-findings-publication/v1) travels BESIDE it, so ICDEV[OS] can refuse a bundle nobody published, or one published by its preparer.",
+  "properties": {
+    "advisories": {
+      "items": {
+        "additionalProperties": false,
+        "description": "A dependency advisory (pip-audit). No PoV, so UNPROVEN: ICDEV[OS] weighs it by KEV, EPSS and reachability. kev null means KEV was not read.",
+        "properties": {
+          "cves": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "fix_versions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "kev": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "package": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "const": "unproven"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cves",
+          "fix_versions",
+          "id",
+          "kev",
+          "package",
+          "status",
+          "version"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "classification": {
+      "maxLength": 80,
+      "minLength": 1,
+      "type": "string"
+    },
+    "config": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "content_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "dropped": {
+      "additionalProperties": false,
+      "description": "Candidates that did not become findings, counted. A dropped candidate is never a finding and never blocks.",
+      "properties": {
+        "by_reason": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "by_source": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "total": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "by_reason",
+        "by_source",
+        "total"
+      ],
+      "type": "object"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "type": "array"
+    },
+    "measurement": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The pipeline's newest measurement on the labelled benchmark. No model judges: confirmed findings against the labels.",
+          "properties": {
+            "event_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "labels": {
+              "additionalProperties": false,
+              "properties": {
+                "labelled_by": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                },
+                "reviewed_by": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "synthetic": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "labelled_by",
+                "path",
+                "reviewed_by",
+                "sha256",
+                "synthetic"
+              ],
+              "type": "object"
+            },
+            "model_used": {
+              "type": "boolean"
+            },
+            "run_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "scores": {
+              "additionalProperties": false,
+              "properties": {
+                "false_negative_rate": {
+                  "anyOf": [
+                    {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "false_positive_rate": {
+                  "anyOf": [
+                    {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fn": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "fp": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "judged_by": {
+                  "type": "string"
+                },
+                "tn": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "tp": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "false_negative_rate",
+                "false_positive_rate",
+                "fn",
+                "fp",
+                "judged_by",
+                "tn",
+                "tp"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "event_id",
+            "labels",
+            "model_used",
+            "run_id",
+            "scores"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "produced_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "producer": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "maxLength": 40,
+          "minLength": 1,
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "system",
+        "tool",
+        "version"
+      ],
+      "type": "object"
+    },
+    "run": {
+      "additionalProperties": false,
+      "properties": {
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "fuzz": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "crashed": {
+                "type": "boolean"
+              },
+              "engine": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "function": {
+                "type": "string"
+              },
+              "iterations": {
+                "anyOf": [
+                  {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "module": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "crashed",
+              "engine",
+              "function",
+              "iterations",
+              "module",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "isolation": {
+          "additionalProperties": false,
+          "description": "How target code ran. A container is not a microVM, and says so.",
+          "properties": {
+            "engine": {
+              "type": "string"
+            },
+            "isolation": {
+              "enum": [
+                "container",
+                "gvisor",
+                "microvm"
+              ],
+              "type": "string"
+            },
+            "microvm": {
+              "type": "boolean"
+            },
+            "network": {
+              "const": "none"
+            },
+            "oci_runtime": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "engine",
+            "isolation",
+            "microvm",
+            "network",
+            "oci_runtime"
+          ],
+          "type": "object"
+        },
+        "recorded_at": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "review": {
+          "additionalProperties": false,
+          "description": "The agentic source review (Cortex governance, the LLM router). It only proposes; its output is modelled.",
+          "properties": {
+            "provenance": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ran": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "provenance",
+            "ran"
+          ],
+          "type": "object"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sast": {
+          "additionalProperties": false,
+          "properties": {
+            "ran": {
+              "type": "boolean"
+            },
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ran",
+            "tool"
+          ],
+          "type": "object"
+        },
+        "sca": {
+          "additionalProperties": false,
+          "properties": {
+            "ran": {
+              "type": "boolean"
+            },
+            "tool": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "ran",
+            "tool"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "content_digest",
+        "event_id",
+        "fuzz",
+        "isolation",
+        "recorded_at",
+        "review",
+        "run_id",
+        "sast",
+        "sca"
+      ],
+      "type": "object"
+    },
+    "schema": {
+      "const": "icos-findings/v1",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "authorisation": {
+          "additionalProperties": false,
+          "description": "The person's declared step (decl-wft-vr-target-authorise) that authorised testing this tree; never the registrant.",
+          "properties": {
+            "decided_by": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "event_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "expires_on": {
+              "format": "date",
+              "type": "string"
+            },
+            "registered_by": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "step_id": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "decided_by",
+            "event_id",
+            "expires_on",
+            "registered_by",
+            "step_id"
+          ],
+          "type": "object"
+        },
+        "commit": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "files": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "target_id": {
+          "pattern": "^vrt-[0-9a-f]{10}$",
+          "type": "string"
+        },
+        "tree_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "authorisation",
+        "commit",
+        "files",
+        "name",
+        "target_id",
+        "tree_digest"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema",
+    "producer",
+    "produced_at",
+    "classification",
+    "target",
+    "run",
+    "findings",
+    "dropped",
+    "advisories",
+    "measurement",
+    "config",
+    "content_digest"
+  ],
+  "title": "FindingsBundle",
+  "type": "object",
+  "x-icos-contract": "draft",
+  "x-license": "Apache-2.0"
+}

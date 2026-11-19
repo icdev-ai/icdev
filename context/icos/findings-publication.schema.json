@@ -1,0 +1,108 @@
+{
+  "$id": "urn:icdev-it:contract:findings-publication:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Publication",
+  "description": "PROPOSED by ICDEV[IT] (icx-ent-01) for ICDEV[OS] to pin; not yet in its contract. The publication of one icos-findings/v1 bundle, in the shape of the Academy publication (icdev-cop-academy-publication/v1): a person who did not prepare it took the declared step decl-wft-vr-findings-publish, bound to the bundle's content_digest. It travels BESIDE the bundle (the bundle schema forbids extra fields), so ICDEV[OS] can refuse a bundle nobody published, or one published by its preparer, before it imports it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "content_digest",
+    "signed_by",
+    "prepared_by",
+    "step_id",
+    "template",
+    "decided_at",
+    "event_id",
+    "row_hash",
+    "producer"
+  ],
+  "properties": {
+    "schema": {
+      "const": "icdev-findings-publication/v1",
+      "type": "string"
+    },
+    "content_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "the content_digest of the bundle it publishes; it must equal the bundle's"
+    },
+    "signed_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "the person who took the publish step (an ICDEV[IT] account id, never the preparer)"
+    },
+    "role": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 60
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "that person's role when they took it"
+    },
+    "prepared_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "description": "who prepared the bundle (a person's account id, or agent:<name>)"
+    },
+    "step_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "the declared step in ICDEV[IT]'s wf_decision_steps"
+    },
+    "template": {
+      "const": "decl-wft-vr-findings-publish",
+      "type": "string"
+    },
+    "decided_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "the published event in ICDEV[IT]'s vr_events"
+    },
+    "row_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "that event's hash on ICDEV[IT]'s hash chain"
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "system",
+        "tool",
+        "version"
+      ],
+      "properties": {
+        "system": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      }
+    }
+  },
+  "x-icos-contract": "proposed",
+  "x-license": "Apache-2.0"
+}

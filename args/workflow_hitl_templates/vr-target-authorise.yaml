@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+id: decl-wft-vr-target-authorise
+name: "Vulnerability discovery targets: a person authorises a registered target for testing, or refuses it (register -> authorise)"
+description: >-
+  AI-assisted vulnerability discovery reads and runs code that is not ours, so a target is scanned only when a
+  person has authorised it. Anyone, or an agent, registers a target on /vulnresearch/: a local source tree under
+  an allowed root (args/vuln_research.yaml scope.allowed_roots), at the SHA-256 of its in-scope files, with why it
+  may be tested. Registering decides nothing. A person who did not register it reads the registration and
+  authorises it for testing, or refuses, with a reason, bound to that digest. An authorisation lapses after
+  scope.authorisation_days; a changed tree is a different target and needs a new registration; any person can
+  revoke a target at once (a stop).
+decides: [vulnresearch.vr_api_target_authorise]
+effect: >-
+  The decided step in wf_decision_steps is the authorisation (subject: "vr_target:<id>"; payload: the target, the
+  registration's content digest, the tree digest and the expiry). vr_events appends an authorised or refused event
+  on the target's stream, bound to that step. Only an authorised, unexpired, unrevoked target whose tree still has
+  its registered digest passes tools/vulnresearch/targets.py::assert_in_scope, which every discovery run, fuzz
+  harness, PoV replay and patch validation calls first.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: register
+    step_type: automated
+    description: Someone (a person, or an agent) registered the target at its tree digest, with a reason.
+  - name: authorise
+    step_type: manual
+    role: vr_target_authoriser
+    holders: [admin, isso, reviewer]
+    # The person who registered a target never authorises it.
+    separate_from: builders
+    decisions: {authorise: affirm, refuse: deny}
+    reason_required: [authorise, refuse]

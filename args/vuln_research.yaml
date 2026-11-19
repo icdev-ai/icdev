@@ -1,0 +1,141 @@
+# CUI // SP-CTI
+# AI-assisted vulnerability discovery, proven or dropped (icx-ent-01).
+#
+# Read by tools/vulnresearch/*. Defensive research on AUTHORISED targets only:
+#
+#   * a target (a source tree at a recorded digest) is scanned only when it is
+#     registered, a person who did not register it has authorised it
+#     (decl-wft-vr-target-authorise), it is not revoked or expired, and its tree
+#     still has the digest it was registered at. Anything else is refused, never
+#     warned about (tools/vulnresearch/targets.py::assert_in_scope);
+#   * the tree must sit under one of scope.allowed_roots. Adding a root is the
+#     deliberate act that makes a path testable, and it must be paired with an
+#     authorisation -- the allowlist alone grants nothing (the same rule as
+#     args/redteam_scope.yaml for hosts);
+#   * target code runs only inside the sandbox executor with no network
+#     (tools/security/sandbox_executor.py::SandboxExecutor.run_isolated);
+#   * a candidate becomes a finding ONLY with a proof of vulnerability (PoV) that
+#     replays in the sandbox through tools/security/reproduction_validator.py and
+#     discriminates (fires on the PoV input, does not fire on the benign control).
+#     Otherwise it is dropped and counted, by reason;
+#   * a PoV is canary-only by construction (the recipes below), sealed in the
+#     ledger and never exported or shown; nothing generates a variant of it.
+#
+# Changing this file changes behaviour: the run records its digest.
+
+version: 1
+
+scope:
+  # Repo-relative (or absolute) roots a target may live under. Default: the
+  # synthetic benchmark only, and the operator's own target checkouts under
+  # data/ (never committed). ICDEV_VR_ALLOWED_ROOTS (os.pathsep-separated) ADDS
+  # roots for a test or e2e run on scratch; it never removes these.
+  allowed_roots:
+    - context/vulnresearch/benchmark
+    - data/vulnresearch/targets
+  # What a target's tree digest covers (and what discovery reads).
+  include: ["**/*.py", "**/requirements*.txt", "**/pyproject.toml"]
+  exclude_dirs: [".git", "__pycache__", ".venv", "venv", "node_modules"]
+  max_files: 400
+  max_file_bytes: 262144
+  # An authorisation lapses after this many days unless the registration names
+  # an earlier date.
+  authorisation_days: 30
+
+sandbox:
+  # Every PoV replay and fuzz run is one container, no network, read-only root,
+  # every capability dropped (SandboxExecutor.run_isolated). The image is pinned
+  # by digest; the fuzz image adds atheris (deploy/vuln-sandbox/Dockerfile) and
+  # is used only when it is present locally, else the built-in fuzzer runs in
+  # the plain image (documented in docs/features/phase-ent-01-vuln-discovery.md).
+  image: "python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b"
+  fuzz_image: "icdev-vuln-sandbox:atheris-3.1.0"
+  timeout_seconds: 60
+  memory_mb: 512
+  pids_limit: 128
+  call_timeout_seconds: 5
+
+fuzz:
+  iterations: 4000
+  seed: 1337
+  max_input_len: 256
+  # Exceptions a function may raise to REJECT bad input. Anything else escaping
+  # the entry point on a fuzz input is a crash.
+  expected_exceptions: [ValueError]
+
+review:
+  # Agentic source review through Cortex governance and the LLM router
+  # (llm_function vuln_source_review). It only proposes candidates.
+  llm_function: vuln_source_review
+  max_source_bytes: 60000
+  max_candidates: 20
+patch:
+  llm_function: vuln_patch_draft
+
+# SAST rule -> weakness class. A bandit finding whose test id is not listed is
+# kept as an unproven lead with no recipe (dropped: no_recipe).
+sast_cwe:
+  B602: CWE-78
+  B605: CWE-78
+  B604: CWE-78
+  B603: CWE-78
+  B607: CWE-78
+  B307: CWE-95
+  B102: CWE-95
+  B301: CWE-502
+  B403: CWE-502
+  B608: CWE-89
+
+# PoV recipes: one per weakness class. Canary-only: a payload can create an empty
+# file under /tmp or read a planted canary, inside the sandbox, and nothing else.
+# {canary} is a per-candidate path under /tmp, {token} its marker, {dotdots} a run
+# of ../ long enough to reach /. The control is a benign input the oracle must NOT
+# fire on: a PoV that also fires on its control proves nothing and is dropped.
+recipes:
+  CWE-78:
+    name: OS command injection
+    severity: critical
+    payload: "x;touch {canary};#"
+    control: "hello"
+    oracle: file_created
+  CWE-95:
+    name: Code injection (eval/exec)
+    severity: critical
+    payload: "__import__('pathlib').Path('{canary}').touch()"
+    control: "1+1"
+    oracle: file_created
+  CWE-22:
+    name: Path traversal
+    severity: high
+    payload: "{dotdots}{canary_rel}"
+    control: "readme.txt"
+    oracle: opened
+    plant: true
+  CWE-89:
+    name: SQL injection
+    severity: high
+    payload: "x' UNION SELECT '{token}' --"
+    control: "alice"
+    oracle: returned
+  CWE-502:
+    name: Deserialisation of untrusted data (pickle)
+    severity: critical
+    payload: "@canary_pickle"
+    control: "@benign_pickle"
+    oracle: file_created
+  CWE-20:
+    name: Improper input validation (a crash found by fuzzing)
+    severity: medium
+    payload: "@fuzz_crash"
+    control: "@fuzz_seed"
+    oracle: exception
+
+benchmark:
+  path: context/vulnresearch/benchmark
+  labels: context/vulnresearch/benchmark/labels.yaml
+
+publish:
+  # A prepared findings bundle waiting this long for a person, or a target whose
+  # newest published bundle is this old, is a twin finding.
+  waiting_warn_days: 7
+  stale_days: 30

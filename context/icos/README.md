@@ -31,3 +31,26 @@ in `conformance.SCHEMA_SHA256`. `content_digest` is SHA-256 over the canonical J
 it. ICDEV[OS] recomputes the digest on import and refuses a mismatch, a bundle nobody published, and one published by its
 preparer. To take a newer contract: copy the new schema, update the digest in `conformance.SCHEMA_SHA256`,
 `conformance.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_coe_03_conformance.py`.
+
+## The findings bundle (DRAFT, icx-ent-01; for ICDEV[OS] osx-ent-07)
+
+`findings.schema.json` is the `icos-findings/v1` bundle schema (`urn:icdev-os:contract:findings:1`), one bundle per
+vulnerability-discovery target: the target at its tree digest and the person's authorisation to test it, the newest
+discovery run and how it was isolated, every CONFIRMED finding with the digest and replay outcomes of its sealed
+proof of vulnerability (never the PoV itself), its patch proposal and review, the dropped candidates counted by
+reason, the dependency advisories carried as unproven with their KEV flag, and the pipeline's measured false-positive
+and false-negative rates. It is a DRAFT (`x-icos-contract: draft`) written in the style of the bundles above and
+licensed the same way (Apache-2.0); ICDEV[OS] adopts it into its contract in osx-ent-07, and then this copy is
+replaced by the vendored one and re-pinned.
+
+`findings-publication.schema.json` (`icdev-findings-publication/v1`, PROPOSED) is its publication, in exactly the
+shape of the Academy publication (`icdev-cop-academy-publication/v1`, icx-cop-01): a person who did not prepare the
+bundle took `decl-wft-vr-findings-publish`, bound to its `content_digest`, with the ledger event and its row hash.
+The bundle admits no extra field, so the publication travels BESIDE it (`icos-findings.json` +
+`icos-findings.publication.json`), and ICDEV[OS]'s one shared bundle-import helper refuses a bundle nobody
+published, one published by its preparer, or one whose digest does not recompute.
+
+`tools/vulnresearch/bundle.py` validates every bundle and publication against them and refuses to run if a file's
+digest is not the one pinned in `bundle.SCHEMA_SHA256` / `bundle.PUBLICATION_SHA256`. `content_digest` is SHA-256
+over the canonical JSON of the bundle without `content_digest` and `produced_at`. To change a draft: edit it, update
+the digest, and run `tests/test_icx_ent_01_vulnresearch.py`.

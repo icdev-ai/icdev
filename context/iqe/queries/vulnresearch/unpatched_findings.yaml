@@ -1,0 +1,13 @@
+# CUI // SP-CTI
+collection: vulnresearch.findings
+query: "Which findings have no accepted patch?"
+description: >-
+  A finding whose patch proposal no person has accepted (or that has none). Accepting records the decision only;
+  nothing is applied to the target.
+iqe: >-
+  foreach f in vulnresearch.findings where f.patched == false
+  select f.target, f.function, f.cwe, f.severity
+example_questions:
+  - "Which findings have no accepted patch?"
+  - "Show unpatched findings"
+  - "What still needs a patch?"

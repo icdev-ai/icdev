@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+id: decl-wft-vr-findings-publish
+name: "Findings bundles: a person publishes a target's prepared icos-findings/v1 bundle to ICDEV[OS], or refuses it (prepare -> publish)"
+description: >-
+  A findings bundle (icos-findings/v1) is what ICDEV[OS]'s vulnerability twin imports (osx-ent-07): one target's
+  confirmed findings, each with its sealed proof of vulnerability's digest and replay outcomes (never the PoV
+  itself), the dropped candidates counted by reason, the unproven dependency advisories with their KEV flag, the
+  patch proposals and their reviews, and the pipeline's measured false-positive and false-negative rates. Leaving
+  the factory is a release, so a person attests it. Anyone, or an agent, prepares a target's bundle, which records
+  it at its digest and decides nothing. A person who did not prepare it publishes it or refuses, with a reason,
+  bound to that digest.
+decides: [vulnresearch.vr_api_bundle_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject: "vr_findings:<target id>"; payload: the
+  target, the bundle's content digest and the prepared event). vr_events appends a published or bundle_refused
+  event on the bundle stream, chained to the row before it. Only a published bundle is exported, with its
+  publication BESIDE it (icdev-findings-publication/v1, the Academy publication's shape):
+  tools/vulnresearch/cli.py export --published.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: prepare
+    step_type: automated
+    description: Someone (a person, or an agent's draft) built the target's bundle and recorded it at its digest.
+  - name: publish
+    step_type: manual
+    role: vr_findings_publisher
+    holders: [admin, isso, reviewer]
+    # The person who prepared the bundle never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]

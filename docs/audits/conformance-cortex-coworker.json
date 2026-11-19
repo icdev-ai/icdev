@@ -3617,6 +3617,234 @@
       "component": "mdc",
       "key": "mdz.waves_cam",
       "label": "Modernisation: an application's waves and CAM refactor jobs"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "vulnresearch_prepare mutating, approval tier 'unknown' (default_tier) halts",
+            "vulnresearch_status read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-VR-01 -> vr.scope -> tests/test_icx_ent_01_vulnresearch.py::test_a_target_is_scanned_only_when_registered_and_authorised_by_another_person, tests/test_icx_ent_01_vulnresearch.py::test_a_root_outside_the_allowlist_is_refused, tests/test_icx_ent_01_vulnresearch.py::test_a_changed_revoked_or_expired_target_is_refused",
+            "PM-VR-02 -> vr.sandbox -> tests/test_icx_ent_01_vulnresearch.py::test_the_isolated_run_has_no_network_and_writes_only_under_out, tests/test_icx_ent_01_vulnresearch.py::test_the_real_sandbox_end_to_end",
+            "PM-VR-03 -> vr.discovery -> tests/test_icx_ent_01_vulnresearch.py::test_a_candidate_becomes_a_finding_only_with_a_discriminating_pov, tests/test_icx_ent_01_vulnresearch.py::test_a_pov_that_also_fires_on_its_control_or_cannot_run_is_dropped, tests/test_icx_ent_01_vulnresearch.py::test_the_recipes_are_canary_only_and_mapped_from_sast, tests/test_icx_ent_01_vulnresearch.py::test_the_agentic_review_only_proposes_and_an_invented_function_is_dropped, tests/test_icx_ent_01_vulnresearch.py::test_reproduction_validator_replays_a_sandbox_pov_only_through_a_registered_engine",
+            "PM-VR-04 -> vr.patches -> tests/test_icx_ent_01_vulnresearch.py::test_a_patch_is_proposed_only_when_its_pov_fails_and_the_tests_pass, tests/test_icx_ent_01_vulnresearch.py::test_a_patch_is_reviewed_by_a_person_never_its_proposer_and_never_applied",
+            "PM-VR-05 -> vr.measurement -> tests/test_icx_ent_01_vulnresearch.py::test_the_rates_are_measured_against_planted_labels_with_no_model_judging",
+            "PM-VR-06 -> vr.bundle -> tests/test_icx_ent_01_vulnresearch.py::test_the_schemas_are_pinned_and_the_publication_has_the_academy_shape, tests/test_icx_ent_01_vulnresearch.py::test_publishing_is_a_persons_step_never_the_preparers_and_it_verifies, tests/test_icx_ent_01_vulnresearch.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_icx_ent_01_ambient.py::test_discovery_and_a_bundle_on_the_platform_database",
+            "PM-VR-07 -> if.vr.console, vr.twin, if.vr.mcp -> tests/test_icx_ent_01_vulnresearch.py::test_the_routes_and_the_page, tests/test_icx_ent_01_vulnresearch.py::test_the_twin_observes_with_threads_and_replays, tests/test_icx_ent_01_vulnresearch.py::test_the_mcp_tools_read_without_sealed_povs_and_only_prepare"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "nav links /vulnresearch",
+            "page /vulnresearch/ renders vulnresearch/index.html",
+            "registry entry 'vulnresearch'",
+            "vulnresearch.vr_api_bundle_prepare called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_bundle_publish called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_measure called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_patch_propose called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_patch_review called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_run called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_target_authorise called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_target_register called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_target_revoke called from tools/dashboard/templates/vulnresearch/index.html"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "vulnresearch.vr_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_patch_propose",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/findings/<fid>/patches",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_patch_review",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/findings/<fid>/review",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_target_register",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "vulnresearch.vr_api_targets",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/vulnresearch/api/targets",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_target",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_target_authorise",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/authorise",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_bundle",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/vulnresearch/api/targets/<tid>/bundle",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_bundle_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/bundle/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_bundle_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/bundle/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_measure",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/measure",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_target_revoke",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/revoke",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_run",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/runs",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/twin",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/vulnresearch.py::VulnResearchTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "vulnresearch.vr_api_bundle_publish (declared (tools/vulnresearch/blueprint.py: \"A person, never the preparer, publishes a target's prepared findings bundle to ICDEV[OS], or refuses it.\")) -> template decl-wft-vr-findings-publish (args/workflow_hitl_templates/vr-findings-publish.yaml)",
+            "vulnresearch.vr_api_patch_review (declared (tools/vulnresearch/blueprint.py: \"A person, never the proposer, accepts or rejects a proposed patch. Nothing is applied.\")) -> template decl-wft-vr-patch-review (args/workflow_hitl_templates/vr-patch-review.yaml)",
+            "vulnresearch.vr_api_target_authorise (declared (tools/vulnresearch/blueprint.py: \"A person, never the registrant, authorises a registered target for testing, or refuses it.\")) -> template decl-wft-vr-target-authorise (args/workflow_hitl_templates/vr-target-authorise.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "vulnresearch",
+      "key": "vulnresearch.discovery",
+      "label": "Vulnerability discovery: authorised targets, PoV-proven findings, reviewed patches, findings bundles"
     }
   ],
   "route_ids": {
@@ -3660,6 +3888,7 @@
       "tools/dashboard/templates/migration_canvas/modernisation.html",
       "tools/dashboard/templates/twin_observatory/conformance.html",
       "tools/dashboard/templates/twin_observatory/index.html",
+      "tools/dashboard/templates/vulnresearch/index.html",
       "tools/dashboard/templates/workflow_canvas/processify.html"
     ],
     "hand_written": [],
@@ -3678,8 +3907,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 28,
-    "features_conforming": 28,
+    "features": 29,
+    "features_conforming": 29,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3876,6 +4105,13 @@
         "gui": 0,
         "twin": 0,
         "workflow": 0
+      },
+      "vulnresearch.discovery": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
       }
     },
     "gaps_by_rule": {
@@ -3886,11 +4122,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 175,
-    "routes_by_id": 149,
-    "routes_observed": 132,
-    "writes_by_id": 73,
-    "writes_observed": 73
+    "routes": 189,
+    "routes_by_id": 161,
+    "routes_observed": 144,
+    "writes_by_id": 82,
+    "writes_observed": 82
   },
   "tool": "feature_audit",
   "version": 1

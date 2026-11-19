@@ -64,3 +64,19 @@ sandbox:
   genesis:
     timeout_per_file: 30
     confidence_penalty: 0.10  # Reduce confidence by this amount on sandbox failure
+
+  # --- Isolated runs of code that is not ours (icx-ent-01) ---
+  # SandboxExecutor.run_isolated: one fresh container per run, NO network (there
+  # is no switch for it), read-only root, every capability dropped, no new
+  # privileges, user nobody, pids and memory capped, a 64 MB /tmp. Used by AI-
+  # assisted vulnerability discovery (tools/vulnresearch) for proof-of-
+  # vulnerability replays, fuzz harnesses and a patched copy's tests.
+  isolated:
+    engine: docker
+    # An OCI runtime with a stronger boundary, when an operator has installed it
+    # into the engine: runsc (gVisor) or kata-runtime (a microVM). Empty: the
+    # engine's default (runc), which is a container, and every record says so.
+    oci_runtime: ""
+    # Pull a pinned image when it is missing (on the host; the run itself has no
+    # network). Set to "never" on an air-gapped host.
+    pull: missing

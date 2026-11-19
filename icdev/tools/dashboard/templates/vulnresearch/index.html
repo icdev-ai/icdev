@@ -1,0 +1,459 @@
+<!-- CUI // SP-CTI — AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) -->
+{% extends "base.html" %}
+{% block title %}Vulnerability discovery — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .vr-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .vr-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .vr-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .vr-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .vr-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .vr-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .vr-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .vr-card th, .vr-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .vr-card th { color: var(--text-secondary); font-weight: 600; }
+  .vr-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .vr-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .vr-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .vr-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .vr-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .vr-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .vr-btn.deny { border-color: var(--status-red); }
+  .vr-btn[aria-pressed="true"] { border-width: 2px; font-weight: 600; }
+  .vr-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .vr-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .vr-wrap input, .vr-wrap textarea { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .vr-wrap textarea { font-family: monospace; min-height: 110px; }
+  .vr-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .vr-row > div { min-width: 200px; flex: 1; }
+  .vr-wrap code { color: var(--text-primary); word-break: break-all; }
+  .vr-wrap { --vr-link: #8cc4ff; }
+  html[data-theme="light"] .vr-wrap { --vr-link: #0d4f9e; }
+  .vr-wrap a, .vr-wrap .vr-link { color: var(--vr-link); text-decoration: underline; }
+  .vr-check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+  .vr-check input { width: auto; }
+  /* The shared IQE widget's badge is #5a9fd4 on #0f3460 (4.37:1); on this page it is at AA (axe, e2e). */
+  .vr-wrap .iqe-badge { color: #8cc4ff; }
+</style>
+
+<div class="vr-wrap">
+  <nav aria-label="Breadcrumb" class="vr-help"><a href="/security/">Security</a> / Vulnerability discovery</nav>
+  <h1>AI-assisted vulnerability discovery, proven or dropped</h1>
+  <p class="vr-help" id="vr-help">
+    Defensive research on <b>authorised targets only</b>. A target is a local source tree under an allowed root
+    (<code>args/vuln_research.yaml</code>), registered at the digest of its files; it is scanned only after a person
+    who did not register it authorises it (<code>{{ templates.authorise }}</code>), and anything else is refused.
+    Discovery gathers candidates from static analysis, dependency audit, an agentic source review through Cortex
+    governance (it only proposes) and generated fuzz harnesses. A candidate becomes a <b>finding only with a proof of
+    vulnerability</b> that replays in the sandbox and fires where its benign control does not; every other candidate
+    is <b>dropped and counted</b>. Proofs are canary-only and <b>sealed</b>: only their digest is shown or exported.
+    A patch is a proposal whose proof now fails and whose tests pass, reviewed by a person
+    (<code>{{ templates.patch }}</code>) and never applied here. Each target's results go to ICDEV[OS] as one
+    <code>icos-findings/v1</code> bundle, prepared by one person and published by another (<code>{{ templates.publish }}</code>).
+    Decisions others proposed wait on <a href="/decisions/">Decisions</a>.
+  </p>
+  <p class="vr-help" id="vr-isolation">Sandbox: <b>{{ isolation.isolation }}</b> ({{ isolation.engine }}, runtime
+    {{ isolation.oci_runtime }}), network <b>{{ isolation.network }}</b>, read-only root, every capability dropped.
+    {% if not isolation.microvm %}This is not a microVM: an operator can set <code>sandbox.isolated.oci_runtime</code>
+    to gVisor or a microVM runtime.{% endif %}</p>
+  {% if error %}<p class="vr-msg">The ledger could not be read: {{ error }}</p>{% endif %}
+
+  <div class="vr-card" id="vr-register">
+    <h2>Register a target</h2>
+    <p class="vr-help">Registering records the tree at its digest and decides nothing.</p>
+    <div class="vr-row">
+      <div><label for="vr-name">Name</label><input id="vr-name" autocomplete="off"></div>
+      <div><label for="vr-root">Root (a directory under an allowed root)</label><input id="vr-root" autocomplete="off"></div>
+    </div>
+    <div class="vr-row">
+      <div><label for="vr-src">Source root</label><input id="vr-src" value="." autocomplete="off"></div>
+      <div><label for="vr-tests">Tests directory</label><input id="vr-tests" autocomplete="off"></div>
+      <div><label for="vr-fuzz">Fuzz entry points (module:function, comma separated)</label><input id="vr-fuzz" autocomplete="off"></div>
+    </div>
+    <label for="vr-why">Why it may be tested</label><input id="vr-why" autocomplete="off">
+    <p><button type="button" class="vr-btn" id="vr-register-btn">Register target</button></p>
+    <div class="vr-msg" id="vr-register-msg" role="status"></div>
+  </div>
+
+  <div class="vr-card">
+    <h2>Targets</h2>
+    <div class="vr-row" id="vr-targets" role="group" aria-label="Target">
+      {% for t in view.get('targets') or [] %}
+      <button type="button" class="vr-btn" data-target="{{ t.target_id }}" data-status="{{ t.status }}" aria-pressed="false">{{ t.name }} ({{ t.status }})</button>
+      {% else %}<p class="vr-help">No target is registered.</p>{% endfor %}
+    </div>
+    <div class="vr-msg" id="vr-target-summary" aria-live="polite">Pick a target.</div>
+    <div id="vr-authorise"></div>
+    <div class="vr-msg" id="vr-authorise-msg" role="status"></div>
+    <div id="vr-revoke"></div>
+    <div class="vr-msg" id="vr-revoke-msg" role="status"></div>
+  </div>
+
+  <div class="vr-card" id="vr-discovery">
+    <h2>Discovery</h2>
+    <p class="vr-help">A run reads and runs the target only through the scope lock and the sandbox. Without a model the
+      agentic review says so and proposes nothing.</p>
+    <p><span class="vr-check"><input type="checkbox" id="vr-model" checked><label for="vr-model">Ask the agentic review (Cortex, through the LLM router)</label></span></p>
+    <p><button type="button" class="vr-btn" id="vr-run">Run discovery</button>
+      <button type="button" class="vr-btn" id="vr-measure">Measure on the labelled benchmark</button></p>
+    <div class="vr-msg" id="vr-run-msg" role="status"></div>
+    <div id="vr-run-body" class="vr-help"></div>
+    <h3>Findings (each with a proof of vulnerability)</h3>
+    <table id="vr-findings">
+      <thead><tr><th scope="col">Finding</th><th scope="col">Where</th><th scope="col">Weakness</th><th scope="col">Severity</th><th scope="col">Sources</th><th scope="col">Proof (sealed)</th><th scope="col">Patch</th></tr></thead>
+      <tbody id="vr-findings-body"><tr><td colspan="7">No run yet.</td></tr></tbody>
+    </table>
+    <h3>Dropped candidates</h3>
+    <div id="vr-dropped-counts" class="vr-help"></div>
+    <table id="vr-dropped">
+      <thead><tr><th scope="col">Where</th><th scope="col">Weakness</th><th scope="col">Sources</th><th scope="col">Why dropped</th></tr></thead>
+      <tbody id="vr-dropped-body"><tr><td colspan="4">No run yet.</td></tr></tbody>
+    </table>
+    <h3>Dependency advisories (unproven)</h3>
+    <table id="vr-advisories">
+      <thead><tr><th scope="col">Package</th><th scope="col">Advisory</th><th scope="col">CVEs</th><th scope="col">In KEV</th><th scope="col">Fixed in</th></tr></thead>
+      <tbody id="vr-advisories-body"><tr><td colspan="5">No run yet.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="vr-card" id="vr-patch">
+    <h2>Patch proposals</h2>
+    <p class="vr-help">Pick a finding's <b>Propose patch</b>. The diff is applied to a throwaway copy; it is proposed only
+      when the finding's proof now fails there and the target's tests pass. A person who did not propose it reviews it.
+      Nothing is applied to the target.</p>
+    <div id="vr-patch-for" class="vr-help">No finding picked.</div>
+    <label for="vr-diff">Unified diff (paths relative to the target root)</label><textarea id="vr-diff"></textarea>
+    <p><button type="button" class="vr-btn" id="vr-propose">Propose patch</button>
+      <button type="button" class="vr-btn" id="vr-draft">Ask a model to draft one</button></p>
+    <div class="vr-msg" id="vr-propose-msg" role="status"></div>
+    <div id="vr-review"></div>
+    <div class="vr-msg" id="vr-review-msg" role="status"></div>
+  </div>
+
+  <div class="vr-card" id="vr-bundle">
+    <h2>Findings bundle for ICDEV[OS]</h2>
+    <p class="vr-help">Preparing records the target's bundle, from its newest run, at its digest; it decides nothing.
+      A person who did not prepare it publishes it or refuses, with a reason. Only a published bundle leaves, with its
+      publication beside it.</p>
+    <div id="vr-ledger" class="vr-help"></div>
+    <p><button type="button" class="vr-btn" id="vr-prepare">Prepare bundle</button></p>
+    <div class="vr-msg" id="vr-prepare-msg" role="status"></div>
+    <div id="vr-publish"></div>
+    <div class="vr-msg" id="vr-publish-msg" role="status"></div>
+    <div id="vr-published" class="vr-help"></div>
+  </div>
+
+  <div class="vr-card" id="vr-measurement">
+    <h2>Measured false-positive and false-negative rates</h2>
+    {% if measurement %}
+    <p class="vr-help" id="vr-measured">On the labelled benchmark (<code>{{ measurement.labels.path }}</code>, synthetic, labelled by
+      construction{% if not measurement.labels.reviewed_by %}, <b>not yet reviewed by a person</b>{% endif %}), run
+      <code>{{ measurement.run_id }}</code>{% if not measurement.model_used %} without a model{% endif %}:
+      false-positive rate <b data-rate="fpr">{{ measurement.scores.false_positive_rate }}</b>,
+      false-negative rate <b data-rate="fnr">{{ measurement.scores.false_negative_rate }}</b>
+      (TP {{ measurement.scores.tp }}, FP {{ measurement.scores.fp }}, FN {{ measurement.scores.fn }}, TN {{ measurement.scores.tn }}).
+      Judged by the labels; no model judges.</p>
+    {% else %}
+    <p class="vr-help" id="vr-measured">No measurement recorded: the rates are <b>unverified</b>.</p>
+    {% endif %}
+  </div>
+
+  <div class="vr-card" id="vr-iqe">
+    {% include "includes/iqe_query_widget.html" %}
+  </div>
+
+  <div class="vr-card" id="vr-twin">
+    <h2>Twin</h2>
+    <p class="vr-help">The governance twin observes discovery: an authorised target with no published bundle, and a
+      pipeline with no measurement, are unverified; a confirmed finding with no accepted patch, a lapsed authorisation,
+      a step waiting too long and a container that is not a microVM are findings, each with its thread to the ledger
+      row it rests on. Recorded observations and their replay are on the <a href="/twin-observatory/governance">governance twins</a> page.</p>
+    <p><button type="button" class="vr-btn" id="vr-observe">Observe now</button></p>
+    <div id="vr-twin-body" class="vr-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var current = null;   // target id
+  var view = null;      // {target, runs, patches, bundle}
+  var picked = null;    // finding id for the patch card
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  var STATUS = {authorised: ['ok', 'authorised'], awaiting_authorisation: ['wait', 'awaiting authorisation'],
+                refused: ['no', 'refused'], revoked: ['no', 'revoked'], expired: ['no', 'expired'],
+                finding: ['ok', 'finding'], patch_accepted: ['ok', 'accepted'], patch_rejected: ['no', 'rejected']};
+  function tag(st) {
+    var t = STATUS[st] || ['', st || 'none'];
+    return '<span class="vr-tag ' + t[0] + '" data-status="' + esc(st) + '">' + esc(t[1]) + '</span>';
+  }
+  function short(d) { return d ? String(d).slice(0, 16) : ''; }
+  function reason() { return ((document.getElementById('vr-reason') || {}).value || '').trim(); }
+
+  function renderTarget(v) {
+    view = v;
+    var st = v.target, reg = st.registered.registration;
+    document.getElementById('vr-target-summary').innerHTML =
+      '<b>' + esc(reg.name) + '</b> ' + tag(st.status) + ' &middot; root <code>' + esc(reg.root) + '</code> &middot; ' +
+      esc(reg.files) + ' files, tree <code id="vr-tree">' + esc(short(reg.tree_digest)) + '</code>' +
+      (reg.commit ? ' at commit <code>' + esc(short(reg.commit)) + '</code>' : '') +
+      ' &middot; registered by ' + esc(st.registered.actor) +
+      (st.decision ? ' &middot; ' + esc(st.decision.event) + ' by ' + esc(st.decision.actor) +
+        (st.decision.expires_on ? ' until ' + esc(st.decision.expires_on) : '') : '') +
+      (st.revoked ? ' &middot; revoked by ' + esc(st.revoked.actor) + ': ' + esc(st.revoked.reason) : '');
+    var box = document.getElementById('vr-authorise');
+    if (st.status === 'awaiting_authorisation') {
+      box.innerHTML = '<h3>Your step</h3><p class="vr-help">May not authorise it: <b>' + esc(Object.keys(st.builders).join(', ')) +
+        '</b>. A reason is required. Bound to registration digest <code>' + esc(short(st.registered.content_digest)) + '</code>.</p>' +
+        '<label for="vr-reason">Reason</label><input id="vr-reason" autocomplete="off">' +
+        '<p><button type="button" class="vr-btn" data-authorise="authorise">Authorise testing</button> ' +
+        '<button type="button" class="vr-btn deny" data-authorise="refuse">Refuse</button></p>';
+    } else { box.innerHTML = ''; }
+    document.getElementById('vr-revoke').innerHTML = st.revoked ? '' :
+      '<h3>Stop</h3><label for="vr-revoke-reason">Reason to revoke (immediate)</label><input id="vr-revoke-reason" autocomplete="off">' +
+      '<p><button type="button" class="vr-btn deny" id="vr-revoke-btn">Revoke target</button></p>';
+    renderRun(v.runs && v.runs[0]);
+    renderLedger(v.bundle);
+    if (picked) renderPatch();
+  }
+
+  function renderRun(r) {
+    var body = document.getElementById('vr-run-body');
+    if (!r) {
+      body.textContent = 'No discovery run on this target yet.';
+      ['vr-findings-body', 'vr-dropped-body', 'vr-advisories-body'].forEach(function (id) {
+        document.getElementById(id).innerHTML = '<tr><td colspan="7">No run yet.</td></tr>';
+      });
+      document.getElementById('vr-dropped-counts').textContent = '';
+      return;
+    }
+    var run = r.run;
+    body.innerHTML = 'Newest run <code id="vr-run-id">' + esc(run.run_id) + '</code> by ' + esc(r.actor) + ' at ' + esc(r.created_at) +
+      ', digest <code>' + esc(short(r.content_digest)) + '</code>. SAST ' + esc(run.sast.tool) + ': ' + (run.sast.ran ? 'ran' : 'did not run (' + esc(run.sast.note) + ')') +
+      '; SCA ' + esc(run.sca.tool) + ': ' + (run.sca.ran ? 'ran' : 'did not run') +
+      '; agentic review: <span id="vr-review-status">' + (run.review.ran ? 'proposed ' + esc(run.review.proposed) + ' (modelled)' : esc(run.review.note)) + '</span>' +
+      '; fuzz: ' + (run.fuzz || []).map(function (z) {
+        return esc(z.module + ':' + z.function) + ' (' + esc(z.engine || z.status) + (z.crashed ? ', crashed: ' + esc(z.exception) : ', no crash') + ', ' + esc(z.iterations) + ' inputs)';
+      }).join(', ') + '. Sandbox: ' + esc(run.isolation.isolation) + ', network ' + esc(run.isolation.network) + '.';
+    document.getElementById('vr-findings-body').innerHTML = (run.findings || []).map(function (f) {
+      var p = ((view.patches || {})[f.finding_id] || {}).proposed;
+      var ps = p ? (p.decided ? tag(p.decided.event) : '<span class="vr-tag wait">awaiting review</span>') : 'none';
+      return '<tr data-finding="' + esc(f.finding_id) + '" data-cwe="' + esc(f.cwe) + '"><td><code>' + esc(f.finding_id) + '</code></td>' +
+        '<td>' + esc(f.module + ':' + f.function) + '<br>' + esc(f.file) + ':' + esc(f.line) + '</td><td>' + esc(f.cwe) + ' ' + esc(f.weakness) + '</td>' +
+        '<td>' + esc(f.severity) + '</td><td>' + esc((f.sources || []).join(', ')) + '</td>' +
+        '<td data-pov="' + esc(f.pov.replays.pov) + '">' + esc(f.pov.oracle) + ' <code>' + esc(short(f.pov.digest)) + '</code><br>PoV ' + esc(f.pov.replays.pov) + ', control ' + esc(f.pov.replays.control) + '</td>' +
+        '<td>' + ps + '<br><button type="button" class="vr-btn" data-pick="' + esc(f.finding_id) + '">Propose patch</button></td></tr>';
+    }).join('') || '<tr><td colspan="7">No candidate was proven: no finding.</td></tr>';
+    var c = run.counts;
+    document.getElementById('vr-dropped-counts').innerHTML = '<span id="vr-counts">' + esc(c.candidates) + ' candidates, ' + esc(c.findings) + ' findings, ' + esc(c.dropped) + ' dropped</span>: ' +
+      Object.keys(c.dropped_by_reason).filter(function (k) { return c.dropped_by_reason[k]; })
+        .map(function (k) { return '<span data-drop="' + esc(k) + '">' + esc(k) + ' ' + esc(c.dropped_by_reason[k]) + '</span>'; }).join(', ') + '.';
+    document.getElementById('vr-dropped-body').innerHTML = (run.dropped || []).map(function (d) {
+      return '<tr data-dropped="' + esc(d.reason) + '"><td>' + esc(d.file) + (d.function ? ' ' + esc(d.function) : '') + ':' + esc(d.line) + '</td>' +
+        '<td>' + esc(d.cwe || 'none') + '</td><td>' + esc((d.sources || []).join(', ')) + '</td><td>' + esc(d.reason) +
+        (d.replays ? ' (' + esc(d.replays.reason) + ')' : '') + '</td></tr>';
+    }).join('') || '<tr><td colspan="4">Nothing was dropped.</td></tr>';
+    document.getElementById('vr-advisories-body').innerHTML = (run.advisories || []).map(function (a) {
+      return '<tr><td>' + esc(a.package) + ' ' + esc(a.version) + '</td><td>' + esc(a.id) + ' <span class="vr-tag wait">unproven</span></td>' +
+        '<td>' + esc((a.cves || []).join(', ')) + '</td><td>' + (a.kev === null ? 'unverified' : (a.kev ? 'yes' : 'no')) + '</td><td>' + esc((a.fix_versions || []).join(', ')) + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">No dependency advisory.</td></tr>';
+  }
+
+  function renderPatch() {
+    var f = null;
+    ((view.runs && view.runs[0] && view.runs[0].run.findings) || []).forEach(function (x) { if (x.finding_id === picked) f = x; });
+    document.getElementById('vr-patch-for').innerHTML = f ? 'For <code id="vr-patch-finding">' + esc(f.finding_id) + '</code>: ' + esc(f.cwe) + ' in ' + esc(f.module + ':' + f.function) + ' (' + esc(f.file) + ')' : 'No finding picked.';
+    var st = (view.patches || {})[picked] || {};
+    var p = st.proposed, box = document.getElementById('vr-review');
+    if (p && !p.decided) {
+      var v = p.proposal.validation;
+      box.innerHTML = '<h3>Review</h3><p class="vr-help" id="vr-validation">Proposed by ' + esc(p.actor) + ' (' + esc(p.proposal.provenance) + '), digest <code>' + esc(short(p.content_digest)) +
+        '</code>. Proof on the vulnerable tree: ' + esc(v.pov_vulnerable) + '; on the patched copy: <b>' + esc(v.pov_patched) + '</b>; tests on the patched copy: <b>' + (v.tests_pass ? 'pass' : 'fail') +
+        '</b>. May not review it: <b>' + esc(p.actor) + '</b>. Nothing is applied to the target.</p><pre class="vr-help">' + esc(p.proposal.diff) + '</pre>' +
+        '<label for="vr-review-reason">Reason</label><input id="vr-review-reason" autocomplete="off">' +
+        '<p><button type="button" class="vr-btn" data-review="accept">Accept patch</button> <button type="button" class="vr-btn deny" data-review="reject">Reject</button></p>';
+    } else if (p) {
+      box.innerHTML = '<p class="vr-help" id="vr-reviewed">The proposal was ' + esc(p.decided.event) + ' by ' + esc(p.decided.actor) + ' (step <code>' + esc(p.decided.step_id) + '</code>). It is not applied to the target.</p>';
+    } else { box.innerHTML = ''; }
+  }
+
+  function renderLedger(l) {
+    var p = l.prepared, pub = l.published;
+    document.getElementById('vr-ledger').innerHTML =
+      (p ? 'Newest prepared: <code id="vr-prepared-digest">' + esc(short(p.content_digest)) + '</code> by ' + esc(p.actor) +
+        (p.decided ? ' (' + esc(p.decided.event) + ' by ' + esc(p.decided.actor) + ')' : ' <span class="vr-tag wait">waiting for a person</span>') : 'No bundle of this target has been prepared.') +
+      '<br>' + (pub ? 'Newest published: <code>' + esc(short(p && p.content_digest)) + '</code> by ' + esc(pub.actor) + ' (step <code>' + esc(pub.step_id) + '</code>)' : 'No bundle of this target has been published: ICDEV[OS] reads it as unverified.');
+    var box = document.getElementById('vr-publish');
+    if (p && !p.decided) {
+      box.innerHTML = '<h3>Your step</h3><p class="vr-help">May not publish it: <b>' + esc(Object.keys(l.builders || {}).join(', ')) + '</b>. Bound to digest <code>' + esc(short(p.content_digest)) + '</code>.</p>' +
+        '<label for="vr-publish-reason">Reason</label><input id="vr-publish-reason" autocomplete="off">' +
+        '<p><button type="button" class="vr-btn" data-publish="publish">Publish to ICDEV[OS]</button> <button type="button" class="vr-btn deny" data-publish="refuse">Refuse</button></p>';
+    } else { box.innerHTML = ''; }
+  }
+
+  function load(tid) {
+    current = tid;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-target]'), function (el) {
+      el.setAttribute('aria-pressed', el.getAttribute('data-target') === tid ? 'true' : 'false');
+    });
+    return getJson(icdevFetch('vulnresearch.vr_api_target', {tid: tid})).then(function (res) {
+      if (!res.ok) { document.getElementById('vr-target-summary').textContent = 'Not read (' + (res.j.code || 'error') + '): ' + (res.j.error || ''); return; }
+      renderTarget(res.j);
+    });
+  }
+  function say(id, res, ok) {
+    var m = document.getElementById(id);
+    if (!res.ok) { m.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return false; }
+    m.textContent = ok(res.j);
+    return true;
+  }
+
+  document.getElementById('vr-register-btn').addEventListener('click', function () {
+    var v = function (id) { return (document.getElementById(id).value || '').trim(); };
+    var body = {name: v('vr-name'), root: v('vr-root'), reason: v('vr-why'), src_root: v('vr-src') || '.', test_dir: v('vr-tests'),
+                fuzz_targets: v('vr-fuzz').split(',').map(function (s) { return s.trim(); }).filter(Boolean)};
+    getJson(icdevFetch('vulnresearch.vr_api_target_register', {}, postInit(body))).then(function (res) {
+      if (say('vr-register-msg', res, function (j) { return 'Registered ' + j.target_id + ' at tree ' + j.registration.tree_digest.slice(0, 12) + '. A person who did not register it authorises it.'; })) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'vr-btn'; b.setAttribute('data-target', res.j.target_id); b.setAttribute('aria-pressed', 'false');
+        b.textContent = res.j.registration.name + ' (awaiting_authorisation)';
+        document.getElementById('vr-targets').appendChild(b);
+        load(res.j.target_id);
+      }
+    });
+  });
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var tid = t.getAttribute('data-target');
+    if (tid) { load(tid); return; }
+    var dec = t.getAttribute('data-authorise');
+    if (dec) {
+      if (!reason()) { document.getElementById('vr-authorise-msg').textContent = 'A reason is required.'; return; }
+      getJson(icdevFetch('vulnresearch.vr_api_target_authorise', {tid: current}, postInit({decision: dec, reason: reason(), digest: view.target.registered.content_digest}))).then(function (res) {
+        if (say('vr-authorise-msg', res, function (j) { return 'Recorded: ' + j.event + ' by ' + j.decided_by + ' (step ' + j.step.step_id + ').'; })) load(current);
+      });
+      return;
+    }
+    if (t.id === 'vr-revoke-btn') {
+      var why = (document.getElementById('vr-revoke-reason').value || '').trim();
+      if (!why) { document.getElementById('vr-revoke-msg').textContent = 'A reason is required.'; return; }
+      getJson(icdevFetch('vulnresearch.vr_api_target_revoke', {tid: current}, postInit({reason: why}))).then(function (res) {
+        if (say('vr-revoke-msg', res, function (j) { return 'Revoked by ' + j.by + '. Nothing scans it again.'; })) load(current);
+      });
+      return;
+    }
+    var pick = t.getAttribute('data-pick');
+    if (pick) { picked = pick; renderPatch(); document.getElementById('vr-diff').focus(); return; }
+    var rv = t.getAttribute('data-review');
+    if (rv) {
+      var r2 = (document.getElementById('vr-review-reason').value || '').trim();
+      if (!r2) { document.getElementById('vr-review-msg').textContent = 'A reason is required.'; return; }
+      var p = view.patches[picked].proposed;
+      getJson(icdevFetch('vulnresearch.vr_api_patch_review', {fid: picked}, postInit({decision: rv, reason: r2, digest: p.content_digest}))).then(function (res) {
+        if (say('vr-review-msg', res, function (j) { return 'Recorded: ' + j.event + ' by ' + j.decided_by + ' (step ' + j.step.step_id + '). Not applied to the target.'; })) load(current);
+      });
+      return;
+    }
+    var pubd = t.getAttribute('data-publish');
+    if (pubd) {
+      var r3 = (document.getElementById('vr-publish-reason').value || '').trim();
+      if (!r3) { document.getElementById('vr-publish-msg').textContent = 'A reason is required.'; return; }
+      getJson(icdevFetch('vulnresearch.vr_api_bundle_publish', {tid: current}, postInit({decision: pubd, reason: r3, digest: view.bundle.prepared.content_digest}))).then(function (res) {
+        if (say('vr-publish-msg', res, function (j) { return 'Recorded: bundle ' + j.event + ' by ' + j.decided_by + ' (step ' + j.step.step_id + ').'; })) {
+          if (res.j.published) {
+            var pb = res.j.published;
+            document.getElementById('vr-published').innerHTML = '<p id="vr-published-bundle">Published <code>' + esc(pb.bundle.schema) + '</code>, digest <code id="vr-published-digest">' +
+              esc(pb.bundle.content_digest) + '</code>, ' + esc(pb.bundle.findings.length) + ' findings, signed by ' + esc(pb.publication.signed_by) + ' (prepared by ' + esc(pb.publication.prepared_by) + ') at ' +
+              esc(pb.publication.decided_at) + '. <a id="vr-bundle-link" href="' + esc(icdevRoute('vulnresearch.vr_api_bundle', {tid: current})) + '">The bundle and its publication as ICDEV[OS] imports them</a>.</p>';
+          }
+          load(current);
+        }
+      });
+      return;
+    }
+    var th = t.getAttribute('data-thread');
+    if (th) {
+      getJson(icdevFetch('vulnresearch.vr_api_twin', {}, {}, {thread: th})).then(function (res) {
+        var rec = res.j.record || {};
+        document.getElementById('vr-thread').innerHTML = res.j.resolved
+          ? '<p id="vr-thread-resolved">Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.stream || '') + ' ' + esc(rec.event || '') +
+            ' by ' + esc(rec.actor || '') + ' ' + esc(rec.created_at || '') + '</p>'
+          : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';
+      });
+    }
+  });
+
+  function runLike(send, label) {
+    var m = document.getElementById('vr-run-msg');
+    if (!current) { m.textContent = 'Pick a target first.'; return; }
+    m.textContent = label + '... (target code runs in the sandbox; this takes a little while)';
+    getJson(send(postInit({use_model: document.getElementById('vr-model').checked}))).then(function (res) {
+      if (say('vr-run-msg', res, function (j) {
+        if (j.scores) return 'Measured: false-positive rate ' + j.scores.false_positive_rate + ', false-negative rate ' + j.scores.false_negative_rate + ' (run ' + j.run_id + ').';
+        return 'Run ' + j.run_id + ': ' + j.run.counts.findings + ' findings proven, ' + j.run.counts.dropped + ' candidates dropped.';
+      })) load(current);
+    }).catch(function (e) { m.textContent = 'Not run: ' + (e && e.message ? e.message : e); });
+  }
+  document.getElementById('vr-run').addEventListener('click', function () {
+    runLike(function (init) { return icdevFetch('vulnresearch.vr_api_run', {tid: current}, init); }, 'Running discovery');
+  });
+  document.getElementById('vr-measure').addEventListener('click', function () {
+    runLike(function (init) { return icdevFetch('vulnresearch.vr_api_measure', {tid: current}, init); }, 'Measuring');
+  });
+
+  function propose(body) {
+    var m = document.getElementById('vr-propose-msg');
+    if (!picked) { m.textContent = 'Pick a finding first.'; return; }
+    m.textContent = 'Validating in the sandbox...';
+    getJson(icdevFetch('vulnresearch.vr_api_patch_propose', {fid: picked}, postInit(body))).then(function (res) {
+      if (!res.ok) {
+        var v = res.j.validation;
+        m.textContent = 'Not proposed (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused') + (v ? ' [proof on the patched copy: ' + v.pov_patched + ', tests ' + (v.tests_pass ? 'pass' : 'fail') + ']' : '');
+        return;
+      }
+      m.textContent = 'Proposed by ' + res.j.proposed_by + ': the proof now fails and the tests pass. A person who did not propose it reviews it.';
+      load(current);
+    });
+  }
+  document.getElementById('vr-propose').addEventListener('click', function () { propose({diff: document.getElementById('vr-diff').value}); });
+  document.getElementById('vr-draft').addEventListener('click', function () { propose({draft: true}); });
+
+  document.getElementById('vr-prepare').addEventListener('click', function () {
+    if (!current) { document.getElementById('vr-prepare-msg').textContent = 'Pick a target first.'; return; }
+    getJson(icdevFetch('vulnresearch.vr_api_bundle_prepare', {tid: current}, postInit({note: 'prepared on /vulnresearch/'}))).then(function (res) {
+      if (say('vr-prepare-msg', res, function (j) { return 'Prepared bundle ' + j.content_digest + ' as ' + j.prepared_by + ' (' + j.findings + ' findings). A person who did not prepare it publishes it.'; })) load(current);
+    });
+  });
+
+  document.getElementById('vr-observe').addEventListener('click', function () {
+    var box = document.getElementById('vr-twin-body');
+    getJson(icdevFetch('vulnresearch.vr_api_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j, vs = env.violations || [];
+      box.innerHTML = '<p id="vr-twin-verdict">Verdict ' + tag(env.verdict) + ' coverage ' + esc(env.coverage_score) + ', ' + esc(vs.length) + ' finding(s).</p><ul>' +
+        vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
+            ' &middot; thread <button type="button" class="vr-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
+        }).join('') + '</ul><div id="vr-thread"></div>';
+    });
+  });
+
+  var first = document.querySelector('[data-target]');
+  if (first) load(first.getAttribute('data-target'));
+})();
+</script>
+{% endblock %}
