@@ -393,7 +393,7 @@
         },
         {
           "additionalProperties": false,
-          "description": "The pipeline's newest measurement on the labelled benchmark. No model judges: confirmed findings against the labels.",
+          "description": "The pipeline's newest measurement on the labelled benchmark. No model judges: confirmed findings against the labels. unverified (rates null, why given) when static analysis or the dependency audit did not run or the sandbox could not decide a candidate: never a false 1.0 or 0.",
           "properties": {
             "event_id": {
               "minLength": 1,
@@ -506,6 +506,16 @@
                 "tp"
               ],
               "type": "object"
+            },
+            "status": {
+              "enum": [
+                "measured",
+                "unverified"
+              ],
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
             }
           },
           "required": [
@@ -513,7 +523,9 @@
             "labels",
             "model_used",
             "run_id",
-            "scores"
+            "scores",
+            "status",
+            "why"
           ],
           "type": "object"
         }

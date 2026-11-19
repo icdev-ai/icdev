@@ -147,9 +147,13 @@ test.describe('Vulnerability discovery: authorised target, PoV-proven finding, r
     await pick(page, tid);
     await page.uncheck('#vr-model');
     await sends(page, 'POST', new RegExp(`^/vulnresearch/api/targets/${tid}/measure$`), () => page.click('#vr-measure'));
-    await expect(page.locator('#vr-run-msg')).toContainText('Measured: false-positive rate', { timeout: RUN });
+    // Measured when bandit and pip-audit both ran here; unverified, with its rates withheld, when one did not (CI
+    // installs neither): never a false 1.0 or 0.
+    await expect(page.locator('#vr-run-msg')).toContainText(/Measured: false-positive rate|Measurement unverified/, { timeout: RUN });
+    const measuredMsg = (await page.locator('#vr-run-msg').textContent()) || '';
     await page.reload();
-    await expect(page.locator('#vr-measured')).toContainText('not yet reviewed by a person', { timeout: T });
+    await expect(page.locator('#vr-measured')).toContainText(
+      measuredMsg.includes('unverified') ? 'Its rates are not claimed' : 'not yet reviewed by a person', { timeout: T });
 
     // 4. the bundle: prepared by the registrant, refused to them, published by the reviewer
     await pick(page, tid);

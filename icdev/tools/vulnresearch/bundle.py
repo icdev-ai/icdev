@@ -48,7 +48,7 @@ from tools.vulnresearch.constants import (
 )
 
 #: The DRAFT schemas, pinned: a changed file is refused, never silently used.
-SCHEMA_SHA256 = "0002194aaa7652db30808eda69f4864a2a9ebf8587813d7ff09db7a9a0b08963"
+SCHEMA_SHA256 = "e6e35bda9fe534d1addb9725422d06ccd20e9fc3185545e3906ec91d00e371b2"
 PUBLICATION_SHA256 = "58db1ff2e08c49f7629173522617ddbadb9100e12f157698df1d3c288695ef44"
 
 BundleRefused = ledger.LedgerRefused
@@ -142,6 +142,7 @@ def build(target_id: str, *, at: Optional[str] = None, conn=None, check: bool = 
     measurement = None
     if m:
         measurement = {"event_id": m["event_id"], "run_id": m["run_id"], "model_used": bool(m.get("model_used")),
+                       "status": m.get("status") or "unverified", "why": m.get("why") or "",
                        "labels": {k: m["labels"].get(k) for k in ("path", "sha256", "synthetic", "labelled_by",
                                                                   "reviewed_by")},
                        "scores": {k: m["scores"][k] for k in ("tp", "fp", "fn", "tn", "false_positive_rate",

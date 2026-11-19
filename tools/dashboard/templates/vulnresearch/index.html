@@ -146,7 +146,10 @@
 
   <div class="vr-card" id="vr-measurement">
     <h2>Measured false-positive and false-negative rates</h2>
-    {% if measurement %}
+    {% if measurement and measurement.status != 'measured' %}
+    <p class="vr-help" id="vr-measured">The newest measurement (run <code>{{ measurement.run_id }}</code>) is
+      <b>unverified</b>: {{ measurement.why }}. Its rates are not claimed.</p>
+    {% elif measurement %}
     <p class="vr-help" id="vr-measured">On the labelled benchmark (<code>{{ measurement.labels.path }}</code>, synthetic, labelled by
       construction{% if not measurement.labels.reviewed_by %}, <b>not yet reviewed by a person</b>{% endif %}), run
       <code>{{ measurement.run_id }}</code>{% if not measurement.model_used %} without a model{% endif %}:
@@ -404,6 +407,7 @@
     m.textContent = label + '... (target code runs in the sandbox; this takes a little while)';
     getJson(send(postInit({use_model: document.getElementById('vr-model').checked}))).then(function (res) {
       if (say('vr-run-msg', res, function (j) {
+        if (j.scores && j.status !== 'measured') return 'Measurement unverified (run ' + j.run_id + '): ' + j.why;
         if (j.scores) return 'Measured: false-positive rate ' + j.scores.false_positive_rate + ', false-negative rate ' + j.scores.false_negative_rate + ' (run ' + j.run_id + ').';
         return 'Run ' + j.run_id + ': ' + j.run.counts.findings + ' findings proven, ' + j.run.counts.dropped + ' candidates dropped.';
       })) load(current);

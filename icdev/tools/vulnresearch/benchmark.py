@@ -49,6 +49,24 @@ def score(findings: list[dict], labels: dict) -> dict:
             "judged_by": "labels (planted by construction); no model judges"}
 
 
+def unverified_why(run: dict) -> str:
+    """Why a run cannot be scored ('' when it can): static analysis or the dependency audit did not run, a fuzz
+    harness did not complete, or a candidate was dropped because the sandbox could not decide it."""
+    why = []
+    if not (run.get("sast") or {}).get("ran"):
+        why.append(f"static analysis ({(run.get('sast') or {}).get('tool') or 'bandit'}) did not run")
+    if not (run.get("sca") or {}).get("ran"):
+        why.append(f"the dependency audit ({(run.get('sca') or {}).get('tool') or 'pip-audit'}) did not run")
+    for z in run.get("fuzz") or []:
+        if z.get("status") != "completed":
+            why.append(f"the fuzz harness for {z.get('module')}:{z.get('function')} did not complete")
+    by = (run.get("counts") or {}).get("dropped_by_reason") or {}
+    for reason in ("sandbox_unavailable", "indecisive"):
+        if by.get(reason):
+            why.append(f"{by[reason]} candidate(s) dropped as {reason}")
+    return "; ".join(why)
+
+
 def measure(target_id: str, actor: Optional[dict], *, use_model: bool = True, conn=None) -> dict:
     """Run discovery on the registered benchmark target and record its scores against the labels."""
     cfg = targets.load_config()
@@ -61,11 +79,17 @@ def measure(target_id: str, actor: Optional[dict], *, use_model: bool = True, co
     out = discovery.run(target_id, actor, use_model=use_model, conn=conn)
     run = out["run"]
     s = score(run["findings"], labels)
+    why = unverified_why(run)
+    if why:
+        # The counts are kept for the record; the RATES are not claimed: a tool that did not run, or a candidate
+        # the sandbox could not decide, would otherwise read as a false negative (or a missing false positive).
+        s = {**s, "false_positive_rate": None, "false_negative_rate": None}
     content = {"run_id": out["run_id"], "run_event": out["event_id"], "run_digest": out["content_digest"],
                "target_id": target_id, "tree_digest": run["tree_digest"], "labels": {
                    "path": labels["_path"], "sha256": labels["_sha256"], "synthetic": bool(labels.get("synthetic")),
                    "labelled_by": labels.get("labelled_by"), "reviewed_by": labels.get("reviewed_by")},
-               "model_used": bool(run["review"].get("ran")), "scores": s, "counts": run["counts"]}
+               "model_used": bool(run["review"].get("ran")), "scores": s, "counts": run["counts"],
+               "status": "unverified" if why else "measured", "why": why}
     own = conn is None
     conn = conn or ledger.connection()
     try:

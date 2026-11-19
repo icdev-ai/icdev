@@ -797,3 +797,34 @@ def test_the_executor_refuses_a_weak_container_for_strong_isolation_runs(tmp_pat
     assert strong.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
                                requires_strong_isolation=True).status == "completed"
     assert "--runtime" in ran[-1] and "runsc" in ran[-1]
+
+
+def test_a_measurement_whose_tools_did_not_all_run_is_unverified(vr, monkeypatch):
+    """No bandit, no pip-audit, or a candidate the sandbox could not decide: the rates are null, never 1.0 / 0."""
+    from tools.security import sast_runner
+    from tools.vulnresearch import benchmark, bundle, discovery, pov
+
+    tid = _bench()
+    monkeypatch.setattr(sast_runner, "run_bandit",
+                        lambda p, **k: {"success": False, "findings": [], "raw_output": "bandit not installed"})
+    m = benchmark.measure(tid, REGISTRANT, use_model=False)
+    assert m["status"] == "unverified" and "bandit" in m["why"]
+    assert m["scores"]["false_positive_rate"] is None and m["scores"]["false_negative_rate"] is None
+    assert bundle.validate(bundle.build(tid)) == []
+    assert bundle.build(tid)["measurement"]["status"] == "unverified"
+    monkeypatch.setattr(sast_runner, "run_bandit", canned_bandit)
+    monkeypatch.setattr(discovery, "_pip_audit", lambda argv: (_ for _ in ()).throw(RuntimeError("offline")))
+    assert benchmark.measure(tid, REGISTRANT, use_model=False)["status"] == "unverified"
+    monkeypatch.setattr(discovery, "_pip_audit", canned_audit)
+
+    class Down:
+        def run_isolated(self, *a, **k):
+            return SimpleNamespace(status="unavailable", stdout="", stderr="", exit_code=-1, error="no engine")
+
+    monkeypatch.setattr(pov, "EXECUTOR", lambda: Down())
+    m = benchmark.measure(tid, REGISTRANT, use_model=False)
+    assert m["status"] == "unverified" and "sandbox_unavailable" in m["why"]
+    assert m["scores"]["false_negative_rate"] is None, "an unrun sandbox is never a 1.0 false-negative rate"
+    monkeypatch.setattr(pov, "EXECUTOR", lambda: LocalDouble())
+    ok = benchmark.measure(tid, REGISTRANT, use_model=False)
+    assert ok["status"] == "measured" and ok["scores"]["false_positive_rate"] == 0.0

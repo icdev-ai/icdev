@@ -59,6 +59,7 @@ def twin_evidence() -> dict:
     ev["targets"] = items
     ev["problems"] = ch["_problems"]
     ev["measurement"] = m and {"event_id": m["event_id"], "created_at": m["created_at"],
+                               "status": m.get("status") or "unverified", "why": m.get("why") or "",
                                "scores": {k: m["scores"][k] for k in ("false_positive_rate", "false_negative_rate",
                                                                      "tp", "fp", "fn", "tn")},
                                "reviewed_by": m["labels"].get("reviewed_by")}
@@ -86,7 +87,9 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
     m = ev.get("measurement")
     if items is not None:
         checks.append(check("vulnresearch.measurement", "A false-positive / false-negative measurement on the "
-                            "labelled benchmark", m is not None, "no measurement recorded: the rates are unverified"))
+                            "labelled benchmark", bool(m) and m.get("status") == "measured",
+                            "no measurement recorded: the rates are unverified" if not m else
+                            f"the newest measurement is unverified: {m.get('why')}"))
     if m and not m.get("reviewed_by"):
         out.append(finding("vulnresearch.labels_unreviewed", "low",
                            "The benchmark's labels are planted by construction and no person has reviewed them",
