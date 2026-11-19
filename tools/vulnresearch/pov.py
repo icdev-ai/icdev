@@ -162,10 +162,22 @@ def stage(root: Path, files: list[dict], dest: Path) -> Path:
         if rel.is_absolute() or ".." in rel.parts:
             raise ScopeViolation(f"refused to stage {f['path']!r}")
         src = Path(root) / rel
-        st = os.lstat(src)
-        if not stat.S_ISREG(st.st_mode):
-            raise ScopeViolation(f"{f['path']} is not a regular file any more")
-        data = src.read_bytes()
+        # Open without following a symlink and without blocking (a FIFO swapped in cannot hang the run), then judge
+        # the OPENED handle, so what is checked is what is read.
+        try:
+            fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError as exc:
+            raise ScopeViolation(f"{f['path']} is not a regular file any more ({exc.strerror})") from exc
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise ScopeViolation(f"{f['path']} is not a regular file any more")
+            if st.st_nlink > 1:
+                raise ScopeViolation(f"{f['path']} is a hard link (it has another name): refused")
+            with os.fdopen(fd, "rb", closefd=False) as fh:
+                data = fh.read()
+        finally:
+            os.close(fd)
         if hashlib.sha256(data).hexdigest() != f["sha256"]:
             raise ScopeViolation(f"{f['path']} changed after the scope lock")
         out = dest / rel

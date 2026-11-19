@@ -110,6 +110,9 @@ def tree(root: Path, cfg: dict) -> dict:
                 continue
             if not _inside(full.resolve(), root):
                 raise ScopeViolation(f"{rel} resolves outside the target root")
+            if os.lstat(full).st_nlink > 1:
+                # A second name for the same inode can be rewritten from outside the tree after the scope lock.
+                raise ScopeViolation(f"{rel} is a hard link (it has another name): refused")
             data = full.read_bytes()
             if len(data) > int(sc.get("max_file_bytes") or 262144):
                 continue

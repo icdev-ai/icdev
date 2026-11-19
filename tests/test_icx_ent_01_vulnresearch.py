@@ -1157,3 +1157,40 @@ def test_the_labels_are_pinned_and_unreviewed_labels_are_said(vr, monkeypatch):
     assert m2["status"] == "unverified" and "labels" in m2["why"]
     assert m2["scores"]["false_positive_rate"] is None and m2["scores"]["false_negative_rate"] is None
 
+
+
+def test_hard_links_and_a_swapped_in_fifo_never_reach_the_sandbox(vr, tmp_path, monkeypatch):
+    """A hard link (st_nlink > 1) is refused at hashing and at staging; a FIFO swapped in for a hashed file after
+    the scope lock is refused without blocking the run (O_NOFOLLOW | O_NONBLOCK, fstat on the opened handle)."""
+    import threading
+
+    from tools.security.redteam_scope import ScopeViolation
+    from tools.vulnresearch import pov, targets
+
+    cfg = targets.load_config()
+    tree = tmp_path / "t"
+    shutil.copytree(ROOT / BENCH, tree, ignore=shutil.ignore_patterns("__pycache__"))
+    os.link(tree / "src" / "vb_eval.py", tmp_path / "outside_link.py")       # the hashed file gains a second name
+    with pytest.raises(ScopeViolation, match="hard link"):
+        targets.tree(tree, cfg)
+    os.unlink(tmp_path / "outside_link.py")
+    files = targets.tree(tree, cfg)["files"]
+    os.link(tree / "src" / "vb_eval.py", tmp_path / "late_link.py")          # linked after the scope lock
+    with pytest.raises(ScopeViolation, match="hard link"):
+        pov.stage(tree, files, tmp_path / "s1")
+    os.unlink(tmp_path / "late_link.py")
+    os.unlink(tree / "src" / "vb_eval.py")
+    os.mkfifo(tree / "src" / "vb_eval.py")                                    # a FIFO swapped in
+    done = {}
+
+    def go():
+        try:
+            pov.stage(tree, files, tmp_path / "s2")
+        except ScopeViolation as exc:
+            done["refused"] = str(exc)
+
+    th = threading.Thread(target=go, daemon=True)
+    th.start()
+    th.join(10)
+    assert not th.is_alive(), "staging blocked on a FIFO"
+    assert "not a regular file" in done.get("refused", "")
