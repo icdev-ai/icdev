@@ -18,11 +18,8 @@ vulnerability.
 """
 from __future__ import annotations
 
-import os
 import re
-import shutil
 import subprocess  # nosec B404 — git apply on a throwaway copy, fixed arguments
-import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -43,18 +40,6 @@ def diff_paths(diff: str) -> list[str]:
     return paths
 
 
-def _copy(root: Path) -> Path:
-    base = os.environ.get("ICDEV_VR_DATA_DIR") or ""
-    work = Path(base) / "work" if base else None
-    if work:
-        work.mkdir(parents=True, exist_ok=True)
-    d = Path(tempfile.mkdtemp(prefix="vr-patch-", dir=str(work) if work else None))
-    dst = d / "tree"
-    shutil.copytree(root, dst, ignore=shutil.ignore_patterns("__pycache__", ".git", "*.pyc"))
-    pov._readable(d)
-    return dst
-
-
 def _apply(copy: Path, diff: str) -> Optional[str]:
     patch = copy.parent / "change.diff"
     patch.write_text(diff if diff.endswith("\n") else diff + "\n", encoding="utf-8")
@@ -66,7 +51,7 @@ def _apply(copy: Path, diff: str) -> Optional[str]:
     return None
 
 
-def run_tests(root: Path, test_dir: str) -> dict:
+def run_tests(root: Path, test_dir: str, scoped: Optional[dict] = None) -> dict:
     """The target's unittest suite in the isolated sandbox. ``{status, passed, detail}``."""
     cfg = targets.load_config().get("sandbox") or {}
     ex = pov.EXECUTOR()
@@ -134,17 +119,18 @@ def validate(fid: str, diff: str) -> dict:
     reg = scoped["registration"]
     if not reg.get("test_dir"):
         raise PatchRefused(422, "no_tests", "the target declares no tests: a patch cannot be shown to keep them passing")
-    copy = _copy(scoped["root"])
+    copy_token, copy = pov.make_copy(finding["target_id"], scoped["root"])
     try:
         err = _apply(copy, diff)
         if err:
             raise PatchRefused(422, "does_not_apply", f"the diff does not apply to the target: {err}")
         cfg = targets.load_config()
         proof = pov.replay_pair(finding["target_id"], {"module": finding["module"], "function": finding["function"]},
-                                sealed, cfg, reg.get("src_root") or ".", against="patched", root_override=str(copy))
-        tests = run_tests(copy, reg["test_dir"])
+                                sealed, cfg, reg.get("src_root") or ".", against="patched", copy_token=copy_token,
+                                finding_id=fid)
+        tests = run_tests(copy, reg["test_dir"], scoped=scoped)
     finally:
-        shutil.rmtree(copy.parent, ignore_errors=True)
+        pov.drop_copy(copy_token)
     validation = {"pov_vulnerable": proof["first"]["outcome"], "pov_patched": proof["second"]["outcome"],
                   "pov_fails_after": proof["discriminating"], "reason": proof["reason"],
                   "tests_pass": tests["passed"], "tests": {k: tests[k] for k in ("status", "exit_code")},

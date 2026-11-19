@@ -1519,6 +1519,12 @@ def handle_guard_result(args: dict) -> dict:
 def handle_finding_replay(args: dict) -> dict:
     """Replay one stored reproduction for a dynamic finding (oss-poc-01)."""
     try:
+        if str((args.get("reproduction") or {}).get("kind") or "") == "sandbox_pov":
+            # icx-ent-01: a sandbox proof of vulnerability is replayed only by tools/vulnresearch, from what it
+            # sealed, on a scope-locked target; never from a caller's reproduction.
+            return {"error": "a sandbox_pov reproduction is not replayed through this tool: tools/vulnresearch "
+                             "replays its own sealed PoVs on authorised targets only",
+                    "code": "sandbox_pov_refused", "refused": True}
         from tools.security.reproduction_validator import Reproduction, replay
 
         repro = Reproduction.from_dict(dict(args.get("reproduction") or {}))
@@ -1553,6 +1559,12 @@ def handle_finding_enforce_reproduction(args: dict) -> dict:
 def handle_finding_verify_discrimination(args: dict) -> dict:
     """Prove a reproduction distinguishes vulnerable from fixed (oss-poc-01)."""
     try:
+        if str((args.get("reproduction") or {}).get("kind") or "") == "sandbox_pov":
+            # icx-ent-01: a sandbox proof of vulnerability is replayed only by tools/vulnresearch, from what it
+            # sealed, on a scope-locked target; never from a caller's reproduction.
+            return {"error": "a sandbox_pov reproduction is not replayed through this tool: tools/vulnresearch "
+                             "replays its own sealed PoVs on authorised targets only",
+                    "code": "sandbox_pov_refused", "refused": True}
         from tools.security.reproduction_validator import (
             Reproduction,
             mark_discriminating,

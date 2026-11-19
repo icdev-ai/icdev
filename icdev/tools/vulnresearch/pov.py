@@ -112,7 +112,7 @@ def _sandbox_cfg() -> dict:
 
 
 def run_in_sandbox(script: str, spec: dict, *, target_root: Path, image: Optional[str] = None,
-                   extra_files: Optional[dict] = None) -> dict:
+                   extra_files: Optional[dict] = None, scoped: Optional[dict] = None) -> dict:
     """Run one runner script on one spec in the isolated sandbox. ``{status, result, stderr, profile}``."""
     from tools.security.sandbox_executor import isolated_profile
 
@@ -151,27 +151,105 @@ def run_in_sandbox(script: str, spec: dict, *, target_root: Path, image: Optiona
         shutil.rmtree(work, ignore_errors=True)
 
 
+#: Proofs in flight: an opaque token -> what this module sealed for one candidate of one target. A discovery run
+#: proves its candidates BEFORE it records them, so they cannot yet be read back by finding id; the token is
+#: minted here, lives only for the two replays, and nothing outside this module can name what it points at.
+_PENDING: dict[str, dict] = {}
+#: Patched copies this module made (token -> {target_id, root}), only under its own workspace.
+_COPIES: dict[str, dict] = {}
+#: The only keys a sandbox_pov step may carry. A spec, a root, a path or an input is never taken from a request.
+_STEP_KEYS = {"proof", "finding_id", "input", "copy"}
+
+
+def _refused(why: str) -> rv.ReplayResult:
+    return rv.ReplayResult(outcome=rv.ReplayOutcome.refused, detail=why)
+
+
+def make_copy(target_id: str, root: Path) -> tuple[str, Path]:
+    """A throwaway copy of a scope-locked tree under this module's workspace, named by an opaque token."""
+    import secrets
+
+    work = _workspace()
+    dst = work / "tree"
+    shutil.copytree(root, dst, ignore=shutil.ignore_patterns("__pycache__", ".git", "*.pyc"))
+    _readable(work)
+    token = secrets.token_hex(16)
+    _COPIES[token] = {"target_id": target_id, "root": dst.resolve(), "work": work.resolve()}
+    return token, dst
+
+
+def drop_copy(token: str) -> None:
+    info = _COPIES.pop(token, None)
+    if info:
+        shutil.rmtree(info["work"], ignore_errors=True)
+
+
+def _sealed_for_step(repro: rv.Reproduction, step: dict):
+    """``(candidate, sealed)`` this module holds for the step, or a refusal reason."""
+    if step.get("proof"):
+        held = _PENDING.get(str(step["proof"]))
+        if not held or held["target_id"] != repro.target:
+            return None, "no proof in flight with that token for this target"
+        return held, None
+    if step.get("finding_id"):
+        from tools.vulnresearch import discovery
+
+        got = discovery.sealed_for(str(step["finding_id"]))
+        if got is None or got[0]["target_id"] != repro.target:
+            return None, "no recorded finding with that id on this target"
+        finding, sealed = got
+        return {"target_id": finding["target_id"], "module": finding["module"], "function": finding["function"],
+                "src_root": None, "sealed": sealed}, None
+    return None, "a sandbox_pov step names a proof token or a finding id"
+
+
 def _replayer(repro: rv.Reproduction) -> rv.ReplayResult:
-    """The ``sandbox_pov`` engine: scope lock, then one isolated run of the stored input."""
+    """The ``sandbox_pov`` engine. It trusts nothing a request carries but WHICH sealed proof to replay:
+
+    * the step may name only a proof in flight (an opaque token this module minted) or a recorded finding id, the
+      input (``pov`` or ``control``) and optionally a patched copy this module made; any other key is refused;
+    * the input, oracle, module and function come from the SEALED PoV, never from the request;
+    * the tree is the scope-locked target (``targets.assert_in_scope``) or a copy this module made of it;
+    * the sandbox's stderr is never handed back (it could carry host or target text).
+    """
     from tools.vulnresearch import targets
 
+    if len(repro.steps) != 1 or not isinstance(repro.steps[0], dict):
+        return _refused("a sandbox_pov reproduction has exactly one step")
+    step = repro.steps[0]
+    extra = set(step) - _STEP_KEYS
+    if extra:
+        return _refused(f"a sandbox_pov step may not carry {sorted(extra)}: only the sealed PoV is replayed")
+    which = str(step.get("input") or "")
+    if which not in ("pov", "control"):
+        return _refused("input must be pov or control")
+    held, why = _sealed_for_step(repro, step)
+    if held is None:
+        return _refused(why)
     try:
         scoped = targets.assert_in_scope(repro.target)
     except ScopeViolation as exc:
-        return rv.ReplayResult(outcome=rv.ReplayOutcome.refused, detail=str(exc))
-    step = repro.steps[0]
-    spec = dict(step["spec"])
-    root = Path(step.get("root_override") or scoped["root"])
-    run = run_in_sandbox("pov_runner.py", spec, target_root=root)
+        return _refused(str(exc))
+    root = scoped["root"]
+    if step.get("copy"):
+        info = _COPIES.get(str(step["copy"]))
+        if not info or info["target_id"] != repro.target:
+            return _refused("no patched copy with that token for this target")
+        root = info["root"]
+    cfg = targets.load_config()
+    src_root = held.get("src_root") or scoped["registration"].get("src_root") or "."
+    spec = _spec(held, held["sealed"], which, cfg, src_root)
+    run = run_in_sandbox("pov_runner.py", spec, target_root=root, scoped=scoped)
     if run["status"] != "completed" or not run["result"]:
-        outcome = rv.ReplayOutcome.unavailable if run["status"] == "unavailable" else rv.ReplayOutcome.error
-        return rv.ReplayResult(outcome=outcome, detail=f"sandbox {run['status']}: {run['stderr'][-300:]}")
+        outcome = {"unavailable": rv.ReplayOutcome.unavailable, "refused": rv.ReplayOutcome.refused}.get(
+            run["status"], rv.ReplayOutcome.error)
+        return rv.ReplayResult(outcome=outcome, detail=f"sandbox {run['status']}" + (
+            f": {run.get('refusal')}" if run.get("refusal") else ""))
     r = run["result"]
     if not r.get("decisive"):
-        return rv.ReplayResult(outcome=rv.ReplayOutcome.error, detail=r.get("detail") or "indecisive",
+        return rv.ReplayResult(outcome=rv.ReplayOutcome.error, detail="the replay could not decide",
                                observations=[{"oracle": r.get("oracle"), "exception": r.get("exception")}])
     return rv.ReplayResult(outcome=rv.ReplayOutcome.reproduced if r["fired"] else rv.ReplayOutcome.not_reproduced,
-                           detail=r.get("detail") or "",
                            observations=[{"oracle": r.get("oracle"), "fired": r["fired"],
                                           "exception": r.get("exception")}])
 
@@ -180,13 +258,9 @@ def register() -> None:
     rv.register_pov_replayer(_replayer)
 
 
-def reproduction(target_id: str, spec: dict, *, root_override: Optional[str] = None) -> rv.Reproduction:
-    step = {"input": spec.get("which", "pov"), "spec": spec}
-    if root_override:
-        step["root_override"] = root_override
+def _repro(target_id: str, oracle: str, step: dict) -> rv.Reproduction:
     return rv.Reproduction(kind="sandbox_pov", target=target_id, steps=[step],
-                           predicate={"type": "pov_oracle", "oracle": spec["oracle"]},
-                           description=f"{spec['module']}:{spec['function']} {spec['oracle']}")
+                           predicate={"type": "pov_oracle", "oracle": oracle})
 
 
 def _spec(c: dict, sealed: dict, which: str, cfg: dict, src_root: str) -> dict:
@@ -199,18 +273,36 @@ def _spec(c: dict, sealed: dict, which: str, cfg: dict, src_root: str) -> dict:
 
 
 def replay_pair(target_id: str, c: dict, sealed: dict, cfg: dict, src_root: str, *,
-                against: str = "control", root_override: Optional[str] = None) -> dict:
+                against: str = "control", copy_token: Optional[str] = None,
+                finding_id: Optional[str] = None) -> dict:
     """Replay the PoV, then either its benign control (``against='control'``: is this a finding?) or the same PoV
-    on another tree (``against='patched'``: does the patch fix it?). The validator decides."""
+    on a patched copy this module made (``against='patched'``: does the patch fix it?). The validator decides.
+
+    A candidate not yet recorded is replayed by an opaque proof token held only for these two replays; a recorded
+    finding by its id. Either way the request names WHICH sealed proof, never its content.
+    """
+    import secrets
+
     register()
-    first = rv.replay(reproduction(target_id, _spec(c, sealed, "pov", cfg, src_root)))
-    if against == "control":
-        second = rv.replay(reproduction(target_id, _spec(c, sealed, "control", cfg, src_root)))
-        vocab = rv.POV_VOCABULARY
+    token = None
+    if finding_id:
+        base = {"finding_id": finding_id}
     else:
-        second = rv.replay(reproduction(target_id, _spec(c, sealed, "pov", cfg, src_root),
-                                        root_override=root_override))
-        vocab = rv.PATCH_VOCABULARY
+        token = secrets.token_hex(16)
+        _PENDING[token] = {"target_id": target_id, "module": c["module"], "function": c["function"],
+                           "src_root": src_root, "sealed": sealed}
+        base = {"proof": token}
+    try:
+        first = rv.replay(_repro(target_id, sealed["oracle"], {**base, "input": "pov"}))
+        if against == "control":
+            second = rv.replay(_repro(target_id, sealed["oracle"], {**base, "input": "control"}))
+            vocab = rv.POV_VOCABULARY
+        else:
+            second = rv.replay(_repro(target_id, sealed["oracle"], {**base, "input": "pov", "copy": copy_token}))
+            vocab = rv.PATCH_VOCABULARY
+    finally:
+        if token:
+            _PENDING.pop(token, None)
     ok, reason = rv.decide_discrimination(
         before_fired=first.reproduced, before_decisive=first.decisive, before_outcome=first.outcome,
         after_fired=second.reproduced, after_decisive=second.decisive, after_outcome=second.outcome,

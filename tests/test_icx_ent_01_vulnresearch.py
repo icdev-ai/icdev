@@ -640,3 +640,49 @@ def test_the_real_sandbox_end_to_end(wf_db, monkeypatch, tmp_path):
     assert {f["module"] for f in run["findings"]} == {"vb_cmdi", "vb_sqli", "vb_eval", "vb_pickle", "vb_parser"}
     fid = next(f["finding_id"] for f in run["findings"] if f["module"] == "vb_cmdi")
     assert patches.propose(fid, _fixed_diff(), DEVELOPER)["validation"]["pov_fails_after"] is True
+
+
+# ── review fixes (FIX FIRST): offensive work stays bounded ───────────────────
+
+
+def test_a_replay_request_cannot_carry_its_own_input_or_root(vr, tmp_path):
+    """The sandbox PoV engine replays only what this module sealed, on the scope-locked tree or a copy it made."""
+    from tools.security import reproduction_validator as rv
+    from tools.vulnresearch import discovery, pov
+
+    tid = _bench()
+    run = discovery.run(tid, REGISTRANT, use_model=False)["run"]
+    fid = run["findings"][0]["finding_id"]
+    (tmp_path / "evil").mkdir()
+    (tmp_path / "evil" / "x.py").write_text("def f(a):\n    return open('/etc/hostname').read()\n")
+    LocalDouble.calls = []
+    forged = [
+        {"input": "pov", "spec": {"module": "x", "function": "f", "input": "", "oracle": "returned", "canary": "/tmp/c",
+                                  "token": "t", "plant": False}, "root_override": str(tmp_path / "evil")},
+        {"finding_id": fid, "input": "pov", "root_override": str(tmp_path / "evil")},
+        {"finding_id": fid, "input": "pov", "copy": "not-a-copy-this-module-made"},
+        {"finding_id": "vrf-000000000000", "input": "pov"},
+    ]
+    for step in forged:
+        repro = rv.Reproduction(kind="sandbox_pov", target=tid, steps=[step],
+                                predicate={"type": "pov_oracle", "oracle": "returned"})
+        out = rv.replay(repro)
+        assert out.outcome == rv.ReplayOutcome.refused, (step, out.to_dict())
+    assert LocalDouble.calls == [], "nothing a request carried ever reached the sandbox"
+    ok = rv.replay(rv.Reproduction(kind="sandbox_pov", target=tid, steps=[{"finding_id": fid, "input": "pov"}],
+                                   predicate={"type": "pov_oracle", "oracle": "x"}))
+    assert ok.outcome == rv.ReplayOutcome.reproduced, "the sealed PoV of a recorded finding still replays"
+    assert "Traceback" not in ok.detail and pov.sealed_digest  # no host stderr is handed back
+
+
+def test_the_mcp_replay_tools_refuse_a_sandbox_pov(vr):
+    from tools.mcp.gap_handlers import handle_finding_replay, handle_finding_verify_discrimination
+
+    repro = {"kind": "sandbox_pov", "target": "vrt-0000000000", "steps": [{"input": "pov"}],
+             "predicate": {"type": "pov_oracle", "oracle": "file_created"}}
+    LocalDouble.calls = []
+    one = handle_finding_replay({"reproduction": repro})
+    two = handle_finding_verify_discrimination({"reproduction": repro, "vulnerable_target": "/", "fixed_target": "/"})
+    for out in (one, two):
+        assert out.get("refused") is True and "sandbox_pov" in out["error"], out
+    assert LocalDouble.calls == []
