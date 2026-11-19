@@ -34,7 +34,9 @@ scope:
     - context/vulnresearch/benchmark
     - data/vulnresearch/targets
   # What a target's tree digest covers (and what discovery reads).
-  include: ["**/*.py", "**/requirements*.txt", "**/pyproject.toml"]
+  # Only these files are hashed, and only these (regular files, no symlinks) are ever staged into the sandbox:
+  # anything else beside the code -- a shared object, bytecode, a .pth file -- never runs.
+  include: ["**/*.py", "**/*.txt", "**/pyproject.toml"]
   exclude_dirs: [".git", "__pycache__", ".venv", "venv", "node_modules"]
   max_files: 400
   max_file_bytes: 262144
@@ -67,9 +69,6 @@ sandbox:
 # also all that CI runs. It never applies to any other target.
 isolation:
   require: [gvisor, microvm]
-  # A patched copy of the benchmark still runs under its waiver only when it has the same in-scope files and
-  # changes no more than this many (the executor recomputes it).
-  max_patched_files: 5
   waivers:
     - id: vr-waiver-synthetic-benchmark
       applies_to: synthetic_benchmark
@@ -167,7 +166,18 @@ benchmark:
   # target and needs gVisor or a microVM. Recompute after a reviewed change to the benchmark with
   #   python tools/vulnresearch/cli.py benchmark-digest --write
   # (--check, and tests/test_icx_ent_01_vulnresearch.py, fail while the pin is stale).
-  tree_digest: "7c0a0fb8e3f09f5acd4ddd84df3091474ce8e845438a36fd32e65aeb9d698fac"
+  tree_digest: "90e15f4ae00d76a86f488f555723f2cd4020ea63c9a6c030b68cf58c4eec339d"
+  # The labels' SHA-256 (the raw file). A measurement against labels that do not hash to this is unverified,
+  # its rates null; labels with reviewed_by null are measured "against unreviewed labels" (a warning: a person
+  # signing the labels is the owner's act, like the ops gold set).
+  labels_sha256: "2cd792133ebedde02867daff258fa3571271260418f715bf2a031fb80bb5f3ca"
+  # The only patched content that runs under the benchmark's waiver: the SHA-256 of each file as the committed
+  # reference fixes (context/vulnresearch/benchmark_fixes/*.diff) leave it. Any other patch on the benchmark is
+  # code that is not ours and needs gVisor or a microVM. benchmark-digest --check recomputes these.
+  reference_fixes:
+    src/vb_cmdi.py: ["db5035aa35d7833e715c44c09d312cf217a9e9e0c447c31e74d1b6ec3b741327"]
+    src/vb_parser.py: ["4e5f8bb194a7403281148c6f0036976fd8afcf0daf3b13ab8fd2c56c5c781350"]
+  fixes_dir: context/vulnresearch/benchmark_fixes
 
 publish:
   # A prepared findings bundle waiting this long for a person, or a target whose

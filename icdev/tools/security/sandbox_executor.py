@@ -801,9 +801,13 @@ def _waiver_problem(waiver: Any, tree_digest: str, mounts: List[tuple]) -> str:
     * its id is a waiver ``args/vuln_research.yaml`` holds, for the synthetic benchmark;
     * ``tree_digest`` (the scope-locked target's) is the benchmark's PINNED tree digest, and the committed benchmark
       recomputes to it;
-    * the ``/target`` mount is the benchmark itself (recomputing to the pin), or a patched copy of it: the same set
-      of in-scope files, no more than ``isolation.max_patched_files`` of them changed.
+    * the ``/target`` mount holds EXACTLY the benchmark's hashed files -- regular files only, nothing else (no
+      shared object, bytecode, .pth or symlink) -- and each is either the committed file or, in a patched copy,
+      one of the benchmark's committed reference fixes (``benchmark.reference_fixes``). Recomputed here.
     """
+    import os as _os
+    import stat as _stat
+
     if not isinstance(waiver, dict) or not waiver.get("id"):
         return "no waiver was given"
     try:
@@ -821,22 +825,29 @@ def _waiver_problem(waiver: Any, tree_digest: str, mounts: List[tuple]) -> str:
     base = targets.tree(root, cfg)
     if base["digest"] != pin:
         return "the committed benchmark no longer has its pinned tree digest"
-    target = next((Path(h).resolve() for h, ctr, _m in mounts if ctr == "/target"), None)
+    target = next((Path(h) for h, ctr, _m in mounts if ctr == "/target"), None)
     if target is None:
         return "no /target mount"
-    if target == root:
-        return ""
-    try:
-        got = targets.tree(target, cfg)
-    except Exception:  # noqa: BLE001
-        return "the mounted tree could not be read"
     want = {f["path"]: f["sha256"] for f in base["files"]}
-    have = {f["path"]: f["sha256"] for f in got["files"]}
-    if set(want) != set(have):
-        return "the mounted tree is not a copy of the benchmark (its files differ)"
-    changed = sum(1 for k in want if want[k] != have[k])
-    if changed > int((cfg.get("isolation") or {}).get("max_patched_files") or 5):
-        return f"the mounted copy changes {changed} files, more than a patch may"
+    seen: Dict[str, str] = {}
+    for dirpath, dirnames, filenames in _os.walk(target):
+        for name in dirnames + filenames:
+            full = Path(dirpath) / name
+            rel = full.relative_to(target).as_posix()
+            st = _os.lstat(full)
+            if _stat.S_ISDIR(st.st_mode):
+                continue
+            if not _stat.S_ISREG(st.st_mode):
+                return f"the mounted tree holds {rel}, which is not a regular file"
+            if rel not in want:
+                return f"the mounted tree holds {rel}, which the pinned tree does not"
+            seen[rel] = hashlib.sha256(full.read_bytes()).hexdigest()
+    if set(seen) != set(want):
+        return "the mounted tree is missing files of the pinned benchmark"
+    changed = {p: s for p, s in seen.items() if want[p] != s}
+    bad = targets.not_reference_fixes(changed, cfg)
+    if bad:
+        return f"the mounted copy changes {', '.join(bad)} to content that is not a committed reference fix"
     return ""
 
 

@@ -83,10 +83,12 @@ def _apply(copy: Path, diff: str) -> Optional[str]:
     return None
 
 
-def run_tests(root: Path, test_dir: str, scoped: dict) -> dict:
-    """The target's unittest suite in the isolated sandbox. ``{status, passed, detail}``."""
+def run_tests(copy_token: str, test_dir: str, scoped: dict) -> dict:
+    """The target's unittest suite on a patched copy this module staged, in the isolated sandbox."""
     cfg = targets.load_config().get("sandbox") or {}
-    gate = pov.isolation_decision(scoped)
+    info = pov.copy_info(copy_token)
+    root = info["root"]
+    gate = pov.isolation_decision(scoped, changed=info.get("changed"))
     if not gate["allowed"]:
         return {"status": "refused", "passed": False, "exit_code": -1, "detail": gate["why"]}
     ex = pov.EXECUTOR()
@@ -154,16 +156,23 @@ def validate(fid: str, diff: str) -> dict:
     reg = scoped["registration"]
     if not reg.get("test_dir"):
         raise PatchRefused(422, "no_tests", "the target declares no tests: a patch cannot be shown to keep them passing")
-    copy_token, copy = pov.make_copy(finding["target_id"], scoped["root"])
+    copy_token, copy = pov.make_copy(finding["target_id"], scoped)
     try:
         err = _apply(copy, diff)
         if err:
             raise PatchRefused(422, "does_not_apply", f"the diff does not apply to the target: {err}")
+        try:
+            changed = pov.note_patched(copy_token)
+        except ScopeViolation as exc:
+            raise PatchRefused(422, "diff_shape", str(exc)) from exc
+        gate = pov.isolation_decision(scoped, changed=changed)
+        if not gate["allowed"]:
+            raise PatchRefused(409, "isolation", gate["why"])
         cfg = targets.load_config()
         proof = pov.replay_pair(finding["target_id"], {"module": finding["module"], "function": finding["function"]},
                                 sealed, cfg, reg.get("src_root") or ".", against="patched", copy_token=copy_token,
                                 finding_id=fid)
-        tests = run_tests(copy, reg["test_dir"], scoped=scoped)
+        tests = run_tests(copy_token, reg["test_dir"], scoped=scoped)
     finally:
         pov.drop_copy(copy_token)
     validation = {"pov_vulnerable": proof["first"]["outcome"], "pov_patched": proof["second"]["outcome"],

@@ -12,6 +12,7 @@ that run's stream, so the bundle and the twin cite the exact run they came from.
 """
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Optional
 
@@ -25,9 +26,37 @@ def load_labels(cfg: Optional[dict] = None) -> dict:
     p = targets.BASE_DIR / ((cfg.get("benchmark") or {}).get("labels") or "context/vulnresearch/benchmark/labels.yaml")
     raw = p.read_bytes()
     labels = yaml.safe_load(raw.decode("utf-8")) or {}
-    labels["_sha256"] = ledger.digest(raw.decode("utf-8"))
+    labels["_sha256"] = hashlib.sha256(raw).hexdigest()
     labels["_path"] = p.relative_to(targets.BASE_DIR).as_posix()
     return labels
+
+
+def pins_check(cfg: Optional[dict] = None) -> dict:
+    """Do the labels and the committed reference fixes still hash to their pins? (benchmark-digest --check)"""
+    import shutil
+    import subprocess  # nosec B404 — git apply on a throwaway copy, fixed arguments
+    import tempfile
+
+    cfg = cfg or targets.load_config()
+    b = cfg.get("benchmark") or {}
+    labels_now = load_labels(cfg)["_sha256"]
+    root, _pin = targets.benchmark_pin(cfg)
+    got: dict = {}
+    base = {x["path"]: x["sha256"] for x in targets.tree(root, cfg)["files"]}
+    fixes = targets.BASE_DIR / str(b.get("fixes_dir") or "context/vulnresearch/benchmark_fixes")
+    for diff in sorted(fixes.glob("*.diff")):
+        with tempfile.TemporaryDirectory(prefix="vr-fix-") as d:
+            copy = Path(d) / "t"
+            shutil.copytree(root, copy, ignore=shutil.ignore_patterns("__pycache__"))
+            subprocess.run(["git", "apply", str(diff)], cwd=copy, check=True, capture_output=True,  # nosec B603 B607
+                           timeout=30)
+            for f in targets.tree(copy, cfg)["files"]:
+                if f["sha256"] != base.get(f["path"]):
+                    got.setdefault(f["path"], []).append(f["sha256"])
+    pinned = {k: sorted(v) for k, v in (b.get("reference_fixes") or {}).items()}
+    return {"labels_sha256": labels_now, "labels_match": labels_now == b.get("labels_sha256"),
+            "reference_fixes": {k: sorted(v) for k, v in got.items()},
+            "reference_fixes_match": {k: sorted(v) for k, v in got.items()} == pinned}
 
 
 def score(findings: list[dict], labels: dict) -> dict:
@@ -80,6 +109,9 @@ def measure(target_id: str, actor: Optional[dict], *, use_model: bool = True, co
     run = out["run"]
     s = score(run["findings"], labels)
     why = unverified_why(run)
+    pinned = (cfg.get("benchmark") or {}).get("labels_sha256")
+    if labels["_sha256"] != pinned:
+        why = "; ".join(x for x in (why, "the labels do not hash to their pin (benchmark.labels_sha256)") if x)
     if why:
         # The counts are kept for the record; the RATES are not claimed: a tool that did not run, or a candidate
         # the sandbox could not decide, would otherwise read as a false negative (or a missing false positive).
@@ -87,7 +119,9 @@ def measure(target_id: str, actor: Optional[dict], *, use_model: bool = True, co
     content = {"run_id": out["run_id"], "run_event": out["event_id"], "run_digest": out["content_digest"],
                "target_id": target_id, "tree_digest": run["tree_digest"], "labels": {
                    "path": labels["_path"], "sha256": labels["_sha256"], "synthetic": bool(labels.get("synthetic")),
-                   "labelled_by": labels.get("labelled_by"), "reviewed_by": labels.get("reviewed_by")},
+                   "labelled_by": labels.get("labelled_by"), "reviewed_by": labels.get("reviewed_by"),
+                   # Rates are measured "against unreviewed labels" until a person signs reviewed_by (a warning).
+                   "reviewed": bool(labels.get("reviewed_by"))},
                "model_used": bool(run["review"].get("ran")), "scores": s, "counts": run["counts"],
                "status": "unverified" if why else "measured", "why": why}
     own = conn is None

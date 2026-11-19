@@ -80,9 +80,11 @@ def main(argv: list[str] | None = None) -> int:
                 p = targets.BASE_DIR / "args" / "vuln_research.yaml"
                 text = p.read_text(encoding="utf-8")
                 p.write_text(text.replace(f'tree_digest: "{pin}"', f'tree_digest: "{now}"'), encoding="utf-8")
-            out = {"path": str(root), "pinned": pin, "current": now, "current_matches_pin": now == pin}
+            out = {"path": str(root), "pinned": pin, "current": now, "current_matches_pin": now == pin,
+                   **benchmark.pins_check(cfg)}
+            ok = now == pin and out["labels_match"] and out["reference_fixes_match"]
             print(json.dumps(out, indent=2))
-            return 1 if (a.check and now != pin) else 0
+            return 1 if (a.check and not ok) else 0
         elif a.cmd == "register":
             out = targets.register(actor, name=a.name, root=a.root, reason=a.reason, src_root=a.src_root,
                                    test_dir=a.test_dir, fuzz_targets=a.fuzz, system_id=a.system_id)

@@ -111,11 +111,14 @@ def _sandbox_cfg() -> dict:
     return load_config().get("sandbox") or {}
 
 
-def isolation_decision(scoped: dict) -> dict:
+def isolation_decision(scoped: dict, changed: Optional[dict] = None) -> dict:
     """May this target's code run here? ``{allowed, isolation, waiver, why}``.
 
     Only under gVisor or a microVM (``isolation.require``), or a plain container under the one named waiver whose
-    scope the target is: the synthetic benchmark. The waiver is returned so the run and the bundle carry it.
+    scope the target is: the synthetic benchmark at its pinned tree. A patched copy of the benchmark (``changed``:
+    ``{path: sha256}`` of every file the patch changed) stays under the waiver only when every changed file is one
+    of the benchmark's committed reference fixes (``benchmark.reference_fixes``); any other patch is code that is
+    not ours. The waiver is returned so the run and the bundle carry it.
     """
     from tools.security.sandbox_executor import isolated_profile
     from tools.vulnresearch import targets
@@ -125,6 +128,13 @@ def isolation_decision(scoped: dict) -> dict:
     prof = isolated_profile()
     if prof["isolation"] in (iso.get("require") or ["gvisor", "microvm"]):
         return {"allowed": True, "isolation": prof["isolation"], "waiver": None, "why": ""}
+    if targets.is_synthetic_benchmark(scoped, cfg) and changed:
+        bad = targets.not_reference_fixes(changed, cfg)
+        if bad:
+            return {"allowed": False, "isolation": prof["isolation"], "waiver": None,
+                    "why": (f"refused: the patch changes {', '.join(bad)} to content that is not one of the "
+                            "benchmark's committed reference fixes, so it is code that is not ours and runs only "
+                            f"under gVisor or a microVM; the engine runs {prof['oci_runtime']} (a plain container)")}
     if targets.is_synthetic_benchmark(scoped, cfg):
         for w in iso.get("waivers") or []:
             if w.get("applies_to") == "synthetic_benchmark" and w.get("id") and w.get("reason"):
@@ -137,16 +147,46 @@ def isolation_decision(scoped: dict) -> dict:
                     "operator installs one and sets sandbox.isolated.oci_runtime (an owner/root step).")}
 
 
-def run_in_sandbox(script: str, spec: dict, *, target_root: Path, scoped: dict, image: Optional[str] = None,
-                   extra_files: Optional[dict] = None) -> dict:
+def stage(root: Path, files: list[dict], dest: Path) -> Path:
+    """Copy EXACTLY the files the tree digest hashed into ``dest``: regular files only, each re-hashed on the way.
+
+    The sandbox mounts this, never the target's root, so a shared object, bytecode, a .pth file or a symlink that
+    sits beside the code (and that the pin cannot see) never reaches it. A file that is not a regular file now, or
+    whose bytes no longer hash to what was recorded, is refused (it changed after the scope lock).
+    """
+    import hashlib
+
+    dest.mkdir(parents=True, exist_ok=True)
+    for f in files:
+        rel = Path(f["path"])
+        if rel.is_absolute() or ".." in rel.parts:
+            raise ScopeViolation(f"refused to stage {f['path']!r}")
+        src = Path(root) / rel
+        st = os.lstat(src)
+        if not stat.S_ISREG(st.st_mode):
+            raise ScopeViolation(f"{f['path']} is not a regular file any more")
+        data = src.read_bytes()
+        if hashlib.sha256(data).hexdigest() != f["sha256"]:
+            raise ScopeViolation(f"{f['path']} changed after the scope lock")
+        out = dest / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(data)
+        out.chmod(0o644)
+    _readable(dest)
+    return dest
+
+
+def run_in_sandbox(script: str, spec: dict, *, scoped: dict, copy: Optional[dict] = None,
+                   image: Optional[str] = None, extra_files: Optional[dict] = None) -> dict:
     """Run one runner script on one spec in the isolated sandbox. ``{status, result, stderr, profile, waiver}``.
 
     ``scoped`` is the target's ``assert_in_scope`` result: its isolation is decided here, every time, and a run
-    that is not allowed is refused before anything is staged.
+    that is not allowed is refused before anything is staged. What is mounted at /target is always a STAGED copy
+    of exactly the hashed files (:func:`stage`), or a patched copy this module built the same way (``copy``).
     """
     from tools.security.sandbox_executor import isolated_profile
 
-    gate = isolation_decision(scoped)
+    gate = isolation_decision(scoped, changed=(copy or {}).get("changed"))
     if not gate["allowed"]:
         return {"status": "refused", "result": None, "stderr": "", "exit_code": -1, "refusal": gate["why"],
                 "profile": isolated_profile(), "waiver": None}
@@ -157,6 +197,11 @@ def run_in_sandbox(script: str, spec: dict, *, target_root: Path, scoped: dict, 
     out.mkdir()
     os.chmod(out, 0o777)  # nosec B103 — a throwaway dir the unprivileged container user writes its result to
     try:
+        try:
+            target_root = copy["root"] if copy else stage(scoped["root"], scoped["tree"]["files"], work / "target")
+        except ScopeViolation as exc:
+            return {"status": "refused", "result": None, "stderr": "", "exit_code": -1, "refusal": str(exc),
+                    "profile": isolated_profile(), "waiver": None}
         for name in ("pov_runner.py", "fuzz_runner.py"):
             shutil.copyfile(RUNTIME / name, harness / name)
         for name, text in (extra_files or {}).items():
@@ -204,17 +249,35 @@ def _refused(why: str) -> rv.ReplayResult:
     return rv.ReplayResult(outcome=rv.ReplayOutcome.refused, detail=why)
 
 
-def make_copy(target_id: str, root: Path) -> tuple[str, Path]:
-    """A throwaway copy of a scope-locked tree under this module's workspace, named by an opaque token."""
+def make_copy(target_id: str, scoped: dict) -> tuple[str, Path]:
+    """A throwaway STAGED copy of a scope-locked tree (exactly its hashed files, :func:`stage`) under this module's
+    workspace, named by an opaque token. Nothing is copied by walking the root, so no symlink is ever followed."""
     import secrets
 
     work = _workspace()
-    dst = work / "tree"
-    shutil.copytree(root, dst, ignore=shutil.ignore_patterns("__pycache__", ".git", "*.pyc"))
-    _readable(work)
+    dst = stage(scoped["root"], scoped["tree"]["files"], work / "tree")
     token = secrets.token_hex(16)
-    _COPIES[token] = {"target_id": target_id, "root": dst.resolve(), "work": work.resolve()}
+    _COPIES[token] = {"target_id": target_id, "root": dst.resolve(), "work": work.resolve(),
+                      "base": {f["path"]: f["sha256"] for f in scoped["tree"]["files"]}, "changed": None}
     return token, dst
+
+
+def note_patched(token: str) -> dict:
+    """After a patch is applied to a copy: ``{path: sha256}`` of every file it changed. The copy must still hold
+    exactly the base's files (a patch only modifies), else it is refused."""
+    from tools.vulnresearch import targets
+
+    info = _COPIES[token]
+    got = targets.tree(info["root"], targets.load_config())
+    have = {f["path"]: f["sha256"] for f in got["files"]}
+    if set(have) != set(info["base"]):
+        raise ScopeViolation("the patched copy does not hold exactly the target's files")
+    info["changed"] = {p: s for p, s in sorted(have.items()) if info["base"][p] != s}
+    return info["changed"]
+
+
+def copy_info(token: str) -> Optional[dict]:
+    return _COPIES.get(token)
 
 
 def drop_copy(token: str) -> None:
@@ -269,16 +332,15 @@ def _replayer(repro: rv.Reproduction) -> rv.ReplayResult:
         scoped = targets.assert_in_scope(repro.target)
     except ScopeViolation as exc:
         return _refused(str(exc))
-    root = scoped["root"]
+    info = None
     if step.get("copy"):
         info = _COPIES.get(str(step["copy"]))
         if not info or info["target_id"] != repro.target:
             return _refused("no patched copy with that token for this target")
-        root = info["root"]
     cfg = targets.load_config()
     src_root = held.get("src_root") or scoped["registration"].get("src_root") or "."
     spec = _spec(held, held["sealed"], which, cfg, src_root)
-    run = run_in_sandbox("pov_runner.py", spec, target_root=root, scoped=scoped)
+    run = run_in_sandbox("pov_runner.py", spec, scoped=scoped, copy=info)
     if run["status"] != "completed" or not run["result"]:
         outcome = {"unavailable": rv.ReplayOutcome.unavailable, "refused": rv.ReplayOutcome.refused}.get(
             run["status"], rv.ReplayOutcome.error)

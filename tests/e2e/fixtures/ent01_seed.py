@@ -16,7 +16,6 @@ on a throwaway database; the spec only uses it to sign in), the benchmark and th
 """
 from __future__ import annotations
 
-import difflib
 import json
 import sys
 import uuid
@@ -37,13 +36,8 @@ def person(name: str, role: str, run: str) -> dict:
 
 
 def parser_patch() -> str:
-    src = (ROOT / BENCH / "src" / "vb_parser.py").read_text(encoding="utf-8")
-    fixed = src.replace("    return fields[int(fields[0])]\n",
-                        "    index = int(fields[0])\n    if index >= len(fields):\n"
-                        "        raise ValueError(\"no such field\")\n    return fields[index]\n")
-    assert fixed != src
-    return "".join(difflib.unified_diff(src.splitlines(True), fixed.splitlines(True), "a/src/vb_parser.py",
-                                        "b/src/vb_parser.py"))
+    """The benchmark's committed reference fix for the planted parser crash (the one a waived run may apply)."""
+    return (ROOT / "context" / "vulnresearch" / "benchmark_fixes" / "vb_parser.diff").read_text(encoding="utf-8")
 
 
 def main() -> int:

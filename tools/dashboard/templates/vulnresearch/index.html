@@ -152,7 +152,8 @@
       <b>unverified</b>: {{ measurement.why }}. Its rates are not claimed.</p>
     {% elif measurement %}
     <p class="vr-help" id="vr-measured">On the labelled benchmark (<code>{{ measurement.labels.path }}</code>, synthetic, labelled by
-      construction{% if not measurement.labels.reviewed_by %}, <b>not yet reviewed by a person</b>{% endif %}), run
+      construction{% if not measurement.labels.reviewed_by %}, <b>not yet reviewed by a person</b>: these are rates
+      <b>against unreviewed labels</b>{% endif %}), run
       <code>{{ measurement.run_id }}</code>{% if not measurement.model_used %} without a model{% endif %}:
       false-positive rate <b data-rate="fpr">{{ measurement.scores.false_positive_rate }}</b>,
       false-negative rate <b data-rate="fnr">{{ measurement.scores.false_negative_rate }}</b>

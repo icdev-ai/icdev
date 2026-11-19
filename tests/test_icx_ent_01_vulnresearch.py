@@ -60,7 +60,9 @@ class LocalDouble:
             return a
 
         cmd = [sys.executable if argv[0] == "python" else argv[0], *[mapped(a) for a in argv[1:]]]
-        env = {**os.environ, "VR_TARGET": m.get("/target", ""), "VR_OUT": m.get("/out", "")}
+        # As in the container (-e PYTHONDONTWRITEBYTECODE=1, a read-only /target): no bytecode is written back.
+        env = {**os.environ, "VR_TARGET": m.get("/target", ""), "VR_OUT": m.get("/out", ""),
+               "PYTHONDONTWRITEBYTECODE": "1"}
         LocalDouble.calls.append({"argv": argv, "image": image, "mounts": mounts})
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds or 60, env=env,
@@ -142,12 +144,8 @@ def _bench(**kw):
 
 
 def _fixed_diff() -> str:
-    src = (ROOT / BENCH / "src/vb_cmdi.py").read_text(encoding="utf-8")
-    fixed = src.replace('subprocess.run(f"echo hello {name}", shell=True, capture_output=True, text=True)',
-                        'subprocess.run(["echo", "hello", name], capture_output=True, text=True)')
-    assert fixed != src
-    return "".join(difflib.unified_diff(src.splitlines(True), fixed.splitlines(True), "a/src/vb_cmdi.py",
-                                        "b/src/vb_cmdi.py"))
+    """The benchmark's committed reference fix for the planted command injection (pinned in the config)."""
+    return (ROOT / "context/vulnresearch/benchmark_fixes/vb_cmdi.diff").read_text(encoding="utf-8")
 
 
 # ── the scope lock ───────────────────────────────────────────────────────────
@@ -364,8 +362,11 @@ def test_the_agentic_review_only_proposes_and_an_invented_function_is_dropped(vr
 # ── patches ──────────────────────────────────────────────────────────────────
 
 
-def test_a_patch_is_proposed_only_when_its_pov_fails_and_the_tests_pass(vr):
+def test_a_patch_is_proposed_only_when_its_pov_fails_and_the_tests_pass(vr, monkeypatch):
+    """Any patch's proof and tests (here under gVisor: an arbitrary patch is not ours, so not under the waiver)."""
     from tools.vulnresearch import discovery, patches
+
+    _gvisor(monkeypatch)
 
     tid = _bench()
     run = discovery.run(tid, REGISTRANT, use_model=False)["run"]
@@ -1001,9 +1002,17 @@ def test_the_executor_checks_a_waiver_against_config_and_the_pinned_tree(tmp_pat
                               requires_strong_isolation=True, waiver=waiver, waiver_tree_digest=digest)
         assert out.status == "refused", (waiver.get("id"), mount, out.error)
     assert ran == []
-    ok = ex.run_isolated(["true"], image="img", mounts=[(bench, "/target", "ro")], runner=runner,
+    from tools.vulnresearch import pov
+
+    cfg = targets.load_config()
+    staged = pov.stage(Path(bench), targets.tree(Path(bench), cfg)["files"], tmp_path / "staged")
+    ok = ex.run_isolated(["true"], image="img", mounts=[(str(staged), "/target", "ro")], runner=runner,
                          requires_strong_isolation=True, waiver=dict(real_w), waiver_tree_digest=pin)
     assert ok.status == "completed" and len(ran) == 1
+    (staged / "src" / "vb_cmdi.cpython-312-x86_64-linux-gnu.so").write_bytes(b"\x7fELF")
+    extra = ex.run_isolated(["true"], image="img", mounts=[(str(staged), "/target", "ro")], runner=runner,
+                            requires_strong_isolation=True, waiver=dict(real_w), waiver_tree_digest=pin)
+    assert extra.status == "refused" and ".so" in extra.error and len(ran) == 1, "nothing beside the pin runs"
 
 
 def test_a_marker_cannot_smuggle_a_pip_option(vr):
@@ -1026,3 +1035,118 @@ def test_the_enforce_mcp_tool_refuses_a_sandbox_pov_too(vr):
                                                                    "steps": [{"input": "pov"}]}}]})
     assert out.get("refused") is True and "sandbox_pov" in out["error"]
     assert LocalDouble.calls == []
+
+
+# ── final re-review: only what the pin covers ever runs ──────────────────────
+
+
+def _gvisor(monkeypatch):
+    """As if an operator had installed gVisor: the profile says runsc (the LocalDouble still runs the scripts)."""
+    from tools.security import sandbox_executor
+
+    monkeypatch.setattr(sandbox_executor, "_load_config",
+                        lambda: {**sandbox_executor.DEFAULT_CONFIG, "isolated": {"oci_runtime": "runsc"}})
+
+
+def _mounted_files(mount: str) -> dict:
+    out = {}
+    for dirpath, dirnames, filenames in os.walk(mount):
+        for name in dirnames + filenames:
+            p = Path(dirpath) / name
+            out[p.relative_to(mount).as_posix()] = "symlink" if p.is_symlink() else ("dir" if p.is_dir() else "file")
+    return out
+
+
+def test_only_the_files_the_pin_hashed_ever_reach_the_sandbox(vr, tmp_path, monkeypatch):
+    """A .so, a .pyc, a .pth and a symlinked directory beside the code are invisible to the tree digest, so they
+    must never be mounted: every run stages exactly the hashed files, regular files only."""
+    from tools.vulnresearch import discovery, patches, targets
+
+    tree = tmp_path / "roots" / "t1"
+    shutil.copytree(ROOT / BENCH, tree, ignore=shutil.ignore_patterns("__pycache__"))
+    allow_root(monkeypatch, tmp_path / "roots")
+    clean = targets.tree(tree.resolve(), targets.load_config())["digest"]
+    (tree / "src" / "vb_cmdi.cpython-312-x86_64-linux-gnu.so").write_bytes(b"\x7fELF not really")
+    (tree / "src" / "__pycache__").mkdir(exist_ok=True)
+    (tree / "src" / "__pycache__" / "vb_cmdi.cpython-312.pyc").write_bytes(b"\x00" * 16)
+    (tree / "src" / "evil.pth").write_text("import os; os.system('touch /tmp/vr_pth_ran')\n")
+    (tree / "src" / "etc").symlink_to("/etc", target_is_directory=True)
+    assert targets.tree(tree.resolve(), targets.load_config())["digest"] == clean, "the pin cannot see these"
+    _gvisor(monkeypatch)
+    r = targets.register(REGISTRANT, name="t1 (synthetic)", root=str(tree), reason="test", src_root="src",
+                         test_dir="tests", fuzz_targets=["vb_parser:parse_record"])
+    targets.authorise(r["target_id"], decision="authorise", reason="ok", read_digest=r["content_digest"],
+                      actor=AUTHORISER)
+    seen = []
+    real_run = LocalDouble.run_isolated
+
+    def spy(self, argv, **kw):
+        mount = next(h for h, c, _m in kw["mounts"] if c == "/target")
+        seen.append(_mounted_files(mount))
+        assert Path(mount).resolve() != tree.resolve(), "the root itself is never mounted"
+        return real_run(self, argv, **kw)
+
+    monkeypatch.setattr(LocalDouble, "run_isolated", spy)
+    run = discovery.run(r["target_id"], REGISTRANT, use_model=False)["run"]
+    fid = next(f["finding_id"] for f in run["findings"] if f["module"] == "vb_cmdi")
+    patches.propose(fid, _fixed_diff(), DEVELOPER)
+    hashed = {f["path"] for f in targets.tree(tree.resolve(), targets.load_config())["files"]}
+    assert seen
+    for files in seen:
+        regular = {k for k, v in files.items() if v == "file"}
+        assert not [k for k, v in files.items() if v == "symlink"], "no symlink is staged"
+        assert regular == hashed, sorted(regular ^ hashed)
+    assert not Path("/tmp/vr_pth_ran").exists()
+
+
+def test_under_the_waiver_only_a_committed_reference_fix_runs(vr, monkeypatch):
+    """On the benchmark under runc, a patch runs only when every changed file is one of the pinned reference
+    fixes; any other patch is code that is not ours and needs gVisor or a microVM."""
+    from tools.vulnresearch import discovery, patches
+
+    tid = _bench()
+    run = discovery.run(tid, REGISTRANT, use_model=False)["run"]
+    fid = next(f["finding_id"] for f in run["findings"] if f["module"] == "vb_cmdi")
+    src = (ROOT / BENCH / "src/vb_cmdi.py").read_text(encoding="utf-8")
+    other = "".join(difflib.unified_diff(src.splitlines(True), src.replace(
+        'subprocess.run(f"echo hello {name}", shell=True, capture_output=True, text=True)',
+        'subprocess.run(["echo", "hello", name], capture_output=True, text=True)  # an equivalent, not the pin'
+    ).splitlines(True), "a/src/vb_cmdi.py", "b/src/vb_cmdi.py"))
+    LocalDouble.calls = []
+    with pytest.raises(patches.PatchRefused) as exc:
+        patches.propose(fid, other, DEVELOPER)
+    assert exc.value.code == "isolation" and "reference fix" in exc.value.message
+    assert not [c for c in LocalDouble.calls if c["mounts"][0][0].endswith("/tree")], "the copy never ran"
+    assert patches.propose(fid, _fixed_diff(), DEVELOPER)["validation"]["pov_fails_after"] is True
+    _gvisor(monkeypatch)
+    assert patches.propose(_refind(tid, "vb_parser"), _parser_fix(), DEVELOPER)["validation"]["tests_pass"]
+
+
+def _refind(tid, module):
+    from tools.vulnresearch import discovery
+
+    return next(f["finding_id"] for f in discovery.runs(tid)[0]["run"]["findings"] if f["module"] == module)
+
+
+def _parser_fix() -> str:
+    return (ROOT / "context/vulnresearch/benchmark_fixes/vb_parser.diff").read_text(encoding="utf-8")
+
+
+def test_the_labels_are_pinned_and_unreviewed_labels_are_said(vr, monkeypatch):
+    from tools.vulnresearch import benchmark, targets
+
+    tid = _bench()
+    m = benchmark.measure(tid, REGISTRANT, use_model=False)
+    assert m["status"] == "measured" and m["labels"]["reviewed"] is False, "rates against unreviewed labels"
+    real = targets.load_config
+
+    def moved(path=None):
+        cfg = real(path)
+        cfg["benchmark"]["labels_sha256"] = "e" * 64
+        return cfg
+
+    monkeypatch.setattr(targets, "load_config", moved)
+    m2 = benchmark.measure(tid, REGISTRANT, use_model=False)
+    assert m2["status"] == "unverified" and "labels" in m2["why"]
+    assert m2["scores"]["false_positive_rate"] is None and m2["scores"]["false_negative_rate"] is None
+

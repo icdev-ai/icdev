@@ -104,6 +104,8 @@ def tree(root: Path, cfg: dict) -> dict:
         for name in sorted(filenames):
             full = Path(dirpath) / name
             rel = full.relative_to(root).as_posix()
+            if full.is_symlink() or not full.is_file():
+                continue    # never hashed, so never staged: only regular files run (pov.stage)
             if not any(fnmatch.fnmatch(rel, g) or fnmatch.fnmatch(name, g.split("/")[-1]) for g in include):
                 continue
             if not _inside(full.resolve(), root):
@@ -329,6 +331,14 @@ def benchmark_pin(cfg: Optional[dict] = None) -> tuple[Path, str]:
     cfg = cfg or load_config()
     b = cfg.get("benchmark") or {}
     return (BASE_DIR / str(b.get("path") or "")).resolve(), str(b.get("tree_digest") or "")
+
+
+def not_reference_fixes(changed: dict, cfg: Optional[dict] = None) -> list[str]:
+    """The changed files (``{path: sha256}``) whose new content is NOT a committed reference fix of the benchmark
+    (``benchmark.reference_fixes``). Empty: every change is one of the pinned fixes."""
+    cfg = cfg or load_config()
+    allowed = (cfg.get("benchmark") or {}).get("reference_fixes") or {}
+    return sorted(p for p, sha in changed.items() if sha not in (allowed.get(p) or []))
 
 
 def is_synthetic_benchmark(scoped: dict, cfg: Optional[dict] = None) -> bool:

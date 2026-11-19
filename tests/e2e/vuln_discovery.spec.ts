@@ -154,7 +154,7 @@ test.describe('Vulnerability discovery: authorised target, PoV-proven finding, r
     const measuredMsg = (await page.locator('#vr-run-msg').textContent()) || '';
     await page.reload();
     await expect(page.locator('#vr-measured')).toContainText(
-      measuredMsg.includes('unverified') ? 'Its rates are not claimed' : 'not yet reviewed by a person', { timeout: T });
+      measuredMsg.includes('unverified') ? 'Its rates are not claimed' : 'against unreviewed labels', { timeout: T });
 
     // 4. the bundle: prepared by the registrant, refused to them, published by the reviewer
     await pick(page, tid);
