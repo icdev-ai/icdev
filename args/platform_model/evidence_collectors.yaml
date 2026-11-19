@@ -1,0 +1,205 @@
+# CUI // SP-CTI
+# ICDEV platform model: evidence collectors for customer environments (icx-ent-02).
+# Four read-only collectors (cloud configuration via AWS Config, the identity provider via OIDC Discovery and SCIM
+# 2.0, endpoints via Intune through Microsoft Graph, the SIEM via Splunk's REST API) with credentials by reference
+# only; observations with observed_at, collector, system and a freshness budget; a reviewed mapping to SP 800-171
+# Rev. 2 and SP 800-53 Rev. 5 objectives that never claims more than was observed; one icos-objective-evidence/v1
+# report per system per run for ICDEV[OS], prepared by one person and published by another of the system's org.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the header of
+# args/platform_model/cortex.yaml.
+
+component: evidence_collectors
+project_id: icdev-platform
+
+elements:
+  - id: ec.collectors
+    type: sysml_element
+    kind: block
+    name: Read-only collectors (AWS Config, OIDC Discovery and SCIM, Intune via Graph, Splunk) and their transport
+    features: [evidence_collectors.objective_evidence]
+    code:
+      - tools/evidence_collectors/collectors/aws_config.py::collect
+      - tools/evidence_collectors/collectors/oidc_scim.py::collect
+      - tools/evidence_collectors/collectors/intune.py::collect
+      - tools/evidence_collectors/collectors/splunk.py::collect
+      - tools/evidence_collectors/transport.py::request_json
+      - tools/evidence_collectors/sigv4.py::sign
+      - tools/evidence_collectors/service.py::collect
+
+  - id: ec.credentials
+    type: sysml_element
+    kind: block
+    name: Credentials by reference only (OS keyring, vault) and a configuration that refuses a literal
+    features: [evidence_collectors.objective_evidence]
+    code:
+      - tools/evidence_collectors/credentials.py::resolve
+      - tools/evidence_collectors/credentials.py::check_ref
+      - tools/evidence_collectors/config.py::validate
+      - args/evidence_collectors.yaml
+
+  - id: ec.judge
+    type: sysml_element
+    kind: block
+    name: Freshness and the reviewed mapping from observed facts to objectives
+    features: [evidence_collectors.objective_evidence]
+    code:
+      - tools/evidence_collectors/bundle.py::freshness
+      - tools/evidence_collectors/bundle.py::evaluate
+
+  - id: ec.bundle
+    type: sysml_element
+    kind: block
+    name: The icos-objective-evidence/v1 report, its ledger, and its publication by another person
+    features: [evidence_collectors.objective_evidence]
+    code:
+      - tools/evidence_collectors/bundle.py::build
+      - tools/evidence_collectors/bundle.py::validate
+      - tools/evidence_collectors/bundle.py::published
+      - tools/evidence_collectors/ledger.py::append
+      - tools/evidence_collectors/ledger.py::chain
+      - tools/evidence_collectors/service.py::prepare
+      - tools/evidence_collectors/service.py::publish
+      - context/icos/objective-evidence.schema.json
+      - args/workflow_hitl_templates/ec-evidence-publish.yaml
+
+  - id: ec.visibility
+    type: sysml_element
+    kind: block
+    name: Who sees a system (its org, its marking) and what is held back
+    features: [evidence_collectors.objective_evidence]
+    code:
+      - tools/evidence_collectors/service.py::visible
+      - tools/evidence_collectors/service.py::systems_view
+
+  - id: ec.twin
+    type: sysml_element
+    kind: block
+    name: The evidence collectors governance twin (threads to ec_events, replay)
+    features: [evidence_collectors.objective_evidence]
+    code:
+      - tools/twin_core/adapters/evidence_collectors.py::EvidenceCollectorsTwin
+      - tools/evidence_collectors/service.py::twin_evidence
+      - tools/evidence_collectors/service.py::twin_judge
+
+interfaces:
+  - id: if.ec.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /evidence-collectors/ and its routes
+    features: [evidence_collectors.objective_evidence]
+    code:
+      - tools/dashboard/templates/evidence_collectors/index.html
+      - tools/evidence_collectors/blueprint.py::ec_page
+      - tools/evidence_collectors/blueprint.py::ec_api_prepare
+      - tools/evidence_collectors/blueprint.py::ec_api_publish
+
+  - id: if.ec.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP evidence_collectors_status (read) and evidence_collectors_prepare (draft only)
+    features: [evidence_collectors.objective_evidence]
+    code:
+      - tools/mcp/gap_handlers.py::handle_evidence_collectors_status
+      - tools/mcp/gap_handlers.py::handle_evidence_collectors_prepare
+
+requirements:
+  - id: PM-EC-01
+    title: Each collector is a real, named, read-only integration tested against local stubs
+    text: >-
+      AWS Config (DescribeComplianceByConfigRule, DescribeConfigRuleEvaluationStatus, SigV4), OIDC Discovery 1.0 and
+      SCIM 2.0 /Users, Intune through Microsoft Graph managedDevices, and Splunk's /services/data/indexes and
+      /services/saved/searches. The transport sends GET, or one of the POSTs that only read; it stays on the
+      configured host, follows no redirect and takes https or loopback http only.
+    type: functional
+    priority: high
+    features: [evidence_collectors.objective_evidence]
+    elements: [ec.collectors]
+    controls: [CA-7, AC-6, SI-4]
+    tests:
+      - tests/test_icx_ent_02_evidence_collectors.py::test_every_collector_reads_its_source_and_every_observation_says_when_who_and_how_fresh
+      - tests/test_icx_ent_02_evidence_collectors.py::test_a_source_that_says_no_is_false_and_one_that_cannot_say_is_unverified
+      - tests/test_icx_ent_02_evidence_collectors.py::test_the_transport_only_reads_and_stays_on_its_host
+      - tests/test_icx_ent_02_evidence_collectors.py::test_sigv4_matches_aws_published_get_vanilla_vector
+
+  - id: PM-EC-02
+    title: Credentials come only by reference from the customer's vault or the OS keyring
+    text: >-
+      A literal, env: or file: credential is refused when the configuration loads, without repeating it; a
+      secret-looking key outside credentials is refused at any depth; a resolved value is redacted everywhere and
+      never reaches an observation, the ledger, a view or a report.
+    type: security
+    priority: high
+    features: [evidence_collectors.objective_evidence]
+    elements: [ec.credentials]
+    controls: [IA-5, SC-28, AU-9]
+    tests:
+      - tests/test_icx_ent_02_evidence_collectors.py::test_credentials_are_references_only_and_never_quoted
+      - tests/test_icx_ent_02_evidence_collectors.py::test_the_ledger_is_append_only_hash_chained_on_the_shared_helper_and_holds_no_secret
+
+  - id: PM-EC-03
+    title: Stale, future or timeless evidence is unverified and nothing is met from absence
+    text: >-
+      Every observation carries observed_at (RFC 3339 with its zone), its collector, its system and a freshness
+      budget; times are parsed and compared as instants. Satisfied needs every mapped fact fresh and true; a fresh
+      false is other than satisfied; anything else is left out as unverified, and no report is made from nothing.
+    type: functional
+    priority: high
+    features: [evidence_collectors.objective_evidence]
+    elements: [ec.judge]
+    controls: [CA-7, CA-2]
+    tests:
+      - tests/test_icx_ent_02_evidence_collectors.py::test_freshness_parses_instants_and_never_passes_stale_future_or_timeless_evidence
+      - tests/test_icx_ent_02_evidence_collectors.py::test_satisfied_needs_every_fact_and_a_fresh_false_is_a_finding_even_beside_an_unverified_one
+      - tests/test_icx_ent_02_evidence_collectors.py::test_a_device_that_has_not_reported_leaves_its_fleet_unverified
+      - tests/test_icx_ent_02_evidence_collectors.py::test_an_unreachable_source_or_an_unreadable_credential_is_unverified_with_why
+      - tests/test_icx_ent_02_evidence_collectors.py::test_the_shipped_configuration_loads_and_every_mapping_row_is_bounded
+
+  - id: PM-EC-04
+    title: One report per system per run, prepared by one person and published by another of its org
+    text: >-
+      The report meets ICDEV[OS]'s pinned icos-objective-evidence/v1 contract and its digest rule; publishing is a
+      person's declared step (decl-wft-ec-evidence-publish) of the system's org, cleared for its marking, never the
+      preparer and never an agent, bound to the digest read and the system's configuration digest; the publication
+      is embedded with exactly the contract's fields; the ledger is append-only and hash-chained.
+    type: functional
+    priority: high
+    features: [evidence_collectors.objective_evidence]
+    elements: [ec.bundle]
+    controls: [AU-9, AU-10, AC-5]
+    tests:
+      - tests/test_icx_ent_02_evidence_collectors.py::test_the_contract_is_icos_verbatim_and_pinned
+      - tests/test_icx_ent_02_evidence_collectors.py::test_the_report_meets_icos_contract_and_icos_digest_rule
+      - tests/test_icx_ent_02_evidence_collectors.py::test_one_person_prepares_and_another_of_the_org_publishes_the_embedded_report
+      - tests/test_icx_ent_02_evidence_collectors.py::test_an_agent_only_prepares_and_a_changed_configuration_needs_a_new_report
+      - tests/test_icx_ent_02_ambient.py::test_a_report_prepared_and_published_on_the_platform_database
+
+  - id: PM-EC-05
+    title: A system is seen only by its org at or above its marking; the rest is counted
+    text: >-
+      A reader outside the system's org or below its marking gets "no such system", the same answer as for one
+      that does not exist; lists, the twin and MCP count what they hold back and never describe it.
+    type: security
+    priority: high
+    features: [evidence_collectors.objective_evidence]
+    elements: [ec.visibility]
+    controls: [AC-3, AC-4, AC-21]
+    tests:
+      - tests/test_icx_ent_02_evidence_collectors.py::test_what_a_reader_may_not_see_is_counted_never_described
+
+  - id: PM-EC-06
+    title: The console page, the twin with threads, and MCP read and draft
+    text: >-
+      /evidence-collectors/ (in the nav) prepares and publishes by endpoint id. The twin observes
+      evidence_collectors.objective_evidence: a system with no published report is unverified; an objective observed
+      other than satisfied is a finding threaded to its ledger row; an observation replays. MCP
+      evidence_collectors_status reads; evidence_collectors_prepare only drafts and halts.
+    type: functional
+    priority: medium
+    features: [evidence_collectors.objective_evidence]
+    elements: [if.ec.console, ec.twin, if.ec.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_icx_ent_02_evidence_collectors.py::test_the_routes_and_the_page
+      - tests/test_icx_ent_02_evidence_collectors.py::test_the_twin_observes_with_threads_and_replays
+      - tests/test_icx_ent_02_evidence_collectors.py::test_the_mcp_tools_read_and_only_prepare

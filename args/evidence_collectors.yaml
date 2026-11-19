@@ -1,0 +1,139 @@
+# CUI // SP-CTI
+# Evidence collectors for customer environments (icx-ent-02).
+#
+# Read by tools/evidence_collectors/config.py. Changing this file is a reviewed change (a pull request someone else
+# approves); its SHA-256 is recorded in every prepared bundle's ledger row, so what a person published says which
+# mapping produced it.
+#
+# collectors   the four read-only integrations (tools/evidence_collectors/collectors/*.py) and each one's freshness
+#              budget: an observation older than max_age_h when the bundle is produced counts for NOTHING.
+# mapping      which observed facts speak for which assessment objective. An objective is SATISFIED only when every
+#              fact in all_of was observed, fresh, and true; OTHER THAN SATISFIED when any one was observed fresh and
+#              false; and otherwise it is left out of the bundle (unverified): never "met" from absence. Objective ids
+#              are ICDEV[OS]'s backbone's (<framework>/<objective>): sp800-171r2 (SP 800-171A, June 2018) and
+#              sp800-53r5 (SP 800-53A Rev. 5). `scope` says what the observation covers, and travels in the entry's
+#              note; `basis` says why the fact speaks for the objective. Discovery metadata (oidc:*) says what an
+#              identity provider OFFERS, not what it enforces, so it maps to no objective.
+# systems      the customer systems collected from. id is the system's id in ICDEV[OS] (osx-ent-01's registry);
+#              org is its owning organisation (a dashboard user's tenant_id) and marking its marking: only a person
+#              of that org, cleared for that marking, sees it or publishes for it. Credentials are references
+#              (keyring:<service>/<user> or vault:<path>#<field>) and nothing else: a literal is refused on load.
+schema: icdev-evidence-collectors/v1
+
+collectors:
+  aws-config: {kind: cloud_config, max_age_h: 72}
+  oidc-scim: {kind: identity_provider, max_age_h: 24}
+  intune: {kind: endpoint_mdm, max_age_h: 72}
+  splunk: {kind: siem, max_age_h: 24}
+
+mapping:
+  # ── Audit and accountability ──────────────────────────────────────────────
+  - objective: sp800-171r2/3.3.1[c]           # audit records are created (generated)
+    all_of: [aws-config:CLOUD_TRAIL_ENABLED]
+    scope: the cloud account's API activity (CloudTrail)
+    basis: an enabled trail generates audit records of the account's API calls
+  - objective: sp800-53r5/au-12_obj.c
+    all_of: [aws-config:CLOUD_TRAIL_ENABLED]
+    scope: the cloud account's API activity (CloudTrail)
+    basis: an enabled trail generates audit records of the account's API calls
+  - objective: sp800-171r2/3.3.8[b]           # audit information is protected from unauthorized modification
+    all_of: [aws-config:CLOUD_TRAIL_LOG_FILE_VALIDATION_ENABLED]
+    scope: the cloud account's CloudTrail log files
+    basis: log file validation signs a digest of each delivered log file, so a change is detected
+  - objective: sp800-53r5/au-9.3_obj
+    all_of: [aws-config:CLOUD_TRAIL_LOG_FILE_VALIDATION_ENABLED]
+    scope: the cloud account's CloudTrail log files
+    basis: log file validation is a cryptographic integrity mechanism over the audit log files
+  - objective: sp800-171r2/3.3.1[f]           # audit records are retained as defined
+    all_of: [splunk:audit_retention_met]
+    scope: the audit indexes the system's configuration names, in the SIEM
+    basis: each named audit index keeps data for at least the declared retention period
+  - objective: sp800-53r5/au-11_obj
+    all_of: [splunk:audit_retention_met]
+    scope: the audit indexes the system's configuration names, in the SIEM
+    basis: each named audit index keeps data for at least the declared retention period
+  - objective: sp800-53r5/au-6_obj.a
+    all_of: [splunk:review_searches_scheduled]
+    scope: the review searches the system's configuration names, in the SIEM
+    basis: the named review and analysis searches run on a schedule
+  # ── Protection at rest ────────────────────────────────────────────────────
+  - objective: sp800-171r2/3.13.16            # the confidentiality of CUI at rest is protected
+    all_of: [aws-config:ENCRYPTED_VOLUMES, aws-config:S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED, intune:all_encrypted]
+    scope: the cloud account's block volumes and object buckets, and the managed endpoints
+    basis: storage in the cloud account and every managed endpoint is encrypted
+  - objective: sp800-53r5/sc-28_obj
+    all_of: [aws-config:ENCRYPTED_VOLUMES, aws-config:S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED, intune:all_encrypted]
+    scope: the cloud account's block volumes and object buckets, and the managed endpoints
+    basis: storage in the cloud account and every managed endpoint is encrypted
+  # ── Accounts and devices ──────────────────────────────────────────────────
+  - objective: sp800-171r2/3.1.1[a]           # authorized users are identified
+    all_of: [scim:users_identified]
+    scope: the identity provider's active users (SCIM /Users)
+    basis: every active user carries a unique user name in the identity provider
+  - objective: sp800-53r5/ac-2_obj.d.1
+    all_of: [scim:users_identified]
+    scope: the identity provider's active users (SCIM /Users)
+    basis: every active user carries a unique user name in the identity provider
+  - objective: sp800-53r5/ac-2_obj.d.2
+    all_of: [scim:group_membership_specified]
+    scope: the identity provider's active users (SCIM /Users)
+    basis: every active user's group membership is specified
+  - objective: sp800-171r2/3.1.1[c]           # devices authorized to connect are identified
+    all_of: [intune:devices_identified]
+    scope: the endpoints enrolled in device management
+    basis: each enrolled device carries an id and a name
+  - objective: sp800-171r2/3.1.19[a]          # mobile devices and platforms are identified
+    all_of: [intune:devices_identified]
+    scope: the endpoints enrolled in device management
+    basis: each enrolled device carries an id and a name
+  - objective: sp800-171r2/3.1.19[b]          # encryption protects CUI on identified mobile devices
+    all_of: [intune:all_encrypted]
+    scope: the endpoints enrolled in device management
+    basis: every enrolled device reports its storage encrypted
+  - objective: sp800-171r2/3.4.2[b]           # security configuration settings are enforced
+    all_of: [intune:all_compliant]
+    scope: the endpoints enrolled in device management, against their compliance policies
+    basis: every enrolled device meets the compliance policies assigned to it
+  - objective: sp800-53r5/cm-6_obj.b
+    all_of: [intune:all_compliant]
+    scope: the endpoints enrolled in device management, against their compliance policies
+    basis: every enrolled device meets the compliance policies assigned to it
+
+systems:
+  # SYNTHETIC: the defense-industrial-base contractor system ICDEV[OS]'s control backbone ships as its example
+  # (examples/controls/syn-dib-01.system.json there). The endpoints are documentation placeholders (example
+  # domains, an AWS endpoint with no credential in any keyring): collecting from them is unverified by design. The
+  # e2e seed and the tests collect from local stubs instead.
+  - id: syn-dib-01
+    synthetic: true
+    org: syn-dib
+    marking: CUI
+    collectors:
+      aws-config:
+        endpoint: https://config.us-gov-west-1.amazonaws.com
+        region: us-gov-west-1
+        rules:
+          CLOUD_TRAIL_ENABLED: cloudtrail-enabled
+          CLOUD_TRAIL_LOG_FILE_VALIDATION_ENABLED: cloud-trail-log-file-validation-enabled
+          ENCRYPTED_VOLUMES: encrypted-volumes
+          S3_BUCKET_SERVER_SIDE_ENCRYPTION_ENABLED: s3-bucket-server-side-encryption-enabled
+        credentials:
+          access_key_id: keyring:icdev-ec-syn-dib-01/aws-access-key-id
+          secret_access_key: keyring:icdev-ec-syn-dib-01/aws-secret-access-key
+      oidc-scim:
+        issuer: https://idp.syn-dib.example
+        scim_base: https://idp.syn-dib.example/scim/v2
+        credentials:
+          scim_token: keyring:icdev-ec-syn-dib-01/scim-token
+      intune:
+        tenant_id: 00000000-0000-0000-0000-000000000000
+        client_id: 00000000-0000-0000-0000-000000000001
+        credentials:
+          client_secret: keyring:icdev-ec-syn-dib-01/graph-client-secret
+      splunk:
+        base: https://siem.syn-dib.example:8089
+        audit_indexes: [audit, cloudtrail]
+        required_retention_days: 365
+        review_searches: [Audit review - daily]
+        credentials:
+          token: keyring:icdev-ec-syn-dib-01/splunk-token

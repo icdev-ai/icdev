@@ -1,0 +1,204 @@
+<!-- CUI // SP-CTI — Evidence collectors for customer environments (icx-ent-02) -->
+{% extends "base.html" %}
+{% block title %}Evidence collectors — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .ec-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .ec-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .ec-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .ec-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .ec-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .ec-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .ec-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ec-card th, .ec-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .ec-card th { color: var(--text-secondary); font-weight: 600; }
+  .ec-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .ec-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .ec-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .ec-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .ec-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .ec-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .ec-btn.deny { border-color: var(--status-red); }
+  .ec-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .ec-wrap input { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .ec-wrap code { color: var(--text-primary); word-break: break-all; }
+  .ec-wrap { --ec-link: #8cc4ff; }
+  html[data-theme="light"] .ec-wrap { --ec-link: #0d4f9e; }
+  .ec-wrap a, .ec-wrap .ec-link { color: var(--ec-link); text-decoration: underline; }
+  .ec-link { background: none; border: none; padding: 0; cursor: pointer; font: inherit; }
+</style>
+
+<div class="ec-wrap">
+  <nav aria-label="Breadcrumb" class="ec-help"><a href="/evidence">Evidence</a> / Evidence collectors</nav>
+  <h1>Evidence collectors for customer environments</h1>
+  <p class="ec-help" id="ec-help">
+    Read-only collectors read a customer system's own sources: <b>cloud configuration</b> (AWS Config),
+    the <b>identity provider</b> (OpenID Connect discovery and SCIM 2.0), <b>endpoints</b> (Microsoft Intune through
+    Microsoft Graph) and the <b>SIEM</b> (Splunk). Credentials are taken only by reference from the customer's vault
+    or the OS keyring, and never shown, logged or exported. Every observation carries when it was observed, by which
+    collector, for which system, and a freshness budget: a stale observation counts for nothing, and an objective
+    is never satisfied by absence. A reviewed mapping (<code>{{ view.config.path }}</code>,
+    sha256 <code>{{ (view.config.sha256 or '')[:12] }}</code>) turns observations into SP 800-171 Rev. 2 and
+    SP 800-53 Rev. 5 objective results; an objective that cannot be judged stays <b>unverified</b>. One
+    <code>{{ schema }}</code> report per system per run (ICDEV[OS] contract {{ contract }}) is prepared by anyone and
+    published to ICDEV[OS] by <b>another person</b> of the system's organisation (<code>{{ template }}</code>).
+    This is evidence, not an assessment.
+  </p>
+  {% if error %}<p class="ec-msg">The configuration or ledger could not be read: {{ error }}</p>{% endif %}
+
+  <section class="ec-card" aria-labelledby="ec-systems-h">
+    <h2 id="ec-systems-h">Systems</h2>
+    {% if view.held_back %}<p class="ec-help" id="ec-held">{{ view.held_back }} system(s) not shown: outside your organisation or above your clearance.</p>{% endif %}
+    <table id="ec-systems">
+      <thead><tr><th scope="col">System</th><th scope="col">Marking</th><th scope="col">Collectors</th><th scope="col">Newest prepared</th><th scope="col">Newest published</th></tr></thead>
+      <tbody>
+      {% for s in view.systems %}
+        <tr data-system="{{ s.id }}">
+          <td><a href="{{ url_for('evidence_collectors.ec_page', system=s.id) }}">{{ s.id }}</a>{% if s.synthetic %} <span class="ec-tag">synthetic</span>{% endif %}</td>
+          <td>{{ s.marking }}</td>
+          <td>{{ s.collectors | map(attribute='name') | join(', ') }}</td>
+          <td>{% if s.prepared %}<code>{{ s.prepared.content_digest[:12] }}</code> {% if s.prepared.decided %}<span class="ec-tag">{{ s.prepared.decided }}</span>{% else %}<span class="ec-tag wait">waiting for a person</span>{% endif %}{% else %}none{% endif %}</td>
+          <td>{% if s.published %}<code>{{ s.published.content_digest[:12] }}</code> by {{ s.published.actor }}{% else %}<span class="ec-tag wait">unverified</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5">No system you may see is declared.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {% if detail %}
+  {% set sys = detail.system %}
+  <section class="ec-card" aria-labelledby="ec-system-h" id="ec-system" data-system="{{ sys.id }}">
+    <h2 id="ec-system-h">{{ sys.id }}{% if sys.synthetic %} (synthetic){% endif %}</h2>
+    <table id="ec-collectors">
+      <thead><tr><th scope="col">Collector</th><th scope="col">Integration (read-only)</th><th scope="col">Freshness budget</th><th scope="col">Credentials</th></tr></thead>
+      <tbody>
+      {% for c in sys.collectors %}
+        <tr><td>{{ c.name }} <span class="ec-tag">{{ c.kind }}</span></td><td>{{ c.integration }}</td><td>{{ '%g' % c.max_age_h }}h</td><td>by reference ({{ c.credentials | join(', ') }})</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <h3>Collect and prepare</h3>
+    <p class="ec-help">Reads the sources now and records the report at its digest. It decides nothing.</p>
+    <label for="ec-note">Note (optional)</label><input id="ec-note" autocomplete="off">
+    <p><button type="button" class="ec-btn" id="ec-prepare">Collect and prepare</button></p>
+    <p class="ec-msg" id="ec-prepare-msg" role="status"></p>
+
+    {% set p = detail.prepared %}
+    <h3>Newest prepared report</h3>
+    {% if p %}
+      <p class="ec-help" id="ec-prepared">Digest <code id="ec-prepared-digest" data-digest="{{ p.content_digest }}">{{ p.content_digest[:16] }}</code>, prepared by {{ p.actor }} ({{ p.actor_kind }}) at {{ p.created_at }}.
+        {% if p.decided %}<span class="ec-tag {{ 'ok' if p.decided.event == 'published' else 'no' }}" id="ec-decided">{{ p.decided.event }} by {{ p.decided.actor }}</span>
+        {% else %}<span class="ec-tag wait">waiting for a person</span>{% endif %}</p>
+      <table id="ec-entries">
+        <thead><tr><th scope="col">Objective</th><th scope="col">Result</th><th scope="col">Observed at</th><th scope="col">What was observed</th></tr></thead>
+        <tbody>
+        {% for e in p.report.entries %}
+          <tr data-objective="{{ e.objective }}" data-result="{{ e.result }}"><td><code>{{ e.objective }}</code></td>
+            <td><span class="ec-tag {{ 'ok' if e.result == 'satisfied' else 'no' }}">{{ e.result | replace('_', ' ') }}</span></td>
+            <td>{{ e.observed_at }}</td><td>{{ e.note }}</td></tr>
+        {% endfor %}
+        {% for u in p.unverified %}
+          <tr data-objective="{{ u.objective }}" data-result="unverified"><td><code>{{ u.objective }}</code></td>
+            <td><span class="ec-tag wait">unverified</span></td><td></td><td>{{ u.why }} (not in the report)</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <h3>Observations</h3>
+      <table id="ec-observations">
+        <thead><tr><th scope="col">Fact</th><th scope="col">Value</th><th scope="col">Observed at</th><th scope="col">Collector</th><th scope="col">Why</th></tr></thead>
+        <tbody>
+        {% for o in p.observations %}
+          <tr data-fact="{{ o.fact }}"><td><code>{{ o.fact }}</code></td>
+            <td>{% if o.value is none %}<span class="ec-tag wait">unverified</span>{% elif o.value %}<span class="ec-tag ok">true</span>{% else %}<span class="ec-tag no">false</span>{% endif %}</td>
+            <td>{{ o.observed_at or 'unknown' }}</td><td>{{ o.collector }} ({{ '%g' % o.max_age_h }}h)</td><td>{{ o.why }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if not p.decided %}
+        <h3>Your step: publish to ICDEV[OS]</h3>
+        <p class="ec-help">May not publish it: <b id="ec-builders">{{ detail.builders.keys() | join(', ') }}</b>. A reason is required.
+          Bound to digest <code>{{ p.content_digest[:16] }}</code> and to the system's configuration.</p>
+        <label for="ec-reason">Reason</label><input id="ec-reason" autocomplete="off">
+        <p><button type="button" class="ec-btn" data-publish="publish">Publish to ICDEV[OS]</button>
+          <button type="button" class="ec-btn deny" data-publish="refuse">Refuse</button></p>
+      {% endif %}
+      <p class="ec-msg" id="ec-publish-msg" role="status"></p>
+    {% else %}
+      <p class="ec-help">No report of this system has been prepared.</p>
+    {% endif %}
+
+    <h3>Published</h3>
+    {% if detail.published %}
+      <p class="ec-help" id="ec-published" data-event="{{ detail.published.event_id }}">Report <code>{{ detail.published.content_digest[:16] }}</code>, prepared by {{ detail.published.prepared_by }},
+        published by {{ detail.published.actor }} (step <code>{{ detail.published.step_id }}</code>) at {{ detail.published.created_at }}.
+        <a id="ec-bundle-link" href="{{ url_for('evidence_collectors.ec_api_bundle', sid=sys.id) }}">The report and its publication as ICDEV[OS] imports them</a>.
+        Twin thread: <button type="button" class="ec-link" id="ec-thread" data-thread="evidence_collectors:{{ detail.published.event_id }}">evidence_collectors:{{ detail.published.event_id }}</button></p>
+      <p class="ec-msg" id="ec-thread-msg" role="status"></p>
+    {% else %}
+      <p class="ec-help" id="ec-unpublished">No report of this system has been published: ICDEV[OS] reads it as unverified.</p>
+    {% endif %}
+    <h3>Ledger</h3>
+    <p class="ec-help" id="ec-chain">Hash chain {{ 'intact' if detail.chain.intact else 'BROKEN' }}; {{ detail.history | length }} event(s).</p>
+  </section>
+  {% endif %}
+
+  <section class="ec-card" aria-labelledby="ec-mapping-h">
+    <h2 id="ec-mapping-h">The reviewed mapping</h2>
+    <table id="ec-mapping">
+      <thead><tr><th scope="col">Objective</th><th scope="col">Satisfied only when all observed, fresh and true</th><th scope="col">Scope</th><th scope="col">Review aid</th></tr></thead>
+      <tbody>
+      {% for m in view.mapping %}
+        <tr><td><code>{{ m.objective }}</code></td><td>{{ m.all_of | join(', ') }}</td><td>{{ m.scope }}</td><td>{{ m.crosswalk or '' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var box = document.getElementById('ec-system');
+  if (!box) return;
+  var sid = box.getAttribute('data-system');
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  function say(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  var prep = document.getElementById('ec-prepare');
+  if (prep) prep.addEventListener('click', function () {
+    say('ec-prepare-msg', 'Collecting…');
+    getJson(icdevFetch('evidence_collectors.ec_api_prepare', {sid: sid},
+      postInit({note: (document.getElementById('ec-note') || {}).value || ''}))).then(function (res) {
+      if (!res.ok) { say('ec-prepare-msg', 'Not prepared (' + (res.j.code || 'error') + '): ' + (res.j.error || '')); return; }
+      window.location.reload();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-publish]'), function (b) {
+    b.addEventListener('click', function () {
+      var d = document.getElementById('ec-prepared-digest');
+      getJson(icdevFetch('evidence_collectors.ec_api_publish', {sid: sid}, postInit({
+        decision: b.getAttribute('data-publish'), reason: ((document.getElementById('ec-reason') || {}).value || '').trim(),
+        digest: d ? d.getAttribute('data-digest') : ''}))).then(function (res) {
+        if (!res.ok) { say('ec-publish-msg', 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || '')); return; }
+        window.location.reload();
+      });
+    });
+  });
+  var th = document.getElementById('ec-thread');
+  if (th) th.addEventListener('click', function () {
+    getJson(icdevFetch('evidence_collectors.ec_api_twin', {}, {}, {thread: th.getAttribute('data-thread')})).then(function (res) {
+      if (!res.ok || !res.j.resolved) { say('ec-thread-msg', 'Not resolved: ' + ((res.j && res.j.reason) || 'error')); return; }
+      var r = res.j.record || {};
+      say('ec-thread-msg', 'Resolved: ' + r.event + ' by ' + r.actor + ' at ' + r.created_at + ', step ' + r.step_id + ', digest ' + String(r.content_digest || '').slice(0, 16) + '.');
+    });
+  });
+})();
+</script>
+{% endblock %}
