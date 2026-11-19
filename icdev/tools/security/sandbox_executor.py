@@ -540,8 +540,9 @@ class SandboxExecutor:
         name = "icdev-sbx-" + uuid.uuid4().hex[:12]
         cmd = [engine, "run", "--rm", "--name", name, *isolated_profile(self._config)["flags"],
                "--memory", f"{_memory}m", "--memory-swap", f"{_memory}m", "--pids-limit", str(int(pids_limit))]
-        if iso.get("oci_runtime"):
-            cmd += ["--runtime", str(iso["oci_runtime"])]
+        resolved = resolve_runtime(self._config)
+        if resolved:
+            cmd += ["--runtime", resolved]
         if iso.get("pull"):
             cmd += ["--pull", str(iso["pull"])]
         for host, ctr, mode in mounts:
@@ -861,18 +862,59 @@ ISOLATED_FLAGS = (
 )
 
 
-def isolated_profile(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """What an isolated run is, said plainly (shown on the page and carried in a bundle).
+#: OCI runtime name -> what boundary it gives (the record says this, never more).
+RUNTIME_KINDS = {"runsc": "gvisor", "kata": "microvm", "kata-runtime": "microvm", "kata-qemu": "microvm",
+                 "kata-fc": "microvm"}
 
-    A container is NOT a microVM: ``microvm`` is true only when the configured OCI
-    runtime is one (gVisor's ``runsc`` is a user-space kernel, Kata or Firecracker
-    a VM). With none configured it says ``container`` and so does every record.
+_RUNTIME_CACHE: Dict[str, frozenset] = {}
+
+
+def engine_runtimes(engine: str = "docker") -> frozenset:
+    """The OCI runtimes the container engine has registered (``docker info``), read once per process. Empty when
+    the engine is absent or does not answer: then only its default (a plain container) is possible."""
+    import shutil
+    import subprocess  # nosec B404 — fixed argv
+
+    if engine not in _RUNTIME_CACHE:
+        found: frozenset = frozenset()
+        if shutil.which(engine):
+            try:
+                out = subprocess.run([engine, "info", "--format", "{{json .Runtimes}}"],  # nosec B603
+                                     capture_output=True, text=True, timeout=20)
+                if out.returncode == 0 and out.stdout.strip():
+                    found = frozenset(json.loads(out.stdout))
+            except Exception:  # noqa: BLE001 — an engine that does not answer has no stronger runtime
+                found = frozenset()
+        _RUNTIME_CACHE[engine] = found
+    return _RUNTIME_CACHE[engine]
+
+
+def resolve_runtime(config: Optional[Dict[str, Any]] = None, runtimes: Optional[frozenset] = None) -> str:
+    """The OCI runtime a run will use: ``isolated.oci_runtime``, else the first of ``isolated.fallback_runtimes``,
+    that the engine actually has; '' (the engine default, runc) when none of them is there."""
+    cfg = config if config is not None else _load_config()
+    iso = dict(cfg.get("isolated") or {})
+    have = runtimes if runtimes is not None else engine_runtimes(str(iso.get("engine") or "docker"))
+    for rt in [iso.get("oci_runtime"), *(iso.get("fallback_runtimes") or [])]:
+        if rt and str(rt) in have:
+            return str(rt)
+    return ""
+
+
+def isolated_profile(config: Optional[Dict[str, Any]] = None, runtimes: Optional[frozenset] = None) -> Dict[str, Any]:
+    """What an isolated run IS, said plainly (shown on the page and carried in a bundle).
+
+    The runtime reported is the one the run will actually use (:func:`resolve_runtime`): the configured one when
+    the engine has it, else a configured fallback, else the engine default. A container is NOT a microVM:
+    ``microvm`` is true only for a VM runtime (Kata), ``gvisor`` for runsc (a user-space kernel); with neither
+    available it says ``container`` and so does every record.
     """
     cfg = config if config is not None else _load_config()
     iso = dict(cfg.get("isolated") or {})
-    rt = str(iso.get("oci_runtime") or "")
-    kind = {"runsc": "gvisor", "kata-runtime": "microvm", "kata": "microvm"}.get(rt, "container")
+    rt = resolve_runtime(cfg, runtimes)
+    kind = RUNTIME_KINDS.get(rt, "container")
     return {"engine": str(iso.get("engine") or "docker"), "oci_runtime": rt or "engine default (runc)",
+            "configured": str(iso.get("oci_runtime") or "") or None,
             "isolation": kind, "microvm": kind == "microvm", "network": "none",
             "flags": list(ISOLATED_FLAGS)}
 

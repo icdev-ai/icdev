@@ -110,6 +110,11 @@ def vr(wf_db, monkeypatch, tmp_path):
     monkeypatch.setattr(pov, "EXECUTOR", lambda: LocalDouble())
     monkeypatch.setattr(harness, "image_present", lambda image: False)
     monkeypatch.setattr(harness, "image_id", lambda image: "sha256:" + "d" * 64)
+    from tools.security import sandbox_executor
+
+    # As on a CI runner: the engine has only runc, whatever this host has installed. A test that wants Kata or
+    # gVisor says so (_gvisor, _kata).
+    monkeypatch.setattr(sandbox_executor, "engine_runtimes", lambda engine="docker": frozenset({"runc"}))
     monkeypatch.setattr(sast_runner, "run_bandit", canned_bandit)
     monkeypatch.setattr(discovery, "_pip_audit", canned_audit)
     LocalDouble.calls = []
@@ -241,7 +246,10 @@ def test_the_isolated_run_has_no_network_and_writes_only_under_out(tmp_path):
     assert gone.status == "failed"
     assert "network" not in SandboxExecutor.run_isolated.__code__.co_varnames, "there is no switch for the network"
     assert isolated_profile({"isolated": {}})["microvm"] is False, "a container never calls itself a microVM"
-    assert isolated_profile({"isolated": {"oci_runtime": "runsc"}})["isolation"] == "gvisor"
+    assert isolated_profile({"isolated": {"oci_runtime": "runsc"}}, runtimes=frozenset({"runc", "runsc"}))[
+        "isolation"] == "gvisor"
+    assert isolated_profile({"isolated": {"oci_runtime": "runsc"}}, runtimes=frozenset({"runc"}))[
+        "isolation"] == "container", "a configured runtime the engine does not have is never claimed"
 
 
 def test_reproduction_validator_replays_a_sandbox_pov_only_through_a_registered_engine(monkeypatch):
@@ -780,13 +788,12 @@ def test_a_real_target_needs_gvisor_or_a_microvm_and_only_the_benchmark_is_waive
     # with gVisor configured the same real target runs, and no waiver is needed or recorded
     from tools.security import sandbox_executor
 
-    monkeypatch.setattr(sandbox_executor, "_load_config",
-                        lambda: {**sandbox_executor.DEFAULT_CONFIG, "isolated": {"oci_runtime": "runsc"}})
+    monkeypatch.setattr(sandbox_executor, "engine_runtimes", lambda engine="docker": frozenset({"runc", "runsc"}))
     run2 = discovery.run(r["target_id"], REGISTRANT, use_model=False)["run"]
     assert run2["isolation"]["isolation"] == "gvisor" and run2["isolation"]["waiver"] is None
 
 
-def test_the_executor_refuses_a_weak_container_for_strong_isolation_runs(tmp_path):
+def test_the_executor_refuses_a_weak_container_for_strong_isolation_runs(tmp_path, monkeypatch):
     from tools.security.sandbox_executor import SandboxExecutor
 
     ran = []
@@ -802,6 +809,9 @@ def test_the_executor_refuses_a_weak_container_for_strong_isolation_runs(tmp_pat
     forged = weak.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
                                requires_strong_isolation=True, waiver={"id": "w", "reason": "synthetic"})
     assert forged.status == "refused" and ran == [], "a waiver the config does not hold lets nothing run"
+    import tools.security.sandbox_executor as _se
+
+    monkeypatch.setattr(_se, "engine_runtimes", lambda engine="docker": frozenset({"runc", "runsc"}))
     strong = SandboxExecutor(config={"enabled": True, "isolated": {"oci_runtime": "runsc"},
                                      "audit_all_executions": False})
     assert strong.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
@@ -1051,8 +1061,7 @@ def _gvisor(monkeypatch):
     """As if an operator had installed gVisor: the profile says runsc (the LocalDouble still runs the scripts)."""
     from tools.security import sandbox_executor
 
-    monkeypatch.setattr(sandbox_executor, "_load_config",
-                        lambda: {**sandbox_executor.DEFAULT_CONFIG, "isolated": {"oci_runtime": "runsc"}})
+    monkeypatch.setattr(sandbox_executor, "engine_runtimes", lambda engine="docker": frozenset({"runc", "runsc"}))
 
 
 def _mounted_files(mount: str) -> dict:
@@ -1194,3 +1203,32 @@ def test_hard_links_and_a_swapped_in_fifo_never_reach_the_sandbox(vr, tmp_path, 
     th.join(10)
     assert not th.is_alive(), "staging blocked on a FIFO"
     assert "not a regular file" in done.get("refused", "")
+
+
+
+def test_a_real_target_runs_under_kata_and_is_refused_under_runc(vr, tmp_path, monkeypatch):
+    """Owner decision (runtime by threat): research on a real target runs under Kata (a microVM), gVisor the
+    fallback where KVM is absent; with only runc the same target is refused, and no waiver is ever used for it."""
+    from tools.security import sandbox_executor as se
+    from tools.vulnresearch import discovery, targets
+
+    tree = tmp_path / "roots" / "real"
+    shutil.copytree(ROOT / BENCH, tree, ignore=shutil.ignore_patterns("__pycache__"))
+    allow_root(monkeypatch, tmp_path / "roots")
+    r = targets.register(REGISTRANT, name="a real target (synthetic copy)", root=str(tree), reason="test",
+                         src_root="src", test_dir="tests", fuzz_targets=["vb_parser:parse_record"])
+    targets.authorise(r["target_id"], decision="authorise", reason="ok", read_digest=r["content_digest"],
+                      actor=AUTHORISER)
+    assert se._load_config()["isolated"]["oci_runtime"] == "kata", "args/sandbox_config.yaml names Kata"
+    monkeypatch.setattr(se, "engine_runtimes", lambda engine="docker": frozenset({"runc"}))
+    with pytest.raises(discovery.RunRefused) as exc:
+        discovery.run(r["target_id"], REGISTRANT, use_model=False)
+    assert exc.value.code == "isolation"
+    monkeypatch.setattr(se, "engine_runtimes", lambda engine="docker": frozenset({"runc", "runsc", "kata"}))
+    run = discovery.run(r["target_id"], REGISTRANT, use_model=False)["run"]
+    iso = run["isolation"]
+    assert (iso["oci_runtime"], iso["isolation"], iso["microvm"], iso["waiver"]) == ("kata", "microvm", True, None)
+    assert run["counts"]["findings"] == 5
+    monkeypatch.setattr(se, "engine_runtimes", lambda engine="docker": frozenset({"runc", "runsc"}))
+    run2 = discovery.run(r["target_id"], REGISTRANT, use_model=False)["run"]
+    assert (run2["isolation"]["oci_runtime"], run2["isolation"]["isolation"]) == ("runsc", "gvisor")

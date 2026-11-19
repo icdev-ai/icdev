@@ -73,10 +73,15 @@ sandbox:
   # vulnerability replays, fuzz harnesses and a patched copy's tests.
   isolated:
     engine: docker
-    # An OCI runtime with a stronger boundary, when an operator has installed it
-    # into the engine: runsc (gVisor) or kata-runtime (a microVM). Empty: the
-    # engine's default (runc), which is a container, and every record says so.
-    oci_runtime: ""
+    # The OCI runtime by threat (owner decision, 2026-11-19): vulnerability
+    # research, proofs of vulnerability and untrusted builds run under Kata
+    # Containers (a microVM; installed on this host by the owner, 4.3.1). gVisor
+    # (runsc) is the accepted fallback where KVM is absent. The run uses the first
+    # of these the engine actually has (docker info); with neither (a CI runner)
+    # it is the engine's default, runc, a plain container: every record says so,
+    # and only the synthetic benchmark runs there, under its named waiver.
+    oci_runtime: kata
+    fallback_runtimes: [runsc]
     # Pull a pinned image when it is missing (on the host; the run itself has no
     # network). Set to "never" on an air-gapped host.
     pull: missing
