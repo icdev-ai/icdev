@@ -415,6 +415,24 @@
     "Cortex findings: adjudicate an open finding with a reason"
    ]
   },
+  "GET evidence_collectors.ec_api_twin": {
+   "endpoint": "evidence_collectors.ec_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the observations, refuse nothing-determinable and the preparer, publish, see the report, open the thread, hide it from another org"
+   ]
+  },
+  "GET evidence_collectors.ec_page": {
+   "endpoint": "evidence_collectors.ec_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the observations, refuse nothing-determinable and the preparer, publish, see the report, open the thread, hide it from another org"
+   ]
+  },
   "GET idp.idp_adrs_page": {
    "endpoint": "idp.idp_adrs_page",
    "method": "GET",
@@ -1062,6 +1080,24 @@
    "test": false,
    "tests": [
     "Cortex findings: adjudicate an open finding with a reason"
+   ]
+  },
+  "POST evidence_collectors.ec_api_prepare": {
+   "endpoint": "evidence_collectors.ec_api_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the observations, refuse nothing-determinable and the preparer, publish, see the report, open the thread, hide it from another org"
+   ]
+  },
+  "POST evidence_collectors.ec_api_publish": {
+   "endpoint": "evidence_collectors.ec_api_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the observations, refuse nothing-determinable and the preparer, publish, see the report, open the thread, hide it from another org"
    ]
   },
   "POST idp.idp_api_adr_accept": {
