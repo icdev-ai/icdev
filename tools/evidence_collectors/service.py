@@ -25,6 +25,7 @@ marking (CUI) and is in no org: it sees a system's state only at or below that m
 """
 from __future__ import annotations
 
+import contextlib
 import json
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -58,8 +59,21 @@ def current_reader() -> dict | None:
     get = (u.get if isinstance(u, dict) else lambda k, d=None: getattr(u, k, d))
     if not get("id"):
         return None
-    return {"id": str(get("id")), "role": str(get("role") or ""), "clearance": str(get("clearance_level") or ""),
-            "org": str(get("tenant_id") or "")}
+    clearance, org = get("clearance_level"), get("tenant_id")
+    if str(get("role") or "") != "service":
+        # The org and clearance are read FRESH from the person's own row: a session carries the whole row, but a
+        # dashboard API key's principal carries no tenant_id (tools/dashboard/auth.py validate_api_key), and a
+        # reader of no org sees nothing. An unreadable row leaves what the request carried.
+        row = None
+        with contextlib.suppress(Exception):     # unreadable: what the request carried (fail closed below)
+            from tools.dashboard.auth import get_user_by_id
+
+            row = get_user_by_id(str(get("id")))
+        if row is not None:
+            row = dict(row)
+            clearance, org = row.get("clearance_level"), row.get("tenant_id")
+    return {"id": str(get("id")), "role": str(get("role") or ""), "clearance": str(clearance or ""),
+            "org": str(org or "")}
 
 
 def mcp_reader(agent: str) -> dict:

@@ -703,3 +703,49 @@ def test_the_mcp_tools_read_and_only_prepare(ec):
     text = json.dumps(one)
     for v in SECRETS.values():
         assert v not in text
+
+
+def test_the_reader_s_org_and_clearance_are_read_fresh_from_their_own_row(ec, monkeypatch):
+    """A dashboard API key's principal carries no tenant_id; the person's org and clearance come from their row
+    (tools.dashboard.auth.get_user_by_id; the e2e reads it from the real dashboard_users on PostgreSQL)."""
+    from tools.dashboard import auth
+    from tools.evidence_collectors import service
+
+    rows = {"u-ent02-keyed": {"id": "u-ent02-keyed", "tenant_id": ORG, "clearance_level": "CUI"}}
+    monkeypatch.setattr(auth, "get_user_by_id", lambda uid, tenant_id=None: rows.get(uid))
+    app = Flask(__name__)
+    with app.test_request_context("/"):
+        g.current_user = {"id": "u-ent02-keyed", "role": "isso", "clearance_level": "CUI"}   # validate_api_key's
+        r = service.current_reader()
+    assert r["org"] == ORG and r["clearance"] == "CUI"
+    assert [s["id"] for s in service.systems_view(r, cfg=ec["cfg"])["systems"]] == ["syn-dib-01"]
+    with app.test_request_context("/"):
+        g.current_user = {"id": "u-ent02-no-row", "role": "isso"}             # no row, no tenant: sees nothing
+        assert service.systems_view(service.current_reader(), cfg=ec["cfg"])["systems"] == []
+
+
+def test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request(wf_db):
+    """canvas_access.check_access read the grants through the row-security predicate of the signed-in person's
+    context, which names a classification column canvas_access_grants does not have: the query raised and every
+    tenant person was refused (icx-ent-02's e2e found it). The grants are read without the label predicate; each
+    query names its tenant."""
+    from tools.db import storage
+    from tools.security import canvas_access
+
+    canvas_access.grant_access(ORG, "user", "u-ent02-granted", "evidence_collectors", "read", granted_by="test-admin")
+    real = storage.get_connection
+
+    def predicated(*a, **k):
+        conn = real(*a, **k)
+        conn.set_security_context(type("Ctx", (), {"tenant_id": None, "classification": "CUI",
+                                                   "compartments": frozenset()})())
+        return conn
+
+    storage.get_connection = predicated
+    try:
+        assert canvas_access.check_access("u-ent02-granted", ORG, "evidence_collectors", "read", "reviewer")
+        assert not canvas_access.check_access("u-ent02-granted", "another-org", "evidence_collectors", "read",
+                                              "reviewer"), "the tenant still scopes the grant"
+    finally:
+        storage.get_connection = real
+

@@ -71,6 +71,8 @@ elements:
     code:
       - tools/evidence_collectors/service.py::visible
       - tools/evidence_collectors/service.py::systems_view
+      - tools/evidence_collectors/service.py::current_reader
+      - tools/security/canvas_access.py::check_access
 
   - id: ec.twin
     type: sysml_element
@@ -186,6 +188,8 @@ requirements:
     controls: [AC-3, AC-4, AC-21]
     tests:
       - tests/test_icx_ent_02_evidence_collectors.py::test_what_a_reader_may_not_see_is_counted_never_described
+      - tests/test_icx_ent_02_evidence_collectors.py::test_the_reader_s_org_and_clearance_are_read_fresh_from_their_own_row
+      - tests/test_icx_ent_02_evidence_collectors.py::test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request
 
   - id: PM-EC-06
     title: The console page, the twin with threads, and MCP read and draft
