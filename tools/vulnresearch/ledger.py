@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """The append-only, hash-chained ledger of AI-assisted vulnerability discovery (icx-ent-01).
 
-One table, ``vr_events`` (migration 20261118180000), one hash chain per STREAM:
+One table, ``vr_events`` (migration 20261118231119), one hash chain per STREAM:
 
 * ``target:<id>``   registered, then a person authorises or refuses it, and a person may revoke it (a stop);
 * ``run:<id>``      one discovery run's whole result, at its digest (``run_recorded``), or one measurement on the

@@ -2,7 +2,7 @@
 """Constants for AI-assisted vulnerability discovery (icx-ent-01).
 
 The ledger's vocabulary, the declared templates and the surfaces they decide. The
-SQL CHECK constraints in the migration (20261118180000_vr_events) are derived from
+SQL CHECK constraints in the migration (20261118231119_vr_events) are derived from
 these tuples, never typed twice.
 """
 from __future__ import annotations

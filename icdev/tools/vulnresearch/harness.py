@@ -68,6 +68,19 @@ def image_present(image: str) -> bool:
         return False
 
 
+def image_id(image: str) -> Optional[str]:
+    """The content ID (``sha256:...``) of the image a run used, so the record names exactly what ran -- a tag such
+    as the fuzz image's can move; its ID cannot. None when it cannot be read."""
+    if not image or not shutil.which("docker"):
+        return None
+    try:
+        out = subprocess.run(["docker", "image", "inspect", "--format", "{{.Id}}", image],  # nosec B603 B607
+                             capture_output=True, text=True, timeout=20)
+        return (out.stdout.strip() or None) if out.returncode == 0 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def fuzz(target_id: str, root: Path, entry: dict, cfg: dict, *, scoped: dict, src_root: str = ".",
          seeds: Optional[list] = None, source: str = "") -> dict:
     """Run one generated harness. ``{status, engine, crashed, crash_input, exception, iterations, coverage, image}``."""
@@ -86,6 +99,7 @@ def fuzz(target_id: str, root: Path, entry: dict, cfg: dict, *, scoped: dict, sr
                              extra_files={"harness_gen.py": text})
     res = run.get("result") or {}
     return {"status": run["status"], "engine": res.get("engine"), "crashed": bool(res.get("crashed")),
+            "image_id": image_id(image),
             "crash_input": res.get("crash_input"), "exception": res.get("exception"),
             "iterations": res.get("iterations"), "coverage": res.get("coverage"), "image": image,
             "harness_digest": ledger.digest(text), "seeds": spec["seeds"], "detail": run.get("stderr", "")[-300:]}

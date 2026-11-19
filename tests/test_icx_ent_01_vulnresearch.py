@@ -107,6 +107,7 @@ def vr(wf_db, monkeypatch, tmp_path):
     monkeypatch.setenv("ICDEV_NO_LLM", "true")
     monkeypatch.setattr(pov, "EXECUTOR", lambda: LocalDouble())
     monkeypatch.setattr(harness, "image_present", lambda image: False)
+    monkeypatch.setattr(harness, "image_id", lambda image: "sha256:" + "d" * 64)
     monkeypatch.setattr(sast_runner, "run_bandit", canned_bandit)
     monkeypatch.setattr(discovery, "_pip_audit", canned_audit)
     LocalDouble.calls = []
@@ -653,6 +654,7 @@ def test_the_real_sandbox_end_to_end(wf_db, monkeypatch, tmp_path):
     tid = _bench()
     run = discovery.run(tid, REGISTRANT, use_model=False)["run"]
     assert run["isolation"]["network"] == "none"
+    assert all(str(z.get("image_id") or "").startswith("sha256:") for z in run["fuzz"]), "the image ID is recorded"
     assert {f["module"] for f in run["findings"]} == {"vb_cmdi", "vb_sqli", "vb_eval", "vb_pickle", "vb_parser"}
     fid = next(f["finding_id"] for f in run["findings"] if f["module"] == "vb_cmdi")
     assert patches.propose(fid, _fixed_diff(), DEVELOPER)["validation"]["pov_fails_after"] is True
@@ -916,3 +918,22 @@ def test_a_patch_may_only_modify_in_scope_files_never_rename_copy_create_or_chmo
             patches.propose(fid, diff, DEVELOPER)
         assert exc.value.code == "diff_shape" and what in exc.value.message, (what, exc.value.message)
     assert patches.propose(fid, _fixed_diff(), DEVELOPER)["validation"]["paths"] == ["src/vb_cmdi.py"]
+
+
+def test_the_records_name_what_really_ran_and_what_really_exists(vr):
+    """Every fuzz run records the image ID it ran; the docs and config name the real migration and feature doc."""
+    import re as _re
+
+    from tools.vulnresearch import discovery
+
+    run = discovery.run(_bench(), REGISTRANT, use_model=False)["run"]
+    for z in run["fuzz"]:
+        assert z["image_id"] == "sha256:" + "d" * 64, z
+    migrations = {p.name for p in (ROOT / "tools/db/migrations").iterdir() if "vr_events" in p.name}
+    assert migrations == {"20261118231119_vr_events"}
+    for rel in ("tools/vulnresearch/constants.py", "tools/vulnresearch/ledger.py", "args/vuln_research.yaml"):
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        for m in _re.findall(r"\b(2026\d{10})\b", text):
+            assert f"{m}_vr_events" in migrations, (rel, m)
+        for doc in _re.findall(r"docs/features/[\w.-]+\.md", text):
+            assert (ROOT / doc).exists(), (rel, doc)

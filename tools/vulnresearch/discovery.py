@@ -350,7 +350,7 @@ def run(target_id: str, actor: Optional[dict], *, use_model: bool = True, conn=N
         fr = harness.fuzz(target_id, scoped["root"], e, cfg, scoped=scoped, src_root=src_root, seeds=seeds,
                           source=idx[e["file"]]["source"])
         fuzz_runs.append({**e, **{k: fr[k] for k in ("status", "engine", "crashed", "exception", "iterations",
-                                                     "coverage", "image", "harness_digest")}})
+                                                     "coverage", "image", "image_id", "harness_digest")}})
         if fr["crashed"] and fr["crash_input"]:
             fuzz_cands.append({"source": "fuzz", "rule": f"fuzz:{fr['engine']}", "file": e["file"],
                                "line": idx[e["file"]]["functions"][e["function"]]["start"],

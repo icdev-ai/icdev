@@ -47,8 +47,10 @@ sandbox:
   # every capability dropped (SandboxExecutor.run_isolated). The image is pinned
   # by digest; the fuzz image adds atheris (deploy/vuln-sandbox/Dockerfile) and
   # is used only when it is present locally, else the built-in fuzzer runs in
-  # the plain image (documented in docs/features/phase-ent-01-vuln-discovery.md).
+  # the plain image (documented in docs/features/icx-ent-01-ai-vulnerability-discovery.md).
   image: "python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b"
+  # A locally built tag (deploy/vuln-sandbox, itself FROM the pinned digest above with a hash-pinned wheel), so
+  # it cannot be pinned by a registry digest: every fuzz run records the image ID it actually ran (image_id).
   fuzz_image: "icdev-vuln-sandbox:atheris-3.1.0"
   timeout_seconds: 60
   memory_mb: 512
