@@ -7797,6 +7797,9 @@ python tools/vulnresearch/cli.py measure --target vrt-0123456789             # F
 python tools/vulnresearch/cli.py prepare --target vrt-0123456789             # a draft; a person publishes it
 python tools/vulnresearch/cli.py export --target vrt-0123456789 --published --out .tmp/vr
 python tools/vulnresearch/cli.py verify .tmp/vr --ledger
+# Inside the isolated sandbox only (run by pov.py / harness.py, never on the host):
+#   python tools/vulnresearch/sandbox_runtime/pov_runner.py /harness/spec.json
+#   python tools/vulnresearch/sandbox_runtime/fuzz_runner.py /harness/spec.json
 # The fuzz image with atheris 3.1.0 (optional; else the built-in coverage-guided fuzzer runs):
 docker build -t icdev-vuln-sandbox:atheris-3.1.0 deploy/vuln-sandbox
 ```
