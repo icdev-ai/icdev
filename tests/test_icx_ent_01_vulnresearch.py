@@ -383,8 +383,8 @@ def test_a_patch_is_proposed_only_when_its_pov_fails_and_the_tests_pass(vr):
         patches.propose(fid, breaks, DEVELOPER)
     assert exc.value.code == "not_validated" and exc.value.validation["tests_pass"] is False, "tests must pass"
     with pytest.raises(patches.PatchRefused) as exc:
-        patches.propose(fid, "--- a/../../etc/x\n+++ b/../../etc/x\n", DEVELOPER)
-    assert exc.value.code == "diff_path"
+        patches.propose(fid, "--- a/../../etc/x\n+++ b/../../etc/x\n@@ -1 +1 @@\n-a\n+b\n", DEVELOPER)
+    assert exc.value.code in ("diff", "diff_path"), "a path out of the tree is refused (git or the check)"
     out = patches.propose(fid, _fixed_diff(), DEVELOPER)
     v = out["validation"]
     assert v["pov_vulnerable"] == "reproduced" and v["pov_patched"] == "not_reproduced" and v["tests_pass"]
@@ -896,3 +896,23 @@ def test_the_per_stream_hash_chain_is_one_shared_helper():
     problems = {p["id"]: p["problem"] for p in out["_problems"]}
     assert problems["b2"] == "row hash does not match its content" and len(out["_problems"]) == 2
     assert "stream_chain.order_streams" in inspect.getsource(ledger.chain)
+
+
+def test_a_patch_may_only_modify_in_scope_files_never_rename_copy_create_or_chmod(vr):
+    from tools.vulnresearch import discovery, patches
+
+    tid = _bench()
+    run = discovery.run(tid, REGISTRANT, use_model=False)["run"]
+    fid = next(f["finding_id"] for f in run["findings"] if f["module"] == "vb_cmdi")
+    rename = ("diff --git a/src/vb_cmdi.py b/src/vb_other.py\nsimilarity index 100%\n"
+              "rename from src/vb_cmdi.py\nrename to src/vb_other.py\n")
+    chmod = "diff --git a/src/vb_cmdi.py b/src/vb_cmdi.py\nold mode 100644\nnew mode 100755\n"
+    create = ("diff --git a/src/new.py b/src/new.py\nnew file mode 100644\n--- /dev/null\n+++ b/src/new.py\n"
+              "@@ -0,0 +1 @@\n+x = 1\n")
+    hidden = _fixed_diff().replace("diff --git", "diff --git") + (
+        "diff --git a/src/vb_eval.py b/src/vb_eval.py\nold mode 100644\nnew mode 100755\n")
+    for diff, what in ((rename, "rename"), (chmod, "mode"), (create, "create"), (hidden, "mode")):
+        with pytest.raises(patches.PatchRefused) as exc:
+            patches.propose(fid, diff, DEVELOPER)
+        assert exc.value.code == "diff_shape" and what in exc.value.message, (what, exc.value.message)
+    assert patches.propose(fid, _fixed_diff(), DEVELOPER)["validation"]["paths"] == ["src/vb_cmdi.py"]

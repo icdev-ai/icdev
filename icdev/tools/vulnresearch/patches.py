@@ -29,15 +29,47 @@ from tools.vulnresearch.constants import GENESIS, SURFACE_PATCH, TEMPLATE_PATCH
 
 PatchRefused = ledger.LedgerRefused
 
-_PATH_RE = re.compile(r"^(?:\+\+\+|---) (?:[ab]/)?(\S+)", re.M)
+_SHAPES = (("rename", "renames a file"), ("copy", "copies a file"), ("create mode", "creates a file"),
+           ("delete mode", "deletes a file"), ("mode change", "changes a file mode"))
 
 
 def diff_paths(diff: str) -> list[str]:
-    paths = sorted({p for p in _PATH_RE.findall(diff or "") if p != "/dev/null"})
-    for p in paths:
-        if p.startswith("/") or ".." in Path(p).parts:
-            raise PatchRefused(400, "diff_path", f"the diff touches {p!r}: only paths inside the target")
-    return paths
+    """The files a diff changes, as ``git apply --numstat --summary`` reads it -- never from its ---/+++ lines.
+
+    A patch may only MODIFY existing text files: one that renames, copies, creates, deletes, changes a mode or
+    touches a binary is refused (``diff_shape``), as is a path that leaves the tree.
+    """
+    import tempfile
+
+    if not (diff or "").strip():
+        raise PatchRefused(400, "diff", "the diff is empty")
+    with tempfile.TemporaryDirectory(prefix="vr-diff-") as d:
+        f = Path(d) / "change.diff"
+        f.write_text(diff if diff.endswith("\n") else diff + "\n", encoding="utf-8")
+        r = subprocess.run(["git", "apply", "--numstat", "--summary", str(f)], cwd=d,  # nosec B603 B607
+                           capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        raise PatchRefused(400, "diff", f"not a diff git can read: {(r.stderr or '').strip()[:200]}")
+    paths = []
+    for line in r.stdout.splitlines():
+        if not line.strip():
+            continue
+        if "\t" not in line:
+            for marker, what in _SHAPES:
+                if line.strip().startswith(marker.split(" ")[0]) and marker.split(" ")[-1] in line:
+                    raise PatchRefused(422, "diff_shape", f"the diff {what} ({marker.split(' ')[0]}): a patch "
+                                                          f"only modifies existing files ({line.strip()[:120]})")
+            raise PatchRefused(422, "diff_shape", f"the diff does something other than modify a file "
+                                                  f"({line.strip()[:120]})")
+        added, _deleted, path = line.split("\t", 2)
+        if added == "-":
+            raise PatchRefused(422, "diff_shape", f"the diff touches a binary file ({path})")
+        if path.startswith("/") or ".." in Path(path).parts or "=>" in path:
+            raise PatchRefused(400, "diff_path", f"the diff touches {path!r}: only paths inside the target")
+        paths.append(path)
+    if not paths:
+        raise PatchRefused(422, "diff_shape", "the diff modifies no file")
+    return sorted(set(paths))
 
 
 def _apply(copy: Path, diff: str) -> Optional[str]:
@@ -113,8 +145,6 @@ def validate(fid: str, diff: str) -> dict:
     except ScopeViolation as exc:
         raise PatchRefused(403, "out_of_scope", str(exc)) from exc
     paths = diff_paths(diff)
-    if not paths:
-        raise PatchRefused(400, "diff", "the diff names no file (use --- a/<path> / +++ b/<path>)")
     for p in paths:
         try:
             targets.in_scope_path(scoped, p)
