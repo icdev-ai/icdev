@@ -54,8 +54,9 @@
   </p>
   <p class="vr-help" id="vr-isolation">Sandbox: <b>{{ isolation.isolation }}</b> ({{ isolation.engine }}, runtime
     {{ isolation.oci_runtime }}), network <b>{{ isolation.network }}</b>, read-only root, every capability dropped.
-    {% if not isolation.microvm %}This is not a microVM: an operator can set <code>sandbox.isolated.oci_runtime</code>
-    to gVisor or a microVM runtime.{% endif %}</p>
+    {% if isolation.isolation == 'container' %}This is a plain container, not gVisor or a microVM, so a real target is
+    <b>refused</b>; only the synthetic benchmark runs here, under its named waiver. An operator installs gVisor or a
+    microVM runtime and sets <code>sandbox.isolated.oci_runtime</code> (an owner step).{% endif %}</p>
   {% if error %}<p class="vr-msg">The ledger could not be read: {{ error }}</p>{% endif %}
 
   <div class="vr-card" id="vr-register">

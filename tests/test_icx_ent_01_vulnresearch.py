@@ -544,7 +544,7 @@ def test_the_routes_and_the_page(vr):
     html = a.get("/vulnresearch/").get_data(as_text=True)
     for want in ("proven or dropped", "decl-wft-vr-target-authorise", "decl-wft-vr-patch-review",
                  "decl-wft-vr-findings-publish", "vulnresearch.vr_api_target_authorise", "vulnresearch.vr_api_run",
-                 "vulnresearch.vr_api_patch_propose", "vulnresearch.vr_api_bundle_publish", "not a microVM",
+                 "vulnresearch.vr_api_patch_propose", "vulnresearch.vr_api_bundle_publish", "not gVisor or a microVM",
                  f'data-target="{tid}"'):
         assert want in html, want
     assert "/api/" not in (ROOT / "tools/dashboard/templates/vulnresearch/index.html").read_text(encoding="utf-8")
@@ -597,7 +597,7 @@ def test_the_twin_observes_with_threads_and_replays(vr):
     chk = {x["id"]: x for x in env["extra"]["checks"]}
     assert chk[f"vulnresearch.bundle.{tid}"]["status"] == "unverified"
     rules = {v["rule_id"] for v in env["violations"]}
-    assert {"vulnresearch.finding_unpatched", "vulnresearch.isolation_container"} <= rules
+    assert {"vulnresearch.finding_unpatched", "vulnresearch.isolation_waived"} <= rules
     for v in env["violations"]:
         assert v["thread_id"], v
         if v["rule_id"] == "vulnresearch.finding_unpatched":
@@ -742,3 +742,58 @@ def test_the_environment_never_widens_the_scope_allowlist(vr, tmp_path, monkeypa
         targets.register(REGISTRANT, name="env", root=str(tmp_path), reason="no")
     assert exc.value.code == "out_of_scope", "a root is allowed only by args/vuln_research.yaml"
     assert str(tmp_path) not in {str(r) for r in targets.allowed_roots(targets.load_config())}
+
+
+def test_a_real_target_needs_gvisor_or_a_microvm_and_only_the_benchmark_is_waived(vr, tmp_path, monkeypatch):
+    """runc is not enough for code that is not ours: refused, unless the target is the synthetic benchmark under
+    its named waiver (which is recorded in the run and the bundle)."""
+    from tools.vulnresearch import bundle, discovery, targets
+
+    tree = tmp_path / "roots" / "t1"
+    shutil.copytree(ROOT / BENCH, tree)
+    allow_root(monkeypatch, tmp_path / "roots")
+    r = targets.register(REGISTRANT, name="a real target (synthetic copy)", root=str(tree), reason="test",
+                         src_root="src", test_dir="tests")
+    targets.authorise(r["target_id"], decision="authorise", reason="ok", read_digest=r["content_digest"],
+                      actor=AUTHORISER)
+    LocalDouble.calls = []
+    with pytest.raises(discovery.RunRefused) as exc:
+        discovery.run(r["target_id"], REGISTRANT, use_model=False)
+    assert exc.value.code == "isolation" and "gVisor" in exc.value.message
+    assert LocalDouble.calls == [], "nothing ran in a container that is not strong enough"
+    # the synthetic benchmark runs under its named waiver, carried in the run and the bundle
+    tid = _bench()
+    run = discovery.run(tid, REGISTRANT, use_model=False)["run"]
+    w = run["isolation"]["waiver"]
+    assert w and w["id"] == "vr-waiver-synthetic-benchmark" and w["reason"]
+    assert bundle.build(tid)["run"]["isolation"]["waiver"]["id"] == "vr-waiver-synthetic-benchmark"
+    # with gVisor configured the same real target runs, and no waiver is needed or recorded
+    from tools.security import sandbox_executor
+
+    monkeypatch.setattr(sandbox_executor, "_load_config",
+                        lambda: {**sandbox_executor.DEFAULT_CONFIG, "isolated": {"oci_runtime": "runsc"}})
+    run2 = discovery.run(r["target_id"], REGISTRANT, use_model=False)["run"]
+    assert run2["isolation"]["isolation"] == "gvisor" and run2["isolation"]["waiver"] is None
+
+
+def test_the_executor_refuses_a_weak_container_for_strong_isolation_runs(tmp_path):
+    from tools.security.sandbox_executor import SandboxExecutor
+
+    ran = []
+
+    def runner(cmd, **kw):
+        ran.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    weak = SandboxExecutor(config={"enabled": True, "isolated": {}, "audit_all_executions": False})
+    out = weak.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
+                            requires_strong_isolation=True)
+    assert out.status == "refused" and ran == []
+    waived = weak.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
+                               requires_strong_isolation=True, waiver={"id": "w", "reason": "synthetic"})
+    assert waived.status == "completed" and len(ran) == 1
+    strong = SandboxExecutor(config={"enabled": True, "isolated": {"oci_runtime": "runsc"},
+                                     "audit_all_executions": False})
+    assert strong.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
+                               requires_strong_isolation=True).status == "completed"
+    assert "--runtime" in ran[-1] and "runsc" in ran[-1]

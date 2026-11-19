@@ -190,7 +190,7 @@ test.describe('Vulnerability discovery: authorised target, PoV-proven finding, r
     // 5. the twin observes; a finding's thread opens on its vr_events row
     await sends(rp, 'GET', /^\/vulnresearch\/api\/twin$/, () => rp.click('#vr-observe'));
     await expect(rp.locator('#vr-twin-verdict')).toBeVisible({ timeout: T });
-    const iso = rp.locator('li[data-rule="vulnresearch.isolation_container"]').first();
+    const iso = rp.locator('li[data-rule="vulnresearch.isolation_waived"]').first();
     await expect(iso).toBeVisible({ timeout: T });
     await iso.locator('button[data-thread]').click();
     await expect(rp.locator('#vr-thread-resolved')).toContainText('run_recorded', { timeout: T });

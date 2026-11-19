@@ -48,7 +48,7 @@ from tools.vulnresearch.constants import (
 )
 
 #: The DRAFT schemas, pinned: a changed file is refused, never silently used.
-SCHEMA_SHA256 = "05c5f5b92c4471d5a25087bd3a2c5130a7b578b8b88d5101559fc85483643c60"
+SCHEMA_SHA256 = "0002194aaa7652db30808eda69f4864a2a9ebf8587813d7ff09db7a9a0b08963"
 PUBLICATION_SHA256 = "58db1ff2e08c49f7629173522617ddbadb9100e12f157698df1d3c288695ef44"
 
 BundleRefused = ledger.LedgerRefused
@@ -160,7 +160,8 @@ def build(target_id: str, *, at: Optional[str] = None, conn=None, check: bool = 
                                      "expires_on": st["decision"]["expires_on"]}},
         "run": {"run_id": run["run_id"], "event_id": newest["event_id"], "content_digest": newest["content_digest"],
                 "recorded_at": newest["created_at"],
-                "isolation": {k: iso.get(k) for k in ("engine", "oci_runtime", "isolation", "microvm", "network")},
+                "isolation": {k: iso.get(k) for k in ("engine", "oci_runtime", "isolation", "microvm", "network",
+                                                      "waiver")},
                 "sast": {"tool": run["sast"].get("tool"), "ran": bool(run["sast"].get("ran"))},
                 "sca": {"tool": run["sca"].get("tool"), "ran": bool(run["sca"].get("ran"))},
                 "review": {"ran": bool(run["review"].get("ran")), "provenance": run["review"].get("provenance")},

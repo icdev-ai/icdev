@@ -297,6 +297,9 @@ def run(target_id: str, actor: Optional[dict], *, use_model: bool = True, conn=N
         scoped = targets.assert_in_scope(target_id, conn)
     except ScopeViolation as exc:
         raise RunRefused(403, "out_of_scope", str(exc)) from exc
+    gate = pov.isolation_decision(scoped)
+    if not gate["allowed"]:
+        raise RunRefused(409, "isolation", gate["why"])
     cfg = targets.load_config()
     reg = scoped["registration"]
     src_root = reg.get("src_root") or "."
@@ -329,7 +332,7 @@ def run(target_id: str, actor: Optional[dict], *, use_model: bool = True, conn=N
             fuzz_runs.append({**e, "status": "not_run", "detail": "not a harnessable function of the target"})
             continue
         seeds = (reg.get("fuzz_seeds") or {}).get(f"{e['module']}:{e['function']}") or ["", "a"]
-        fr = harness.fuzz(target_id, scoped["root"], e, cfg, src_root=src_root, seeds=seeds,
+        fr = harness.fuzz(target_id, scoped["root"], e, cfg, scoped=scoped, src_root=src_root, seeds=seeds,
                           source=idx[e["file"]]["source"])
         fuzz_runs.append({**e, **{k: fr[k] for k in ("status", "engine", "crashed", "exception", "iterations",
                                                      "coverage", "image", "harness_digest")}})
@@ -390,8 +393,8 @@ def run(target_id: str, actor: Optional[dict], *, use_model: bool = True, conn=N
               "advisories": len(advisories)}
     rid = f"vrr-{uuid.uuid4().hex[:10]}"
     content = {"run_id": rid, "target_id": target_id, "tree_digest": reg["tree_digest"], "commit": reg.get("commit"),
-               "config_sha256": cfg["_sha256"], "isolation": {k: v for k, v in isolated_profile().items()
-                                                              if k != "flags"},
+               "config_sha256": cfg["_sha256"], "isolation": {**{k: v for k, v in isolated_profile().items() if k != "flags"},
+                             "waiver": gate["waiver"]},
                "sast": sast_status, "sca": sca_status, "review": review_status, "fuzz": fuzz_runs,
                "findings": sorted(findings, key=lambda f: f["finding_id"]),
                "dropped": sorted(dropped, key=lambda d: (str(d.get("file")), str(d.get("function")),

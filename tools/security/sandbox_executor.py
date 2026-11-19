@@ -114,7 +114,7 @@ class SandboxResult:
     runtime_ms: int = 0
     artifacts: List[str] = field(default_factory=list)
     container_id: str = ""
-    status: str = "completed"  # completed | failed | timeout | disabled | unavailable
+    status: str = "completed"  # completed | failed | timeout | disabled | unavailable | refused
     error: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -491,6 +491,8 @@ class SandboxExecutor:
         actor: Optional[str] = None,
         project_id: Optional[str] = None,
         runner: Any = None,
+        requires_strong_isolation: bool = False,
+        waiver: Optional[Dict[str, Any]] = None,
     ) -> SandboxResult:
         """Run ``argv`` in a fresh container with NO network (icx-ent-01).
 
@@ -504,6 +506,10 @@ class SandboxExecutor:
         mode)``: ``ro`` anywhere, ``rw`` only under ``/out``. A missing host path,
         a writable mount elsewhere, or no container engine is refused, never
         run some other way. ``runner`` replaces ``subprocess.run`` (tests).
+
+        ``requires_strong_isolation`` (vulnerability research on a real target): the run is REFUSED unless the
+        configured OCI runtime is gVisor or a microVM; a plain container (runc) is allowed only with a named
+        ``waiver`` the caller carries (the synthetic benchmark's), and the waiver is the caller's to record.
         """
         import shutil
         import subprocess  # nosec B404 — fixed argv, never a shell
@@ -516,6 +522,12 @@ class SandboxExecutor:
                 return SandboxResult(status="failed", error=f"refused mount {ctr!r} ({mode}): only /out may be written")
             if not Path(host).exists():
                 return SandboxResult(status="failed", error=f"refused mount: {host} does not exist")
+        prof = isolated_profile(self._config)
+        if requires_strong_isolation and prof["isolation"] not in ("gvisor", "microvm") and not (
+                isinstance(waiver, dict) and waiver.get("id") and waiver.get("reason")):
+            return SandboxResult(status="refused", error=(
+                f"refused: this run needs gVisor or a microVM and the engine runs {prof['oci_runtime']} "
+                "(a plain container); set sandbox.isolated.oci_runtime once an operator has installed one"))
         engine = str(iso.get("engine") or "docker")
         if runner is None and not shutil.which(engine):
             return SandboxResult(status="unavailable", error=f"no container engine ({engine}) on this host")

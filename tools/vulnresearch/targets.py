@@ -317,6 +317,15 @@ def assert_in_scope(tid: str, conn=None) -> dict:
     return {"target_id": tid, "root": root, "registration": reg, "tree": t, "state": st}
 
 
+def is_synthetic_benchmark(scoped: dict, cfg: Optional[dict] = None) -> bool:
+    """True only when the target IS ICDEV's committed synthetic benchmark (its configured path, in this repo)."""
+    cfg = cfg or load_config()
+    bench = (cfg.get("benchmark") or {}).get("path") or ""
+    if not bench:
+        return False
+    return Path(scoped["root"]).resolve() == (BASE_DIR / bench).resolve()
+
+
 def in_scope_path(scoped: dict, rel: str) -> Path:
     """A file of the target, refused when it is not one of its in-scope files."""
     rel = _text(rel).replace("\\", "/").lstrip("/")

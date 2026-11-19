@@ -612,7 +612,7 @@
         },
         "isolation": {
           "additionalProperties": false,
-          "description": "How target code ran. A container is not a microVM, and says so.",
+          "description": "How target code ran. A container is not a microVM, and says so; a real target is refused unless the runtime is gVisor or a microVM.",
           "properties": {
             "engine": {
               "type": "string"
@@ -633,6 +633,50 @@
             },
             "oci_runtime": {
               "type": "string"
+            },
+            "waiver": {
+              "anyOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "applies_to": {
+                      "const": "synthetic_benchmark"
+                    },
+                    "id": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "reason": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "recorded_by": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "recorded_on": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "applies_to",
+                    "reason",
+                    "recorded_by",
+                    "recorded_on"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "description": "The named waiver a plain container ran under, carried as recorded. Only the synthetic benchmark has one; a real target runs only under gVisor or a microVM."
             }
           },
           "required": [
@@ -640,7 +684,8 @@
             "isolation",
             "microvm",
             "network",
-            "oci_runtime"
+            "oci_runtime",
+            "waiver"
           ],
           "type": "object"
         },

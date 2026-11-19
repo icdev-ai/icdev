@@ -51,14 +51,18 @@ def _apply(copy: Path, diff: str) -> Optional[str]:
     return None
 
 
-def run_tests(root: Path, test_dir: str, scoped: Optional[dict] = None) -> dict:
+def run_tests(root: Path, test_dir: str, scoped: dict) -> dict:
     """The target's unittest suite in the isolated sandbox. ``{status, passed, detail}``."""
     cfg = targets.load_config().get("sandbox") or {}
+    gate = pov.isolation_decision(scoped)
+    if not gate["allowed"]:
+        return {"status": "refused", "passed": False, "exit_code": -1, "detail": gate["why"]}
     ex = pov.EXECUTOR()
     res = ex.run_isolated(["python", "-m", "unittest", "discover", "-s", f"/target/{test_dir}"],
                           image=cfg.get("image") or "python:3.12-slim", mounts=[(str(root), "/target", "ro")],
                           timeout_seconds=int(cfg.get("timeout_seconds") or 60),
-                          max_memory_mb=int(cfg.get("memory_mb") or 512), pids_limit=int(cfg.get("pids_limit") or 128))
+                          max_memory_mb=int(cfg.get("memory_mb") or 512), pids_limit=int(cfg.get("pids_limit") or 128),
+                          requires_strong_isolation=True, waiver=gate["waiver"])
     tail = ((res.stderr or "") + (res.error or ""))[-400:]
     return {"status": res.status, "passed": res.status == "completed" and res.exit_code == 0,
             "exit_code": res.exit_code, "detail": tail}

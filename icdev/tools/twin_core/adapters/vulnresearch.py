@@ -8,8 +8,9 @@ An authorised target with no published findings bundle, and a pipeline with no b
 UNVERIFIED checks, never passes. Findings, each threaded to the ``vr_events`` row they rest on
 (``vulnresearch:<event id>``): ``finding_unpatched`` (a PoV-confirmed finding with no accepted patch),
 ``authorisation_expired``, ``awaiting_authorisation``, ``patch_awaiting_review``, ``bundle_awaiting_publish``,
-``bundle_stale``, ``self_published`` and ``chain_broken`` (critical), ``labels_unreviewed`` and
-``isolation_container`` (low: said plainly, never hidden).
+``bundle_stale``, ``self_published``, ``chain_broken`` and ``isolation_container`` (critical: an unwaived
+plain container, which run_isolated refuses), ``isolation_waived`` (medium: the benchmark under its named
+waiver) and ``labels_unreviewed`` (low).
 """
 from __future__ import annotations
 

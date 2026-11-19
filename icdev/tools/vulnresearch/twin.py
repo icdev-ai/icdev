@@ -46,7 +46,9 @@ def twin_evidence() -> dict:
                       "decision": t["decision"] and {k: t["decision"][k] for k in ("event_id", "event", "actor",
                                                                                    "expires_on", "created_at")},
                       "run": newest and {"event_id": newest["event_id"], "created_at": newest["created_at"],
-                                         "isolation": (newest["run"].get("isolation") or {}).get("isolation")},
+                                         "isolation": (newest["run"].get("isolation") or {}).get("isolation"),
+                                         "waiver": ((newest["run"].get("isolation") or {}).get("waiver") or {})
+                                         .get("id")},
                       "findings": findings,
                       "bundle": {"prepared": bl["prepared"] and {
                           "event_id": bl["prepared"]["event_id"], "actor": bl["prepared"]["actor"],
@@ -118,11 +120,20 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
                             pub is not None, "no findings bundle of this target has been published: unverified"))
         run = t.get("run")
         if run and run.get("isolation") == "container":
-            out.append(finding("vulnresearch.isolation_container", "low",
-                               f"{t['name']}: target code ran in a container (runc), not gVisor or a microVM",
-                               thread_id=f"vulnresearch:{run['event_id']}", category="security",
-                               recommendation="An operator installs gVisor (runsc) or a microVM runtime into the "
-                                              "engine and sets sandbox.isolated.oci_runtime."))
+            if run.get("waiver"):
+                out.append(finding("vulnresearch.isolation_waived", "medium",
+                                   f"{t['name']}: ran in a plain container (runc) under the named waiver "
+                                   f"{run['waiver']}, not gVisor or a microVM",
+                                   thread_id=f"vulnresearch:{run['event_id']}", category="security",
+                                   recommendation="Owner step: install gVisor (runsc) or a microVM runtime into "
+                                                  "the engine and set sandbox.isolated.oci_runtime."))
+            else:
+                # A blocking condition: run_isolated refuses this, so a recorded run like it is an incident.
+                out.append(finding("vulnresearch.isolation_container", "critical",
+                                   f"{t['name']}: target code ran in a plain container with no waiver",
+                                   thread_id=f"vulnresearch:{run['event_id']}", category="security",
+                                   recommendation="Treat the run as untrusted and find how it bypassed "
+                                                  "SandboxExecutor.run_isolated's isolation gate."))
         for f in t.get("findings") or []:
             summary["findings"] += 1
             patch = f.get("patch")

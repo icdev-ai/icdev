@@ -111,11 +111,45 @@ def _sandbox_cfg() -> dict:
     return load_config().get("sandbox") or {}
 
 
-def run_in_sandbox(script: str, spec: dict, *, target_root: Path, image: Optional[str] = None,
-                   extra_files: Optional[dict] = None, scoped: Optional[dict] = None) -> dict:
-    """Run one runner script on one spec in the isolated sandbox. ``{status, result, stderr, profile}``."""
+def isolation_decision(scoped: dict) -> dict:
+    """May this target's code run here? ``{allowed, isolation, waiver, why}``.
+
+    Only under gVisor or a microVM (``isolation.require``), or a plain container under the one named waiver whose
+    scope the target is: the synthetic benchmark. The waiver is returned so the run and the bundle carry it.
+    """
+    from tools.security.sandbox_executor import isolated_profile
+    from tools.vulnresearch import targets
+
+    cfg = targets.load_config()
+    iso = cfg.get("isolation") or {}
+    prof = isolated_profile()
+    if prof["isolation"] in (iso.get("require") or ["gvisor", "microvm"]):
+        return {"allowed": True, "isolation": prof["isolation"], "waiver": None, "why": ""}
+    if targets.is_synthetic_benchmark(scoped, cfg):
+        for w in iso.get("waivers") or []:
+            if w.get("applies_to") == "synthetic_benchmark" and w.get("id") and w.get("reason"):
+                return {"allowed": True, "isolation": prof["isolation"], "why": "",
+                        "waiver": {k: w.get(k) for k in ("id", "applies_to", "reason", "recorded_by",
+                                                          "recorded_on")}}
+    return {"allowed": False, "isolation": prof["isolation"], "waiver": None,
+            "why": (f"refused: {scoped['target_id']} is not the synthetic benchmark, so its code runs only under "
+                    f"gVisor or a microVM, and the engine runs {prof['oci_runtime']} (a plain container). An "
+                    "operator installs one and sets sandbox.isolated.oci_runtime (an owner/root step).")}
+
+
+def run_in_sandbox(script: str, spec: dict, *, target_root: Path, scoped: dict, image: Optional[str] = None,
+                   extra_files: Optional[dict] = None) -> dict:
+    """Run one runner script on one spec in the isolated sandbox. ``{status, result, stderr, profile, waiver}``.
+
+    ``scoped`` is the target's ``assert_in_scope`` result: its isolation is decided here, every time, and a run
+    that is not allowed is refused before anything is staged.
+    """
     from tools.security.sandbox_executor import isolated_profile
 
+    gate = isolation_decision(scoped)
+    if not gate["allowed"]:
+        return {"status": "refused", "result": None, "stderr": "", "exit_code": -1, "refusal": gate["why"],
+                "profile": isolated_profile(), "waiver": None}
     cfg = _sandbox_cfg()
     work = _workspace()
     harness, out = work / "harness", work / "out"
@@ -136,7 +170,11 @@ def run_in_sandbox(script: str, spec: dict, *, target_root: Path, image: Optiona
                                       (str(out), "/out", "rw")],
                               timeout_seconds=int(cfg.get("timeout_seconds") or 60),
                               max_memory_mb=int(cfg.get("memory_mb") or 512),
-                              pids_limit=int(cfg.get("pids_limit") or 128))
+                              pids_limit=int(cfg.get("pids_limit") or 128),
+                              requires_strong_isolation=True, waiver=gate["waiver"])
+        if res.status == "refused":
+            return {"status": "refused", "result": None, "stderr": "", "exit_code": -1, "refusal": res.error,
+                    "profile": isolated_profile(), "waiver": None}
         result = None
         if res.status == "completed":
             if script == "pov_runner.py":
@@ -146,7 +184,7 @@ def run_in_sandbox(script: str, spec: dict, *, target_root: Path, image: Optiona
                 f = out / f"{spec['id']}.json"
                 result = json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
         return {"status": res.status, "result": result, "stderr": (res.stderr or res.error or "")[-800:],
-                "exit_code": res.exit_code, "profile": isolated_profile()}
+                "exit_code": res.exit_code, "profile": isolated_profile(), "waiver": gate["waiver"]}
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

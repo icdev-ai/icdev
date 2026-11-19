@@ -55,6 +55,26 @@ sandbox:
   pids_limit: 128
   call_timeout_seconds: 5
 
+# What a run on a target must be isolated by. Code that is not ours runs only under gVisor (runsc) or a microVM
+# (Kata, Firecracker): SandboxExecutor.run_isolated REFUSES a plain container (runc) for it. Installing one into
+# the container engine is an OWNER/ROOT step (docs/features/icx-ent-01-ai-vulnerability-discovery.md, "Isolation"),
+# then sandbox.isolated.oci_runtime in args/sandbox_config.yaml names it.
+#
+# A WAIVER lets a plain container run, by name, for one scope only, and is recorded in the run and the bundle.
+# The only one: the synthetic benchmark of ICDEV's own planted code (context/vulnresearch/benchmark), which is
+# also all that CI runs. It never applies to any other target.
+isolation:
+  require: [gvisor, microvm]
+  waivers:
+    - id: vr-waiver-synthetic-benchmark
+      applies_to: synthetic_benchmark
+      reason: >-
+        The target is ICDEV's own synthetic benchmark of planted code (context/vulnresearch/benchmark), whose
+        proofs are canary-only; it runs in the hardened container (no network, read-only root, capabilities
+        dropped) on hosts without gVisor or a microVM, including CI. No other target is covered.
+      recorded_by: "icx-ent-01 (card builder); for the owner to confirm"
+      recorded_on: "2026-11-18"
+
 fuzz:
   iterations: 4000
   seed: 1337

@@ -2435,6 +2435,9 @@ vuln_research:
     - root_not_allowlisted           # a tree outside scope.allowed_roots is refused at registration and every scan
     - tree_changed                   # a tree whose digest moved since registration is a different target
     - network_in_sandbox             # run_isolated has no network switch; --network none is fixed
+    - isolation_container            # a real target runs only under gVisor or a microVM; runc is refused
+                                     # (only the synthetic benchmark's named waiver, recorded in the run and the
+                                     # bundle; twin: vulnresearch.isolation_container critical when unwaived)
     - finding_without_pov            # a candidate whose PoV did not discriminate is dropped, never a finding
     - pov_exported                   # a sealed PoV input never appears in a view, an MCP result or a bundle
     - patch_without_proof            # a patch is proposed only when its PoV fails on the copy and the tests pass
@@ -2449,7 +2452,7 @@ vuln_research:
     - bundle_unpublished             # twin: vulnresearch.bundle.<target> unverified (never passed)
     - measurement_missing            # twin: vulnresearch.measurement unverified
     - labels_unreviewed              # twin: vulnresearch.labels_unreviewed (planted by construction)
-    - isolation_container            # twin: vulnresearch.isolation_container (not gVisor or a microVM)
+    - isolation_waived               # twin: vulnresearch.isolation_waived (the benchmark ran under its waiver)
     - authorisation_expired          # twin: vulnresearch.authorisation_expired
   note: >
     A dependency advisory has no PoV recipe: it is carried as UNPROVEN with its KEV flag (null when KEV was not

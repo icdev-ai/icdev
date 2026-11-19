@@ -68,7 +68,7 @@ def image_present(image: str) -> bool:
         return False
 
 
-def fuzz(target_id: str, root: Path, entry: dict, cfg: dict, *, src_root: str = ".",
+def fuzz(target_id: str, root: Path, entry: dict, cfg: dict, *, scoped: dict, src_root: str = ".",
          seeds: Optional[list] = None, source: str = "") -> dict:
     """Run one generated harness. ``{status, engine, crashed, crash_input, exception, iterations, coverage, image}``."""
     fz = cfg.get("fuzz") or {}
@@ -82,7 +82,7 @@ def fuzz(target_id: str, root: Path, entry: dict, cfg: dict, *, src_root: str = 
             "iterations": int(fz.get("iterations") or 2000), "seed": int(fz.get("seed") or 1),
             "max_input_len": int(fz.get("max_input_len") or 256),
             "engine": "auto" if image == fuzz_image else "builtin"}
-    run = pov.run_in_sandbox("fuzz_runner.py", spec, target_root=root, image=image,
+    run = pov.run_in_sandbox("fuzz_runner.py", spec, target_root=root, image=image, scoped=scoped,
                              extra_files={"harness_gen.py": text})
     res = run.get("result") or {}
     return {"status": run["status"], "engine": res.get("engine"), "crashed": bool(res.get("crashed")),
