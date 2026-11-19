@@ -288,8 +288,15 @@ def test_a_candidate_becomes_a_finding_only_with_a_discriminating_pov(vr):
     assert all(c["mounts"][0][1] == "/target" and c["mounts"][0][2] == "ro" for c in LocalDouble.calls)
     rows = discovery.runs(tid)
     assert rows[0]["run"]["run_id"] == out["run_id"] and "sealed" not in rows[0]["run"]
-    f, sealed = discovery.sealed_for(rows[0]["run"]["findings"][0]["finding_id"])
-    assert sealed["pov"]["input"] and sealed["control"]["input"]
+    # Every finding, not "the first": findings are ordered by id, and an id hashes the run's random target id, so
+    # which finding came first changed from run to run. The fuzz crash's control is its seed, which may be the
+    # empty input, so a control is a string, possibly empty; a proof of vulnerability never is.
+    for f in rows[0]["run"]["findings"]:
+        _, sealed = discovery.sealed_for(f["finding_id"])
+        assert sealed["pov"]["input"], f["finding_id"]
+        assert isinstance(sealed["control"]["input"], str)
+    crash = next(f for f in rows[0]["run"]["findings"] if f["cwe"] == "CWE-20")
+    assert discovery.sealed_for(crash["finding_id"])[1]["control"]["input"] == "", "the empty seed is the control"
 
 
 def test_a_pov_that_also_fires_on_its_control_or_cannot_run_is_dropped(vr, monkeypatch):
