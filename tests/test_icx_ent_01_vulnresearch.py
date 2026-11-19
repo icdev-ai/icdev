@@ -868,3 +868,31 @@ def test_a_target_names_its_icos_system_and_the_bundle_carries_it(vr):
     t2 = _bench()
     discovery.run(t2, REGISTRANT, use_model=False)
     assert bundle.build(t2)["target"]["system_id"] is None, "no system named is null, never guessed"
+
+
+def test_the_per_stream_hash_chain_is_one_shared_helper():
+    """tools/common/stream_chain.py orders each stream from GENESIS and names every row that does not verify; the
+    vulnerability ledger uses it (the CoE ledgers move onto it in the h1 pass)."""
+    import inspect
+
+    from tools.common import stream_chain
+    from tools.vulnresearch import ledger
+
+    g = "0" * 64
+
+    def rh(r):
+        return ledger.digest({k: r[k] for k in ("id", "s", "prev")})
+
+    a = {"id": "a", "s": "x", "prev": g}
+    a["h"] = rh(a)
+    b = {"id": "b", "s": "x", "prev": a["h"]}
+    b["h"] = rh(b)
+    fork = {"id": "c", "s": "x", "prev": a["h"]}
+    fork["h"] = rh(fork)
+    bad = dict(b, id="b2", h="f" * 64)
+    out = stream_chain.order_streams([b, a, fork, bad], key=lambda r: r["s"], row_hash=rh, stored=lambda r: r["h"],
+                                     prev=lambda r: r["prev"], ident=lambda r: r["id"])
+    assert [r["id"] for r in out["x"]][:1] == ["a"] and len(out["x"]) == 2
+    problems = {p["id"]: p["problem"] for p in out["_problems"]}
+    assert problems["b2"] == "row hash does not match its content" and len(out["_problems"]) == 2
+    assert "stream_chain.order_streams" in inspect.getsource(ledger.chain)

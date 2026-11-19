@@ -21,6 +21,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 
+from tools.common import stream_chain
 from tools.idp.dora import canonical, digest
 from tools.vulnresearch.constants import ACTOR_KINDS, EVENTS, GENESIS, TABLE
 
@@ -88,30 +89,21 @@ def read(conn=None, *, stream: Optional[str] = None, prefix: Optional[str] = Non
 
 
 def chain(rows: Iterable[dict]) -> dict[str, Any]:
-    """Each stream's rows in hash-chain order, plus ``_problems`` (a row that does not verify or is off its chain)."""
-    by: dict[str, list[dict]] = {}
-    for r in rows:
-        by.setdefault(str(r["stream"]), []).append(r)
-    out: dict[str, Any] = {"_problems": []}
-    for stream, items in sorted(by.items()):
-        nxt = {str(r["prev_hash"]): r for r in items}
-        ordered, prev = [], GENESIS
-        while prev in nxt:
-            r = nxt.pop(prev)
-            ordered.append(r)
-            prev = str(r["row_hash"])
-        for r in items:
-            if _row_hash(r) != r["row_hash"]:
-                out["_problems"].append({"event_id": r["event_id"], "stream": stream,
-                                         "problem": "row hash does not match its content"})
-            elif r["content_digest"] and r["event"] in ("run_recorded", "measured", "prepared", "patch_proposed"):
-                if content_digest_of(r["event"], payload(r).get("content")) != r["content_digest"]:
-                    out["_problems"].append({"event_id": r["event_id"], "stream": stream,
-                                             "problem": "the recorded content does not match its digest"})
-        for r in nxt.values():
-            out["_problems"].append({"event_id": r["event_id"], "stream": stream,
-                                     "problem": "not on the stream's hash chain"})
-        out[stream] = ordered
+    """Each stream's rows in hash-chain order, plus ``_problems`` (a row that does not verify or is off its chain).
+
+    The walk is the shared ``tools.common.stream_chain.order_streams``; this only says how a vr_events row reads.
+    """
+    def check(r: dict) -> Optional[str]:
+        if r["content_digest"] and r["event"] in ("run_recorded", "measured", "prepared", "patch_proposed"):
+            if content_digest_of(r["event"], payload(r).get("content")) != r["content_digest"]:
+                return "the recorded content does not match its digest"
+        return None
+
+    out = stream_chain.order_streams(rows, key=lambda r: r["stream"], row_hash=_row_hash,
+                                     stored=lambda r: r["row_hash"], prev=lambda r: r["prev_hash"],
+                                     ident=lambda r: r["event_id"], check=check, genesis=GENESIS)
+    out["_problems"] = [{"event_id": p["id"], "stream": p["stream"], "problem": p["problem"]}
+                        for p in out["_problems"]]
     return out
 
 
