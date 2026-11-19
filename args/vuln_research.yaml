@@ -67,6 +67,9 @@ sandbox:
 # also all that CI runs. It never applies to any other target.
 isolation:
   require: [gvisor, microvm]
+  # A patched copy of the benchmark still runs under its waiver only when it has the same in-scope files and
+  # changes no more than this many (the executor recomputes it).
+  max_patched_files: 5
   waivers:
     - id: vr-waiver-synthetic-benchmark
       applies_to: synthetic_benchmark
@@ -159,6 +162,12 @@ recipes:
 benchmark:
   path: context/vulnresearch/benchmark
   labels: context/vulnresearch/benchmark/labels.yaml
+  # The committed benchmark's tree digest (targets.tree over the in-scope files). The isolation waiver applies
+  # ONLY to a target whose registered AND current tree has exactly this digest: an edited benchmark is a real
+  # target and needs gVisor or a microVM. Recompute after a reviewed change to the benchmark with
+  #   python tools/vulnresearch/cli.py benchmark-digest --write
+  # (--check, and tests/test_icx_ent_01_vulnresearch.py, fail while the pin is stale).
+  tree_digest: "7c0a0fb8e3f09f5acd4ddd84df3091474ce8e845438a36fd32e65aeb9d698fac"
 
 publish:
   # A prepared findings bundle waiting this long for a person, or a target whose

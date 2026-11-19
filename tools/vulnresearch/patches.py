@@ -94,7 +94,8 @@ def run_tests(root: Path, test_dir: str, scoped: dict) -> dict:
                           image=cfg.get("image") or "python:3.12-slim", mounts=[(str(root), "/target", "ro")],
                           timeout_seconds=int(cfg.get("timeout_seconds") or 60),
                           max_memory_mb=int(cfg.get("memory_mb") or 512), pids_limit=int(cfg.get("pids_limit") or 128),
-                          requires_strong_isolation=True, waiver=gate["waiver"])
+                          requires_strong_isolation=True, waiver=gate["waiver"],
+                          waiver_tree_digest=(scoped.get("tree") or {}).get("digest") or "")
     tail = ((res.stderr or "") + (res.error or ""))[-400:]
     return {"status": res.status, "passed": res.status == "completed" and res.exit_code == 0,
             "exit_code": res.exit_code, "detail": tail}

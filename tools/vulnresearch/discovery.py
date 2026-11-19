@@ -158,6 +158,10 @@ def vet_requirements(text: str) -> tuple[list[str], str, str]:
         line = raw.split("#", 1)[0].strip() if not raw.strip().startswith("#") else ""
         if not line:
             continue
+        if re.search(r"\s-", line) or line.startswith("-"):
+            # An option anywhere -- also after an environment marker -- is pip's, never a requirement's.
+            refused = refused or f"line {n} carries a pip option ({line[:60]})"
+            continue
         if _PIN_RE.match(line):
             pins.append(line)
         elif _NAME_RE.match(line) and not re.search(r"(://|@|^\.|/|\\)", line):

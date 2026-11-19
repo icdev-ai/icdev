@@ -1537,6 +1537,12 @@ def handle_finding_replay(args: dict) -> dict:
 def handle_finding_enforce_reproduction(args: dict) -> dict:
     """Apply the reproduce-or-drop rule to a batch of findings (oss-poc-01)."""
     try:
+        if any(str(((f or {}).get("reproduction") or {}).get("kind") or "") == "sandbox_pov"
+               for f in (args.get("findings") or []) if isinstance(f, dict)):
+            # icx-ent-01: as for finding_replay and finding_verify_discrimination.
+            return {"error": "a sandbox_pov reproduction is not judged through this tool: tools/vulnresearch "
+                             "replays its own sealed PoVs on authorised targets only",
+                    "code": "sandbox_pov_refused", "refused": True}
         from tools.security.reproduction_validator import enforce
 
         report = enforce(

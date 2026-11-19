@@ -60,6 +60,9 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--target", required=True)
     e.add_argument("--published", action="store_true", required=True)
     e.add_argument("--out", required=True)
+    bd = sub.add_parser("benchmark-digest", help="the committed benchmark's tree digest vs its pin")
+    bd.add_argument("--check", action="store_true", help="exit 1 when the pin is stale")
+    bd.add_argument("--write", action="store_true", help="re-pin it (after a reviewed change to the benchmark)")
     v = sub.add_parser("verify")
     v.add_argument("dir")
     v.add_argument("--ledger", action="store_true")
@@ -69,6 +72,17 @@ def main(argv: list[str] | None = None) -> int:
         if a.cmd == "status":
             out = ({"target": targets.state(a.target), "runs": discovery.runs(a.target)[:1]} if a.target
                    else {"targets": targets.targets_view(), "measurement": benchmark.latest()})
+        elif a.cmd == "benchmark-digest":
+            cfg = targets.load_config()
+            root, pin = targets.benchmark_pin(cfg)
+            now = targets.tree(root, cfg)["digest"]
+            if a.write and now != pin:
+                p = targets.BASE_DIR / "args" / "vuln_research.yaml"
+                text = p.read_text(encoding="utf-8")
+                p.write_text(text.replace(f'tree_digest: "{pin}"', f'tree_digest: "{now}"'), encoding="utf-8")
+            out = {"path": str(root), "pinned": pin, "current": now, "current_matches_pin": now == pin}
+            print(json.dumps(out, indent=2))
+            return 1 if (a.check and now != pin) else 0
         elif a.cmd == "register":
             out = targets.register(actor, name=a.name, root=a.root, reason=a.reason, src_root=a.src_root,
                                    test_dir=a.test_dir, fuzz_targets=a.fuzz, system_id=a.system_id)

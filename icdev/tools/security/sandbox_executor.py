@@ -493,6 +493,7 @@ class SandboxExecutor:
         runner: Any = None,
         requires_strong_isolation: bool = False,
         waiver: Optional[Dict[str, Any]] = None,
+        waiver_tree_digest: str = "",
     ) -> SandboxResult:
         """Run ``argv`` in a fresh container with NO network (icx-ent-01).
 
@@ -523,11 +524,12 @@ class SandboxExecutor:
             if not Path(host).exists():
                 return SandboxResult(status="failed", error=f"refused mount: {host} does not exist")
         prof = isolated_profile(self._config)
-        if requires_strong_isolation and prof["isolation"] not in ("gvisor", "microvm") and not (
-                isinstance(waiver, dict) and waiver.get("id") and waiver.get("reason")):
-            return SandboxResult(status="refused", error=(
-                f"refused: this run needs gVisor or a microVM and the engine runs {prof['oci_runtime']} "
-                "(a plain container); set sandbox.isolated.oci_runtime once an operator has installed one"))
+        if requires_strong_isolation and prof["isolation"] not in ("gvisor", "microvm"):
+            why = _waiver_problem(waiver, waiver_tree_digest, mounts)
+            if why:
+                return SandboxResult(status="refused", error=(
+                    f"refused: this run needs gVisor or a microVM and the engine runs {prof['oci_runtime']} "
+                    f"(a plain container), and {why}"))
         engine = str(iso.get("engine") or "docker")
         if runner is None and not shutil.which(engine):
             return SandboxResult(status="unavailable", error=f"no container engine ({engine}) on this host")
@@ -790,6 +792,52 @@ class SandboxExecutor:
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+
+
+def _waiver_problem(waiver: Any, tree_digest: str, mounts: List[tuple]) -> str:
+    """Why ``waiver`` does NOT let a plain container run ('' when it does). Checked here, from the reviewed config,
+    never from what the caller says about it (icx-ent-01):
+
+    * its id is a waiver ``args/vuln_research.yaml`` holds, for the synthetic benchmark;
+    * ``tree_digest`` (the scope-locked target's) is the benchmark's PINNED tree digest, and the committed benchmark
+      recomputes to it;
+    * the ``/target`` mount is the benchmark itself (recomputing to the pin), or a patched copy of it: the same set
+      of in-scope files, no more than ``isolation.max_patched_files`` of them changed.
+    """
+    if not isinstance(waiver, dict) or not waiver.get("id"):
+        return "no waiver was given"
+    try:
+        from tools.vulnresearch import targets
+    except Exception:  # noqa: BLE001
+        return "the waiver register could not be read"
+    cfg = targets.load_config()
+    held = {w.get("id"): w for w in (cfg.get("isolation") or {}).get("waivers") or []}
+    w = held.get(waiver.get("id"))
+    if not w or w.get("applies_to") != "synthetic_benchmark":
+        return f"{waiver.get('id')!r} is not a waiver args/vuln_research.yaml holds"
+    root, pin = targets.benchmark_pin(cfg)
+    if not pin or tree_digest != pin:
+        return "the target's tree is not the pinned synthetic benchmark"
+    base = targets.tree(root, cfg)
+    if base["digest"] != pin:
+        return "the committed benchmark no longer has its pinned tree digest"
+    target = next((Path(h).resolve() for h, ctr, _m in mounts if ctr == "/target"), None)
+    if target is None:
+        return "no /target mount"
+    if target == root:
+        return ""
+    try:
+        got = targets.tree(target, cfg)
+    except Exception:  # noqa: BLE001
+        return "the mounted tree could not be read"
+    want = {f["path"]: f["sha256"] for f in base["files"]}
+    have = {f["path"]: f["sha256"] for f in got["files"]}
+    if set(want) != set(have):
+        return "the mounted tree is not a copy of the benchmark (its files differ)"
+    changed = sum(1 for k in want if want[k] != have[k])
+    if changed > int((cfg.get("isolation") or {}).get("max_patched_files") or 5):
+        return f"the mounted copy changes {changed} files, more than a patch may"
+    return ""
 
 
 #: The container flags of :meth:`SandboxExecutor.run_isolated` (icx-ent-01). Fixed:

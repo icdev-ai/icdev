@@ -171,7 +171,8 @@ def run_in_sandbox(script: str, spec: dict, *, target_root: Path, scoped: dict, 
                               timeout_seconds=int(cfg.get("timeout_seconds") or 60),
                               max_memory_mb=int(cfg.get("memory_mb") or 512),
                               pids_limit=int(cfg.get("pids_limit") or 128),
-                              requires_strong_isolation=True, waiver=gate["waiver"])
+                              requires_strong_isolation=True, waiver=gate["waiver"],
+                              waiver_tree_digest=(scoped.get("tree") or {}).get("digest") or "")
         if res.status == "refused":
             return {"status": "refused", "result": None, "stderr": "", "exit_code": -1, "refusal": res.error,
                     "profile": isolated_profile(), "waiver": None}

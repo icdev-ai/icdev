@@ -324,13 +324,26 @@ def assert_in_scope(tid: str, conn=None) -> dict:
     return {"target_id": tid, "root": root, "registration": reg, "tree": t, "state": st}
 
 
-def is_synthetic_benchmark(scoped: dict, cfg: Optional[dict] = None) -> bool:
-    """True only when the target IS ICDEV's committed synthetic benchmark (its configured path, in this repo)."""
+def benchmark_pin(cfg: Optional[dict] = None) -> tuple[Path, str]:
+    """``(the benchmark's root, its pinned tree digest)`` from the reviewed config."""
     cfg = cfg or load_config()
-    bench = (cfg.get("benchmark") or {}).get("path") or ""
-    if not bench:
+    b = cfg.get("benchmark") or {}
+    return (BASE_DIR / str(b.get("path") or "")).resolve(), str(b.get("tree_digest") or "")
+
+
+def is_synthetic_benchmark(scoped: dict, cfg: Optional[dict] = None) -> bool:
+    """True only when the target IS ICDEV's committed synthetic benchmark: its configured path, AND both the
+    registered and the current tree digest equal the digest pinned in args/vuln_research.yaml. Editing files under
+    the path makes it a different tree, so a real target, never the waiver's."""
+    cfg = cfg or load_config()
+    root, pin = benchmark_pin(cfg)
+    if not pin or not (cfg.get("benchmark") or {}).get("path"):
         return False
-    return Path(scoped["root"]).resolve() == (BASE_DIR / bench).resolve()
+    if Path(scoped["root"]).resolve() != root:
+        return False
+    registered = (scoped.get("registration") or {}).get("tree_digest")
+    current = (scoped.get("tree") or {}).get("digest")
+    return registered == pin and current == pin
 
 
 def in_scope_path(scoped: dict, rel: str) -> Path:

