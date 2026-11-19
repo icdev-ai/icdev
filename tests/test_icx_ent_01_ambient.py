@@ -40,7 +40,7 @@ def _rollback_close(conn):
 
 def test_discovery_and_a_bundle_on_the_platform_database(tmp_path, monkeypatch):
     from tools.db.storage import get_connection
-    from tools.security import dependency_auditor, sast_runner
+    from tools.security import sast_runner
     from tools.vulnresearch import bundle, discovery, harness, ledger, pov, targets
 
     monkeypatch.setenv("ICDEV_VR_DATA_DIR", str(tmp_path / "vr"))
@@ -48,7 +48,7 @@ def test_discovery_and_a_bundle_on_the_platform_database(tmp_path, monkeypatch):
     monkeypatch.setattr(pov, "EXECUTOR", lambda: LocalDouble())
     monkeypatch.setattr(harness, "image_present", lambda image: False)
     monkeypatch.setattr(sast_runner, "run_bandit", canned_bandit)
-    monkeypatch.setattr(dependency_auditor, "audit_python", canned_audit)
+    monkeypatch.setattr(discovery, "_pip_audit", canned_audit)
     run = uuid.uuid4().hex[:8]
     a = {"id": f"u-ent01-amb-{run}-registrant", "role": "reviewer"}
     b = {"id": f"u-ent01-amb-{run}-authoriser", "role": "isso"}

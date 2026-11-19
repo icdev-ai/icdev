@@ -91,24 +91,24 @@ def canned_bandit(project_path, **_):
         for rel, needle, tid in hits]}
 
 
-def canned_audit(project_path, **_):
-    return {"success": True, "raw_output": "", "findings": [
-        {"package": "jinja2", "version": "2.10", "vulnerability_id": "PYSEC-2019-217", "aliases": ["CVE-2019-10906"],
-         "fix_versions": ["2.10.1"]}]}
+def canned_audit(argv):
+    """SYNTHETIC pip-audit JSON for the benchmark's one pin, so the suite judges the same without network."""
+    return {"dependencies": [{"name": "jinja2", "version": "2.10", "vulns": [
+        {"id": "PYSEC-2019-217", "aliases": ["CVE-2019-10906"], "fix_versions": ["2.10.1"]}]}]}
 
 
 @pytest.fixture()
 def vr(wf_db, monkeypatch, tmp_path):
     """The conftest SQLite platform DB, the sandbox double, canned SAST/SCA, a private work dir, no model."""
-    from tools.security import dependency_auditor, sast_runner
-    from tools.vulnresearch import harness, pov
+    from tools.security import sast_runner
+    from tools.vulnresearch import discovery, harness, pov
 
     monkeypatch.setenv("ICDEV_VR_DATA_DIR", str(tmp_path / "vr"))
     monkeypatch.setenv("ICDEV_NO_LLM", "true")
     monkeypatch.setattr(pov, "EXECUTOR", lambda: LocalDouble())
     monkeypatch.setattr(harness, "image_present", lambda image: False)
     monkeypatch.setattr(sast_runner, "run_bandit", canned_bandit)
-    monkeypatch.setattr(dependency_auditor, "audit_python", canned_audit)
+    monkeypatch.setattr(discovery, "_pip_audit", canned_audit)
     LocalDouble.calls = []
     return wf_db
 
@@ -627,13 +627,13 @@ def test_the_real_sandbox_end_to_end(wf_db, monkeypatch, tmp_path):
     image is pulled on the host when missing): a planted command injection is proven, its patch makes the proof
     fail. Never skipped: a sandbox that cannot run here is a failure, not a pass."""
     assert shutil.which("docker"), "the isolated sandbox needs a container engine on this host"
-    from tools.security import dependency_auditor, sast_runner
+    from tools.security import sast_runner
     from tools.vulnresearch import discovery, patches
 
     monkeypatch.setenv("ICDEV_VR_DATA_DIR", str(tmp_path / "vr"))
     monkeypatch.setenv("ICDEV_NO_LLM", "true")
     monkeypatch.setattr(sast_runner, "run_bandit", canned_bandit)
-    monkeypatch.setattr(dependency_auditor, "audit_python", canned_audit)
+    monkeypatch.setattr(discovery, "_pip_audit", canned_audit)
     tid = _bench()
     run = discovery.run(tid, REGISTRANT, use_model=False)["run"]
     assert run["isolation"]["network"] == "none"
@@ -686,3 +686,32 @@ def test_the_mcp_replay_tools_refuse_a_sandbox_pov(vr):
     for out in (one, two):
         assert out.get("refused") is True and "sandbox_pov" in out["error"], out
     assert LocalDouble.calls == []
+
+
+def test_the_dependency_audit_never_runs_a_targets_build_code(vr, tmp_path, monkeypatch):
+    """pip-audit sees only pinned name==version lines, with --no-deps --disable-pip; anything else is refused."""
+    from tools.vulnresearch import discovery
+
+    seen = []
+    monkeypatch.setattr(discovery, "_pip_audit", lambda argv: seen.append(list(argv)) or {"dependencies": []})
+    for bad in ("-e .", "--index-url https://evil.example/simple\nrequests==2.0", "git+https://x/y.git#egg=y",
+                "./local_pkg", "-r other.txt", "pkg @ file:///tmp/x", "https://x/y.whl"):
+        (tmp_path / "requirements.txt").write_text(bad + "\n")
+        status, adv = discovery.sca({"root": tmp_path})
+        assert status["ran"] is False and status["refused"], (bad, status)
+        assert adv == [] and seen == [], "nothing is installed, built or fetched for a refused manifest"
+    (tmp_path / "requirements.txt").write_text("requests>=2.0\n")
+    status, _ = discovery.sca({"root": tmp_path})
+    assert status["ran"] is False and "unpinned" in status["note"], "an unpinned requirement is unverified"
+    assert seen == []
+    (tmp_path / "requirements.txt").write_text("# synthetic\njinja2==2.10\nmarkupsafe[x]==1.0 ; python_version > '3'\n")
+    status, _ = discovery.sca({"root": tmp_path})
+    assert status["ran"] is True and len(seen) == 1
+    argv = seen[0]
+    assert "--no-deps" in argv and "--disable-pip" in argv and "-r" in argv
+    req = Path(argv[argv.index("-r") + 1])
+    assert not str(req).startswith(str(tmp_path)), "pip-audit reads a vetted copy, never the target's file"
+    (tmp_path / "requirements.txt").unlink()
+    (tmp_path / "pyproject.toml").write_text("[build-system]\nrequires = ['setuptools']\n")
+    status, _ = discovery.sca({"root": tmp_path})
+    assert status["ran"] is False and "pyproject" in status["note"], "a build backend is never invoked"

@@ -27,6 +27,7 @@ import ast
 import json
 import os
 import re
+import sys
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -127,11 +128,82 @@ def _kev(ids: list[str]) -> tuple[Optional[set], str]:
         return None, f"KEV not read ({exc})"
 
 
+#: A requirement line ICDEV hands to pip-audit: an exact pin, with optional extras and an environment marker.
+#: Anything else -- an option (-e, -r, --index-url ...), a URL, a VCS ref, a local path, ``name @ ...`` -- could
+#: make pip fetch, build or run the target's code on the host, so the whole manifest is refused.
+_PIN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._ -]+\])?\s*==\s*[A-Za-z0-9.!+_-]+"
+                     r"(\s*;\s*[A-Za-z0-9_.<>=!'\" ()-]+)?$")
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._ -]+\])?\s*(>=|<=|~=|>|<|!=)")
+
+
+def vet_requirements(text: str) -> tuple[list[str], str, str]:
+    """``(pinned lines, refused why, unpinned why)``. Pure: nothing is installed or read but the text."""
+    pins, refused, unpinned = [], "", ""
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.split("#", 1)[0].strip() if not raw.strip().startswith("#") else ""
+        if not line:
+            continue
+        if _PIN_RE.match(line):
+            pins.append(line)
+        elif _NAME_RE.match(line) and not re.search(r"(://|@|^\.|/|\\)", line):
+            unpinned = unpinned or f"line {n} is unpinned ({line[:60]})"
+        else:
+            refused = refused or f"line {n} is not a plain pinned requirement ({line[:60]})"
+    return pins, refused, unpinned
+
+
+def _pip_audit(argv: list[str]) -> dict:
+    """pip-audit, with exactly the arguments given (``--no-deps --disable-pip -r <vetted copy>``)."""
+    import subprocess  # nosec B404 — fixed argv, never a shell
+
+    proc = subprocess.run([sys.executable, "-m", "pip_audit", *argv], capture_output=True, text=True,  # nosec B603
+                          timeout=300)
+    if proc.returncode not in (0, 1) or not proc.stdout.strip():
+        raise RuntimeError((proc.stderr or "pip-audit produced no output").strip()[:300])
+    return json.loads(proc.stdout)
+
+
 def sca(scoped: dict) -> tuple[dict, list[dict]]:
+    """Dependency audit WITHOUT running any of the target's code on the host.
+
+    Only ``requirements*.txt`` at the target root is read, and only when every line is an exact pin: a vetted copy
+    goes to pip-audit with ``--no-deps --disable-pip`` (it resolves nothing and installs nothing; it only asks the
+    advisory service about the named versions). An option, URL, VCS ref or path refuses the manifest; an unpinned
+    line leaves the audit unverified; a ``pyproject.toml`` alone is never built. Each advisory is UNPROVEN, flagged
+    against CISA KEV when that feed is read and fresh.
+    """
+    import tempfile
+
     from tools.security import dependency_auditor
 
-    res = dependency_auditor.audit_python(str(scoped["root"]))
-    findings = res.get("findings") or []
+    root = Path(scoped["root"])
+    status = {"tool": "pip-audit", "ran": False, "refused": False, "advisories": 0, "note": "", "kev_note": "",
+              "flags": ["--no-deps", "--disable-pip"]}
+    reqs = sorted(p for p in root.glob("requirements*.txt") if p.is_file())
+    if not reqs:
+        status["note"] = ("no requirements*.txt; a pyproject.toml is never built to resolve it (unverified)"
+                          if (root / "pyproject.toml").exists() else "no dependency manifest")
+        return status, []
+    pins: list[str] = []
+    for r in reqs:
+        got, refused, unpinned = vet_requirements(r.read_text(encoding="utf-8", errors="replace"))
+        if refused:
+            status.update(refused=True, note=f"{r.name}: {refused}: the manifest is refused, nothing is audited")
+            return status, []
+        if unpinned:
+            status["note"] = f"{r.name}: {unpinned}: unverified (only exact pins are audited)"
+            return status, []
+        pins += got
+    with tempfile.TemporaryDirectory(prefix="vr-sca-") as d:
+        vetted = Path(d) / "requirements.txt"
+        vetted.write_text("\n".join(pins) + "\n", encoding="utf-8")
+        try:
+            data = _pip_audit(["-r", str(vetted), "--no-deps", "--disable-pip", "-f", "json", "--progress-spinner",
+                               "off"])
+        except Exception as exc:  # noqa: BLE001 — not audited is unverified, never clean
+            status["note"] = f"pip-audit did not run: {exc}"[:300]
+            return status, []
+    findings = dependency_auditor._parse_pip_audit_json(json.dumps(data))
     ids = sorted({a for f in findings for a in [f.get("vulnerability_id"), *(f.get("aliases") or [])]
                   if str(a or "").startswith("CVE-")})
     kev, why = _kev(ids)
@@ -141,8 +213,8 @@ def sca(scoped: dict) -> tuple[dict, list[dict]]:
         adv.append({"package": f.get("package"), "version": f.get("version"), "id": f.get("vulnerability_id"),
                     "cves": cves, "fix_versions": f.get("fix_versions") or [],
                     "kev": None if kev is None else bool(set(cves) & kev), "status": "unproven"})
-    return {"tool": "pip-audit", "ran": bool(res.get("success")), "advisories": len(adv),
-            "note": str(res.get("raw_output") or "")[:300] if not findings else "", "kev_note": why}, adv
+    status.update(ran=True, advisories=len(adv), kev_note=why)
+    return status, adv
 
 
 def _no_model() -> bool:
