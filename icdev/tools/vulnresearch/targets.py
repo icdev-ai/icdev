@@ -23,6 +23,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import os
+import re
 import subprocess  # nosec B404 — git rev-parse, fixed arguments
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -183,12 +184,15 @@ def state(tid: str, conn=None) -> dict:
 
 def register(actor: Optional[dict], *, name: str, root: str, reason: str, src_root: str = ".",
              test_dir: str = "", fuzz_targets: Optional[list] = None, fuzz_seeds: Optional[dict] = None,
-             expires_on: str = "", conn=None) -> dict:
+             expires_on: str = "", system_id: str = "", conn=None) -> dict:
     """Record a target at its tree digest. Anyone signed in, or an agent; it decides nothing."""
     if not isinstance(actor, dict) or not actor.get("id"):
         raise TargetRefused(401, "no_actor", "registering a target needs a signed-in person or a named agent")
     if not _text(name) or not _text(reason):
         raise TargetRefused(400, "fields", "a target needs a name and a reason (why it may be tested)")
+    if _text(system_id) and not re.match(r"^[a-z0-9][a-z0-9._-]{0,63}$", _text(system_id)):
+        raise TargetRefused(400, "system_id", "system_id is the ICDEV[OS] registered system id "
+                                              "(lower-case letters, digits, . _ -), e.g. icos")
     cfg = load_config()
     try:
         p = resolve_root(root, cfg)
@@ -210,7 +214,10 @@ def register(actor: Optional[dict], *, name: str, root: str, reason: str, src_ro
                     "test_dir": _text(test_dir), "fuzz_targets": [str(x) for x in fuzz_targets or []],
                     "fuzz_seeds": {str(k): [str(s) for s in v] for k, v in (fuzz_seeds or {}).items()},
                     "tree_digest": t["digest"], "files": t["count"], "commit": git_commit(p),
-                    "expires_on": expires_on or None, "config_sha256": cfg["_sha256"]}
+                    "expires_on": expires_on or None, "config_sha256": cfg["_sha256"],
+                    # The ICDEV[OS] system under assessment this tree belongs to (osx-ent-01), when named: its
+                    # vulnerability register (osx-ent-07) keys findings by it. Never guessed.
+                    "system_id": _text(system_id) or None}
     own = conn is None
     conn = conn or ledger.connection()
     try:

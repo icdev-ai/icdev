@@ -852,3 +852,19 @@ def test_kev_is_unverified_unless_the_feed_is_populated_and_fresh(vr):
     conn.close()
     kev, why = discovery._kev(["CVE-2019-10906", "CVE-2021-44228"])
     assert kev == {"CVE-2021-44228"} and why == ""
+
+
+def test_a_target_names_its_icos_system_and_the_bundle_carries_it(vr):
+    from tools.vulnresearch import bundle, discovery, targets
+
+    with pytest.raises(targets.TargetRefused) as exc:
+        targets.register(REGISTRANT, name="x", root=BENCH, reason="x", system_id="Not A System!")
+    assert exc.value.code == "system_id"
+    tid = _bench(system_id="icos")
+    assert targets.state(tid)["registered"]["registration"]["system_id"] == "icos"
+    discovery.run(tid, REGISTRANT, use_model=False)
+    b = bundle.build(tid)
+    assert b["target"]["system_id"] == "icos" and bundle.validate(b) == []
+    t2 = _bench()
+    discovery.run(t2, REGISTRANT, use_model=False)
+    assert bundle.build(t2)["target"]["system_id"] is None, "no system named is null, never guessed"

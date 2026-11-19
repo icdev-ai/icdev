@@ -840,6 +840,18 @@
           "minLength": 1,
           "type": "string"
         },
+        "system_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The ICDEV[OS] registered system under assessment (osx-ent-01) this target belongs to, as named at registration; ICDEV[OS]'s vulnerability register keys findings by it. Null when none was named: never guessed."
+        },
         "target_id": {
           "pattern": "^vrt-[0-9a-f]{10}$",
           "type": "string"
@@ -854,6 +866,7 @@
         "commit",
         "files",
         "name",
+        "system_id",
         "target_id",
         "tree_digest"
       ],

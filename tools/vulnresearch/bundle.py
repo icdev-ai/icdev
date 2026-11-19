@@ -48,7 +48,7 @@ from tools.vulnresearch.constants import (
 )
 
 #: The DRAFT schemas, pinned: a changed file is refused, never silently used.
-SCHEMA_SHA256 = "e6e35bda9fe534d1addb9725422d06ccd20e9fc3185545e3906ec91d00e371b2"
+SCHEMA_SHA256 = "ef02a8ffa6cbeb8655cca734f4da36236cc83277e47b478ff60909b1d19302dc"
 PUBLICATION_SHA256 = "58db1ff2e08c49f7629173522617ddbadb9100e12f157698df1d3c288695ef44"
 
 BundleRefused = ledger.LedgerRefused
@@ -154,7 +154,8 @@ def build(target_id: str, *, at: Optional[str] = None, conn=None, check: bool = 
         "producer": {"system": PRODUCER_SYSTEM, "tool": PRODUCER_TOOL, "version": _version()},
         "produced_at": at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "classification": CLASSIFICATION,
-        "target": {"target_id": target_id, "name": reg["name"], "tree_digest": reg["tree_digest"],
+        "target": {"target_id": target_id, "name": reg["name"], "system_id": reg.get("system_id"),
+                   "tree_digest": reg["tree_digest"],
                    "commit": reg.get("commit"), "files": int(reg.get("files") or 0),
                    "authorisation": {"event_id": st["decision"]["event_id"], "step_id": st["decision"]["step_id"],
                                      "decided_by": st["decision"]["actor"], "registered_by": st["registered"]["actor"],

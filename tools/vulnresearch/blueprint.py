@@ -92,7 +92,7 @@ def vr_api_targets():
 def vr_api_target_register():
     """Register a target at its tree digest. Anyone signed in (a service key as an agent); it decides nothing.
 
-    Body: ``{name, root, reason, src_root, test_dir, fuzz_targets: [module:function], expires_on}``.
+    Body: ``{name, root, reason, src_root, test_dir, fuzz_targets: [module:function], expires_on, system_id}``.
     """
     from tools.vulnresearch import targets
 
@@ -102,7 +102,8 @@ def vr_api_target_register():
                                reason=str(d.get("reason") or ""), src_root=str(d.get("src_root") or "."),
                                test_dir=str(d.get("test_dir") or ""),
                                fuzz_targets=[str(x) for x in d.get("fuzz_targets") or [] if str(x).strip()],
-                               expires_on=str(d.get("expires_on") or ""))
+                               expires_on=str(d.get("expires_on") or ""),
+                               system_id=str(d.get("system_id") or ""))
     except targets.TargetRefused as exc:
         return _refused(exc)
     return jsonify(out), 201

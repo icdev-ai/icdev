@@ -70,6 +70,7 @@
       <div><label for="vr-src">Source root</label><input id="vr-src" value="." autocomplete="off"></div>
       <div><label for="vr-tests">Tests directory</label><input id="vr-tests" autocomplete="off"></div>
       <div><label for="vr-fuzz">Fuzz entry points (module:function, comma separated)</label><input id="vr-fuzz" autocomplete="off"></div>
+      <div><label for="vr-system">ICDEV[OS] system id (optional)</label><input id="vr-system" autocomplete="off"></div>
     </div>
     <label for="vr-why">Why it may be tested</label><input id="vr-why" autocomplete="off">
     <p><button type="button" class="vr-btn" id="vr-register-btn">Register target</button></p>
@@ -327,7 +328,8 @@
   document.getElementById('vr-register-btn').addEventListener('click', function () {
     var v = function (id) { return (document.getElementById(id).value || '').trim(); };
     var body = {name: v('vr-name'), root: v('vr-root'), reason: v('vr-why'), src_root: v('vr-src') || '.', test_dir: v('vr-tests'),
-                fuzz_targets: v('vr-fuzz').split(',').map(function (s) { return s.trim(); }).filter(Boolean)};
+                fuzz_targets: v('vr-fuzz').split(',').map(function (s) { return s.trim(); }).filter(Boolean),
+                system_id: v('vr-system')};
     getJson(icdevFetch('vulnresearch.vr_api_target_register', {}, postInit(body))).then(function (res) {
       if (say('vr-register-msg', res, function (j) { return 'Registered ' + j.target_id + ' at tree ' + j.registration.tree_digest.slice(0, 12) + '. A person who did not register it authorises it.'; })) {
         var b = document.createElement('button');

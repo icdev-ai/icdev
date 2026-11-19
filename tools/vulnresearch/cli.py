@@ -49,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--src-root", default=".")
     r.add_argument("--test-dir", default="")
     r.add_argument("--fuzz", nargs="*", default=[])
+    r.add_argument("--system-id", default="", help="the ICDEV[OS] registered system this tree belongs to")
     for name in ("run", "measure"):
         x = sub.add_parser(name)
         x.add_argument("--target", required=True)
@@ -70,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
                    else {"targets": targets.targets_view(), "measurement": benchmark.latest()})
         elif a.cmd == "register":
             out = targets.register(actor, name=a.name, root=a.root, reason=a.reason, src_root=a.src_root,
-                                   test_dir=a.test_dir, fuzz_targets=a.fuzz)
+                                   test_dir=a.test_dir, fuzz_targets=a.fuzz, system_id=a.system_id)
         elif a.cmd == "run":
             out = discovery.run(a.target, actor, use_model=not a.no_model)
         elif a.cmd == "measure":

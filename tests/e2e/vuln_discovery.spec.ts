@@ -86,6 +86,7 @@ test.describe('Vulnerability discovery: authorised target, PoV-proven finding, r
     await page.fill('#vr-src', s.benchmark.src_root);
     await page.fill('#vr-tests', s.benchmark.test_dir);
     await page.fill('#vr-fuzz', s.benchmark.fuzz);
+    await page.fill('#vr-system', 'icos');   // the ICDEV[OS] system id the bundle names
     await page.fill('#vr-why', 'ent01 e2e: the synthetic planted benchmark, owned by ICDEV (synthetic)');
     await sends(page, 'POST', /^\/vulnresearch\/api\/targets$/, () => page.click('#vr-register-btn'));
     await expect(page.locator('#vr-register-msg')).toContainText('Registered vrt-', { timeout: T });
@@ -180,6 +181,7 @@ test.describe('Vulnerability discovery: authorised target, PoV-proven finding, r
     expect(resp.ok()).toBeTruthy();
     const got = await resp.json();
     expect(got.bundle.schema).toBe('icos-findings/v1');
+    expect(got.bundle.target.system_id).toBe('icos');
     expect(got.bundle.content_digest).toBe(prepared);
     expect(got.publication.content_digest).toBe(prepared);
     expect(got.publication.signed_by).toBe(s.reviewer.id);
