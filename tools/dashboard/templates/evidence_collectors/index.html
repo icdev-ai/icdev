@@ -25,6 +25,9 @@
   .ec-wrap { --ec-link: #8cc4ff; }
   html[data-theme="light"] .ec-wrap { --ec-link: #0d4f9e; }
   .ec-wrap a, .ec-wrap .ec-link { color: var(--ec-link); text-decoration: underline; }
+  /* The shared IQE widget's badge is #5a9fd4 on #0f3460 (4.37:1); on this page it is at AA (axe, e2e). */
+  .ec-wrap .iqe-badge { color: #8cc4ff; }
+  html[data-theme="light"] .ec-wrap .iqe-badge { color: #0d4f9e; }
   .ec-link { background: none; border: none; padding: 0; cursor: pointer; font: inherit; }
 </style>
 
@@ -143,6 +146,10 @@
     <p class="ec-help" id="ec-chain">Hash chain {{ 'intact' if detail.chain.intact else 'BROKEN' }}; {{ detail.history | length }} event(s).</p>
   </section>
   {% endif %}
+
+  <section class="ec-card" id="ec-iqe" aria-label="Query published objectives">
+    {% include "includes/iqe_query_widget.html" %}
+  </section>
 
   <section class="ec-card" aria-labelledby="ec-mapping-h">
     <h2 id="ec-mapping-h">The reviewed mapping</h2>

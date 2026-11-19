@@ -15,10 +15,11 @@ Routes:
   POST /evidence-collectors/api/systems/<sid>/publish A person publishes or refuses it (declared step)
   GET  /evidence-collectors/api/systems/<sid>/bundle  The newest published report, its publication embedded
   GET  /evidence-collectors/api/twin                  The governance twin, observed now (?thread= resolves one)
+  POST /evidence-collectors/api/iqe-query             IQE query over the published objectives the reader may see
 """
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, jsonify, render_template, url_for
 from flask import request as flask_request
 
 from tools.logging.icdev_logger import get_logger
@@ -40,7 +41,7 @@ def _refused(exc):
 def ec_page():
     """The systems the reader may see, each one's collectors and newest report, publishing, and the twin."""
     from tools.evidence_collectors import service
-    from tools.evidence_collectors.constants import SCHEMA, SCHEMA_CONTRACT, TEMPLATE
+    from tools.evidence_collectors.constants import IQE_CANVAS, IQE_EXAMPLES, SCHEMA, SCHEMA_CONTRACT, TEMPLATE
 
     reader = service.current_reader()
     try:
@@ -57,7 +58,9 @@ def ec_page():
             detail = None
     return render_template("evidence_collectors/index.html", view=view, detail=detail, error=error,
                            template=TEMPLATE, schema=SCHEMA, contract=SCHEMA_CONTRACT,
-                           me=(reader or {}).get("id", ""))
+                           me=(reader or {}).get("id", ""), iqe_canvas=IQE_CANVAS,
+                           iqe_api_route=url_for("evidence_collectors.ec_api_iqe_query"),
+                           iqe_examples=list(IQE_EXAMPLES), iqe_title="Query published objectives (IQE)")
 
 
 @ec_bp.route("/api/systems")
@@ -156,3 +159,32 @@ def ec_api_twin():
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": f"the twin could not observe ({type(exc).__name__})"}), 503
     return jsonify(env)
+
+
+@ec_bp.route("/api/iqe-query", methods=["POST"])
+def ec_api_iqe_query():
+    """IQE natural-language query over evidence_collectors.objectives: the published objectives of the systems the
+    signed-in reader may see. Reads; observations, notes and credentials are no column."""
+    import tools.iqe.adapters.evidence_collectors  # noqa: F401  (registers the collection)
+    from tools.evidence_collectors.constants import IQE_COLLECTIONS
+    from tools.iqe.executor import execute_query
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import IQESyntaxError, parse
+
+    data = _body()
+    question = str(data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+    translation = nl_to_iqe(question, list(IQE_COLLECTIONS))
+    iqe_str = translation.get("iqe", "")
+    if not data.get("execute", True):
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": translation.get("explanation", "")})
+    try:
+        rows = execute_query(parse(iqe_str), None)
+    except IQESyntaxError as exc:
+        return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("evidence collectors IQE query error: %s", type(exc).__name__)
+        return jsonify({"error": f"the query could not run ({type(exc).__name__})", "iqe": iqe_str}), 500
+    return jsonify({"ok": True, "iqe": iqe_str, "explanation": translation.get("explanation", ""),
+                    "results": rows, "row_count": len(rows)})

@@ -642,6 +642,11 @@ def test_the_routes_and_the_page(ec):
     got = b.get("/evidence-collectors/api/systems/syn-dib-01/bundle").get_json()
     assert got["publication"]["signed_by"] == PUBLISHER["id"]
     assert o.get("/evidence-collectors/api/systems/syn-dib-01/bundle").status_code == 404
+    q = {"question": "Show all evidence_collectors objectives"}
+    mine = b.post("/evidence-collectors/api/iqe-query", json=q).get_json()
+    assert mine["ok"] and mine["row_count"] == len(got["entries"]) and "note" not in json.dumps(mine["results"])
+    theirs = o.post("/evidence-collectors/api/iqe-query", json=q).get_json()
+    assert theirs["ok"] and theirs["row_count"] == 0, "another org's IQE sees none of it"
 
 
 def test_the_twin_observes_with_threads_and_replays(ec):

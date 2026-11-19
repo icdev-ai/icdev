@@ -40,3 +40,11 @@ SECRET_SCHEMES = ("keyring:", "vault:")
 
 FACT_TRUE, FACT_FALSE = True, False
 RESULTS = ("satisfied", "other_than_satisfied")
+
+# IQE (the canvas completeness gate, point 8): tools/iqe/adapters/evidence_collectors.py registers the collection.
+IQE_CANVAS = "evidence_collectors"
+IQE_COLLECTIONS = ("evidence_collectors.objectives",)
+IQE_EXAMPLES = (
+    {"label": "Other than satisfied", "query": "Show objectives observed other than satisfied"},
+    {"label": "All published objectives", "query": "Show all evidence_collectors objectives"},
+)

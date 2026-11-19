@@ -3,8 +3,9 @@
 
 Importing this module registers one collection, computed from the ec_events ledger (no table of its own):
   evidence_collectors.objectives — one row per objective in each system's newest PUBLISHED objective-evidence report
-                                   that IQE's caller may see at the MCP marking (CUI): system, objective, result,
-                                   observed_at. Observations, credentials and notes are never columns.
+                                   that the caller may see: in a dashboard request the signed-in person (their org,
+                                   their clearance), otherwise an agent at the MCP marking (CUI): system, objective,
+                                   result, observed_at. Observations, credentials and notes are never columns.
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ def objectives_adapter(conn: Any = None) -> list[dict]:
     from tools.evidence_collectors import config, ledger, service
 
     cfg = config.load()
-    reader = service.mcp_reader("iqe")
+    reader = service.current_reader() or service.mcp_reader("iqe")
     ch = ledger.chain(ledger.read())
     rows = []
     for s in cfg.get("systems") or []:

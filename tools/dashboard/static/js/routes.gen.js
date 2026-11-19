@@ -1502,6 +1502,7 @@
     "evidence_api_v1.evidence_stats": [["/api/v1/evidence/stats",["GET"]]],
     "evidence_api_v1.trigger_collection": [["/api/v1/evidence/collect",["POST"]]],
     "evidence_collectors.ec_api_bundle": [["/evidence-collectors/api/systems/<sid>/bundle",["GET"]]],
+    "evidence_collectors.ec_api_iqe_query": [["/evidence-collectors/api/iqe-query",["POST"]]],
     "evidence_collectors.ec_api_prepare": [["/evidence-collectors/api/systems/<sid>/prepare",["POST"]]],
     "evidence_collectors.ec_api_publish": [["/evidence-collectors/api/systems/<sid>/publish",["POST"]]],
     "evidence_collectors.ec_api_system": [["/evidence-collectors/api/systems/<sid>",["GET"]]],
