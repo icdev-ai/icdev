@@ -5239,8 +5239,9 @@ def handle_coe_golden_path_propose(args: dict) -> dict:
 def handle_evidence_collectors_status(args: dict) -> dict:
     """MCP (icx-ent-02): the evidence collectors' systems, one system's newest report, or its published report.
 
-    Read-only, at the MCP results' marking: a system above it is counted, never described, and
-    a system id that is not visible reads exactly as one that does not exist. Credentials are
+    Read-only, at the MCP results' marking, and SYNTHETIC systems only: an agent is in no org and
+    names itself, so no customer's system is ever shown; the rest are counted, never described,
+    and a system id that is not visible reads exactly as one that does not exist. Credentials are
     references and never returned. Prepares and publishes nothing.
     """
     try:
@@ -5265,7 +5266,8 @@ def handle_evidence_collectors_status(args: dict) -> dict:
 
 
 def handle_evidence_collectors_prepare(args: dict) -> dict:
-    """MCP (icx-ent-02): an agent collects (read-only) and prepares a system's report as a DRAFT, as ``agent:<id>``.
+    """MCP (icx-ent-02): an agent collects (read-only) and prepares a SYNTHETIC system's report as a DRAFT, as
+    ``agent:<id>``; never a customer's system, and at most once per system per the configured interval.
 
     Preparing decides nothing and nothing leaves: a person of the system's org who did not
     prepare it publishes it to ICDEV[OS] or refuses it on /evidence-collectors/

@@ -29,8 +29,8 @@ from tools.evidence_collectors.constants import CONFIG_RELPATH, CONFIG_SCHEMA, M
 from tools.evidence_collectors.credentials import CredentialError, check_ref
 
 BASE_DIR = repo_root(__file__)
-SYSTEM_ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
-OBJECTIVE = re.compile(r"^(sp800-171r2/3\.\d{1,2}\.\d{1,2}(\[[a-z]\])?|sp800-53r5/[a-z]{2}-\d{1,2}(\.\d{1,2})?_obj\S*)$")
+SYSTEM_ID = re.compile(r"[a-z][a-z0-9_-]{0,63}")          # fullmatch, ASCII only
+OBJECTIVE = re.compile(r"sp800-171r2/3\.[0-9]{1,2}\.[0-9]{1,2}(\[[a-z]\])?|sp800-53r5/[a-z]{2}-[0-9]{1,2}(\.[0-9]{1,2})?_obj(\.[a-z0-9]{1,4}){0,4}")
 SECRETISH = ("token", "secret", "password", "passwd", "api_key", "apikey", "private_key", "credential")
 
 #: The fields each collector reads (required, optional). Anything else is refused.
@@ -40,6 +40,31 @@ FIELDS = {
     "intune": ({"tenant_id", "client_id", "credentials"}, {"graph_base", "login_base"}),
     "splunk": ({"base", "audit_indexes", "required_retention_days", "review_searches", "credentials"}, set()),
 }
+
+
+#: Each service's own hosts. An endpoint is one of them, or a loopback stub; never another host, so a configuration
+#: cannot point a credential at someone else. AWS Config: config(-fips).<region>.amazonaws.com for the system's own
+#: region (https://docs.aws.amazon.com/general/latest/gr/awsconfig.html). Microsoft Graph and identity platform: the
+#: commercial hosts, and the US Government (GCC High) and DoD ones.
+GRAPH_HOSTS = ("graph.microsoft.com", "graph.microsoft.us", "dod-graph.microsoft.us")
+LOGIN_HOSTS = ("login.microsoftonline.com", "login.microsoftonline.us")
+
+
+def _service_host(name: str, key: str, spec: dict) -> bool:
+    import urllib.parse
+
+    u = urllib.parse.urlsplit(str(spec.get(key) or ""))
+    host = (u.hostname or "").casefold()
+    if u.scheme == "http":           # check_base already allows plain http only to loopback
+        return True
+    if name == "aws-config" and key == "endpoint":
+        region = str(spec.get("region") or "").casefold()
+        return host in (f"config.{region}.amazonaws.com", f"config-fips.{region}.amazonaws.com")
+    if name == "intune" and key == "graph_base":
+        return host in GRAPH_HOSTS
+    if name == "intune" and key == "login_base":
+        return host in LOGIN_HOSTS
+    return True
 
 
 class ConfigError(ValueError):
@@ -63,7 +88,7 @@ def _secretish_outside(node: Any, path: str, errs: list[str]) -> None:
 def _check_system(s: dict, collectors: dict, errs: list[str]) -> None:
     sid = s.get("id")
     at = f"systems[{sid!r}]"
-    if not isinstance(sid, str) or not SYSTEM_ID.match(sid):
+    if not isinstance(sid, str) or not SYSTEM_ID.fullmatch(sid):
         errs.append(f"{at}: id must match {SYSTEM_ID.pattern} (ICDEV[OS]'s system id)")
     if not str(s.get("org") or "").strip():
         errs.append(f"{at}: org (the owning organisation) is required")
@@ -111,23 +136,24 @@ def _check_system(s: dict, collectors: dict, errs: list[str]) -> None:
                     transport.check_base(str(spec[key]))
                 except transport.CollectorError as exc:
                     errs.append(f"{where}.{key}: {exc}")
+        for key in ("endpoint", "graph_base", "login_base"):
+            if key in spec and not _service_host(name, key, spec):
+                errs.append(f"{where}.{key}: not {name}'s own service host (or a loopback stub)")
         if name == "aws-config":
             rules = spec.get("rules")
             if not isinstance(rules, dict) or not rules or set(rules) - set(MANAGED_RULES):
                 errs.append(f"{where}.rules: a mapping of managed-rule identifiers ({', '.join(MANAGED_RULES)}) "
                             "to the account's rule names")
-            if not re.match(r"^[a-z]{2}(-gov)?-[a-z]+-\d$", str(spec.get("region") or "")):
+            if not re.fullmatch(r"[a-z]{2}(-gov)?-[a-z]+-[0-9]", str(spec.get("region") or "")):
                 errs.append(f"{where}.region: not an AWS region code")
         if name == "splunk":
             if not isinstance(spec.get("audit_indexes"), list) or not spec.get("audit_indexes"):
                 errs.append(f"{where}.audit_indexes: a non-empty list of index names")
             if not isinstance(spec.get("review_searches"), list):
                 errs.append(f"{where}.review_searches: a list of saved-search names")
-            try:
-                if float(spec.get("required_retention_days")) <= 0:
-                    raise ValueError
-            except (TypeError, ValueError):
-                errs.append(f"{where}.required_retention_days: a positive number of days")
+            days = transport.finite(spec.get("required_retention_days"))
+            if days is None or days <= 0:
+                errs.append(f"{where}.required_retention_days: a positive, finite number of days")
 
 
 def validate(cfg: Any) -> dict:
@@ -149,10 +175,18 @@ def validate(cfg: Any) -> dict:
                 raise ValueError
         except (TypeError, ValueError):
             errs.append(f"collectors.{name}.max_age_h: a freshness budget in hours, above 0 and at most a year")
+    lim = cfg.get("limits") or {}
+    if not isinstance(lim, dict) or set(lim) - {"min_collect_interval_s", "run_seconds", "run_bytes"}:
+        errs.append("limits: only min_collect_interval_s, run_seconds and run_bytes")
+    else:
+        for k, v in lim.items():
+            f = transport.finite(v)
+            if f is None or f < 0:
+                errs.append(f"limits.{k}: a finite number, 0 or more")
     seen: set[str] = set()
     for i, m in enumerate(cfg.get("mapping") or []):
         obj = (m or {}).get("objective")
-        if not isinstance(obj, str) or not OBJECTIVE.match(obj):
+        if not isinstance(obj, str) or not OBJECTIVE.fullmatch(obj):
             errs.append(f"mapping[{i}]: {obj!r} is not an sp800-171r2 or sp800-53r5 objective id")
         elif obj in seen:
             errs.append(f"mapping[{i}]: {obj} is mapped twice")

@@ -12,7 +12,7 @@ A collector's configuration names where a credential lives, never the credential
 Anything else -- a literal, ``env:``, ``file:`` -- is refused when the configuration is loaded
 (:func:`check_ref`), so a secret never lands in ``args/`` or git. A resolved value is wrapped in :class:`Secret`,
 whose ``repr`` and ``str`` are redacted: it is never logged, recorded, returned by a route or written into a
-bundle. Errors name the reference, never a value.
+bundle. Errors name the scheme only, never the reference or a value.
 """
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ import re
 
 from tools.evidence_collectors.constants import SECRET_SCHEMES
 
-_KEYRING = re.compile(r"^keyring:([^/\s]{1,200})/([^\s]{1,200})$")
-_VAULT = re.compile(r"^vault:([^#\s]{1,500})#([^#\s]{1,200})$")
+_KEYRING = re.compile(r"keyring:([!-.0-~]{1,200})/([!-~]{1,200})")      # fullmatch; printable ASCII only
+_VAULT = re.compile(r"vault:([!-\"$-~]{1,500})#([!-\"$-~]{1,200})")
 
 
 class CredentialError(Exception):
@@ -41,7 +41,7 @@ class Secret:
         return self._v
 
     def __repr__(self) -> str:
-        return f"Secret({self.ref!r}, <redacted>)"
+        return f"Secret({self.ref.split(':', 1)[0]}, <redacted>)"
 
     __str__ = __repr__
 
@@ -52,7 +52,7 @@ def check_ref(ref) -> str:
     The error never quotes the value: a literal pasted into the configuration may be the secret itself.
     """
     s = str(ref or "").strip()
-    if _KEYRING.match(s) or _VAULT.match(s):
+    if _KEYRING.fullmatch(s) or _VAULT.fullmatch(s):
         return s
     raise CredentialError("a credential is configured only by reference: " + " or ".join(
         f"{p}..." for p in SECRET_SCHEMES) + " (the value given is not one; it is not repeated here)")
@@ -61,18 +61,19 @@ def check_ref(ref) -> str:
 def resolve(ref: str) -> Secret:
     """Read the credential a reference names. :class:`CredentialError` when it cannot be read."""
     s = check_ref(ref)
-    m = _KEYRING.match(s)
+    scheme = s.split(":", 1)[0]          # errors name the scheme, never the reference (it names the customer's entry)
+    m = _KEYRING.fullmatch(s)
     if m:
         try:
             import keyring
         except ModuleNotFoundError as exc:
-            raise CredentialError(f"{s}: the OS keyring library (keyring) is not installed") from exc
+            raise CredentialError(f"{scheme}: the OS keyring library (keyring) is not installed") from exc
         try:
             value = keyring.get_password(m.group(1), m.group(2))
         except Exception as exc:
-            raise CredentialError(f"{s}: the OS keyring could not be read ({type(exc).__name__})") from exc
+            raise CredentialError(f"{scheme}: the OS keyring could not be read ({type(exc).__name__})") from exc
         if not value:
-            raise CredentialError(f"{s}: no such entry in the OS keyring")
+            raise CredentialError(f"{scheme}: no such entry in the OS keyring")
         return Secret(value, s)
     from tools.databridge.resolvers.vault_resolver import SecretResolverError
     from tools.databridge.resolvers.vault_resolver import resolve as vault_resolve
@@ -80,4 +81,4 @@ def resolve(ref: str) -> Secret:
     try:
         return Secret(vault_resolve(s), s)
     except SecretResolverError as exc:
-        raise CredentialError(f"{s}: the vault could not be read ({type(exc).__name__})") from exc
+        raise CredentialError(f"{scheme}: the vault could not be read ({type(exc).__name__})") from exc

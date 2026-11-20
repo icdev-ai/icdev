@@ -16,9 +16,17 @@
 #              identity provider OFFERS, not what it enforces, so it maps to no objective.
 # systems      the customer systems collected from. id is the system's id in ICDEV[OS] (osx-ent-01's registry);
 #              org is its owning organisation (a dashboard user's tenant_id) and marking its marking: only a person
-#              of that org, cleared for that marking, sees it or publishes for it. Credentials are references
+#              of that org, cleared for that marking, sees it or publishes for it. An agent (MCP) is in no org and
+#              names itself, so it reads and prepares SYNTHETIC systems only, and never publishes. Each endpoint must be its service's own host (or a loopback stub). Credentials are references
 #              (keyring:<service>/<user> or vault:<path>#<field>) and nothing else: a literal is refused on load.
 schema: icdev-evidence-collectors/v1
+
+# Live collection is throttled per system (a refused attempt counts too): a person or an agent cannot hammer a
+# customer's sources. Each collector run has a wall-clock and byte allowance shared by all its requests.
+limits:
+  min_collect_interval_s: 300
+  run_seconds: 300
+  run_bytes: 67108864
 
 collectors:
   aws-config: {kind: cloud_config, max_age_h: 72}

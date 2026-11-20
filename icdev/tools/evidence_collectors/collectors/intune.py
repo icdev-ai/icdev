@@ -87,8 +87,10 @@ def collect(system: str, spec: dict, *, now: datetime, max_age_h: float,
     states = [str(d.get("complianceState") or "") for d in devices]
     counts = {"devices": len(devices), "not_reported_within_budget": stale,
               "unencrypted": sum(1 for d in devices if d.get("isEncrypted") is not True),
+              "encryption_unreported": sum(1 for d in devices if not isinstance(d.get("isEncrypted"), bool)),
               "noncompliant": states.count("noncompliant"),
               "compliance_unknown": sum(1 for s in states if s not in ("compliant", "noncompliant"))}
+    # complianceState is only counted against its documented values: no device's words travel further.
 
     def obs(fact, value, why, at):
         return observation(system=system, collector=NAME, kind=KIND, fact=fact, value=value, why=why, observed_at=at,
@@ -104,8 +106,14 @@ def collect(system: str, spec: dict, *, now: datetime, max_age_h: float,
         why = f"{stale} of {len(devices)} devices have not reported within {max_age_h:g}h: their state is unknown"
         return out + [obs("intune:all_encrypted", None, why, None), obs("intune:all_compliant", None, why, None)]
     at = rfc3339(oldest) if oldest else None
-    enc = counts["unencrypted"] == 0
-    out.append(obs("intune:all_encrypted", enc, f"{counts['unencrypted']} of {len(devices)} devices not encrypted", at))
+    unknown = sum(1 for d in devices if not isinstance(d.get("isEncrypted"), bool))
+    if counts["unencrypted"] - unknown:
+        enc = (False, f"{counts['unencrypted'] - unknown} of {len(devices)} devices not encrypted")
+    elif unknown:
+        enc = (None, f"{unknown} of {len(devices)} devices did not report isEncrypted")
+    else:
+        enc = (True, f"all {len(devices)} devices encrypted")
+    out.append(obs("intune:all_encrypted", *enc, at))
     if counts["noncompliant"]:
         comp = (False, f"{counts['noncompliant']} of {len(devices)} devices noncompliant")
     elif counts["compliance_unknown"]:

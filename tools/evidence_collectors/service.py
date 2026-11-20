@@ -21,12 +21,20 @@ it was prepared is refused). Only then is the report exported, its publication E
 **Who sees what.** A system is shown, prepared for, published or exported only for a reader whose tenant is the
 system's org and whose clearance is at or above its marking; anything else is "no such system" (never confirming it
 exists), and a list counts what it holds back without describing it. An agent reads through MCP at the MCP results'
-marking (CUI) and is in no org: it sees a system's state only at or below that marking and prepares only drafts.
+marking (CUI), is in no org and names itself (the MCP caller says who it is), so it sees and prepares SYNTHETIC
+systems only, never a customer's, and only drafts. Live collection is throttled per system (:func:`_throttle`).
+
+**The twin is per reader.** The console's twin route judges only the systems its reader may see and counts the rest
+(:func:`twin_evidence` with a reader); the platform observatory (no reader) is anonymous: it names no system, no
+objective and no person, only ordinals, counts and ledger threads, and the generic thread resolver returns no
+system, person or reason (:func:`thread_record` is the per-reader one).
 """
 from __future__ import annotations
 
 import contextlib
 import json
+import re
+import threading
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -87,12 +95,13 @@ def _cleared(reader: dict | None, marking: str) -> bool:
 
 
 def visible(system: dict, reader: dict | None) -> bool:
-    """Fail closed: a reader, cleared for the system's marking, and of its owning org (an agent, in no org, reads
-    only at or below the MCP marking and never publishes)."""
+    """Fail closed: a reader, cleared for the system's marking, and of its owning org. An agent is in no org and
+    its name is its caller's say-so, so it sees a SYNTHETIC system only (at or below the MCP marking), never a
+    customer's; it never publishes."""
     if not reader or not _cleared(reader, system["marking"]):
         return False
     if reader.get("org") is None and str(reader.get("id", "")).startswith("agent:"):
-        return True
+        return system.get("synthetic") is True
     return str(reader.get("org") or "").strip() == str(system["org"]).strip()
 
 
@@ -111,14 +120,19 @@ def collect(system: dict, cfg: dict, *, now: datetime | None = None,
             resolve: Callable[[str], Any] | None = None) -> list[dict]:
     """Run every collector the system declares. A collector that cannot read its source yields its facts as
     unverified, with why; it never raises past here."""
+    from tools.evidence_collectors import transport
+
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     resolve = resolve or resolve_ref
+    lim = cfg.get("limits") or {}
+    run_s, run_b = float(lim.get("run_seconds", 300)), int(lim.get("run_bytes", 64 * 1024 * 1024))
     out: list[dict] = []
     for name, spec in sorted((system.get("collectors") or {}).items()):
         mod = REGISTRY[name]
         budget = float(cfg["collectors"][name]["max_age_h"])
         try:
-            out += mod.collect(system["id"], spec, now=now, max_age_h=budget, resolve=resolve)
+            with transport.budget(seconds=run_s, max_bytes=run_b):      # one allowance per collector run
+                out += mod.collect(system["id"], spec, now=now, max_age_h=budget, resolve=resolve)
         except Exception as exc:  # noqa: BLE001 — a collector fault is an unverified source, said
             from tools.evidence_collectors.collectors.base import unread
 
@@ -165,6 +179,41 @@ def builders(state: dict) -> dict[str, str]:
     return {who: "prepared this report"} if who else {}
 
 
+_LAST_LIVE: dict[str, float] = {}
+_LIVE_LOCK = threading.Lock()
+
+
+def _throttle(sid: str, cfg: dict, made: datetime, conn=None) -> None:
+    """At most one LIVE collection per system per ``limits.min_collect_interval_s``, on the injected clock: a refused
+    or failed attempt counts (this process remembers it), and so does a live report already in the ledger (every
+    process sees it, by its ``produced_at``). A time ahead of now counts as now. A person or an agent cannot hammer a
+    customer's sources with credentialed reads."""
+    gap = float((cfg.get("limits") or {}).get("min_collect_interval_s", 300))
+    if gap <= 0:
+        return
+    now = made.timestamp()
+    own = conn is None
+    c = conn or ledger.connection()
+    try:
+        ordered, _ = ledger.stream_rows(_stream(sid), c)
+    finally:
+        if own:
+            c.close()
+    last = 0.0
+    for r in reversed(ordered):
+        p = ledger.payload(r)
+        if r["event"] == "prepared" and (p.get("detail") or {}).get("live") is True:
+            t = instant((p.get("content") or {}).get("produced_at"))
+            last = min(now, t.timestamp()) if t is not None else now     # unreadable: as if just now
+            break
+    with _LIVE_LOCK:
+        last = max(last, min(now, _LAST_LIVE.get(sid, 0.0)))
+        if now - last < gap:
+            raise Refused(429, "too_soon", f"this system's sources were read less than {gap:g}s ago: try again in "
+                                           f"{int(gap - (now - last)) + 1}s")
+        _LAST_LIVE[sid] = now
+
+
 def prepare(sid: str, actor: dict | None, reader: dict | None, *, note: str = "", conn=None,
             cfg: dict | None = None, observations: list[dict] | None = None, now: datetime | None = None,
             resolve: Callable[[str], Any] | None = None) -> dict:
@@ -177,7 +226,10 @@ def prepare(sid: str, actor: dict | None, reader: dict | None, *, note: str = ""
     cfg = cfg or cmod.load()
     s = _system(sid, reader, cfg)
     made = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
-    obs = observations if observations is not None else collect(s, cfg, now=made, resolve=resolve)
+    live = observations is None
+    if live:
+        _throttle(s["id"], cfg, made, conn)
+    obs = observations if not live else collect(s, cfg, now=made, resolve=resolve)
     try:
         report, judged = bmod.build(s, obs, cfg["mapping"], made=made, mapping_sha256=cfg.get("_sha256", ""))
     except bmod.BundleError as exc:
@@ -195,7 +247,7 @@ def prepare(sid: str, actor: dict | None, reader: dict | None, *, note: str = ""
                             detail={"observations": obs, "unverified": judged["unverified"], "facts": judged["facts"],
                                     "config_sha256": cfg.get("_sha256", ""),
                                     "system_digest": cmod.digest_of_system(cfg, s["id"]), "org": s["org"],
-                                    "observations_digest": bmod.observations_digest(obs)},
+                                    "observations_digest": bmod.observations_digest(obs), "live": live},
                             prev_hash=ledger.head(ordered))
     finally:
         if own:
@@ -238,21 +290,30 @@ def publish(sid: str, *, decision: str, reason: str, read_digest: str, actor: di
             raise Refused(409, "config_changed", "the system's endpoints, credential references or the mapping "
                                                  "changed since this report was prepared: prepare a new one")
         dec = str(decision or "").strip().lower()
+        why = str(reason or "").strip()
+        step = {"surface": SURFACE, "decision": dec, "reason": why, "actor": actor, "separated_from": builders(st)}
         try:
-            taken = declared.take_step(
-                TEMPLATE, surface=SURFACE, decision=dec, subject=f"objective_evidence:{s['id']}",
-                reason=str(reason or "").strip(), actor=actor, separated_from=builders(st),
-                payload={"system": s["id"], "org": s["org"], "content_digest": p["content_digest"],
-                         "prepared_event": p["event_id"], "system_digest": sdig})
+            # Checked first, then the LEDGER is written (it claims the chain head: a concurrent decision is refused
+            # here, before any step is recorded), then the step under the id the row already carries. A step that
+            # then fails to record leaves a row whose step is not decided: published_bundle exports nothing for it.
+            affirmative = declared.check_step(TEMPLATE, **step)
         except declared.StepRefused as exc:
             raise Refused(exc.status, exc.code, exc.message) from exc
-        event = "published" if taken["affirmative"] else "refused"
+        step_id = declared.new_step_id()
+        event = "published" if affirmative else "refused"
         row = ledger.append(conn, stream=_stream(s["id"]), event=event, system_id=s["id"],
-                            actor=taken["decided_by"], actor_kind="person", actor_role=str(actor.get("role") or ""),
-                            step_id=taken["step_id"], reason=str(reason or "").strip(),
-                            content_digest=p["content_digest"],
+                            actor=str(actor["id"]), actor_kind="person", actor_role=str(actor.get("role") or ""),
+                            step_id=step_id, reason=why, content_digest=p["content_digest"],
                             detail={"prepared_event": p["event_id"], "decision": dec, "org": s["org"],
                                     "system_digest": sdig}, prev_hash=ledger.head(ordered))
+        try:
+            taken = declared.take_step(
+                TEMPLATE, subject=f"objective_evidence:{s['id']}", step_id=step_id, **step,
+                payload={"system": s["id"], "org": s["org"], "content_digest": p["content_digest"],
+                         "prepared_event": p["event_id"], "system_digest": sdig, "ledger_event": row["event_id"]})
+        except declared.StepRefused as exc:
+            raise Refused(exc.status, exc.code, f"{exc.message} (the ledger row {row['event_id']} stands without "
+                                                "its step, so nothing is exported)") from exc
     finally:
         if own:
             conn.close()
@@ -261,6 +322,18 @@ def publish(sid: str, *, decision: str, reason: str, read_digest: str, actor: di
     if event == "published":
         out["bundle"] = published_bundle(s["id"], reader, cfg=cfg)
     return out
+
+
+def _step_taken(pub: dict) -> bool:
+    """The published row's declared step is recorded as decided, affirmatively, by the row's own person."""
+    from tools.workflow_hitl import declared
+
+    try:
+        st = declared.step_state(str(pub.get("step_id") or ""))
+    except Exception:  # noqa: BLE001 — unreadable: not shown as published
+        return False
+    return bool(st) and st["status"] in ("decided", "spent") and st["affirmative"] is True \
+        and st["decided_by"] == pub["actor"]
 
 
 def published_bundle(sid: str, reader: dict | None, *, conn=None, cfg: dict | None = None) -> dict | None:
@@ -276,7 +349,7 @@ def published_bundle(sid: str, reader: dict | None, *, conn=None, cfg: dict | No
         if own:
             conn.close()
     pub = st["published"]
-    if pub is None or problems:
+    if pub is None or problems or not _step_taken(pub):
         return None
     t = instant(pub["created_at"]) or datetime.now(timezone.utc)
     try:
@@ -375,42 +448,74 @@ def crosswalk_hint(objective: str) -> str | None:
 # ── twin ─────────────────────────────────────────────────────────────────────
 
 
-def twin_evidence(cfg: dict | None = None) -> dict:
-    """Each system's ledger state and its newest published report's facts. A system above the twin's marking (CUI)
-    is counted, never described."""
-    ev: dict[str, Any] = {"systems": None, "errors": {}, "held_back": 0}
+def twin_evidence(cfg: dict | None = None, reader: dict | None = None) -> dict:
+    """Each system's ledger state and its newest published report's facts.
+
+    With a ``reader`` (the console's twin route): only the systems that reader may see (:func:`visible`), the rest
+    counted in ``held_back``. Without one (the platform observatory, recorded and replayed): every system at or below
+    the twin's marking (CUI), ANONYMOUS -- an ordinal label for each system, a count of objectives other than
+    satisfied instead of their names, and no person: it names no system, objective or org to any observer. Either
+    way the actors are reduced to whether the publisher was the preparer.
+    """
+    ev: dict[str, Any] = {"systems": None, "errors": {}, "held_back": 0, "scope": "reader" if reader else "platform"}
     try:
         cfg = cfg or cmod.load()
         ch = ledger.chain(ledger.read())
     except Exception as exc:  # noqa: BLE001 — unreadable is unverified
-        ev["errors"]["ledger"] = f"{type(exc).__name__}: {exc}"[:300]
+        ev["errors"]["ledger"] = f"the ledger could not be read ({type(exc).__name__})"
         return ev
-    items = []
+    items, labels = [], {}
     twin = mcp_reader("governance-twin")
-    for s in cfg.get("systems") or []:
-        if not _cleared(twin, s["marking"]):
+    for s in sorted(cfg.get("systems") or [], key=lambda x: str(x.get("id"))):
+        if not (visible(s, reader) if reader else _cleared(twin, s["marking"])):
             ev["held_back"] += 1
             continue
+        label = s["id"] if reader else f"system-{len(items) + 1}"
+        labels[_stream(s["id"])] = label
         st = replay(ch.get(_stream(s["id"]), []))
         pub, prep = st["published"], st["prepared"]
         facts = None
         if pub is not None:
             rep = pub.get("report") or {}
+            other = sorted(e["objective"] for e in rep.get("entries") or [] if e.get("result") == "other_than_satisfied")
             facts = {"produced_at": rep.get("produced_at"),
-                     "other_than_satisfied": sorted(e["objective"] for e in rep.get("entries") or []
-                                                    if e.get("result") == "other_than_satisfied"),
+                     "other_than_satisfied": other if reader else len(other),
                      "unverified": len((pub.get("prepared_detail") or {}).get("unverified") or []),
                      "budget_h": min((float(c["max_age_h"]) for c in cfg["collectors"].values()), default=24)}
-        items.append({"system": s["id"],
-                      "prepared": prep and {k: prep[k] for k in ("event_id", "actor", "created_at", "content_digest")}
+        items.append({"system": label,
+                      "prepared": prep and {k: prep[k] for k in ("event_id", "created_at", "content_digest")}
                       | {"decided": bool(prep.get("decided"))},
-                      "published": pub and {k: pub[k] for k in ("event_id", "actor", "prepared_by", "created_at",
-                                                                "content_digest")},
+                      "published": pub and {k: pub[k] for k in ("event_id", "created_at", "content_digest")}
+                      | {"self_published": str(pub.get("actor") or "").casefold()
+                         == str(pub.get("prepared_by") or "").casefold()},
                       "facts": facts})
     ev["systems"] = items
-    visible_streams = {_stream(i["system"]) for i in items}
-    ev["problems"] = [p for p in ch["_problems"] if p["stream"] in visible_streams]
+    ev["problems"] = [{"event_id": p["event_id"], "system": labels[p["stream"]],
+                       "problem": "a row does not verify on the system's hash chain"}
+                      for p in ch["_problems"] if p["stream"] in labels]
     return ev
+
+
+def thread_record(event_id: str, reader: dict | None, cfg: dict | None = None) -> dict | None:
+    """One ``ec_events`` row as a thread, in full (who, why, which system), for a reader who may see its system;
+    None for a row that does not exist and one the reader may not see alike."""
+    cfg = cfg or cmod.load()
+    eid = str(event_id or "")
+    if not re.fullmatch(r"ece-[0-9a-f]{16}", eid):
+        return None
+    conn = ledger.connection()
+    try:
+        rows = conn.execute(f"SELECT {', '.join(ledger.COLS)} FROM {ledger.TABLE} WHERE event_id = %s",  # nosec B608
+                            (eid,)).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return None
+    r = dict(zip(ledger.COLS, tuple(rows[0])))
+    s = cmod.system(cfg, str(r["system_id"]))
+    if s is None or not visible(s, reader):
+        return None
+    return {k: r[k] for k in ledger.COLS if k != "payload_json"}
 
 
 def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], list[dict], dict]:
@@ -424,7 +529,7 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
     findings: list[dict] = []
     waiting = float((policy or {}).get("waiting_warn_days") or 7)
     for p in ev.get("problems") or []:
-        findings.append(finding("evidence_collectors.chain_broken", "critical", f"{p['stream']}: {p['problem']}",
+        findings.append(finding("evidence_collectors.chain_broken", "critical", f"{p['system']}: {p['problem']}",
                                 thread_id=f"evidence_collectors:{p['event_id']}",
                                 recommendation="The evidence history cannot be trusted; the ledger is append-only, so "
                                                "find who wrote the row and treat it as an incident."))
@@ -447,7 +552,7 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
             continue
         published += 1
         thread = f"evidence_collectors:{pub['event_id']}"
-        if str(pub.get("actor") or "").casefold() == str(pub.get("prepared_by") or "").casefold():
+        if pub.get("self_published"):
             findings.append(finding("evidence_collectors.self_published", "critical",
                                     f"{r['system']}: the report was published by the person who prepared it",
                                     thread_id=thread, recommendation="Treat it as unpublished; prepare and have "
@@ -458,9 +563,11 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
                                     f"{r['system']}: the newest published report is {age:.0f}h old, past the "
                                     "shortest collector budget: its observations count for nothing now",
                                     thread_id=thread, recommendation="Collect, prepare and publish a current report."))
-        for obj in facts.get("other_than_satisfied") or []:
+        other = facts.get("other_than_satisfied") or []
+        # A reader's twin names the objectives; the platform's (anonymous) counts them.
+        for obj in (other if isinstance(other, list) else [f"{other} objective(s)"]):
             findings.append(finding("evidence_collectors.other_than_satisfied", "high",
-                                    f"{r['system']}: {obj} was observed other than satisfied",
+                                    f"{r['system']}: {obj} observed other than satisfied",
                                     thread_id=thread, recommendation="Fix what the collector observed, or record "
                                                                      "a POA&M item in ICDEV[OS]."))
         if facts.get("unverified"):

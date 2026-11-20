@@ -42,11 +42,14 @@ OPTIONAL_CREDENTIALS: tuple = ()
 MAX_USERS = 100_000
 
 
-def _https(u) -> bool:
-    """https (or http to a loopback stub, the transport's one exception)."""
+def _https(u, *, issuer: str) -> bool:
+    """https. Plain http to loopback only when the configured issuer is itself a loopback stub: an endpoint a REMOTE
+    discovery document names is never taken over plain http."""
     import urllib.parse
 
     p = urllib.parse.urlsplit(str(u or ""))
+    if p.scheme == "http" and urllib.parse.urlsplit(issuer).scheme != "http":
+        return False
     try:
         transport.check_base(f"{p.scheme}://{p.netloc}")
     except transport.CollectorError:
@@ -74,20 +77,24 @@ def _oidc(system: str, spec: dict, now: datetime, max_age_h: float) -> list[dict
     ends = [doc.get(k) for k in ("authorization_endpoint", "token_endpoint", "jwks_uri")]
     if doc.get("issuer") != spec["issuer"]:
         valid = (False, "the document's issuer is not the configured issuer (OIDC Discovery 1.0 §4.3)")
-    elif not all(_https(e) for e in ends):
+    elif not all(_https(e, issuer=spec["issuer"]) for e in ends):
         valid = (False, "an authorization, token or JWKS endpoint is missing or not https")
     else:
         valid = (True, "issuer matches; authorization, token and JWKS endpoints are https")
     methods = doc.get("code_challenge_methods_supported")
+    # What a source sends is reduced to fixed words here: nothing it says reaches a report, the page or MCP verbatim.
     if not isinstance(methods, list):
         pkce = (None, "code_challenge_methods_supported is not advertised")
     else:
-        pkce = ("S256" in methods, f"code_challenge_methods_supported: {', '.join(map(str, methods))[:200]}")
+        s256 = "S256" in methods
+        pkce = (s256, "S256 is advertised" if s256 else "S256 is not advertised")
     algs = doc.get("id_token_signing_alg_values_supported")
     if not isinstance(algs, list) or not algs:
         signed = (None, "id_token_signing_alg_values_supported is missing (it is REQUIRED)")
     else:
-        signed = ("none" not in algs, f"id_token_signing_alg_values_supported: {', '.join(map(str, algs))[:200]}")
+        unsigned = any(str(a).strip().casefold() == "none" for a in algs)
+        signed = (not unsigned, "'none' is an ID-token signing algorithm" if unsigned
+                  else "every ID-token signing algorithm signs")
     return [obs("oidc:discovery_valid", *valid), obs("oidc:pkce_s256", *pkce), obs("oidc:signed_id_tokens", *signed)]
 
 
@@ -104,13 +111,24 @@ def _users(spec: dict, token) -> list[dict]:
             raise transport.CollectorError(f"{spec['scim_base']}/Users: not a SCIM ListResponse")
         got = [r for r in (doc.get("Resources") or []) if isinstance(r, dict)]
         users += got
-        total = int(doc.get("totalResults") or 0)
+        tot = transport.finite(doc.get("totalResults"))
+        if tot is None or tot < 0:
+            raise transport.CollectorError(f"{spec['scim_base']}/Users: totalResults is not a count")
+        total = int(tot)
         if total > MAX_USERS:
             raise transport.CollectorError(f"{spec['scim_base']}/Users: more than {MAX_USERS} users")
         if not got or len(users) >= total:
             return users
         start += len(got)
     raise transport.CollectorError(f"{spec['scim_base']}/Users: paging did not end")
+
+
+def _active(v) -> bool:
+    """SCIM's ``active`` (RFC 7643 §4.1.1), read as sent: False or "false" (any case) is inactive; True, "true" or
+    absent is active. Anything else counts as active, so it is judged rather than hidden."""
+    if v is False:
+        return False
+    return not (isinstance(v, str) and v.strip().casefold() == "false")
 
 
 def _scim(system: str, spec: dict, now: datetime, max_age_h: float, resolve) -> list[dict]:
@@ -123,7 +141,7 @@ def _scim(system: str, spec: dict, now: datetime, max_age_h: float, resolve) -> 
         return unread(system=system, collector=NAME, kind=KIND, facts=SCIM_FACTS, why=why, max_age_h=max_age_h,
                       source=src)
     at = rfc3339(now)
-    active = [u for u in users if u.get("active", True) is True]
+    active = [u for u in users if _active(u.get("active", True))]
     names = [str(u.get("userName") or "").strip().casefold() for u in active]
     unnamed = sum(1 for n in names if not n)
     dupes = len([n for n in names if n]) - len({n for n in names if n})

@@ -34,6 +34,8 @@ from pathlib import Path
 import pytest
 from flask import Flask, g
 
+from tools.evidence_collectors.credentials import resolve as REAL_RESOLVE  # before any fixture patches it
+
 ROOT = Path(__file__).resolve().parents[1]
 NOW = datetime(2026, 11, 19, 9, 0, 0, tzinfo=timezone.utc)
 ORG = "syn-dib"
@@ -191,6 +193,7 @@ def stub_config(base: str) -> dict:
              "collectors": copy.deepcopy(sys_["collectors"])}
     raw = {k: v for k, v in cfg.items() if not k.startswith("_")}
     raw["systems"] = [sys_, secret, other]
+    raw["limits"] = {**(raw.get("limits") or {}), "min_collect_interval_s": 0}   # the throttle has its own test
     out = config.validate(copy.deepcopy(raw))
     out["_sha256"], out["_path"] = "f" * 64, "args/evidence_collectors.yaml"
     return out
@@ -223,6 +226,7 @@ def ec(wf_db, stub, monkeypatch):
     from tools.evidence_collectors import service
 
     monkeypatch.setattr(service, "resolve_ref", fake_resolve)
+    monkeypatch.setattr(service, "_LAST_LIVE", {}, raising=False)
     return {"cfg": cfg, "stub": stub, "db": wf_db}
 
 
@@ -658,8 +662,11 @@ def test_the_twin_observes_with_threads_and_replays(ec):
     env = governance.observe(adapter, record=False)
     chk = {x["id"]: x for x in env["extra"]["checks"]}
     assert chk["evidence_collectors.ledger"]["status"] == "verified"
-    assert chk["evidence_collectors.syn-dib-01"]["status"] == "unverified", "nothing published is never a pass"
-    assert "evidence_collectors.syn-secret-01" not in chk, "above the twin's marking: counted, not described"
+    # The platform observation is anonymous: ordinals in id order (syn-dib-01, syn-other-01; syn-secret-01 is above
+    # the twin's marking: counted, not described).
+    assert chk["evidence_collectors.system-1"]["status"] == "unverified", "nothing published is never a pass"
+    assert set(chk) == {"evidence_collectors.ledger", "evidence_collectors.system-1", "evidence_collectors.system-2"}
+    assert env["extra"]["summary"]["evidence_held_back"] == 1 and "syn-" not in json.dumps(env)
     real = datetime.now(timezone.utc)          # the twin judges against the clock, so the sources speak in it
     st = ec["stub"].state
     st["aws"] = {k: (v[0], real - timedelta(hours=1)) for k, v in st["aws"].items()}
@@ -670,7 +677,7 @@ def test_the_twin_observes_with_threads_and_replays(ec):
     pub = _publish(ec, p)
     env2 = governance.observe(adapter)
     chk = {x["id"]: x for x in env2["extra"]["checks"]}
-    assert chk["evidence_collectors.syn-dib-01"]["status"] == "verified"
+    assert chk["evidence_collectors.system-1"]["status"] == "verified"
     f = [v for v in env2["violations"] if v["rule_id"] == "evidence_collectors.other_than_satisfied"]
     assert f and all(v["thread_id"] == f"evidence_collectors:{pub['event_id']}" for v in f)
     res = governance.resolve_thread(f[0]["thread_id"])
@@ -749,3 +756,302 @@ def test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request(wf_db):
     finally:
         storage.get_connection = real
 
+
+
+# ── the adversarial review's findings (each a fail-closed test) ──────────────
+
+
+def _publish_one(ec):
+    p = _prepare(ec, now=datetime.now(timezone.utc))
+    return p, _publish(ec, p)
+
+
+def _fresh_sources(ec):
+    real = datetime.now(timezone.utc)
+    st = ec["stub"].state
+    st["aws"] = {k: (v[0], real - timedelta(hours=1)) for k, v in st["aws"].items()}
+    st["aws"]["encrypted-volumes"] = ("NON_COMPLIANT", real - timedelta(hours=1))
+    for d in st["devices"]:
+        d["lastSyncDateTime"] = (real - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_the_twin_route_shows_a_reader_only_their_systems_and_the_platform_twin_names_none(ec):
+    """HIGH 1: /evidence-collectors/api/twin judged every org's systems for any person with the canvas grant."""
+    import tools.twin_core.adapters.evidence_collectors  # noqa: F401
+    from tools.twin_core import governance
+
+    _fresh_sources(ec)
+    _publish_one(ec)
+    o = _page_app(OUTSIDER).get("/evidence-collectors/api/twin").get_json()
+    text = json.dumps(o)
+    assert "syn-dib-01" not in text and "sp800-" not in text and "evidence_collectors:ece-" not in text
+    assert o["summary"]["evidence_held_back"] >= 1
+    mine = _page_app(PUBLISHER).get("/evidence-collectors/api/twin").get_json()
+    assert "evidence_collectors.syn-dib-01" in {c["id"] for c in mine["checks"]}
+    assert any(f["rule_id"] == "evidence_collectors.other_than_satisfied" and "sp800-" in f["title"]
+               for f in mine["findings"])
+    env = governance.observe(governance.adapter_for("evidence_collectors"), record=False)
+    plat = json.dumps({"c": env["extra"]["checks"], "v": env["violations"]})
+    assert "syn-dib-01" not in plat and "sp800-" not in plat, "the platform twin names no system and no objective"
+
+
+def test_an_agent_reads_and_prepares_only_synthetic_systems(ec):
+    """MED-HIGH 2: any agent:* reader saw, and could collect from, every org's systems at or below CUI. An agent is
+    in no org and names itself, so it sees and prepares synthetic systems only."""
+    from tools.evidence_collectors import service
+    from tools.mcp.gap_handlers import handle_evidence_collectors_prepare, handle_evidence_collectors_status
+
+    cfg = ec["cfg"]
+    real = service.mcp_reader("drafter")
+    assert "syn-dib-01" in {s["id"] for s in service.systems_view(real, cfg=cfg)["systems"]}
+    cfg["systems"][0]["synthetic"] = False                  # a customer's system
+    v = service.systems_view(real, cfg=cfg)
+    assert "syn-dib-01" not in {s["id"] for s in v["systems"]} and v["held_back"] == 2
+    with pytest.raises(service.Refused) as e:
+        service.prepare("syn-dib-01", {"id": "agent:drafter", "role": "service"}, real, cfg=cfg, now=NOW,
+                        resolve=fake_resolve)
+    assert (e.value.status, e.value.message) == (404, "no such system")
+    cfg["systems"][0]["synthetic"] = "yes"                  # only the boolean true is synthetic
+    assert "syn-dib-01" not in {s["id"] for s in service.systems_view(real, cfg=cfg)["systems"]}
+    cfg["systems"][2]["synthetic"] = False
+    for h in (handle_evidence_collectors_status, handle_evidence_collectors_prepare):
+        assert h({"agent_id": "other", "system": "syn-other-01"}) == {
+            "error": "no such system", "code": "not_found", "refused": True}
+    assert "syn-other-01" not in json.dumps(handle_evidence_collectors_status({"agent_id": "other"}))
+    from tools.evidence_collectors import config
+    raw = {k: v for k, v in cfg.items() if not k.startswith("_")}
+    raw["systems"][0]["agents"] = ["drafter"]
+    with pytest.raises(config.ConfigError):
+        config.validate(copy.deepcopy(raw)), "no per-agent grant: an agent's name is its caller's say-so"
+
+
+def test_iqe_with_no_signed_in_reader_reads_nothing(ec):
+    import tools.iqe.adapters.evidence_collectors as iqe
+
+    _fresh_sources(ec)
+    _publish_one(ec)
+    assert iqe.objectives_adapter() == [], "no reader: fail closed"
+
+
+def test_live_collection_is_throttled_per_system(ec):
+    from tools.evidence_collectors import service
+
+    ec["cfg"]["limits"] = {"min_collect_interval_s": 300}
+    _prepare(ec)
+    with pytest.raises(service.Refused) as e:
+        _prepare(ec, now=NOW + timedelta(seconds=10))
+    assert (e.value.status, e.value.code) == (429, "too_soon")
+    service._LAST_LIVE.clear()                     # another process: the ledger's live report still counts
+    with pytest.raises(service.Refused):
+        _prepare(ec, now=NOW + timedelta(seconds=10))
+    _prepare(ec, now=NOW + timedelta(seconds=301))
+    # A refused attempt counts too: a failing source is not hammered.
+    seen = len(ec["stub"].seen)
+    with pytest.raises(service.Refused):
+        _prepare(ec, now=NOW + timedelta(seconds=302))
+    assert len(ec["stub"].seen) == seen, "a throttled attempt sends nothing"
+    # Recorded observations (the e2e seed) are not a live read and are not throttled.
+    service.prepare("syn-dib-01", actor(PREPARER), reader(PREPARER), cfg=ec["cfg"], now=NOW + timedelta(seconds=303),
+                    observations=_collect(ec))
+
+
+def test_a_twin_thread_names_no_system_person_or_reason(ec):
+    """MED 3: the generic thread resolver returned system_id, actor and reason to any caller."""
+    from tools.twin_core import governance
+
+    _, pub = _publish_one(ec)
+    res = governance.resolve_thread(f"evidence_collectors:{pub['event_id']}")
+    assert res["resolved"]
+    assert not {"system_id", "stream", "actor", "reason"} & set(res["record"])
+    page = _page_app(PUBLISHER).get("/evidence-collectors/api/twin",
+                                    query_string={"thread": f"evidence_collectors:{pub['event_id']}"}).get_json()
+    assert page["record"]["actor"] == PUBLISHER["id"], "the page, for a reader who may see it, says who"
+
+
+def test_splunk_retention_never_passes_on_a_non_finite_number(ec):
+    from tools.evidence_collectors import config
+
+    for bad in ("nan", "NaN", "inf", "Infinity", "-inf"):
+        ec["stub"].state["indexes"]["audit"]["frozenTimePeriodInSecs"] = bad
+        by = {o["fact"]: o for o in _collect(ec)}
+        assert by["splunk:audit_retention_met"]["value"] is None, bad
+    raw = {k: v for k, v in ec["cfg"].items() if not k.startswith("_")}
+    raw["systems"][0]["collectors"]["splunk"]["required_retention_days"] = float("nan")
+    with pytest.raises(config.ConfigError):
+        config.validate(copy.deepcopy(raw))
+
+
+def test_source_strings_become_tokens_and_counts_must_be_integers(ec, monkeypatch):
+    """MED 5: what a source says is never echoed verbatim into a report, the page, MCP or the twin."""
+    from tools.evidence_collectors.collectors import aws_config
+
+    real = aws_config._all
+
+    def evil(spec, op, names, key, creds, now):
+        rows = real(spec, op, names, key, creds, now)
+        for r in rows:
+            if "Compliance" in r:
+                r["Compliance"] = {"ComplianceType": "<script>x</script>" * 50,
+                                   "ComplianceContributorCount": {"CappedCount": {"deep": "x" * 100}}}
+        return rows
+
+    monkeypatch.setattr(aws_config, "_all", evil)
+    ec["stub"].state["issuer_override"] = None
+    obs = _collect(ec)
+    text = json.dumps(obs)
+    assert "<script>" not in text
+    a = next(o for o in obs if o["fact"] == "aws-config:CLOUD_TRAIL_ENABLED")
+    assert a["value"] is None and a["detail"]["compliance_type"] == "other"
+    assert a["detail"]["noncompliant_resources"] is None
+    o = {x["fact"]: x for x in obs}
+    assert o["oidc:pkce_s256"]["why"] in ("S256 is advertised", "S256 is not advertised")
+
+
+def test_a_deep_non_finite_slow_or_oversized_response_is_an_unread_source(stub, monkeypatch):
+    """MED 6 and the probes: nothing a source sends escapes as a crash or runs past a deadline or a byte budget."""
+    import time
+
+    from tools.evidence_collectors import transport
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            return
+
+        def do_GET(self):
+            if self.path == "/slow":
+                self.send_response(200)
+                self.send_header("Content-Length", "10")
+                self.end_headers()
+                for _ in range(10):
+                    self.wfile.write(b" ")
+                    self.wfile.flush()
+                    time.sleep(0.4)
+                return
+            body = {"/deep": b"[" * 100000 + b"]" * 100000, "/nan": b'{"a": NaN}', "/inf": b'{"a": Infinity}',
+                    "/big": b'{"a": "' + b"x" * 5000 + b'"}'}[self.path]
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        for p in ("/deep", "/nan", "/inf"):
+            with pytest.raises(transport.CollectorError):
+                transport.request_json("GET", base + p)
+        monkeypatch.setattr(transport, "DEADLINE_S", 1.0)
+        t0 = time.monotonic()
+        with pytest.raises(transport.CollectorError, match="deadline"):
+            transport.request_json("GET", base + "/slow")
+        assert time.monotonic() - t0 < 3, "a slow drip is cut at the request's wall-clock deadline"
+        with transport.budget(seconds=30, max_bytes=1000), pytest.raises(transport.CollectorError, match="budget"):
+            transport.request_json("GET", base + "/big")
+        with transport.budget(seconds=0.0001, max_bytes=10**6):
+            time.sleep(0.01)
+            with pytest.raises(transport.CollectorError, match="deadline"):
+                transport.request_json("GET", base + "/nan")
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_the_review_s_lesser_findings_each_fail_closed(ec, monkeypatch):
+    from tools.evidence_collectors import config, credentials, transport
+    from tools.evidence_collectors.collectors.base import instant
+
+    # A proxy in the environment is never used: the bearer token would travel through it.
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    assert {o["fact"]: o for o in _collect(ec)}["scim:users_identified"]["value"] is True
+    # Endpoints are tied to their services (or a loopback stub).
+    raw = {k: v for k, v in ec["cfg"].items() if not k.startswith("_")}
+    for coll, key, bad in (("aws-config", "endpoint", "https://config.us-gov-west-1.evil.example"),
+                           ("aws-config", "endpoint", "https://config.us-east-1.amazonaws.com"),
+                           ("intune", "login_base", "https://login.evil.example"),
+                           ("intune", "graph_base", "https://graph.evil.example")):
+        r = copy.deepcopy(raw)
+        r["systems"][0]["collectors"][coll][key] = bad
+        with pytest.raises(config.ConfigError):
+            config.validate(r)
+    # Endpoints a REMOTE discovery document names must be https.
+    from tools.evidence_collectors.collectors import oidc_scim
+    assert oidc_scim._https("http://127.0.0.1:1/x", issuer="https://idp.example") is False
+    # isEncrypted missing or not a bool is unverified; SCIM's "active" as a string is read as such.
+    st = ec["stub"].state
+    st["devices"][0].pop("isEncrypted")
+    st["users"][0]["active"] = "false"
+    st["users"][1]["active"] = "TRUE"
+    st["users"][2]["groups"] = []
+    by = {o["fact"]: o for o in _collect(ec)}
+    assert by["intune:all_encrypted"]["value"] is None
+    assert by["scim:users_identified"]["detail"]["active"] == 4
+    # 'none' in any case is an unsigned ID token.
+    real_req = transport.request_json
+
+    def disco(method, url, **k):
+        doc = real_req(method, url, **k)
+        if url.endswith("openid-configuration"):
+            doc["id_token_signing_alg_values_supported"] = ["RS256", "NONE"]
+        return doc
+
+    monkeypatch.setattr(transport, "request_json", disco)
+    assert {o["fact"]: o for o in _collect(ec)}["oidc:signed_id_tokens"]["value"] is False
+    monkeypatch.setattr(transport, "request_json", real_req)
+    # A credential error repeats the scheme only, never the reference.
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "keyring", types.SimpleNamespace(get_password=lambda svc, user: None))
+    with pytest.raises(credentials.CredentialError) as e:
+        REAL_RESOLVE("keyring:secret-service-name/secret-user")
+    assert "secret-service-name" not in str(e.value) and "secret-user" not in str(e.value)
+    # RFC 3339 exactly: a colon in the offset, an hour of 0-23, no space, the seconds.
+    for bad in ("2026-11-19T00:00:00+0530", "2026-11-19T24:00:00Z", "2026-11-19T00:00:00 Z", "2026-11-19T00:00Z"):
+        assert instant(bad) is None, bad
+    assert instant("2026-11-19T00:00:00.1234567+05:30") is not None
+    # A next link's scheme is read without case; a port out of range is refused.
+    with pytest.raises(transport.CollectorError):
+        transport.url_for("https://graph.microsoft.com", "HTTPS://evil.example/x")
+    with pytest.raises(transport.CollectorError):
+        transport.check_base("http://localhost:99999")
+    # Identifiers are ASCII and matched whole: a Unicode digit or a trailing newline is refused.
+    for bad_id in ("syn-dib-\u0661", "syn-dib-01\n"):
+        r = copy.deepcopy(raw)
+        r["systems"][0]["id"] = bad_id
+        with pytest.raises(config.ConfigError):
+            config.validate(r)
+    with pytest.raises(credentials.CredentialError):
+        credentials.check_ref("keyring:svc/us\u00e9r")
+
+
+def test_a_decision_claims_the_ledger_before_its_step_and_a_lost_step_exports_nothing(ec, monkeypatch):
+    """LOW: the step was taken, then the ledger written; a concurrent decision left a decided step with no effect."""
+    from tools.evidence_collectors import ledger, service
+    from tools.workflow_hitl import declared
+
+    p = _prepare(ec)
+    before = len(declared.list_steps())
+    real_append = ledger.append
+
+    def lost_race(conn, **k):
+        if k["event"] in ("published", "refused"):
+            raise ledger.LedgerRefused(409, "concurrent", "this system's evidence changed while you were deciding")
+        return real_append(conn, **k)
+
+    monkeypatch.setattr(ledger, "append", lost_race)
+    with pytest.raises(service.Refused) as e:
+        _publish(ec, p)
+    assert e.value.code == "concurrent"
+    assert len(declared.list_steps()) == before, "no step is recorded for a decision the ledger refused"
+    monkeypatch.setattr(ledger, "append", real_append)
+
+    def unrecorded(*a, **k):
+        raise declared.StepRefused(503, "store_unavailable", "the decision could not be recorded")
+
+    monkeypatch.setattr(declared, "take_step", unrecorded)
+    with pytest.raises(service.Refused):
+        _publish(ec, p)
+    assert service.published_bundle("syn-dib-01", reader(PUBLISHER), cfg=ec["cfg"]) is None, \
+        "a published row whose step is not decided exports nothing"

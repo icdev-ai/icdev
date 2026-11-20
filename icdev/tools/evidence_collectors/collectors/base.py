@@ -15,6 +15,7 @@ An observation is one fact a collector read from one system's source, with:
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,28 +24,25 @@ def rfc3339(t: datetime) -> str:
     return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def instant(v: Any) -> datetime | None:
-    """An RFC 3339 date-time WITH its zone as an aware datetime; None for anything else (empty, junk, no zone).
+_RFC3339 = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|[+-][0-9]{2}:[0-9]{2})")
 
-    Times are parsed and compared as instants, never as strings.
+
+def instant(v: Any) -> datetime | None:
+    """An RFC 3339 date-time WITH its zone as an aware datetime; None for anything else.
+
+    Exactly ICDEV[OS]'s pattern (``T`` and ``Z`` upper case, seconds present, an offset with its colon), an hour of
+    0-23 (no ``24:00``), and fractions of any length truncated to microseconds (Graph sends seven digits). Times are
+    parsed and compared as instants, never as strings.
     """
-    s = str(v or "").strip()
-    if len(s) < 20 or s[10] not in "Tt":
+    m = _RFC3339.fullmatch(v.strip()) if isinstance(v, str) else None
+    if m is None or int(m.group(2)) > 23:
         return None
+    day, hh, mm, ss, frac, zone = m.groups()
+    text = f"{day}T{hh}:{mm}:{ss}" + (f".{frac[:6]}" if frac else "") + ("+00:00" if zone == "Z" else zone)
     try:
-        t = datetime.fromisoformat(s[:-1] + "+00:00" if s[-1] in "Zz" else s)
+        return datetime.fromisoformat(text)
     except ValueError:
-        # Graph and others send 7 fractional digits; Python takes 6.
-        try:
-            head, _, frac = s.partition(".")
-            if not frac:
-                return None
-            digits = "".join(ch for ch in frac if ch.isdigit())
-            zone = frac[len(digits):]
-            t = datetime.fromisoformat(f"{head}.{digits[:6]}" + ("+00:00" if zone in ("Z", "z") else zone))
-        except ValueError:
-            return None
-    return t if t.tzinfo is not None else None
+        return None
 
 
 def observation(*, system: str, collector: str, kind: str, fact: str, value: bool | None, why: str,

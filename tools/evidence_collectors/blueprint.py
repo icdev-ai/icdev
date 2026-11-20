@@ -14,7 +14,7 @@ Routes:
   POST /evidence-collectors/api/systems/<sid>/prepare Collect (read-only) and record the report (decides nothing)
   POST /evidence-collectors/api/systems/<sid>/publish A person publishes or refuses it (declared step)
   GET  /evidence-collectors/api/systems/<sid>/bundle  The newest published report, its publication embedded
-  GET  /evidence-collectors/api/twin                  The governance twin, observed now (?thread= resolves one)
+  GET  /evidence-collectors/api/twin                  The twin as this reader may see it (?thread= resolves one)
   POST /evidence-collectors/api/iqe-query             IQE query over the published objectives the reader may see
 """
 from __future__ import annotations
@@ -137,28 +137,28 @@ def ec_api_bundle(sid: str):
 
 @ec_bp.route("/api/twin")
 def ec_api_twin():
-    """The governance twin over the collectors, observed now; ``?thread=evidence_collectors:<event>`` resolves one."""
+    """The governance twin over the collectors as the signed-in reader may see it, judged now and never recorded:
+    only that reader's systems, the rest counted (``summary.evidence_held_back``). ``?thread=evidence_collectors:
+    <event>`` resolves one ledger row, in full, for a reader who may see its system."""
     import tools.twin_core.adapters.evidence_collectors  # noqa: F401 — registers the adapter
+    from tools.evidence_collectors import service
     from tools.twin_core import governance
 
+    reader = service.current_reader()
     thread = flask_request.args.get("thread") or ""
     if thread:
-        if not thread.startswith("evidence_collectors:"):
-            return jsonify({"error": "not an evidence_collectors thread", "code": "thread"}), 400
-        from tools.evidence_collectors import config as cmod
-        from tools.evidence_collectors import service
-
-        res = governance.resolve_thread(thread)
-        s = cmod.system(cmod.load(), str((res.get("record") or {}).get("system_id") or ""))
-        if not res.get("resolved") or s is None or not service.visible(s, service.current_reader()):
-            # One answer for a thread that does not exist and one about a system the reader may not see.
+        kind, _, ref = thread.partition(":")
+        rec = service.thread_record(ref, reader) if kind == "evidence_collectors" else None
+        if rec is None:
+            # One answer for a thread that does not exist, one of another kind and one the reader may not see.
             return jsonify({"thread_id": thread, "resolved": False, "reason": "no such thread"}), 404
-        return jsonify(res)
+        return jsonify({"thread_id": thread, "kind": kind, "resolved": True, "record": rec, "source": "ec_events"})
+    if reader is None:
+        return jsonify({"error": "sign in to see the twin", "code": "no_reader"}), 401
     try:
-        env = governance.observe(governance.adapter_for("evidence_collectors"), record=False)
+        return jsonify(governance.adapter_for("evidence_collectors").judge_for(reader))
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": f"the twin could not observe ({type(exc).__name__})"}), 503
-    return jsonify(env)
 
 
 @ec_bp.route("/api/iqe-query", methods=["POST"])

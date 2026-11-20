@@ -61,7 +61,11 @@ def collect(system: str, spec: dict, *, now: datetime, max_age_h: float,
         why = f"credential: {exc}" if isinstance(exc, CredentialError) else str(exc)
         return unread(system=system, collector=NAME, kind=KIND, facts=FACTS, why=why, max_age_h=max_age_h, source=src)
     at = rfc3339(now)
-    need_s = float(spec["required_retention_days"]) * 86400
+    need_d = transport.finite(spec["required_retention_days"])
+    if need_d is None or need_d <= 0:
+        return unread(system=system, collector=NAME, kind=KIND, facts=FACTS, max_age_h=max_age_h, source=src,
+                      why="required_retention_days is not a positive, finite number of days")
+    need_s = need_d * 86400
 
     idx = []
     for name in spec["audit_indexes"]:
@@ -69,10 +73,9 @@ def collect(system: str, spec: dict, *, now: datetime, max_age_h: float,
         if c is None:
             idx.append((None, f"index {name} is not there"))
             continue
-        try:
-            keep = float(c.get("frozenTimePeriodInSecs"))
-        except (TypeError, ValueError):
-            idx.append((None, f"index {name}: frozenTimePeriodInSecs is not a number"))
+        keep = transport.finite(c.get("frozenTimePeriodInSecs"))
+        if keep is None or keep < 0:
+            idx.append((None, f"index {name}: frozenTimePeriodInSecs is not a finite number of seconds"))
             continue
         off = _flag(c.get("disabled"))
         if off is None:

@@ -670,10 +670,11 @@ _THREAD_TABLES = {
                  "reason", "entry_digest", "row_hash", "created_at")),
     # icx-coe-03: one event in a repo's conformance bundles (prepared, published, refused).
     # icx-ent-02: one event of a customer system's objective-evidence reports (prepared, published,
-    # refused), on the system's hash chain. The observations stay in payload_json, never in a thread.
+    # refused), on the system's hash chain. The observations stay in payload_json, never in a thread, and this
+    # generic resolver (any observer, MCP twin_governance) names no system, person, reason or step: the console's
+    # /evidence-collectors/api/twin?thread= resolves the whole row for a reader who may see its system.
     "evidence_collectors": ("core", "ec_events", "event_id",
-                            ("event_id", "stream", "event", "system_id", "actor", "actor_kind", "actor_role",
-                             "step_id", "reason", "content_digest", "row_hash", "created_at")),
+                            ("event_id", "event", "actor_kind", "content_digest", "row_hash", "created_at")),
     "coe_conformance": ("core", "coe_conformance_events", "event_id",
                         ("event_id", "repo", "event", "actor", "actor_kind", "actor_role", "step_id",
                          "reason", "content_digest", "row_hash", "created_at")),

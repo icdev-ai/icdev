@@ -50,6 +50,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -386,20 +387,41 @@ def _record_decision(tmpl: dict, *, step_id: str, surface: str, subject: str, ac
             "affirmative": affirmative, "decided_by": actor["id"], "status": "decided"}
 
 
+_STEP_ID = re.compile(r"step-[0-9a-f]{16}")
+
+
+def new_step_id() -> str:
+    """A fresh step id, for a caller that records its effect BEFORE it takes the step (see ``take_step``)."""
+    return f"step-{uuid.uuid4().hex[:16]}"
+
+
+def check_step(template_id: str, *, surface: str, decision: str, reason: str = "",
+               actor: dict | None = None, separated_from: dict | None = None) -> bool:
+    """Every check ``take_step`` makes, recording nothing: whether the decision affirms.
+    Raises StepRefused exactly as ``take_step`` would."""
+    actor = actor if actor is not None else current_actor()
+    return _check(_template(template_id), surface, actor, decision, reason,
+                  separated_from=separated_from)[1]
+
+
 def take_step(template_id: str, *, surface: str, decision: str, subject: str = "",
               reason: str = "", actor: dict | None = None, payload: Any = None,
-              separated_from: dict | None = None) -> dict:
+              separated_from: dict | None = None, step_id: str | None = None) -> dict:
     """A person takes the manual step in the request itself. Raises StepRefused.
 
     ``separated_from`` ``{person id: why}``: for a template whose step is
-    ``separate_from: builders``, who built or approved the subject.
+    ``separate_from: builders``, who built or approved the subject. ``step_id``
+    (from ``new_step_id``) lets a caller write its own append-only record first,
+    naming the step; ``UNIQUE(step_id, event)`` still decides it once.
     """
     tmpl = _template(template_id)
     actor = actor if actor is not None else current_actor()
     _, affirmative = _check(tmpl, surface, actor, decision, reason,
                             separated_from=separated_from)
+    if step_id is not None and not _STEP_ID.fullmatch(str(step_id)):
+        raise StepRefused(500, "step_id", "a step id comes from new_step_id")
     try:
-        return _record_decision(tmpl, step_id=f"step-{uuid.uuid4().hex[:16]}",
+        return _record_decision(tmpl, step_id=step_id or new_step_id(),
                                 surface=surface, subject=subject, actor=actor,
                                 decision=decision, affirmative=affirmative,
                                 reason=reason, payload=payload)

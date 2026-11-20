@@ -41,6 +41,8 @@ MANAGED_RULES = {
     "ROOT_ACCOUNT_MFA_ENABLED": "the root user has MFA enabled",
 }
 FACTS = tuple(f"{NAME}:{k}" for k in MANAGED_RULES)
+#: ComplianceType's documented values; anything else a source sends is recorded as "other", never echoed.
+COMPLIANCE_TYPES = ("COMPLIANT", "NON_COMPLIANT", "NOT_APPLICABLE", "INSUFFICIENT_DATA")
 CREDENTIALS = ("access_key_id", "secret_access_key")
 OPTIONAL_CREDENTIALS = ("session_token",)
 _BATCH = 25     # ConfigRuleNames takes at most 25 names
@@ -102,11 +104,12 @@ def collect(system: str, spec: dict, *, now: datetime, max_age_h: float,
     for ident, rule in sorted(rules.items()):
         fact = f"{NAME}:{ident}"
         c, s = comp.get(rule), status.get(rule) or {}
-        kind = ((c or {}).get("Compliance") or {}).get("ComplianceType")
-        last = s.get("LastSuccessfulEvaluationTime")
+        raw_kind = ((c or {}).get("Compliance") or {}).get("ComplianceType")
+        kind = raw_kind if raw_kind in COMPLIANCE_TYPES else ("other" if raw_kind is not None else None)
+        last = transport.finite(s.get("LastSuccessfulEvaluationTime"))
         at = None
-        if isinstance(last, (int, float)) and not isinstance(last, bool):
-            at = rfc3339(datetime.fromtimestamp(float(last), timezone.utc))
+        if last is not None and 0 < last < 32503680000:          # a real epoch time, before the year 3000
+            at = rfc3339(datetime.fromtimestamp(last, timezone.utc))
         value, why = None, ""
         if c is None:
             why = f"rule {rule} is not in the account (not deployed)"
@@ -118,9 +121,10 @@ def collect(system: str, spec: dict, *, now: datetime, max_age_h: float,
             value, why = False, f"rule {rule}: NON_COMPLIANT"
         else:
             why = f"rule {rule}: {kind or 'no result'}"
-        cnt = ((c or {}).get("Compliance") or {}).get("ComplianceContributorCount") or {}
+        cnt = ((c or {}).get("Compliance") or {}).get("ComplianceContributorCount")
+        capped = cnt.get("CappedCount") if isinstance(cnt, dict) else None
+        capped = capped if isinstance(capped, int) and not isinstance(capped, bool) and capped >= 0 else None
         out.append(observation(system=system, collector=NAME, kind=KIND, fact=fact, value=value, why=why,
                                observed_at=at, max_age_h=max_age_h, source=f"{src} {rule}",
-                               detail={"rule": rule, "compliance_type": kind,
-                                       "noncompliant_resources": cnt.get("CappedCount")}))
+                               detail={"rule": rule, "compliance_type": kind, "noncompliant_resources": capped}))
     return out

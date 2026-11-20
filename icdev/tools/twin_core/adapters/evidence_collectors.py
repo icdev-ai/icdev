@@ -9,7 +9,9 @@ A system with no published objective-evidence report is an UNVERIFIED check, nev
 the ``ec_events`` row they rest on (``evidence_collectors:<event id>``): ``other_than_satisfied`` (high: an objective
 a collector observed other than satisfied), ``stale`` (the newest published report is past the shortest collector
 budget: its observations count for nothing), ``unverified_objectives``, ``awaiting_publish``, ``self_published`` and
-``chain_broken``. A system above the twin's marking (CUI) is counted, never described.
+``chain_broken``. A system above the twin's marking (CUI) is counted, never described. The recorded platform
+observation is anonymous (ordinals and counts, no system, objective or person); the console's twin route judges per
+reader (``judge_for``) and is never recorded.
 """
 from __future__ import annotations
 
@@ -29,10 +31,25 @@ class EvidenceCollectorsTwin(GovernanceTwinAdapter):
         return replay_observation(self, observation_id)
 
     def collect(self) -> dict:
+        """The platform observation: anonymous (no system, objective or person named; see twin_evidence)."""
         from tools.evidence_collectors.service import twin_evidence
 
         return {"canvas": self.canvas_key, "target_id": "evidence_collectors", "observed_at": now_iso(),
                 "policy": load_policy("evidence_collectors"), "evidence": twin_evidence()}
+
+    def judge_for(self, reader: dict) -> dict:
+        """One reader's judgment, never recorded: only the systems that reader may see, the rest counted."""
+        from tools.evidence_collectors.service import twin_evidence
+
+        ev = {"canvas": self.canvas_key, "target_id": "evidence_collectors", "observed_at": now_iso(),
+              "policy": load_policy("evidence_collectors"), "evidence": twin_evidence(reader=reader)}
+        from tools.twin_core.governance import conclude, digest, unverified_findings
+
+        judged = self.judge(ev)
+        findings = list(judged["findings"]) + unverified_findings(self.canvas_key, judged["checks"], digest(ev))
+        verdict, coverage = conclude(judged["checks"], findings)
+        return {"scope": "reader", "observed_at": ev["observed_at"], "verdict": verdict, "coverage_score": coverage,
+                "checks": judged["checks"], "findings": findings, "summary": judged["summary"]}
 
     def judge(self, evidence: dict) -> dict:
         from tools.evidence_collectors.service import twin_judge
