@@ -42,6 +42,7 @@ NOW = datetime(2026, 11, 19, 9, 0, 0, tzinfo=timezone.utc)
 ORG = "syn-dib"
 PREPARER = {"id": "u-ent02-preparer", "role": "reviewer", "clearance_level": "CUI", "tenant_id": ORG}
 PUBLISHER = {"id": "u-ent02-publisher", "role": "isso", "clearance_level": "CUI", "tenant_id": ORG}
+PUBLISHER2 = {"id": "u-ent02-publisher2", "role": "isso", "clearance_level": "CUI", "tenant_id": ORG}
 OUTSIDER = {"id": "u-ent02-outsider", "role": "isso", "clearance_level": "CUI", "tenant_id": "another-org"}
 UNCLEARED = {"id": "u-ent02-public", "role": "isso", "clearance_level": "PUBLIC", "tenant_id": ORG}
 SECRETS = {"keyring:ec-test/aws-id": "AKIDSTUBEXAMPLE", "keyring:ec-test/aws-secret": "stub-aws-secret-0f9e8d",
@@ -667,7 +668,7 @@ def test_the_twin_observes_with_threads_and_replays(ec):
     # marking: counted, not described.
     assert chk["evidence_collectors.syn-dib-01"]["status"] == "unverified", "nothing published is never a pass"
     assert set(chk) == {"evidence_collectors.ledger", "evidence_collectors.syn-dib-01",
-                        "evidence_collectors.syn-other-01", "evidence_collectors.customers"}
+                        "evidence_collectors.syn-other-01"}
     assert env["extra"]["summary"]["evidence_held_back"] == 1 and "syn-secret-01" not in json.dumps(env)
     real = datetime.now(timezone.utc)          # the twin judges against the clock, so the sources speak in it
     st = ec["stub"].state
@@ -805,9 +806,9 @@ def test_the_twin_route_shows_a_reader_only_their_systems_and_the_platform_twin_
         for v in (r["event_id"], r["content_digest"], r["created_at"], r["row_hash"]):
             assert str(v) not in plat, "nothing that identifies a customer system's rows"
     summ = env["extra"]["summary"]
-    assert (summ["customer_systems"], summ["customer_published"]) == (1, 1) and summ["customer_other_than_satisfied"]
-    hi = [v for v in env["violations"] if v["rule_id"] == "evidence_collectors.customers.other_than_satisfied"]
-    assert hi and hi[0]["thread_id"].startswith("twin_obs:")
+    # One customer system: below K, so nothing but "fewer than 5" (a tenant could subtract its own from a total).
+    assert summ["customer_systems"] == "fewer than 5" and "customer_published" not in summ
+    assert not [v for v in env["violations"] if v["rule_id"].startswith("evidence_collectors.customers")]
     assert governance.replay(governance.adapter_for("evidence_collectors"),
                              governance.observe(governance.adapter_for("evidence_collectors"))["extra"]
                              ["observation_id"])["match"], "the totals replay"
@@ -1085,7 +1086,6 @@ def test_a_decision_whose_step_was_never_recorded_decides_nothing_anywhere(ec, m
     import tools.iqe.adapters.evidence_collectors as iqe
     import tools.twin_core.adapters.evidence_collectors  # noqa: F401
     from tools.evidence_collectors import service
-    from tools.twin_core import governance
     from tools.workflow_hitl import declared
 
     _fresh_sources(ec)
@@ -1105,15 +1105,14 @@ def test_a_decision_whose_step_was_never_recorded_decides_nothing_anywhere(ec, m
     mine = _page_app(PUBLISHER).get("/evidence-collectors/api/twin").get_json()
     chk = {c["id"]: c for c in mine["checks"]}
     assert chk["evidence_collectors.syn-dib-01"]["status"] == "unverified", "never verified on a lost step"
-    assert any(f["rule_id"] == "evidence_collectors.step_missing"
-               and f["thread_id"] == f"evidence_collectors:{lost['event_id']}" for f in mine["findings"])
+    marks = [r for r in service.ledger.read() if r["event"] == "step_lost"]
+    assert [service.ledger.payload(r)["detail"]["decision_event"] for r in marks] == [lost["event_id"]], \
+        "only an explicit step_lost row reopens the report"
     assert not [f for f in mine["findings"] if f["rule_id"] == "evidence_collectors.other_than_satisfied"]
     app = Flask(__name__)
     with app.test_request_context("/"):
         g.current_user = {"id": PUBLISHER["id"], "role": "isso", "clearance_level": "CUI", "tenant_id": ORG}
         assert iqe.objectives_adapter() == [], "IQE reads nothing a lost step published"
-    env = governance.observe(governance.adapter_for("evidence_collectors"), record=False)
-    assert any(v["rule_id"] == "evidence_collectors.step_missing" for v in env["violations"])
     # A person may decide it again, and then it is published everywhere.
     out = _publish(ec, p)
     assert out["event"] == "published" and out["bundle"]["publication"]["signed_by"] == PUBLISHER["id"]
@@ -1248,3 +1247,121 @@ def test_a_caller_named_step_id_is_for_a_new_step_only(ec):
     with pytest.raises(declared.StepRefused):
         declared.take_step(TEMPLATE, surface=SURFACE, decision="publish", reason="x (test)", actor=actor(PUBLISHER),
                            separated_from={}, step_id="step-" + "\u0661" * 16)
+
+
+# ── the verification's findings ───────────────────────────────────────────────
+
+
+def test_a_decision_waiting_for_its_step_blocks_others_and_is_never_overturned(ec, monkeypatch):
+    """MED: while A's decision row lacked its step, replay reopened the report, B decided too, and when A's step
+    landed B's exported bundle was withdrawn and B's decision silently dropped."""
+    from tools.evidence_collectors import service
+    from tools.workflow_hitl import declared
+
+    p = _prepare(ec)
+    real = declared.take_step
+    seen = {}
+
+    def delayed(*a, **k):
+        if k["actor"]["id"] == PUBLISHER["id"]:
+            # A's ledger row is written, its step not yet: B tries now.
+            v = service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])
+            seen["view"] = (v["next"], v["published"], (v["pending"] or {}).get("event"))
+            with pytest.raises(service.Refused) as e:
+                _publish(ec, p, who=PUBLISHER2)
+            seen["b"] = e.value.code
+            assert service.published_bundle("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"]) is None
+        return real(*a, **k)
+
+    monkeypatch.setattr(declared, "take_step", delayed)
+    out = _publish(ec, p, decision="refuse", reason="A refuses (test)")
+    assert seen == {"view": (["wait"], None, "refused"), "b": "pending"}, seen
+    assert out["event"] == "refused" and out["decided_by"] == PUBLISHER["id"]
+    v = service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])
+    assert v["prepared"]["decided"]["actor"] == PUBLISHER["id"] and v["published"] is None, "the result is A's"
+    with pytest.raises(service.Refused) as e:
+        _publish(ec, p, who=PUBLISHER2)
+    assert e.value.code == "already_decided"
+
+
+def test_an_unreadable_step_store_blocks_and_never_reopens(ec, monkeypatch):
+    from tools.evidence_collectors import service
+    from tools.workflow_hitl import declared
+
+    _fresh_sources(ec)
+    p, pub = _publish_one(ec)
+
+    def unreadable(step_id):
+        raise RuntimeError("store down")
+
+    real_state = declared.step_state
+    monkeypatch.setattr(declared, "step_state", unreadable)
+    v = service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])
+    assert v["published"] is None and v["next"] == ["wait"], "unreadable: nothing published, nothing reopened"
+    with pytest.raises(service.Refused) as e:
+        _publish(ec, p, who=PUBLISHER2)
+    assert e.value.code == "pending"
+    with pytest.raises(service.Refused) as e:
+        service.mark_step_lost("syn-dib-01", pub["event_id"], actor={"id": "agent:ops", "role": "service"},
+                               reason="crash (test)", cfg=ec["cfg"], now=NOW + timedelta(days=30))
+    assert e.value.code == "store_unavailable", "an operator cannot void a decision whose step cannot be read"
+    monkeypatch.setattr(declared, "step_state", real_state)
+    assert service.published_bundle("syn-dib-01", reader(PUBLISHER), cfg=ec["cfg"]) is not None, "it was A's"
+
+
+def test_the_operator_voids_a_crashed_decision_only_after_its_grace_and_only_when_unrecorded(ec, monkeypatch):
+    from tools.evidence_collectors import cli, service
+    from tools.workflow_hitl import declared
+
+    p = _prepare(ec)
+
+    def crash(*a, **k):
+        raise SystemExit("the process died between the ledger row and the step")
+
+    real_take = declared.take_step
+    monkeypatch.setattr(declared, "take_step", crash)
+    with pytest.raises(SystemExit):
+        _publish(ec, p)
+    monkeypatch.setattr(declared, "take_step", real_take)
+    v = service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])
+    assert v["next"] == ["wait"]
+    eid = v["pending"]["event_id"]
+    ops = {"id": "agent:ops", "role": "service"}
+    with pytest.raises(service.Refused) as e:
+        service.mark_step_lost("syn-dib-01", eid, actor=ops, reason="crash (test)", cfg=ec["cfg"])
+    assert e.value.code == "too_soon", "an in-flight decision is never raced"
+    with pytest.raises(service.Refused) as e:
+        service.mark_step_lost("syn-dib-01", "ece-0000000000000000", actor=ops, reason="x", cfg=ec["cfg"],
+                               now=datetime.now(timezone.utc) + timedelta(hours=1))
+    assert e.value.code == "not_pending"
+    later = datetime.now(timezone.utc) + timedelta(hours=1)
+    out = service.mark_step_lost("syn-dib-01", eid, actor=ops, reason="crash (test)", cfg=ec["cfg"], now=later)
+    assert out["voided"] == eid
+    assert service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])["next"] == ["publish"]
+    assert _publish(ec, p, who=PUBLISHER2)["event"] == "published"
+    assert "step-lost" in cli.__doc__
+
+
+def test_customer_totals_need_five_systems_and_are_banded(ec):
+    """LOW: exact customer totals let a tenant subtract its own system or match a single event's delta."""
+    import tools.twin_core.adapters.evidence_collectors  # noqa: F401
+    from tools.evidence_collectors import service
+    from tools.twin_core import governance
+
+    assert [service.band(n) for n in (0, 1, 4, 5, 9, 10, 24, 25, 99, 100)] == [
+        "0", "1-4", "1-4", "5-9", "5-9", "10-24", "10-24", "25-99", "25-99", "100+"]
+    _fresh_sources(ec)
+    _publish_one(ec)
+    base = ec["cfg"]["systems"][0]
+    base["synthetic"] = False
+    for i in range(2, 6):
+        ec["cfg"]["systems"].append(dict(copy.deepcopy(base), id=f"cust-{i:02d}"))
+    env = governance.observe(governance.adapter_for("evidence_collectors"), record=False)
+    summ = env["extra"]["summary"]
+    assert (summ["customer_systems"], summ["customer_published"], summ["customer_unpublished"]) == ("5-9", "1-4", "1-4")
+    assert summ["customer_other_than_satisfied"] in ("1-4", "5-9", "10-24")
+    text = json.dumps(env)
+    assert "cust-0" not in text and "syn-dib-01" not in text
+    hi = [v for v in env["violations"] if v["rule_id"] == "evidence_collectors.customers.other_than_satisfied"]
+    assert hi and hi[0]["thread_id"].startswith("twin_obs:")
+    assert hi[0]["title"].split(" ")[0] in ("1-4", "5-9", "10-24", "25-99", "100+"), "a band, never a count"

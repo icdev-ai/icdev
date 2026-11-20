@@ -5036,7 +5036,7 @@ CREATE TRIGGER IF NOT EXISTS coe_conformance_events_no_delete BEFORE DELETE ON c
 CREATE TABLE IF NOT EXISTS ec_events (
     event_id        TEXT PRIMARY KEY,
     stream          TEXT NOT NULL,
-    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused')),
+    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused','step_lost')),
     system_id       TEXT NOT NULL,
     actor           TEXT NOT NULL,
     actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent','bootstrap')),

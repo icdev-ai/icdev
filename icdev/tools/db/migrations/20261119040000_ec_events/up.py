@@ -6,7 +6,8 @@ objective-evidence reports (``tools/evidence_collectors``): ``prepared`` (anyone
 ran the read-only collectors and recorded the system's ``icos-objective-evidence/v1`` report at
 its content digest, with the observations it rests on, in ``payload_json``), then ``published`` or
 ``refused`` (a person of the system's org who did not prepare it took the declared step
-decl-wft-ec-evidence-publish, ``step_id`` in ``wf_decision_steps``, bound to the same digest).
+decl-wft-ec-evidence-publish, ``step_id`` in ``wf_decision_steps``, bound to the same digest), and
+``step_lost`` (that decision's step was never recorded: the decision is void and the report open again).
 Only a published report leaves for ICDEV[OS]; nothing is updated in place.
 
 Each row carries the hash of its stream's previous row (one stream per system).
@@ -26,7 +27,7 @@ DDL = (
     """CREATE TABLE IF NOT EXISTS ec_events (
     event_id        TEXT PRIMARY KEY,
     stream          TEXT NOT NULL,
-    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused')),
+    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused','step_lost')),
     system_id       TEXT NOT NULL,
     actor           TEXT NOT NULL,
     actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent','bootstrap')),

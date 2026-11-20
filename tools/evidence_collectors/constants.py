@@ -19,7 +19,7 @@ PUBLICATION_FIELDS = ("prepared_by", "signed_by", "step_id", "decided_at", "cont
 PRODUCER = "icdev-it/evidence_collectors"
 TABLE = "ec_events"
 GENESIS = "0" * 64
-EVENTS = ("prepared", "published", "refused")
+EVENTS = ("prepared", "published", "refused", "step_lost")
 ACTOR_KINDS = ("person", "agent", "bootstrap")
 
 TEMPLATE = "decl-wft-ec-evidence-publish"

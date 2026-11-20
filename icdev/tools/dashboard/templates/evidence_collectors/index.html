@@ -92,6 +92,7 @@
     {% if p %}
       <p class="ec-help" id="ec-prepared">Digest <code id="ec-prepared-digest" data-digest="{{ p.content_digest }}">{{ p.content_digest[:16] }}</code>, prepared by {{ p.actor }} ({{ p.actor_kind }}) at {{ p.created_at }}.
         {% if p.decided %}<span class="ec-tag {{ 'ok' if p.decided.event == 'published' else 'no' }}" id="ec-decided">{{ p.decided.event }} by {{ p.decided.actor }}</span>
+        {% elif detail.pending %}<span class="ec-tag wait" id="ec-pending">a decision by {{ detail.pending.actor }} is being recorded</span>
         {% else %}<span class="ec-tag wait">waiting for a person</span>{% endif %}</p>
       <table id="ec-entries">
         <thead><tr><th scope="col">Objective</th><th scope="col">Result</th><th scope="col">Observed at</th><th scope="col">What was observed</th></tr></thead>
@@ -118,7 +119,7 @@
         {% endfor %}
         </tbody>
       </table>
-      {% if not p.decided %}
+      {% if not p.decided and not detail.pending %}
         <h3>Your step: publish to ICDEV[OS]</h3>
         <p class="ec-help">May not publish it: <b id="ec-builders">{{ detail.builders.keys() | join(', ') }}</b>. A reason is required.
           Bound to digest <code>{{ p.content_digest[:16] }}</code> and to the system's configuration.</p>

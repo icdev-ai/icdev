@@ -12,7 +12,7 @@ budget: its observations count for nothing), ``unverified_objectives``, ``awaiti
 ``chain_broken`` and ``step_missing`` (a decision whose declared step was never recorded: it decides nothing). A
 system above the twin's marking (CUI) is counted, never described. The recorded platform observation (what MCP and
 the observatory read) names SYNTHETIC systems only; customer systems are totals (``customers.*``, threaded to the
-observation itself), with no id, ordinal, event, time or digest. The console's twin route judges per reader
+observation itself), with no id, ordinal, event, time or digest, banded, and only from five customer systems up. The console's twin route judges per reader
 (``judge_for``: that reader's own systems by name) and is never recorded.
 """
 from __future__ import annotations

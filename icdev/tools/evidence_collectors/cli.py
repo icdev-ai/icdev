@@ -7,6 +7,9 @@
     python -m tools.evidence_collectors.cli collect --system <id> --json           observations only, records nothing
     python -m tools.evidence_collectors.cli prepare --system <id> --agent <name>    a draft, recorded as agent:<name>
     python -m tools.evidence_collectors.cli export --system <id> --out <dir>        the newest PUBLISHED report
+    python -m tools.evidence_collectors.cli step-lost --system <id> --event <ece-...> --reason "<why>"
+        the operator's path after a crash: void a PENDING decision whose step was never recorded (service.
+        mark_step_lost: only after its grace period, only when the step store is readable and holds no record of it)
 
 The CLI acts as an agent (``agent:<name>``) at the MCP marking (CUI), in no org: it sees what an agent may, and a
 person publishes on /evidence-collectors/. ``export`` writes ``objective-evidence-<system>.json`` exactly as
@@ -28,10 +31,12 @@ def main(argv: list[str] | None = None) -> int:
     from tools.evidence_collectors import config, service
 
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("command", choices=("systems", "check-config", "collect", "prepare", "export"))
+    ap.add_argument("command", choices=("systems", "check-config", "collect", "prepare", "export", "step-lost"))
     ap.add_argument("--system", default="")
     ap.add_argument("--agent", default="cli")
     ap.add_argument("--out", default="")
+    ap.add_argument("--event", default="")
+    ap.add_argument("--reason", default="")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     reader = service.mcp_reader(a.agent)
@@ -48,6 +53,9 @@ def main(argv: list[str] | None = None) -> int:
             if s is None or not service.visible(s, reader):
                 raise service.Refused(404, "not_found", "no such system")
             out = {"system": a.system, "observations": service.collect(s, cfg)}
+        elif a.command == "step-lost":
+            out = service.mark_step_lost(a.system, a.event, actor={"id": f"agent:{a.agent}", "role": "service"},
+                                         reason=a.reason)
         elif a.command == "prepare":
             out = service.prepare(a.system, {"id": f"agent:{a.agent}", "role": "service"}, reader)
         else:
