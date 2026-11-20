@@ -67,6 +67,23 @@ def _service_host(name: str, key: str, spec: dict) -> bool:
     return True
 
 
+#: Every URL each collector reads (all of them, defaults included).
+URL_KEYS = {"aws-config": ("endpoint",), "oidc-scim": ("issuer", "scim_base"),
+            "intune": ("graph_base", "login_base"), "splunk": ("base",)}
+
+
+def _loopback_url(v) -> bool:
+    import urllib.parse
+
+    if not isinstance(v, str):
+        return False
+    try:
+        transport.check_base(v)
+    except transport.CollectorError:
+        return False
+    return transport._loopback(urllib.parse.urlsplit(v).hostname or "")
+
+
 class ConfigError(ValueError):
     """The configuration is refused."""
 
@@ -97,6 +114,9 @@ def _check_system(s: dict, collectors: dict, errs: list[str]) -> None:
     extra = set(s) - {"id", "synthetic", "org", "marking", "collectors"}
     if extra:
         errs.append(f"{at}: unknown fields {sorted(extra)}")
+    synthetic = s.get("synthetic", False)
+    if not isinstance(synthetic, bool):
+        errs.append(f"{at}: synthetic is true or false")
     cols = s.get("collectors")
     if not isinstance(cols, dict) or not cols:
         errs.append(f"{at}: collectors is required")
@@ -136,6 +156,13 @@ def _check_system(s: dict, collectors: dict, errs: list[str]) -> None:
                     transport.check_base(str(spec[key]))
                 except transport.CollectorError as exc:
                     errs.append(f"{where}.{key}: {exc}")
+        if synthetic is True:
+            # A synthetic system reads only local stubs: every endpoint it names is loopback, and it must name each
+            # one (Intune's defaults are Microsoft's own hosts). An agent may collect from it (service.visible), so
+            # it can never point an agent's read at a real service or a customer's credential at one.
+            for key in URL_KEYS[name]:
+                if not _loopback_url(spec.get(key)):
+                    errs.append(f"{where}.{key}: a synthetic system names a loopback stub here (http://127.0.0.1:...)")
         for key in ("endpoint", "graph_base", "login_base"):
             if key in spec and not _service_host(name, key, spec):
                 errs.append(f"{where}.{key}: not {name}'s own service host (or a loopback stub)")

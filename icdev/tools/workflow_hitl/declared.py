@@ -418,8 +418,17 @@ def take_step(template_id: str, *, surface: str, decision: str, subject: str = "
     actor = actor if actor is not None else current_actor()
     _, affirmative = _check(tmpl, surface, actor, decision, reason,
                             separated_from=separated_from)
-    if step_id is not None and not _STEP_ID.fullmatch(str(step_id)):
-        raise StepRefused(500, "step_id", "a step id comes from new_step_id")
+    if step_id is not None:
+        if not _STEP_ID.fullmatch(str(step_id)):
+            raise StepRefused(500, "step_id", "a step id comes from new_step_id")
+        try:
+            seen = _events(step_id)
+        except Exception as exc:  # noqa: BLE001 — fail closed: unreadable, not taken
+            raise StepRefused(503, "store_unavailable",
+                              f"the decision could not be recorded, so it was not taken ({type(exc).__name__})")
+        if seen:
+            # A caller-named id is for a NEW step only: never a proposal someone else decides, or a step taken.
+            raise StepRefused(409, "step_exists", f"step {step_id} already has a history")
     try:
         return _record_decision(tmpl, step_id=step_id or new_step_id(),
                                 surface=surface, subject=subject, actor=actor,

@@ -22,11 +22,14 @@ def objectives_adapter(conn: Any = None) -> list[dict]:
         return []           # fail closed: no reader, no rows
     cfg = config.load()
     ch = ledger.chain(ledger.read())
+    broken = {p["stream"] for p in ch["_problems"]}
     rows = []
     for s in cfg.get("systems") or []:
-        if not service.visible(s, reader):
-            continue
-        pub = service.replay(ch.get(f"system:{s['id']}", []))["published"]
+        stream = f"system:{s['id']}"
+        if not service.visible(s, reader) or stream in broken:
+            continue        # a chain that does not verify publishes nothing
+        # A decision whose declared step was never recorded publishes nothing (replay_checked).
+        pub = service.replay_checked(ch.get(stream, []))["published"]
         for e in ((pub or {}).get("report") or {}).get("entries") or []:
             rows.append({"system": s["id"], "objective": e["objective"], "result": e["result"],
                          "observed_at": e["observed_at"], "published_by": pub["actor"]})

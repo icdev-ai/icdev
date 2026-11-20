@@ -10,8 +10,9 @@ Bounded by construction:
 * ``GET`` only, except the few POSTs that only READ, named here (:data:`READ_POSTS`): an AWS JSON-protocol
   ``Describe*`` call and an OAuth 2.0 client-credentials token request. A collector that asks for anything else is
   refused before a byte is sent;
-* a response is at most :data:`MAX_BYTES`, read within a wall-clock :data:`DEADLINE_S` (a slow drip is cut, not
-  waited out); inside :func:`budget` (one per collector run, ``service.collect``) every request also spends a shared
+* a response is at most :data:`MAX_BYTES`, and the WHOLE exchange -- connect, TLS handshake, status line, headers,
+  body -- ends by a wall-clock :data:`DEADLINE_S`: a watchdog shuts the request's socket at the deadline, so a drip
+  anywhere is cut, not waited out (:class:`_Watch`); only the name lookup before connecting is outside it; inside :func:`budget` (one per collector run, ``service.collect``) every request also spends a shared
   byte budget and run deadline, so paging cannot pull gigabytes or run for hours;
 * the JSON must be finite (no NaN or Infinity) and not nested past what the parser can hold; anything else is an
   unread source, never a crash;
@@ -23,9 +24,12 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import http.client
 import ipaddress
 import json
 import math
+import socket
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -56,7 +60,78 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
                              "which a collector never follows")
 
 
-_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
+class _Watch:
+    """One request's deadline: at it, every socket the request opened is shut down, so whatever read is blocked --
+    the TLS handshake, the status line, a header, the body -- returns at once."""
+
+    def __init__(self, deadline: float):
+        self.deadline, self.fired, self._socks = deadline, False, []
+        self._lock = threading.Lock()
+        self._timer = threading.Timer(max(0.0, deadline - time.monotonic()), self._fire)
+        self._timer.daemon = True
+
+    def register(self, sock) -> None:
+        with self._lock:
+            self._socks.append(sock)
+            fired = self.fired
+        if fired:
+            self._shut(sock)
+
+    @staticmethod
+    def _shut(sock) -> None:
+        with contextlib.suppress(OSError):
+            sock.shutdown(socket.SHUT_RDWR)
+
+    def _fire(self) -> None:
+        with self._lock:
+            self.fired = True
+            socks = list(self._socks)
+        for sock in socks:
+            self._shut(sock)
+
+    def __enter__(self):
+        self._timer.start()
+        return self
+
+    def __exit__(self, *exc):
+        self._timer.cancel()
+        return False
+
+
+_WATCH: contextvars.ContextVar = contextvars.ContextVar("ec_watch", default=None)
+
+
+def _watched_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, **kw):
+    sock = socket.create_connection(address, timeout, source_address, **kw)
+    w = _WATCH.get()
+    if w is not None:
+        w.register(sock)
+    return sock
+
+
+class _HTTPConnection(http.client.HTTPConnection):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self._create_connection = _watched_connection
+
+
+class _HTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self._create_connection = _watched_connection     # the raw socket, before the TLS handshake on it
+
+
+class _HTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_HTTPConnection, req)
+
+
+class _HTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_HTTPSConnection, req, context=self._context)
+
+
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect, _HTTPHandler, _HTTPSHandler)
 
 
 @contextlib.contextmanager
@@ -133,14 +208,14 @@ def request_json(method: str, url: str, *, headers: dict | None = None, body: by
         cap = min(cap, run["bytes"])
     if time.monotonic() >= deadline:
         raise CollectorError(f"{where}: past the collector's deadline, not sent")
+    watch = _Watch(deadline)
+    token = _WATCH.set(watch)
     try:
-        with _OPENER.open(req, timeout=max(0.1, min(TIMEOUT_S, deadline - time.monotonic()))) as resp:  # nosec B310 — scheme checked above
+        with watch, _OPENER.open(req, timeout=max(0.1, min(TIMEOUT_S, deadline - time.monotonic()))) as resp:  # nosec B310 — scheme checked above
             chunks, got = [], 0
             while True:
                 if time.monotonic() >= deadline:
                     raise CollectorError(f"{where}: past the request's deadline ({DEADLINE_S:g}s), cut")
-                with contextlib.suppress(AttributeError, OSError):   # each wait ends by the deadline too
-                    resp.fp.raw._sock.settimeout(max(0.05, min(TIMEOUT_S, deadline - time.monotonic())))
                 part = resp.read1(_CHUNK)       # what has arrived, not "wait for the whole chunk"
                 if not part:
                     break
@@ -149,17 +224,23 @@ def request_json(method: str, url: str, *, headers: dict | None = None, body: by
                     raise CollectorError(f"{where}: past the response or the collector's byte budget, cut")
                 chunks.append(part)
             raw = b"".join(chunks)
+        if watch.fired:
+            raise CollectorError(f"{where}: past the request's deadline, cut")
         if run is not None:
             run["bytes"] -= len(raw)
     except CollectorError:
         raise
     except urllib.error.HTTPError as exc:
-        raise CollectorError(f"{where}: HTTP {exc.code}") from None
-    except (urllib.error.URLError, OSError, TimeoutError) as exc:
-        reason = getattr(exc, "reason", exc)
-        if time.monotonic() >= deadline - 0.05:
+        if watch.fired:
             raise CollectorError(f"{where}: past the request's deadline, cut") from None
-        raise CollectorError(f"{where}: unreachable ({type(reason).__name__})") from None
+        raise CollectorError(f"{where}: HTTP {exc.code}") from None
+    except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException, ValueError) as exc:
+        if watch.fired or time.monotonic() >= deadline - 0.05:
+            raise CollectorError(f"{where}: past the request's deadline, cut") from None
+        reason = getattr(exc, "reason", exc)
+        raise CollectorError(f"{where}: unreachable or unreadable ({type(reason).__name__})") from None
+    finally:
+        _WATCH.reset(token)
     try:
         return json.loads(raw.decode("utf-8"), parse_constant=_finite)
     except (UnicodeDecodeError, ValueError, RecursionError):

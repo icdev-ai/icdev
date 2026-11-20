@@ -109,16 +109,16 @@ mapping:
 
 systems:
   # SYNTHETIC: the defense-industrial-base contractor system ICDEV[OS]'s control backbone ships as its example
-  # (examples/controls/syn-dib-01.system.json there). The endpoints are documentation placeholders (example
-  # domains, an AWS endpoint with no credential in any keyring): collecting from them is unverified by design. The
-  # e2e seed and the tests collect from local stubs instead.
+  # (examples/controls/syn-dib-01.system.json there). A synthetic system names loopback stubs only (config.py
+  # refuses anything else): here a closed port on 127.0.0.1 with no credential in any keyring, so collecting from it
+  # is unverified by design. The e2e seed and the tests collect from local stubs instead.
   - id: syn-dib-01
     synthetic: true
     org: syn-dib
     marking: CUI
     collectors:
       aws-config:
-        endpoint: https://config.us-gov-west-1.amazonaws.com
+        endpoint: http://127.0.0.1:9/aws-config
         region: us-gov-west-1
         rules:
           CLOUD_TRAIL_ENABLED: cloudtrail-enabled
@@ -129,17 +129,19 @@ systems:
           access_key_id: keyring:icdev-ec-syn-dib-01/aws-access-key-id
           secret_access_key: keyring:icdev-ec-syn-dib-01/aws-secret-access-key
       oidc-scim:
-        issuer: https://idp.syn-dib.example
-        scim_base: https://idp.syn-dib.example/scim/v2
+        issuer: http://127.0.0.1:9/idp
+        scim_base: http://127.0.0.1:9/scim/v2
         credentials:
           scim_token: keyring:icdev-ec-syn-dib-01/scim-token
       intune:
         tenant_id: 00000000-0000-0000-0000-000000000000
         client_id: 00000000-0000-0000-0000-000000000001
+        graph_base: http://127.0.0.1:9/graph
+        login_base: http://127.0.0.1:9/login
         credentials:
           client_secret: keyring:icdev-ec-syn-dib-01/graph-client-secret
       splunk:
-        base: https://siem.syn-dib.example:8089
+        base: http://127.0.0.1:9/splunk
         audit_indexes: [audit, cloudtrail]
         required_retention_days: 365
         review_searches: [Audit review - daily]

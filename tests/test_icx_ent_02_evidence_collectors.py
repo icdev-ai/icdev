@@ -22,6 +22,7 @@ People here are labelled test persons (synthetic); every source is a synthetic s
 """
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import json
@@ -662,11 +663,12 @@ def test_the_twin_observes_with_threads_and_replays(ec):
     env = governance.observe(adapter, record=False)
     chk = {x["id"]: x for x in env["extra"]["checks"]}
     assert chk["evidence_collectors.ledger"]["status"] == "verified"
-    # The platform observation is anonymous: ordinals in id order (syn-dib-01, syn-other-01; syn-secret-01 is above
-    # the twin's marking: counted, not described).
-    assert chk["evidence_collectors.system-1"]["status"] == "unverified", "nothing published is never a pass"
-    assert set(chk) == {"evidence_collectors.ledger", "evidence_collectors.system-1", "evidence_collectors.system-2"}
-    assert env["extra"]["summary"]["evidence_held_back"] == 1 and "syn-" not in json.dumps(env)
+    # The platform observation names synthetic systems (every system here is one); syn-secret-01 is above the twin's
+    # marking: counted, not described.
+    assert chk["evidence_collectors.syn-dib-01"]["status"] == "unverified", "nothing published is never a pass"
+    assert set(chk) == {"evidence_collectors.ledger", "evidence_collectors.syn-dib-01",
+                        "evidence_collectors.syn-other-01", "evidence_collectors.customers"}
+    assert env["extra"]["summary"]["evidence_held_back"] == 1 and "syn-secret-01" not in json.dumps(env)
     real = datetime.now(timezone.utc)          # the twin judges against the clock, so the sources speak in it
     st = ec["stub"].state
     st["aws"] = {k: (v[0], real - timedelta(hours=1)) for k, v in st["aws"].items()}
@@ -677,7 +679,7 @@ def test_the_twin_observes_with_threads_and_replays(ec):
     pub = _publish(ec, p)
     env2 = governance.observe(adapter)
     chk = {x["id"]: x for x in env2["extra"]["checks"]}
-    assert chk["evidence_collectors.system-1"]["status"] == "verified"
+    assert chk["evidence_collectors.syn-dib-01"]["status"] == "verified"
     f = [v for v in env2["violations"] if v["rule_id"] == "evidence_collectors.other_than_satisfied"]
     assert f and all(v["thread_id"] == f"evidence_collectors:{pub['event_id']}" for v in f)
     res = governance.resolve_thread(f[0]["thread_id"])
@@ -790,9 +792,25 @@ def test_the_twin_route_shows_a_reader_only_their_systems_and_the_platform_twin_
     assert "evidence_collectors.syn-dib-01" in {c["id"] for c in mine["checks"]}
     assert any(f["rule_id"] == "evidence_collectors.other_than_satisfied" and "sp800-" in f["title"]
                for f in mine["findings"])
+    # MED-LOW 3: a CUSTOMER system (not synthetic) reaches the platform observation (MCP twin_governance, the
+    # observatory, replay) only as totals: no id, ordinal, event, time or digest of it.
+    ec["cfg"]["systems"][0]["synthetic"] = False
+    from tools.evidence_collectors import ledger
+
+    rows = [r for r in ledger.read() if r["system_id"] == "syn-dib-01"]
     env = governance.observe(governance.adapter_for("evidence_collectors"), record=False)
-    plat = json.dumps({"c": env["extra"]["checks"], "v": env["violations"]})
-    assert "syn-dib-01" not in plat and "sp800-" not in plat, "the platform twin names no system and no objective"
+    plat = json.dumps(env)
+    assert "syn-dib-01" not in plat and "sp800-" not in plat and "system-1" not in plat
+    for r in rows:
+        for v in (r["event_id"], r["content_digest"], r["created_at"], r["row_hash"]):
+            assert str(v) not in plat, "nothing that identifies a customer system's rows"
+    summ = env["extra"]["summary"]
+    assert (summ["customer_systems"], summ["customer_published"]) == (1, 1) and summ["customer_other_than_satisfied"]
+    hi = [v for v in env["violations"] if v["rule_id"] == "evidence_collectors.customers.other_than_satisfied"]
+    assert hi and hi[0]["thread_id"].startswith("twin_obs:")
+    assert governance.replay(governance.adapter_for("evidence_collectors"),
+                             governance.observe(governance.adapter_for("evidence_collectors"))["extra"]
+                             ["observation_id"])["match"], "the totals replay"
 
 
 def test_an_agent_reads_and_prepares_only_synthetic_systems(ec):
@@ -967,6 +985,7 @@ def test_the_review_s_lesser_findings_each_fail_closed(ec, monkeypatch):
     assert {o["fact"]: o for o in _collect(ec)}["scim:users_identified"]["value"] is True
     # Endpoints are tied to their services (or a loopback stub).
     raw = {k: v for k, v in ec["cfg"].items() if not k.startswith("_")}
+    raw["systems"][0]["synthetic"] = False           # a customer's system: its service's own hosts
     for coll, key, bad in (("aws-config", "endpoint", "https://config.us-gov-west-1.evil.example"),
                            ("aws-config", "endpoint", "https://config.us-east-1.amazonaws.com"),
                            ("intune", "login_base", "https://login.evil.example"),
@@ -1055,3 +1074,177 @@ def test_a_decision_claims_the_ledger_before_its_step_and_a_lost_step_exports_no
         _publish(ec, p)
     assert service.published_bundle("syn-dib-01", reader(PUBLISHER), cfg=ec["cfg"]) is None, \
         "a published row whose step is not decided exports nothing"
+
+
+# ── the re-review's findings ──────────────────────────────────────────────────
+
+
+def test_a_decision_whose_step_was_never_recorded_decides_nothing_anywhere(ec, monkeypatch):
+    """MED 1: with take_step failing after the ledger row, the twin said verified, IQE returned the objectives and a
+    re-publish was refused already_decided."""
+    import tools.iqe.adapters.evidence_collectors as iqe
+    import tools.twin_core.adapters.evidence_collectors  # noqa: F401
+    from tools.evidence_collectors import service
+    from tools.twin_core import governance
+    from tools.workflow_hitl import declared
+
+    _fresh_sources(ec)
+    p = _prepare(ec, now=datetime.now(timezone.utc))
+    real_take = declared.take_step
+
+    def unrecorded(*a, **k):
+        raise declared.StepRefused(503, "store_unavailable", "the decision could not be recorded")
+
+    monkeypatch.setattr(declared, "take_step", unrecorded)
+    with pytest.raises(service.Refused):
+        _publish(ec, p)
+    monkeypatch.setattr(declared, "take_step", real_take)
+    lost = next(r for r in service.ledger.read() if r["event"] == "published")
+    v = service.system_view("syn-dib-01", reader(PUBLISHER), cfg=ec["cfg"])
+    assert v["published"] is None and v["next"] == ["publish"], "the preparation is still open"
+    mine = _page_app(PUBLISHER).get("/evidence-collectors/api/twin").get_json()
+    chk = {c["id"]: c for c in mine["checks"]}
+    assert chk["evidence_collectors.syn-dib-01"]["status"] == "unverified", "never verified on a lost step"
+    assert any(f["rule_id"] == "evidence_collectors.step_missing"
+               and f["thread_id"] == f"evidence_collectors:{lost['event_id']}" for f in mine["findings"])
+    assert not [f for f in mine["findings"] if f["rule_id"] == "evidence_collectors.other_than_satisfied"]
+    app = Flask(__name__)
+    with app.test_request_context("/"):
+        g.current_user = {"id": PUBLISHER["id"], "role": "isso", "clearance_level": "CUI", "tenant_id": ORG}
+        assert iqe.objectives_adapter() == [], "IQE reads nothing a lost step published"
+    env = governance.observe(governance.adapter_for("evidence_collectors"), record=False)
+    assert any(v["rule_id"] == "evidence_collectors.step_missing" for v in env["violations"])
+    # A person may decide it again, and then it is published everywhere.
+    out = _publish(ec, p)
+    assert out["event"] == "published" and out["bundle"]["publication"]["signed_by"] == PUBLISHER["id"]
+    with app.test_request_context("/"):
+        g.current_user = {"id": PUBLISHER["id"], "role": "isso", "clearance_level": "CUI", "tenant_id": ORG}
+        assert len(iqe.objectives_adapter()) == len(out["bundle"]["entries"])
+
+
+def test_iqe_reads_nothing_from_a_chain_that_does_not_verify(ec, monkeypatch):
+    import tools.iqe.adapters.evidence_collectors as iqe
+    from tools.evidence_collectors import ledger
+
+    _fresh_sources(ec)
+    _publish_one(ec)
+    later = _prepare(ec, now=datetime.now(timezone.utc) + timedelta(seconds=1))   # a row AFTER the publication
+    real = ledger.read
+
+    def tampered(*a, **k):
+        rows = real(*a, **k)
+        return [dict(r, reason="rewritten") if r["event_id"] == later["event_id"] else r for r in rows]
+
+    monkeypatch.setattr(ledger, "read", tampered)
+    app = Flask(__name__)
+    with app.test_request_context("/"):
+        g.current_user = {"id": PUBLISHER["id"], "role": "isso", "clearance_level": "CUI", "tenant_id": ORG}
+        assert iqe.objectives_adapter() == []
+
+
+def _drip_server(handler_body):
+    import socket as so
+
+    srv = so.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(4)
+    stop = threading.Event()
+
+    def run():
+        while not stop.is_set():
+            try:
+                c, _ = srv.accept()
+            except OSError:
+                return
+            threading.Thread(target=handler_body, args=(c, stop), daemon=True).start()
+
+    threading.Thread(target=run, daemon=True).start()
+    return srv, stop
+
+
+def test_the_deadline_holds_for_the_whole_exchange_headers_and_tls_too(monkeypatch):
+    """MED 2: the deadline was checked only in the body loop: a header drip held a 2 s request for 24.5 s."""
+    import time
+
+    from tools.evidence_collectors import transport
+
+    def header_drip(c, stop):
+        with contextlib.suppress(OSError):
+            c.recv(4096)
+            for b in b"HTTP/1.1 200 OK\r\nX-Slow: " + b"a" * 200:
+                if stop.is_set():
+                    break
+                c.sendall(bytes([b]))
+                time.sleep(0.3)
+        c.close()
+
+    def tls_drip(c, stop):
+        with contextlib.suppress(OSError):
+            c.recv(4096)                              # the ClientHello
+            c.sendall(b"\x16\x03\x03\x40\x00")       # a handshake record of 16 KiB...
+            for _ in range(200):                     # ...that arrives a byte at a time
+                if stop.is_set():
+                    break
+                c.sendall(b"\x00")
+                time.sleep(0.3)
+        c.close()
+
+    monkeypatch.setattr(transport, "DEADLINE_S", 1.5)
+    for body, scheme in ((header_drip, "http"), (tls_drip, "https")):
+        srv, stop = _drip_server(body)
+        try:
+            t0 = time.monotonic()
+            with pytest.raises(transport.CollectorError, match="deadline"):
+                transport.request_json("GET", f"{scheme}://127.0.0.1:{srv.getsockname()[1]}/x")
+            assert time.monotonic() - t0 < 3.5, f"{scheme}: cut at the deadline, not per byte"
+        finally:
+            stop.set()
+            srv.close()
+
+
+def test_synthetic_is_a_boolean_and_a_synthetic_system_reads_only_loopback_stubs(ec):
+    """LOW-MED 4: an agent may collect from a synthetic system, so a synthetic system can never name a real service
+    (the shipped syn-dib-01 named AWS GovCloud and, by default, Microsoft's login and Graph hosts)."""
+    from tools.evidence_collectors import config
+
+    shipped = config.validate(__import__("yaml").safe_load((ROOT / "args/evidence_collectors.yaml").read_text()))
+    assert all(s["synthetic"] is True for s in shipped["systems"] if s["id"] == "syn-dib-01")
+    raw = {k: v for k, v in ec["cfg"].items() if not k.startswith("_")}
+    cases = [("synthetic", "yes"), ("synthetic", 1)]
+    for key, val in cases:
+        r = copy.deepcopy(raw)
+        r["systems"][0][key] = val
+        with pytest.raises(config.ConfigError):
+            config.validate(r)
+    for coll, key, real in (("aws-config", "endpoint", "https://config.us-gov-west-1.amazonaws.com"),
+                            ("intune", "login_base", "https://login.microsoftonline.us"),
+                            ("intune", "graph_base", None),       # absent: the default is Microsoft's own host
+                            ("oidc-scim", "issuer", "https://idp.syn-dib.example"),
+                            ("splunk", "base", "https://siem.syn-dib.example:8089")):
+        r = copy.deepcopy(raw)
+        spec = r["systems"][0]["collectors"][coll]
+        if real is None:
+            spec.pop(key)
+        else:
+            spec[key] = real
+        with pytest.raises(config.ConfigError, match="synthetic"):
+            config.validate(r)
+        r["systems"][0]["synthetic"] = False
+        if real is not None and coll != "oidc-scim" and coll != "splunk":
+            config.validate(copy.deepcopy(r))             # a customer's system may name the real service
+
+
+def test_a_caller_named_step_id_is_for_a_new_step_only(ec):
+    """LOW 5: take_step(step_id=) must not decide a step that already has a history (someone's proposal)."""
+    from tools.evidence_collectors.constants import SURFACE, TEMPLATE
+    from tools.workflow_hitl import declared
+
+    sid = declared.propose(TEMPLATE, surface=SURFACE, subject="objective_evidence:syn-dib-01",
+                           actor=actor(PREPARER))["step_id"]
+    with pytest.raises(declared.StepRefused) as e:
+        declared.take_step(TEMPLATE, surface=SURFACE, decision="publish", reason="x (test)", actor=actor(PUBLISHER),
+                           separated_from={}, step_id=sid)
+    assert e.value.code == "step_exists"
+    with pytest.raises(declared.StepRefused):
+        declared.take_step(TEMPLATE, surface=SURFACE, decision="publish", reason="x (test)", actor=actor(PUBLISHER),
+                           separated_from={}, step_id="step-" + "\u0661" * 16)

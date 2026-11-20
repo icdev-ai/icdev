@@ -25,9 +25,14 @@ marking (CUI), is in no org and names itself (the MCP caller says who it is), so
 systems only, never a customer's, and only drafts. Live collection is throttled per system (:func:`_throttle`).
 
 **The twin is per reader.** The console's twin route judges only the systems its reader may see and counts the rest
-(:func:`twin_evidence` with a reader); the platform observatory (no reader) is anonymous: it names no system, no
-objective and no person, only ordinals, counts and ledger threads, and the generic thread resolver returns no
-system, person or reason (:func:`thread_record` is the per-reader one).
+(:func:`twin_evidence` with a reader); the platform observation (no reader; MCP and the observatory read it) names
+synthetic systems only and gives customer systems as totals, with no id, ordinal, event, time or digest of theirs;
+the generic thread resolver returns no system, person or reason (:func:`thread_record` is the per-reader one).
+
+**A decision counts only with its step.** Publishing writes the ledger row first, then records the declared step
+under the id the row carries; a row whose step is not recorded (that way, by that person) decides nothing for any
+reader -- the page, the bundle, IQE, the twin (``step_missing``) -- and the report can be decided again
+(:func:`replay_checked`).
 """
 from __future__ import annotations
 
@@ -148,10 +153,16 @@ def _stream(sid: str) -> str:
     return f"system:{sid}"
 
 
-def replay(ordered: list[dict]) -> dict:
-    """One system's ledger: the newest prepared report, whether a person decided it, the newest published."""
+def replay(ordered: list[dict], step_taken: Callable[[dict, bool], bool] | None = None) -> dict:
+    """One system's ledger: the newest prepared report, whether a person decided it, the newest published.
+
+    ``step_taken(row, affirmative)`` (:func:`_step_taken`; every consumer passes it through :func:`replay_checked`):
+    a decision row whose declared step is not recorded, decided that way by that person, decides NOTHING -- it is
+    listed in ``lost_steps``, the preparation stays open to be decided again, and nothing is published by it.
+    Pure when ``step_taken`` is None (the chain alone).
+    """
     prepared = published = None
-    history = []
+    history, lost = [], []
     for r in ordered:
         p = ledger.payload(r)
         det = p.get("detail") or {}
@@ -160,17 +171,37 @@ def replay(ordered: list[dict]) -> dict:
         history.append(h)
         if r["event"] == "prepared":
             prepared = {**h, "decided": None, "report": p.get("content"), "detail": det}
-        elif prepared and det.get("prepared_event") == prepared["event_id"]:
+        elif prepared and not prepared["decided"] and det.get("prepared_event") == prepared["event_id"]:
+            if step_taken is not None and not step_taken(h, r["event"] == "published"):
+                lost.append(h)
+                continue
             prepared["decided"] = h
             if r["event"] == "published":
                 published = {**h, "prepared_event": prepared["event_id"], "prepared_by": prepared["actor"],
                              "report": prepared["report"], "prepared_detail": prepared["detail"]}
-    return {"prepared": prepared, "published": published, "history": history}
+    return {"prepared": prepared, "published": published, "history": history, "lost_steps": lost}
+
+
+def _step_taken(row: dict, affirmative: bool) -> bool:
+    """The decision row's declared step is recorded as decided, that way, by the row's own person."""
+    from tools.workflow_hitl import declared
+
+    try:
+        st = declared.step_state(str(row.get("step_id") or ""))
+    except Exception:  # noqa: BLE001 — unreadable: decides nothing
+        return False
+    return bool(st) and st["status"] in ("decided", "spent") and st["affirmative"] is affirmative \
+        and st["decided_by"] == row["actor"]
+
+
+def replay_checked(ordered: list[dict]) -> dict:
+    """:func:`replay` with each decision held to its recorded step: what every reader and the twin use."""
+    return replay(ordered, step_taken=_step_taken)
 
 
 def _state(sid: str, conn) -> tuple[dict, list[dict], list[dict]]:
     ordered, problems = ledger.stream_rows(_stream(sid), conn)
-    return replay(ordered), problems, ordered
+    return replay_checked(ordered), problems, ordered
 
 
 def builders(state: dict) -> dict[str, str]:
@@ -324,18 +355,6 @@ def publish(sid: str, *, decision: str, reason: str, read_digest: str, actor: di
     return out
 
 
-def _step_taken(pub: dict) -> bool:
-    """The published row's declared step is recorded as decided, affirmatively, by the row's own person."""
-    from tools.workflow_hitl import declared
-
-    try:
-        st = declared.step_state(str(pub.get("step_id") or ""))
-    except Exception:  # noqa: BLE001 — unreadable: not shown as published
-        return False
-    return bool(st) and st["status"] in ("decided", "spent") and st["affirmative"] is True \
-        and st["decided_by"] == pub["actor"]
-
-
 def published_bundle(sid: str, reader: dict | None, *, conn=None, cfg: dict | None = None) -> dict | None:
     """The system's newest PUBLISHED report with its publication embedded, as ICDEV[OS] imports it; None when none
     is, or the ledger does not verify."""
@@ -349,7 +368,7 @@ def published_bundle(sid: str, reader: dict | None, *, conn=None, cfg: dict | No
         if own:
             conn.close()
     pub = st["published"]
-    if pub is None or problems or not _step_taken(pub):
+    if pub is None or problems:
         return None
     t = instant(pub["created_at"]) or datetime.now(timezone.utc)
     try:
@@ -390,7 +409,7 @@ def systems_view(reader: dict | None, conn=None, cfg: dict | None = None) -> dic
         if not visible(s, reader):
             held += 1
             continue
-        st = replay(ch.get(_stream(s["id"]), []))
+        st = replay_checked(ch.get(_stream(s["id"]), []))
         seen.append({"id": s["id"], "synthetic": bool(s.get("synthetic")), "marking": s["marking"],
                      "collectors": _collectors_of(s, cfg), **_brief(st)})
     probs = [p for p in ch["_problems"] if p["stream"] in {_stream(x["id"]) for x in seen}]
@@ -448,14 +467,37 @@ def crosswalk_hint(objective: str) -> str | None:
 # ── twin ─────────────────────────────────────────────────────────────────────
 
 
-def twin_evidence(cfg: dict | None = None, reader: dict | None = None) -> dict:
-    """Each system's ledger state and its newest published report's facts.
+def _twin_row(label: str, st: dict, cfg: dict, *, named: bool) -> dict:
+    """One system's twin row from its checked replay. ``named``: objectives by name (a reader's own, or a synthetic
+    system); otherwise counted."""
+    pub, prep = st["published"], st["prepared"]
+    facts = None
+    if pub is not None:
+        rep = pub.get("report") or {}
+        other = sorted(e["objective"] for e in rep.get("entries") or [] if e.get("result") == "other_than_satisfied")
+        facts = {"produced_at": rep.get("produced_at"), "other_than_satisfied": other if named else len(other),
+                 "unverified": len((pub.get("prepared_detail") or {}).get("unverified") or []),
+                 "budget_h": min((float(c["max_age_h"]) for c in cfg["collectors"].values()), default=24)}
+    return {"system": label,
+            "prepared": prep and {k: prep[k] for k in ("event_id", "created_at", "content_digest")}
+            | {"decided": bool(prep.get("decided"))},
+            "published": pub and {k: pub[k] for k in ("event_id", "created_at", "content_digest")}
+            | {"self_published": str(pub.get("actor") or "").casefold()
+               == str(pub.get("prepared_by") or "").casefold()},
+            "step_missing": [h["event_id"] for h in st.get("lost_steps") or []],
+            "facts": facts}
 
-    With a ``reader`` (the console's twin route): only the systems that reader may see (:func:`visible`), the rest
-    counted in ``held_back``. Without one (the platform observatory, recorded and replayed): every system at or below
-    the twin's marking (CUI), ANONYMOUS -- an ordinal label for each system, a count of objectives other than
-    satisfied instead of their names, and no person: it names no system, objective or org to any observer. Either
-    way the actors are reduced to whether the publisher was the preparer.
+
+def twin_evidence(cfg: dict | None = None, reader: dict | None = None, *, observed_at: str = "",
+                  waiting_days: float = 7) -> dict:
+    """Each system's ledger state (decisions held to their recorded steps) and its newest published report's facts.
+
+    With a ``reader`` (the console's twin route): only the systems that reader may see (:func:`visible`), each by
+    name, the rest counted in ``held_back``. Without one (the platform observation, recorded and replayed, which MCP
+    and the observatory read): a row per SYNTHETIC system at or below the twin's marking, and for every customer
+    system only TOTALS (``customers``: how many, published, unpublished, objectives other than satisfied, unverified,
+    stale, awaiting a person, self-published, steps missing, chains broken) -- no id, ordinal, event, time or digest
+    of any customer system. Systems above the twin's marking are counted in ``held_back``.
     """
     ev: dict[str, Any] = {"systems": None, "errors": {}, "held_back": 0, "scope": "reader" if reader else "platform"}
     try:
@@ -464,35 +506,47 @@ def twin_evidence(cfg: dict | None = None, reader: dict | None = None) -> dict:
     except Exception as exc:  # noqa: BLE001 — unreadable is unverified
         ev["errors"]["ledger"] = f"the ledger could not be read ({type(exc).__name__})"
         return ev
-    items, labels = [], {}
+    from tools.twin_core.governance import age_hours
+
+    at = observed_at or rfc3339(datetime.now(timezone.utc))
+    budget = min((float(c["max_age_h"]) for c in cfg["collectors"].values()), default=24)
+    waiting_h = float(waiting_days) * 24
+    items: list[dict] = []
+    cust = {"systems": 0, "published": 0, "unpublished": 0, "other_than_satisfied": 0, "unverified_objectives": 0,
+            "stale": 0, "awaiting_publish": 0, "self_published": 0, "step_missing": 0, "chain_broken": 0}
+    broken = {p["stream"] for p in ch["_problems"]}
+    problems = []
     twin = mcp_reader("governance-twin")
     for s in sorted(cfg.get("systems") or [], key=lambda x: str(x.get("id"))):
         if not (visible(s, reader) if reader else _cleared(twin, s["marking"])):
             ev["held_back"] += 1
             continue
-        label = s["id"] if reader else f"system-{len(items) + 1}"
-        labels[_stream(s["id"])] = label
-        st = replay(ch.get(_stream(s["id"]), []))
-        pub, prep = st["published"], st["prepared"]
-        facts = None
-        if pub is not None:
-            rep = pub.get("report") or {}
-            other = sorted(e["objective"] for e in rep.get("entries") or [] if e.get("result") == "other_than_satisfied")
-            facts = {"produced_at": rep.get("produced_at"),
-                     "other_than_satisfied": other if reader else len(other),
-                     "unverified": len((pub.get("prepared_detail") or {}).get("unverified") or []),
-                     "budget_h": min((float(c["max_age_h"]) for c in cfg["collectors"].values()), default=24)}
-        items.append({"system": label,
-                      "prepared": prep and {k: prep[k] for k in ("event_id", "created_at", "content_digest")}
-                      | {"decided": bool(prep.get("decided"))},
-                      "published": pub and {k: pub[k] for k in ("event_id", "created_at", "content_digest")}
-                      | {"self_published": str(pub.get("actor") or "").casefold()
-                         == str(pub.get("prepared_by") or "").casefold()},
-                      "facts": facts})
+        stream = _stream(s["id"])
+        st = replay_checked(ch.get(stream, []))
+        if reader or s.get("synthetic") is True:
+            items.append(_twin_row(s["id"], st, cfg, named=True))
+            problems += [{"event_id": p["event_id"], "system": s["id"],
+                          "problem": "a row does not verify on the system's hash chain"}
+                         for p in ch["_problems"] if p["stream"] == stream]
+            continue
+        # A customer system, seen by no particular reader: totals only.
+        row = _twin_row("", st, cfg, named=False)
+        pub, prep, facts = row["published"], row["prepared"], row["facts"] or {}
+        cust["systems"] += 1
+        cust["published" if pub else "unpublished"] += 1
+        cust["other_than_satisfied"] += int(facts.get("other_than_satisfied") or 0)
+        cust["unverified_objectives"] += int(facts.get("unverified") or 0)
+        age = age_hours(facts.get("produced_at"), at) if pub else None
+        cust["stale"] += int(age is not None and age > budget)
+        wait = age_hours(prep.get("created_at"), at) if prep and not prep["decided"] else None
+        cust["awaiting_publish"] += int(wait is not None and wait > waiting_h)
+        cust["self_published"] += int(bool(pub and pub["self_published"]))
+        cust["step_missing"] += len(row["step_missing"])
+        cust["chain_broken"] += int(stream in broken)
     ev["systems"] = items
-    ev["problems"] = [{"event_id": p["event_id"], "system": labels[p["stream"]],
-                       "problem": "a row does not verify on the system's hash chain"}
-                      for p in ch["_problems"] if p["stream"] in labels]
+    ev["problems"] = problems
+    if not reader:
+        ev["customers"] = cust
     return ev
 
 
@@ -518,8 +572,11 @@ def thread_record(event_id: str, reader: dict | None, cfg: dict | None = None) -
     return {k: r[k] for k in ledger.COLS if k != "payload_json"}
 
 
-def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], list[dict], dict]:
-    """``(checks, findings, summary)``. Pure: a replay judges the same."""
+def twin_judge(ev: dict, policy: dict, observed_at: str, obs_thread: str = "") -> tuple[list[dict], list[dict], dict]:
+    """``(checks, findings, summary)``. Pure: a replay judges the same.
+
+    ``obs_thread`` (``twin_obs:<observation>#evidence_collectors.customers``) is the thread of the customer TOTALS
+    (they name no ledger row on purpose); it is required when the evidence carries them."""
     from tools.twin_core.governance import age_hours, check, finding
 
     errors = ev.get("errors") or {}
@@ -548,6 +605,13 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
                                         thread_id=f"evidence_collectors:{prep['event_id']}",
                                         recommendation="A person of the system's org who did not prepare it "
                                                        "publishes it or refuses."))
+        for eid in r.get("step_missing") or []:
+            findings.append(finding("evidence_collectors.step_missing", "medium",
+                                    f"{r['system']}: a decision was written to the ledger but its declared step was "
+                                    "never recorded: it decides nothing and the report is still open",
+                                    thread_id=f"evidence_collectors:{eid}",
+                                    recommendation="A person of the system's org who did not prepare it publishes "
+                                                   "or refuses the report again."))
         if pub is None:
             continue
         published += 1
@@ -563,9 +627,7 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
                                     f"{r['system']}: the newest published report is {age:.0f}h old, past the "
                                     "shortest collector budget: its observations count for nothing now",
                                     thread_id=thread, recommendation="Collect, prepare and publish a current report."))
-        other = facts.get("other_than_satisfied") or []
-        # A reader's twin names the objectives; the platform's (anonymous) counts them.
-        for obj in (other if isinstance(other, list) else [f"{other} objective(s)"]):
+        for obj in facts.get("other_than_satisfied") or []:
             findings.append(finding("evidence_collectors.other_than_satisfied", "high",
                                     f"{r['system']}: {obj} observed other than satisfied",
                                     thread_id=thread, recommendation="Fix what the collector observed, or record "
@@ -575,8 +637,33 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
                                     f"{r['system']}: {facts['unverified']} mapped objectives could not be judged",
                                     thread_id=thread, recommendation="Restore the unreadable sources or credentials "
                                                                      "and collect again."))
+    cust = ev.get("customers")
     summary = {"evidence_systems": len(systems or []), "evidence_published": published,
                "evidence_held_back": ev.get("held_back", 0)}
+    if cust is not None:
+        if not obs_thread:
+            raise ValueError("customer totals need the observation's own thread")
+        # Customer systems, seen by no particular reader: totals only, no system named or threaded.
+        checks.append(check("evidence_collectors.customers", "A published objective-evidence report for every "
+                                                             "customer system", not cust["unpublished"],
+                            f"{cust['unpublished']} of {cust['systems']} customer systems have no published report: "
+                            "unverified"))
+        for key, sev, what in (("chain_broken", "critical", "customer system(s) whose ledger does not verify"),
+                               ("self_published", "critical", "customer report(s) published by their preparer"),
+                               ("other_than_satisfied", "high", ("objective(s) observed other than satisfied across "
+                                                                "customer systems")),
+                               ("step_missing", "medium", ("customer decision(s) whose declared step was never "
+                                                          "recorded (they decide nothing)")),
+                               ("stale", "medium", ("customer system(s) whose newest published report is past the "
+                                                   "shortest collector budget")),
+                               ("unverified_objectives", "low", ("mapped objective(s) left unverified across customer "
+                                                                "systems")),
+                               ("awaiting_publish", "low", "customer report(s) waiting for a person")):
+            if cust.get(key):
+                findings.append(finding(f"evidence_collectors.customers.{key}", sev, f"{cust[key]} {what}",
+                                        thread_id=obs_thread, recommendation="Each customer's own people see their "
+                                                                             "systems on /evidence-collectors/."))
+        summary.update({f"customer_{k}": v for k, v in cust.items()})
     return checks, findings, summary
 
 

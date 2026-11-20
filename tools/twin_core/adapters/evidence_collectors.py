@@ -9,9 +9,11 @@ A system with no published objective-evidence report is an UNVERIFIED check, nev
 the ``ec_events`` row they rest on (``evidence_collectors:<event id>``): ``other_than_satisfied`` (high: an objective
 a collector observed other than satisfied), ``stale`` (the newest published report is past the shortest collector
 budget: its observations count for nothing), ``unverified_objectives``, ``awaiting_publish``, ``self_published`` and
-``chain_broken``. A system above the twin's marking (CUI) is counted, never described. The recorded platform
-observation is anonymous (ordinals and counts, no system, objective or person); the console's twin route judges per
-reader (``judge_for``) and is never recorded.
+``chain_broken`` and ``step_missing`` (a decision whose declared step was never recorded: it decides nothing). A
+system above the twin's marking (CUI) is counted, never described. The recorded platform observation (what MCP and
+the observatory read) names SYNTHETIC systems only; customer systems are totals (``customers.*``, threaded to the
+observation itself), with no id, ordinal, event, time or digest. The console's twin route judges per reader
+(``judge_for``: that reader's own systems by name) and is never recorded.
 """
 from __future__ import annotations
 
@@ -31,11 +33,13 @@ class EvidenceCollectorsTwin(GovernanceTwinAdapter):
         return replay_observation(self, observation_id)
 
     def collect(self) -> dict:
-        """The platform observation: anonymous (no system, objective or person named; see twin_evidence)."""
+        """The platform observation: synthetic systems by name, customer systems as totals only (twin_evidence)."""
         from tools.evidence_collectors.service import twin_evidence
 
-        return {"canvas": self.canvas_key, "target_id": "evidence_collectors", "observed_at": now_iso(),
-                "policy": load_policy("evidence_collectors"), "evidence": twin_evidence()}
+        at, policy = now_iso(), load_policy("evidence_collectors")
+        return {"canvas": self.canvas_key, "target_id": "evidence_collectors", "observed_at": at, "policy": policy,
+                "evidence": twin_evidence(observed_at=at,
+                                          waiting_days=float((policy or {}).get("waiting_warn_days") or 7))}
 
     def judge_for(self, reader: dict) -> dict:
         """One reader's judgment, never recorded: only the systems that reader may see, the rest counted."""
@@ -53,11 +57,14 @@ class EvidenceCollectorsTwin(GovernanceTwinAdapter):
 
     def judge(self, evidence: dict) -> dict:
         from tools.evidence_collectors.service import twin_judge
+        from tools.twin_core.governance import digest, observation_id
 
+        # The customer totals' thread is this observation itself (as for an unverified check).
+        obs_thread = f"twin_obs:{observation_id(self.canvas_key, digest(evidence))}#evidence_collectors.customers"
         checks, findings, summary = twin_judge(evidence.get("evidence") or {}, evidence.get("policy") or {},
-                                               evidence.get("observed_at") or "")
+                                               evidence.get("observed_at") or "", obs_thread=obs_thread)
         unthreaded = [f["rule_id"] for f in findings
-                      if not str(f.get("thread_id") or "").startswith("evidence_collectors:")]
+                      if not str(f.get("thread_id") or "").startswith(("evidence_collectors:", obs_thread))]
         if unthreaded:
             raise ValueError(f"evidence collector findings without a ledger thread: {unthreaded}")
         return {"checks": checks, "findings": findings, "summary": summary}
