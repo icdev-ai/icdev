@@ -172,7 +172,7 @@ def replay(ordered: list[dict], step_taken: Callable[[dict, bool], bool] | None 
     voided = {str((ledger.payload(r).get("detail") or {}).get("decision_event") or "")
               for r in ordered if r["event"] == "step_lost"}
     prepared = published = None
-    history, lost = [], []
+    history, lost, after_void, superseded = [], [], [], []
     for r in ordered:
         p = ledger.payload(r)
         det = p.get("detail") or {}
@@ -181,10 +181,17 @@ def replay(ordered: list[dict], step_taken: Callable[[dict, bool], bool] | None 
         history.append(h)
         if r["event"] == "prepared":
             prepared = {**h, "decided": None, "pending": None, "report": p.get("content"), "detail": det}
-        elif r["event"] in ("published", "refused") and prepared and not prepared["decided"] \
-                and not prepared["pending"] and det.get("prepared_event") == prepared["event_id"]:
+        elif r["event"] in ("published", "refused") and not (
+                prepared and not prepared["decided"] and not prepared["pending"]
+                and det.get("prepared_event") == prepared["event_id"]):
+            # A decision on a preparation that was not open: it decides nothing. Its step being recorded is a finding.
+            if step_taken is not None and step_taken(h, r["event"] == "published"):
+                superseded.append(h)
+        elif r["event"] in ("published", "refused"):
             if r["event_id"] in voided:
                 lost.append(h)
+                if step_taken is not None and step_taken(h, r["event"] == "published"):
+                    after_void.append(h)      # voided, yet its step was recorded later: it still decides nothing
                 continue
             if step_taken is not None and not step_taken(h, r["event"] == "published"):
                 prepared["pending"] = h
@@ -194,7 +201,8 @@ def replay(ordered: list[dict], step_taken: Callable[[dict, bool], bool] | None 
                 published = {**h, "prepared_event": prepared["event_id"], "prepared_by": prepared["actor"],
                              "report": prepared["report"], "prepared_detail": prepared["detail"]}
     return {"prepared": prepared, "published": published, "history": history, "lost_steps": lost,
-            "pending": (prepared or {}).get("pending")}
+            "pending": (prepared or {}).get("pending"), "recorded_after_void": after_void,
+            "recorded_superseded": superseded}
 
 
 def _step_taken(row: dict, affirmative: bool) -> bool:
@@ -273,6 +281,17 @@ def prepare(sid: str, actor: dict | None, reader: dict | None, *, note: str = ""
     cfg = cfg or cmod.load()
     s = _system(sid, reader, cfg)
     made = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).replace(microsecond=0)
+    own0 = conn is None
+    c0 = conn or ledger.connection()
+    try:
+        st0, _, _ = _state(s["id"], c0)
+    finally:
+        if own0:
+            c0.close()
+    if st0.get("pending"):
+        # A new report would supersede the one a decision is being recorded on.
+        raise Refused(409, "pending", "a decision on this system's report is being recorded: it stands until it is, "
+                                      "or until it is marked lost")
     live = observations is None
     if live:
         _throttle(s["id"], cfg, made, conn)
@@ -373,6 +392,11 @@ def publish(sid: str, *, decision: str, reason: str, read_digest: str, actor: di
             except Refused:
                 note = "it stays pending (blocking) until an operator marks it lost"
             raise Refused(exc.status, exc.code, f"{exc.message}; {note}") from exc
+        # The step is recorded; was the decision voided meanwhile (an operator marked it lost)? Never report success.
+        after, _, _ = _state(s["id"], conn)
+        if ((after["prepared"] or {}).get("decided") or {}).get("event_id") != row["event_id"]:
+            raise Refused(409, "voided", "your decision was marked lost before its step was recorded, so it decides "
+                                         "nothing (your step stands in the decision log): reload and decide again")
     finally:
         if own:
             conn.close()
@@ -388,8 +412,8 @@ def publish(sid: str, *, decision: str, reason: str, read_digest: str, actor: di
 STEP_GRACE_S = 600
 
 
-def mark_step_lost(sid: str, event_id: str, *, actor: dict, reason: str, cfg: dict | None = None,
-                   now: datetime | None = None, conn=None) -> dict:
+def mark_step_lost(sid: str, event_id: str, *, actor: dict, reason: str, asked_by: str, os_user: str,
+                   cfg: dict | None = None, now: datetime | None = None, conn=None) -> dict:
     """The operator's path after a crash between a decision's ledger row and its step: void the PENDING decision
     ``event_id`` with a ``step_lost`` row, so a person can decide the report again. Refused unless it is the pending
     decision of the open report, at least :data:`STEP_GRACE_S` old, and the step store is READABLE and holds no
@@ -400,8 +424,10 @@ def mark_step_lost(sid: str, event_id: str, *, actor: dict, reason: str, cfg: di
     s = cmod.system(cfg, str(sid or ""))
     if s is None:
         raise Refused(404, "not_found", "no such system")
-    if not str(reason or "").strip() or not isinstance(actor, dict) or not actor.get("id"):
-        raise Refused(400, "reason", "a named operator and a reason are required")
+    if not str(reason or "").strip() or not isinstance(actor, dict) or not actor.get("id") \
+            or not str(asked_by or "").strip() or not str(os_user or "").strip():
+        raise Refused(400, "reason", "the operator (OS user and agent), the person who asked, and a reason are "
+                                     "required")
     own = conn is None
     conn = conn or ledger.connection()
     try:
@@ -425,8 +451,9 @@ def mark_step_lost(sid: str, event_id: str, *, actor: dict, reason: str, cfg: di
         row = ledger.append(conn, stream=_stream(s["id"]), event="step_lost", system_id=s["id"],
                             actor=str(actor["id"]), actor_kind=ledger.actor_kind(actor),
                             actor_role=str(actor.get("role") or ""), step_id=str(pend["step_id"]),
-                            reason=str(reason).strip(),
+                            reason=f"{str(reason).strip()} (asked by {str(asked_by).strip()})",
                             detail={"decision_event": pend["event_id"], "org": s["org"],
+                                    "os_user": str(os_user).strip(), "asked_by": str(asked_by).strip(),
                                     "prepared_event": (st["prepared"] or {}).get("event_id")},
                             prev_hash=ledger.head(ordered))
     finally:
@@ -567,6 +594,8 @@ def _twin_row(label: str, st: dict, cfg: dict, *, named: bool) -> dict:
             | {"self_published": str(pub.get("actor") or "").casefold()
                == str(pub.get("prepared_by") or "").casefold()},
             "step_missing": [st["pending"]["event_id"]] if st.get("pending") else [],
+            "step_recorded_after_void": [h["event_id"] for h in st.get("recorded_after_void") or []],
+            "step_on_superseded": [h["event_id"] for h in st.get("recorded_superseded") or []],
             "facts": facts}
 
 
@@ -580,7 +609,7 @@ def twin_evidence(cfg: dict | None = None, reader: dict | None = None, *, observ
     system only TOTALS (``customers``: how many, published, unpublished, objectives other than satisfied, unverified,
     stale, awaiting a person, self-published, steps missing, chains broken) -- no id, ordinal, event, time or digest
     of any customer system; each total a BAND (:func:`band`), and nothing but "fewer than 5" below
-    :data:`CUSTOMER_K` customer systems. Systems above the twin's marking are counted in ``held_back``.
+    :data:`CUSTOMER_K` distinct customer ORGS (a tenant could otherwise subtract its own systems). Systems above the twin's marking are counted in ``held_back``.
     """
     ev: dict[str, Any] = {"systems": None, "errors": {}, "held_back": 0, "scope": "reader" if reader else "platform"}
     try:
@@ -595,8 +624,10 @@ def twin_evidence(cfg: dict | None = None, reader: dict | None = None, *, observ
     budget = min((float(c["max_age_h"]) for c in cfg["collectors"].values()), default=24)
     waiting_h = float(waiting_days) * 24
     items: list[dict] = []
+    orgs: set[str] = set()
     cust = {"systems": 0, "published": 0, "unpublished": 0, "other_than_satisfied": 0, "unverified_objectives": 0,
-            "stale": 0, "awaiting_publish": 0, "self_published": 0, "step_missing": 0, "chain_broken": 0}
+            "stale": 0, "awaiting_publish": 0, "self_published": 0, "step_missing": 0, "step_recorded_after_void": 0,
+            "chain_broken": 0}
     broken = {p["stream"] for p in ch["_problems"]}
     problems = []
     twin = mcp_reader("governance-twin")
@@ -616,6 +647,7 @@ def twin_evidence(cfg: dict | None = None, reader: dict | None = None, *, observ
         row = _twin_row("", st, cfg, named=False)
         pub, prep, facts = row["published"], row["prepared"], row["facts"] or {}
         cust["systems"] += 1
+        orgs.add(str(s.get("org") or "").strip().casefold())
         cust["published" if pub else "unpublished"] += 1
         cust["other_than_satisfied"] += int(facts.get("other_than_satisfied") or 0)
         cust["unverified_objectives"] += int(facts.get("unverified") or 0)
@@ -625,18 +657,19 @@ def twin_evidence(cfg: dict | None = None, reader: dict | None = None, *, observ
         cust["awaiting_publish"] += int(wait is not None and wait > waiting_h)
         cust["self_published"] += int(bool(pub and pub["self_published"]))
         cust["step_missing"] += len(row["step_missing"])
+        cust["step_recorded_after_void"] += len(row["step_recorded_after_void"]) + len(row["step_on_superseded"])
         cust["chain_broken"] += int(stream in broken)
     ev["systems"] = items
     ev["problems"] = problems
     if not reader:
         # Fewer than K customer systems: nothing but that (a tenant could subtract its own system from a total);
         # otherwise every total as a band, never an exact count (no single event shows as a delta).
-        ev["customers"] = ({"systems": f"fewer than {CUSTOMER_K}"} if cust["systems"] < CUSTOMER_K
+        ev["customers"] = ({"systems": f"fewer than {CUSTOMER_K} customer orgs"} if len(orgs) < CUSTOMER_K
                            else {k: band(v) for k, v in cust.items()})
     return ev
 
 
-#: Customer totals reach the platform observation only for at least this many customer systems.
+#: Customer totals reach the platform observation only when the customer systems span at least this many orgs.
 CUSTOMER_K = 5
 _BANDS = ((0, "0"), (4, "1-4"), (9, "5-9"), (24, "10-24"), (99, "25-99"))
 
@@ -708,6 +741,20 @@ def twin_judge(ev: dict, policy: dict, observed_at: str, obs_thread: str = "") -
                                     thread_id=f"evidence_collectors:{eid}",
                                     recommendation="If it does not land, an operator marks it lost (cli.py "
                                                    "step-lost) and a person decides the report again."))
+        for eid in r.get("step_recorded_after_void") or []:
+            findings.append(finding("evidence_collectors.step_recorded_after_void", "high",
+                                    f"{r['system']}: a decision marked lost had its declared step recorded "
+                                    "afterwards: the step stands in the decision log but decides nothing here",
+                                    thread_id=f"evidence_collectors:{eid}",
+                                    recommendation="Reconcile with the person who decided: the report's current "
+                                                   "decision is the one on the ledger after the step_lost row."))
+        for eid in r.get("step_on_superseded") or []:
+            findings.append(finding("evidence_collectors.step_on_superseded", "high",
+                                    f"{r['system']}: a declared step was recorded for a decision on a report that "
+                                    "was no longer open: it decides nothing",
+                                    thread_id=f"evidence_collectors:{eid}",
+                                    recommendation="Reconcile with the person who decided, and decide the current "
+                                                   "report."))
         if pub is None:
             continue
         published += 1
@@ -752,6 +799,9 @@ def twin_judge(ev: dict, policy: dict, observed_at: str, obs_thread: str = "") -
                                                                 "customer systems")),
                                ("step_missing", "medium", ("customer decision(s) whose declared step was never "
                                                           "recorded (they decide nothing)")),
+                               ("step_recorded_after_void", "high", ("customer step(s) recorded for a decision "
+                                                                     "that was void or not open (it decides "
+                                                                     "nothing)")),
                                ("stale", "medium", ("customer system(s) whose newest published report is past the "
                                                    "shortest collector budget")),
                                ("unverified_objectives", "low", ("mapped objective(s) left unverified across customer "

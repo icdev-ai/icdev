@@ -807,7 +807,7 @@ def test_the_twin_route_shows_a_reader_only_their_systems_and_the_platform_twin_
             assert str(v) not in plat, "nothing that identifies a customer system's rows"
     summ = env["extra"]["summary"]
     # One customer system: below K, so nothing but "fewer than 5" (a tenant could subtract its own from a total).
-    assert summ["customer_systems"] == "fewer than 5" and "customer_published" not in summ
+    assert summ["customer_systems"] == "fewer than 5 customer orgs" and "customer_published" not in summ
     assert not [v for v in env["violations"] if v["rule_id"].startswith("evidence_collectors.customers")]
     assert governance.replay(governance.adapter_for("evidence_collectors"),
                              governance.observe(governance.adapter_for("evidence_collectors"))["extra"]
@@ -1303,7 +1303,7 @@ def test_an_unreadable_step_store_blocks_and_never_reopens(ec, monkeypatch):
     assert e.value.code == "pending"
     with pytest.raises(service.Refused) as e:
         service.mark_step_lost("syn-dib-01", pub["event_id"], actor={"id": "agent:ops", "role": "service"},
-                               reason="crash (test)", cfg=ec["cfg"], now=NOW + timedelta(days=30))
+                               asked_by="u-ent02-publisher2", os_user="ops", reason="crash (test)", cfg=ec["cfg"], now=NOW + timedelta(days=30))
     assert e.value.code == "store_unavailable", "an operator cannot void a decision whose step cannot be read"
     monkeypatch.setattr(declared, "step_state", real_state)
     assert service.published_bundle("syn-dib-01", reader(PUBLISHER), cfg=ec["cfg"]) is not None, "it was A's"
@@ -1328,14 +1328,14 @@ def test_the_operator_voids_a_crashed_decision_only_after_its_grace_and_only_whe
     eid = v["pending"]["event_id"]
     ops = {"id": "agent:ops", "role": "service"}
     with pytest.raises(service.Refused) as e:
-        service.mark_step_lost("syn-dib-01", eid, actor=ops, reason="crash (test)", cfg=ec["cfg"])
+        service.mark_step_lost("syn-dib-01", eid, actor=ops, asked_by="u-ent02-publisher2", os_user="ops", reason="crash (test)", cfg=ec["cfg"])
     assert e.value.code == "too_soon", "an in-flight decision is never raced"
     with pytest.raises(service.Refused) as e:
-        service.mark_step_lost("syn-dib-01", "ece-0000000000000000", actor=ops, reason="x", cfg=ec["cfg"],
+        service.mark_step_lost("syn-dib-01", "ece-0000000000000000", actor=ops, asked_by="u-ent02-publisher2", os_user="ops", reason="x", cfg=ec["cfg"],
                                now=datetime.now(timezone.utc) + timedelta(hours=1))
     assert e.value.code == "not_pending"
     later = datetime.now(timezone.utc) + timedelta(hours=1)
-    out = service.mark_step_lost("syn-dib-01", eid, actor=ops, reason="crash (test)", cfg=ec["cfg"], now=later)
+    out = service.mark_step_lost("syn-dib-01", eid, actor=ops, asked_by="u-ent02-publisher2", os_user="ops", reason="crash (test)", cfg=ec["cfg"], now=later)
     assert out["voided"] == eid
     assert service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])["next"] == ["publish"]
     assert _publish(ec, p, who=PUBLISHER2)["event"] == "published"
@@ -1356,6 +1356,11 @@ def test_customer_totals_need_five_systems_and_are_banded(ec):
     base["synthetic"] = False
     for i in range(2, 6):
         ec["cfg"]["systems"].append(dict(copy.deepcopy(base), id=f"cust-{i:02d}"))
+    # Five customer systems of ONE org: still below K, which counts distinct orgs.
+    one = governance.observe(governance.adapter_for("evidence_collectors"), record=False)["extra"]["summary"]
+    assert one["customer_systems"] == "fewer than 5 customer orgs" and "customer_published" not in one
+    for i, s_ in enumerate(ec["cfg"]["systems"][3:], start=2):
+        s_["org"] = f"cust-org-{i}"
     env = governance.observe(governance.adapter_for("evidence_collectors"), record=False)
     summ = env["extra"]["summary"]
     assert (summ["customer_systems"], summ["customer_published"], summ["customer_unpublished"]) == ("5-9", "1-4", "1-4")
@@ -1365,3 +1370,105 @@ def test_customer_totals_need_five_systems_and_are_banded(ec):
     hi = [v for v in env["violations"] if v["rule_id"] == "evidence_collectors.customers.other_than_satisfied"]
     assert hi and hi[0]["thread_id"].startswith("twin_obs:")
     assert hi[0]["title"].split(" ")[0] in ("1-4", "5-9", "10-24", "25-99", "100+"), "a band, never a count"
+
+
+# ── the final check's lesser findings ─────────────────────────────────────────
+
+
+def test_a_decision_voided_while_its_step_was_recording_is_never_reported_as_success(ec, monkeypatch):
+    """(1) An operator marked the decision lost while take_step hung; the step then landed: publish() said success."""
+    from tools.evidence_collectors import service
+    from tools.workflow_hitl import declared
+
+    _fresh_sources(ec)
+    p = _prepare(ec, now=datetime.now(timezone.utc))
+    real = declared.take_step
+
+    def slow(*a, **k):
+        pend = service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])["pending"]
+        service.mark_step_lost("syn-dib-01", pend["event_id"], actor={"id": "agent:ops", "role": "service"},
+                               reason="looked crashed (test)", asked_by="u-ent02-publisher2", os_user="ops",
+                               cfg=ec["cfg"], now=datetime.now(timezone.utc) + timedelta(hours=1))
+        return real(*a, **k)
+
+    monkeypatch.setattr(declared, "take_step", slow)
+    with pytest.raises(service.Refused) as e:
+        _publish(ec, p)
+    assert e.value.code == "voided"
+    monkeypatch.setattr(declared, "take_step", real)
+    v = service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])
+    assert v["published"] is None and v["next"] == ["publish"]
+    mine = _page_app(PUBLISHER).get("/evidence-collectors/api/twin").get_json()
+    assert any(f["rule_id"] == "evidence_collectors.step_recorded_after_void" for f in mine["findings"])
+
+
+def test_no_new_report_supersedes_a_pending_decision_and_a_step_on_a_closed_report_is_a_finding(ec, monkeypatch):
+    from tools.evidence_collectors import ledger, service
+    from tools.workflow_hitl import declared
+
+    p = _prepare(ec)
+
+    def crash(*a, **k):
+        raise SystemExit("died")
+
+    real = declared.take_step
+    monkeypatch.setattr(declared, "take_step", crash)
+    with pytest.raises(SystemExit):
+        _publish(ec, p)
+    monkeypatch.setattr(declared, "take_step", real)
+    with pytest.raises(service.Refused) as e:
+        _prepare(ec, now=NOW + timedelta(seconds=1))
+    assert e.value.code == "pending", "a new report never supersedes one a decision is being recorded on"
+    # A recorded step on a decision about a report that was no longer open decides nothing, and is a finding.
+    eid = service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])["pending"]["event_id"]
+    service.mark_step_lost("syn-dib-01", eid, actor={"id": "agent:ops", "role": "service"}, reason="crash (test)",
+                           asked_by="u-ent02-publisher", os_user="ops", cfg=ec["cfg"],
+                           now=datetime.now(timezone.utc) + timedelta(hours=1))
+    out = _publish(ec, p, who=PUBLISHER2)
+    p2 = _prepare(ec, now=NOW + timedelta(seconds=2))
+    conn = ledger.connection()
+    try:
+        ordered, _ = ledger.stream_rows("system:syn-dib-01", conn)
+        stray = ledger.append(conn, stream="system:syn-dib-01", event="published", system_id="syn-dib-01",
+                              actor=PUBLISHER2["id"], actor_kind="person", step_id=out["step"]["step_id"],
+                              detail={"prepared_event": p["event_id"]}, prev_hash=ledger.head(ordered))
+    finally:
+        conn.close()
+    st = service.replay_checked(ledger.stream_rows("system:syn-dib-01", ledger.connection())[0])
+    assert [h["event_id"] for h in st["recorded_superseded"]] == [stray["event_id"]]
+    assert st["prepared"]["event_id"] == p2["event_id"] and not st["prepared"]["decided"]
+    mine = _page_app(PUBLISHER).get("/evidence-collectors/api/twin").get_json()
+    assert any(f["rule_id"] == "evidence_collectors.step_on_superseded" for f in mine["findings"])
+
+
+def test_the_step_lost_cli_records_the_os_user_and_who_asked(ec):
+    """(2) The operator's path named only --agent, which anyone running the CLI chooses."""
+    from tools.evidence_collectors import cli, ledger, service
+
+    p = _prepare(ec)
+    from tools.workflow_hitl import declared
+
+    real = declared.take_step
+    declared.take_step = lambda *a, **k: (_ for _ in ()).throw(SystemExit("died"))
+    try:
+        with pytest.raises(SystemExit):
+            _publish(ec, p)
+    finally:
+        declared.take_step = real
+    eid = service.system_view("syn-dib-01", reader(PUBLISHER2), cfg=ec["cfg"])["pending"]["event_id"]
+    assert cli.main(["step-lost", "--system", "syn-dib-01", "--event", eid, "--reason", "crash (test)"]) == 1, \
+        "refused without the person who asked"
+    import os
+    import pwd
+
+    assert cli._os_user() == pwd.getpwuid(os.getuid()).pw_name
+    with pytest.raises(service.Refused):
+        service.mark_step_lost("syn-dib-01", eid, actor={"id": "agent:ops", "role": "service"}, reason="x",
+                               asked_by="", os_user="ops", cfg=ec["cfg"])
+    service.mark_step_lost("syn-dib-01", eid, actor={"id": "agent:ops", "role": "service"}, reason="crash (test)",
+                           asked_by="u-ent02-publisher2", os_user=cli._os_user(), cfg=ec["cfg"],
+                           now=datetime.now(timezone.utc) + timedelta(hours=1))
+    mark = next(r for r in ledger.read() if r["event"] == "step_lost")
+    det = ledger.payload(mark)["detail"]
+    assert det["os_user"] == cli._os_user() and det["asked_by"] == "u-ent02-publisher2"
+    assert "asked by u-ent02-publisher2" in mark["reason"]
