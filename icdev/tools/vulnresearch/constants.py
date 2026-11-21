@@ -55,9 +55,12 @@ SOURCES = ("sast", "sca", "agent", "fuzz")
 
 BUNDLE_SCHEMA = "icos-findings/v1"
 BUNDLE_SCHEMA_RELPATH = "context/icos/findings.schema.json"
-PUBLICATION_SCHEMA = "icdev-findings-publication/v1"
+PUBLICATION_SCHEMA = "icos-findings-publication/v1"
 PUBLICATION_RELPATH = "context/icos/findings-publication.schema.json"
 PRODUCER_SYSTEM = "icdev-it"
+#: ICDEV[OS]'s registered system id (its findings contract's ``target.system_id``): a name it would refuse never
+#: reaches a bundle.
+SYSTEM_ID = r"^[a-z][a-z0-9-]{1,62}$"
 PRODUCER_TOOL = "icdev-it/vulnresearch"
 
 # IQE (the canvas completeness gate, point 8): tools/iqe/adapters/vulnresearch.py registers these.

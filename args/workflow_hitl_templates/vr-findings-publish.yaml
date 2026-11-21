@@ -14,7 +14,7 @@ effect: >-
   The decided step in wf_decision_steps is the publication (subject: "vr_findings:<target id>"; payload: the
   target, the bundle's content digest and the prepared event). vr_events appends a published or bundle_refused
   event on the bundle stream, chained to the row before it. Only a published bundle is exported, with its
-  publication BESIDE it (icdev-findings-publication/v1, the Academy publication's shape):
+  publication BESIDE it (icos-findings-publication/v1, the Academy publication's shape):
   tools/vulnresearch/cli.py export --published.
 approval_policy: any_one
 kickback_limit: 1

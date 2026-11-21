@@ -214,7 +214,7 @@ requirements:
   - id: PM-VR-06
     title: The icos-findings/v1 bundle is prepared by one person and published by another
     text: >-
-      The bundle validates against its pinned draft schema, its digest recomputes, it carries no PoV input. Preparing
+      The bundle validates against ICDEV[OS]'s pinned contract schema, its digest recomputes, it carries no PoV input. Preparing
       records it at its digest and decides nothing; publishing is a person's declared step (decl-wft-vr-findings-
       publish), never the preparer's. Its publication (the Academy publication's shape) travels beside it and
       verifies against the append-only, hash-chained ledger.

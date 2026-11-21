@@ -35,7 +35,7 @@ import yaml
 from icdev.core.paths import repo_root
 from tools.security.redteam_scope import ScopeViolation
 from tools.vulnresearch import ledger
-from tools.vulnresearch.constants import CONFIG_RELPATH, GENESIS, SURFACE_AUTHORISE, TEMPLATE_AUTHORISE
+from tools.vulnresearch.constants import CONFIG_RELPATH, GENESIS, SURFACE_AUTHORISE, SYSTEM_ID, TEMPLATE_AUTHORISE
 
 BASE_DIR = repo_root(__file__)
 
@@ -195,9 +195,9 @@ def register(actor: Optional[dict], *, name: str, root: str, reason: str, src_ro
         raise TargetRefused(401, "no_actor", "registering a target needs a signed-in person or a named agent")
     if not _text(name) or not _text(reason):
         raise TargetRefused(400, "fields", "a target needs a name and a reason (why it may be tested)")
-    if _text(system_id) and not re.match(r"^[a-z0-9][a-z0-9._-]{0,63}$", _text(system_id)):
-        raise TargetRefused(400, "system_id", "system_id is the ICDEV[OS] registered system id "
-                                              "(lower-case letters, digits, . _ -), e.g. icos")
+    if _text(system_id) and not re.fullmatch(SYSTEM_ID, _text(system_id)):
+        raise TargetRefused(400, "system_id", "system_id is the ICDEV[OS] registered system id (a lower-case "
+                                              "letter, then 1-62 lower-case letters, digits or -), e.g. icos")
     cfg = load_config()
     try:
         p = resolve_root(root, cfg)

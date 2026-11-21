@@ -7785,7 +7785,7 @@ register it. Discovery reads and runs it only through the scope lock and the iso
 (`SandboxExecutor.run_isolated`, no network). A candidate becomes a finding only with a proof of vulnerability
 replayed through `reproduction_validator`; patches are proposals a person reviews; one `icos-findings/v1`
 bundle per target goes to ICDEV[OS], prepared by one person and published by another, its publication beside it
-(`context/icos/findings.schema.json`, `findings-publication.schema.json`, DRAFT, pinned). The CLI acts as an
+(`context/icos/findings.schema.json`, `findings-publication.schema.json`, vendored from ICDEV[OS] contract 1.201.0, pinned). The CLI acts as an
 agent and takes no person's step.
 
 ```bash

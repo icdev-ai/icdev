@@ -9,14 +9,16 @@ published-by-another pattern of the conformance and Academy bundles exactly (``t
   isolated, every confirmed finding with its sealed PoV's digest and replay outcomes (never the PoV), its patch
   proposal and review, the dropped candidates counted by reason, the UNPROVEN dependency advisories with their KEV
   flag, and the newest benchmark measurement. ``content_digest`` is SHA-256 over the canonical JSON without
-  ``content_digest`` and ``produced_at``. Validated against the DRAFT schema (``context/icos/findings.schema.json``,
-  pinned by SHA-256 here) before it is returned;
+  ``content_digest`` and ``produced_at``. Validated against ICDEV[OS]'s contract (``context/icos/findings.schema.json``,
+  vendored from contract ``SCHEMA_CONTRACT`` and pinned by SHA-256 here) before it is returned. That contract has no
+  room for the run's isolation waiver or the measurement's status and why: the waiver stays in the run record (the
+  twin reports it), and an unverified measurement reaches ICDEV[OS] as null rates;
 * :func:`prepare` -- anyone, or an agent, records it at its digest as ``prepared`` on ``bundle:<target>``; it
   decides nothing;
 * :func:`publish` -- a person who did not prepare it publishes or refuses, with a reason, bound to that digest
   (``decl-wft-vr-findings-publish``);
 * :func:`published` -- the newest published bundle EXACTLY as prepared, and its publication BESIDE it
-  (``icdev-findings-publication/v1``, the Academy publication's shape, ``context/icos/findings-publication.schema.json``);
+  (``icos-findings-publication/v1``, the Academy publication's shape, ``context/icos/findings-publication.schema.json``);
 * :func:`verify` -- both documents against their pinned schemas, the digest, the separation, and (given the
   ledger) the published row on an intact chain over that very bundle.
 
@@ -47,9 +49,11 @@ from tools.vulnresearch.constants import (
     TEMPLATE_PUBLISH,
 )
 
-#: The DRAFT schemas, pinned: a changed file is refused, never silently used.
-SCHEMA_SHA256 = "ef02a8ffa6cbeb8655cca734f4da36236cc83277e47b478ff60909b1d19302dc"
-PUBLICATION_SHA256 = "58db1ff2e08c49f7629173522617ddbadb9100e12f157698df1d3c288695ef44"
+#: ICDEV[OS]'s published contract (osx-ent-07), vendored byte for byte and pinned: a changed file is refused, never
+#: silently used. To take a newer contract: copy both schemas, update these and context/icos/README.md.
+SCHEMA_SHA256 = "555fbdff56e74f27e60981c2275e5ba2cae60351e4d55e5d509ff703a7481697"
+PUBLICATION_SHA256 = "9f86fdc8656c67e57550c6a3a97b1e6af56afd6b1738680917e52747b456d8d9"
+SCHEMA_CONTRACT = "1.201.0"
 
 BundleRefused = ledger.LedgerRefused
 BUNDLE_FILE = "icos-findings.json"
@@ -69,7 +73,7 @@ def _pinned(rel: str, sha: str) -> dict:
     raw = (targets.BASE_DIR / rel).read_bytes()
     got = hashlib.sha256(raw).hexdigest()
     if got != sha:
-        raise BundleRefused(500, "schema", f"{rel} is not the pinned draft (sha256 {got}, pinned {sha})")
+        raise BundleRefused(500, "schema", f"{rel} is not the pinned contract (sha256 {got}, pinned {sha})")
     return json.loads(raw)
 
 
@@ -142,7 +146,6 @@ def build(target_id: str, *, at: Optional[str] = None, conn=None, check: bool = 
     measurement = None
     if m:
         measurement = {"event_id": m["event_id"], "run_id": m["run_id"], "model_used": bool(m.get("model_used")),
-                       "status": m.get("status") or "unverified", "why": m.get("why") or "",
                        "labels": {k: m["labels"].get(k) for k in ("path", "sha256", "synthetic", "labelled_by",
                                                                   "reviewed_by")},
                        "scores": {k: m["scores"][k] for k in ("tp", "fp", "fn", "tn", "false_positive_rate",
@@ -162,8 +165,7 @@ def build(target_id: str, *, at: Optional[str] = None, conn=None, check: bool = 
                                      "expires_on": st["decision"]["expires_on"]}},
         "run": {"run_id": run["run_id"], "event_id": newest["event_id"], "content_digest": newest["content_digest"],
                 "recorded_at": newest["created_at"],
-                "isolation": {k: iso.get(k) for k in ("engine", "oci_runtime", "isolation", "microvm", "network",
-                                                      "waiver")},
+                "isolation": {k: iso.get(k) for k in ("engine", "oci_runtime", "isolation", "microvm", "network")},
                 "sast": {"tool": run["sast"].get("tool"), "ran": bool(run["sast"].get("ran"))},
                 "sca": {"tool": run["sca"].get("tool"), "ran": bool(run["sca"].get("ran"))},
                 "review": {"ran": bool(run["review"].get("ran")), "provenance": run["review"].get("provenance")},
@@ -181,7 +183,7 @@ def build(target_id: str, *, at: Optional[str] = None, conn=None, check: bool = 
     if check:
         errors = validate(bundle)
         if errors:
-            raise BundleRefused(500, "contract", "the bundle does not meet the icos-findings/v1 draft: "
+            raise BundleRefused(500, "contract", "the bundle does not meet the icos-findings/v1 contract: "
                                 + "; ".join(errors[:10]))
     return bundle
 

@@ -470,7 +470,12 @@ def test_the_schemas_are_pinned_and_the_publication_has_the_academy_shape():
     assert set(pub["properties"]) == set(pub["required"]) | {"role"}
     s = bundle.schema()
     assert s["additionalProperties"] is False and "publication" not in s["properties"], "it travels beside"
-    assert s["x-icos-contract"] == "draft" and s["x-license"] == "Apache-2.0"
+    # ICDEV[OS]'s published contract (osx-ent-07), vendored byte for byte: no longer a draft
+    assert s["$id"] == "urn:icdev-os:contract:findings:1" and s["x-license"] == "Apache-2.0"
+    assert s["x-icos-contract"] == pub["x-icos-contract"] == bundle.SCHEMA_CONTRACT
+    assert pub["$id"] == "urn:icdev-os:contract:findings-publication:1"
+    assert bundle.PUBLICATION_SCHEMA == "icos-findings-publication/v1"
+    assert bundle.PUBLICATION_SCHEMA in pub["properties"]["schema"]["enum"]
 
 
 def test_publishing_is_a_persons_step_never_the_preparers_and_it_verifies(vr):
@@ -496,6 +501,7 @@ def test_publishing_is_a_persons_step_never_the_preparers_and_it_verifies(vr):
     assert out["event"] == "published"
     pub = bundle.published(tid)
     assert pub["publication"]["signed_by"] == AUTHORISER["id"] and pub["publication"]["prepared_by"] == REGISTRANT["id"]
+    assert pub["publication"]["schema"] == "icos-findings-publication/v1", "ICDEV[OS]'s name, not the draft's"
     v = bundle.verify(pub["bundle"], pub["publication"], ledger.read())
     assert v["ok"], v["errors"]
     forged = {**pub["publication"], "signed_by": REGISTRANT["id"]}
@@ -779,12 +785,14 @@ def test_a_real_target_needs_gvisor_or_a_microvm_and_only_the_benchmark_is_waive
         discovery.run(r["target_id"], REGISTRANT, use_model=False)
     assert exc.value.code == "isolation" and "gVisor" in exc.value.message
     assert LocalDouble.calls == [], "nothing ran in a container that is not strong enough"
-    # the synthetic benchmark runs under its named waiver, carried in the run and the bundle
+    # the synthetic benchmark runs under its named waiver, carried in the run (and so the twin); the bundle carries
+    # what ICDEV[OS]'s contract has room for: a container, not a microVM (its Isolation has no waiver field)
     tid = _bench()
     run = discovery.run(tid, REGISTRANT, use_model=False)["run"]
     w = run["isolation"]["waiver"]
     assert w and w["id"] == "vr-waiver-synthetic-benchmark" and w["reason"]
-    assert bundle.build(tid)["run"]["isolation"]["waiver"]["id"] == "vr-waiver-synthetic-benchmark"
+    biso = bundle.build(tid)["run"]["isolation"]
+    assert "waiver" not in biso and biso["isolation"] == "container" and biso["microvm"] is False
     # with gVisor configured the same real target runs, and no waiver is needed or recorded
     from tools.security import sandbox_executor
 
@@ -831,7 +839,10 @@ def test_a_measurement_whose_tools_did_not_all_run_is_unverified(vr, monkeypatch
     assert m["status"] == "unverified" and "bandit" in m["why"]
     assert m["scores"]["false_positive_rate"] is None and m["scores"]["false_negative_rate"] is None
     assert bundle.validate(bundle.build(tid)) == []
-    assert bundle.build(tid)["measurement"]["status"] == "unverified"
+    bm = bundle.build(tid)["measurement"]
+    # ICDEV[OS]'s Measurement has no status or why: an unverified measurement reaches it as null rates, never 1.0 / 0
+    assert "status" not in bm and "why" not in bm
+    assert bm["scores"]["false_positive_rate"] is None and bm["scores"]["false_negative_rate"] is None
     monkeypatch.setattr(sast_runner, "run_bandit", canned_bandit)
     monkeypatch.setattr(discovery, "_pip_audit", lambda argv: (_ for _ in ()).throw(RuntimeError("offline")))
     assert benchmark.measure(tid, REGISTRANT, use_model=False)["status"] == "unverified"
@@ -880,6 +891,11 @@ def test_a_target_names_its_icos_system_and_the_bundle_carries_it(vr):
     with pytest.raises(targets.TargetRefused) as exc:
         targets.register(REGISTRANT, name="x", root=BENCH, reason="x", system_id="Not A System!")
     assert exc.value.code == "system_id"
+    # ICDEV[OS]'s system id (^[a-z][a-z0-9-]{1,62}$): a name its import would refuse is refused here, at registration
+    for bad in ("1abc", "a.b", "a_b", "x", "a" * 64):
+        with pytest.raises(targets.TargetRefused) as exc:
+            targets.register(REGISTRANT, name="x", root=BENCH, reason="x", system_id=bad)
+        assert exc.value.code == "system_id", bad
     tid = _bench(system_id="icos")
     assert targets.state(tid)["registered"]["registration"]["system_id"] == "icos"
     discovery.run(tid, REGISTRANT, use_model=False)
