@@ -1,0 +1,211 @@
+{
+  "$defs": {
+    "Entry": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "description": "citations in the forms icdev_os/rmf/evidence.py resolves",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "method": {
+          "default": "automated",
+          "enum": [
+            "examine",
+            "interview",
+            "test",
+            "automated"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Note",
+          "type": "string"
+        },
+        "objective": {
+          "description": "<framework>/<objective id>, as the backbone names it",
+          "maxLength": 200,
+          "minLength": 3,
+          "title": "Objective",
+          "type": "string"
+        },
+        "observed_at": {
+          "description": "RFC 3339 time (with its zone) the evidence was observed; never after the report's produced_at",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "satisfied",
+            "other_than_satisfied"
+          ],
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "objective",
+        "result",
+        "observed_at"
+      ],
+      "title": "Entry",
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    },
+    "Publication": {
+      "additionalProperties": false,
+      "properties": {
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "decided_at": {
+          "title": "Decided At",
+          "type": "string"
+        },
+        "prepared_by": {
+          "minLength": 1,
+          "title": "Prepared By",
+          "type": "string"
+        },
+        "signed_by": {
+          "minLength": 1,
+          "title": "Signed By",
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prepared_by",
+        "signed_by",
+        "step_id",
+        "decided_at",
+        "content_digest"
+      ],
+      "title": "Publication",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:objective-evidence:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One system's objective evidence (``icos-objective-evidence/v1``, osx-ent-02). ``content_digest`` is the SHA-256 of\nthe canonical JSON (keys sorted, separators ``,`` and ``:``) of the report without ``content_digest`` and\n``publication``. ``classification`` is a claim only: ICOS marks a report by its system's declared marking.",
+  "properties": {
+    "as_of": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "title": "As Of",
+      "type": "string"
+    },
+    "classification": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Classification"
+    },
+    "collector": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Collector",
+      "type": "string"
+    },
+    "content_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/Entry"
+      },
+      "maxItems": 20000,
+      "minItems": 1,
+      "title": "Entries",
+      "type": "array"
+    },
+    "produced_at": {
+      "description": "RFC 3339 time (with its zone) the report was produced",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "title": "Produced At",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "publication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Publication"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema": {
+      "const": "icos-objective-evidence/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "system": {
+      "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+      "title": "System",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "system",
+    "as_of",
+    "produced_at",
+    "producer",
+    "collector",
+    "entries",
+    "content_digest"
+  ],
+  "title": "ObjectiveEvidence",
+  "type": "object",
+  "x-icos-contract": "1.199.0",
+  "x-license": "Apache-2.0"
+}
