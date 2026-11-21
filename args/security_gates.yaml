@@ -2421,3 +2421,40 @@ coe_golden_paths:
     The drift check scaffolds into a temporary tree laid over the checkout and never writes to a
     database or to the repo. The standards that apply to a path are derived from the register and
     args/coe_conformance.yaml, never listed by hand.
+
+
+# AI-assisted vulnerability discovery, proven or dropped (icx-ent-01)
+#
+# Enforced by tools/vulnresearch/* (targets.assert_in_scope, pov.replay_pair, patches.validate, bundle.verify), the
+# isolated sandbox (tools/security/sandbox_executor.py::SandboxExecutor.run_isolated) and the declared templates
+# args/workflow_hitl_templates/vr-*.yaml; tested in tests/test_icx_ent_01_*.py (gated: core.d/icx-ent-01.txt).
+vuln_research:
+  blocking:
+    - target_not_authorised          # a target not authorised by a person (or refused, revoked, expired) is never scanned
+    - self_authorised                # the registrant never authorises their own target (separate_from: builders)
+    - root_not_allowlisted           # a tree outside scope.allowed_roots is refused at registration and every scan
+    - tree_changed                   # a tree whose digest moved since registration is a different target
+    - network_in_sandbox             # run_isolated has no network switch; --network none is fixed
+    - isolation_container            # a real target runs only under gVisor or a microVM; runc is refused
+                                     # (only the synthetic benchmark's named waiver, recorded in the run and the
+                                     # bundle; twin: vulnresearch.isolation_container critical when unwaived)
+    - finding_without_pov            # a candidate whose PoV did not discriminate is dropped, never a finding
+    - pov_exported                   # a sealed PoV input never appears in a view, an MCP result or a bundle
+    - patch_without_proof            # a patch is proposed only when its PoV fails on the copy and the tests pass
+    - patch_applied                  # nothing in this feature writes to the target
+    - self_reviewed_patch            # the proposer never reviews their own patch
+    - preparer_publishes             # the preparer never publishes the findings bundle
+    - bundle_off_schema              # a bundle that does not meet the pinned draft, or whose digest is not its content's
+    - schema_unpinned                # context/icos/findings*.schema.json changed without re-pinning
+    - chain_broken                   # a vr_events row that does not verify blocks new events on that stream
+  warning:
+    - finding_unpatched              # twin: vulnresearch.finding_unpatched
+    - bundle_unpublished             # twin: vulnresearch.bundle.<target> unverified (never passed)
+    - measurement_missing            # twin: vulnresearch.measurement unverified
+    - labels_unreviewed              # twin: vulnresearch.labels_unreviewed (planted by construction)
+    - isolation_waived               # twin: vulnresearch.isolation_waived (the benchmark ran under its waiver)
+    - authorisation_expired          # twin: vulnresearch.authorisation_expired
+  note: >
+    A dependency advisory has no PoV recipe: it is carried as UNPROVEN with its KEV flag (null when KEV was not
+    read), never a finding. The model (Cortex governance, llm_function vuln_source_review / vuln_patch_draft) only
+    proposes candidates and drafts; no model judges a finding or a measurement.

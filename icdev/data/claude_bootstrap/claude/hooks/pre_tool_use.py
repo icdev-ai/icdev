@@ -700,6 +700,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # icx-coe-03, migration 20261118024513: the conformance bundle ledger (prepared, then a
         # person publishes or refuses), hash-chained per repo. Only a published bundle leaves.
         "coe_conformance_events",
+        # icx-ent-01, migration 20261118231119: the AI-assisted vulnerability discovery ledger
+        # (targets, runs, measurements, patch proposals, findings bundles), hash-chained per stream.
+        "vr_events",
         # icx-coe-04, migration 20261118070149: the golden path ledger (seeded, proposed,
         # drift-checked, then a person publishes, refuses or retires), hash-chained per path.
         "coe_golden_path_events",

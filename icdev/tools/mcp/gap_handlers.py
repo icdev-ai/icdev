@@ -1519,6 +1519,12 @@ def handle_guard_result(args: dict) -> dict:
 def handle_finding_replay(args: dict) -> dict:
     """Replay one stored reproduction for a dynamic finding (oss-poc-01)."""
     try:
+        if str((args.get("reproduction") or {}).get("kind") or "") == "sandbox_pov":
+            # icx-ent-01: a sandbox proof of vulnerability is replayed only by tools/vulnresearch, from what it
+            # sealed, on a scope-locked target; never from a caller's reproduction.
+            return {"error": "a sandbox_pov reproduction is not replayed through this tool: tools/vulnresearch "
+                             "replays its own sealed PoVs on authorised targets only",
+                    "code": "sandbox_pov_refused", "refused": True}
         from tools.security.reproduction_validator import Reproduction, replay
 
         repro = Reproduction.from_dict(dict(args.get("reproduction") or {}))
@@ -1531,6 +1537,12 @@ def handle_finding_replay(args: dict) -> dict:
 def handle_finding_enforce_reproduction(args: dict) -> dict:
     """Apply the reproduce-or-drop rule to a batch of findings (oss-poc-01)."""
     try:
+        if any(str(((f or {}).get("reproduction") or {}).get("kind") or "") == "sandbox_pov"
+               for f in (args.get("findings") or []) if isinstance(f, dict)):
+            # icx-ent-01: as for finding_replay and finding_verify_discrimination.
+            return {"error": "a sandbox_pov reproduction is not judged through this tool: tools/vulnresearch "
+                             "replays its own sealed PoVs on authorised targets only",
+                    "code": "sandbox_pov_refused", "refused": True}
         from tools.security.reproduction_validator import enforce
 
         report = enforce(
@@ -1553,6 +1565,12 @@ def handle_finding_enforce_reproduction(args: dict) -> dict:
 def handle_finding_verify_discrimination(args: dict) -> dict:
     """Prove a reproduction distinguishes vulnerable from fixed (oss-poc-01)."""
     try:
+        if str((args.get("reproduction") or {}).get("kind") or "") == "sandbox_pov":
+            # icx-ent-01: a sandbox proof of vulnerability is replayed only by tools/vulnresearch, from what it
+            # sealed, on a scope-locked target; never from a caller's reproduction.
+            return {"error": "a sandbox_pov reproduction is not replayed through this tool: tools/vulnresearch "
+                             "replays its own sealed PoVs on authorised targets only",
+                    "code": "sandbox_pov_refused", "refused": True}
         from tools.security.reproduction_validator import (
             Reproduction,
             mark_discriminating,
@@ -5233,4 +5251,46 @@ def handle_coe_golden_path_propose(args: dict) -> dict:
                 "next": "its drift check runs; a person who did not author it publishes it on /idp/golden-paths"}
     except Exception as exc:
         logger.warning("handle_coe_golden_path_propose: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_vulnresearch_status(args: dict) -> dict:
+    """MCP (icx-ent-01): read vulnerability discovery. Sealed PoVs are never returned. Changes nothing."""
+    try:
+        from tools.vulnresearch import benchmark, bundle, discovery, patches, targets
+
+        tid = str(args.get("target_id") or "").strip()
+        if not tid:
+            return {"classification": CORTEX_CLASSIFICATION, "targets": targets.targets_view(),
+                    "measurement": benchmark.latest()}
+        try:
+            return {"classification": CORTEX_CLASSIFICATION, "target": targets.state(tid),
+                    "runs": discovery.runs(tid)[:3], "patches": patches.patches_for(tid),
+                    "bundle": bundle.ledger_view(tid)}
+        except targets.TargetRefused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_vulnresearch_status: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_vulnresearch_prepare(args: dict) -> dict:
+    """MCP (icx-ent-01): an agent prepares a target's findings bundle as a DRAFT, recorded as ``agent:<id>``.
+
+    Preparing decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or
+    refuses it on /vulnresearch/ (decl-wft-vr-findings-publish).
+    """
+    try:
+        from tools.vulnresearch import bundle
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = bundle.prepare(str(args.get("target_id") or ""), {"id": f"agent:{agent}", "role": "service"},
+                                 note=str(args.get("note") or ""))
+        except bundle.BundleRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who did not prepare it publishes it or refuses it on /vulnresearch/"}
+    except Exception as exc:
+        logger.warning("handle_vulnresearch_prepare: %s", exc)
         return {"error": str(exc)}

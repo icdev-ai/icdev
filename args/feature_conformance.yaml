@@ -666,6 +666,48 @@ features:
           file: tools/idp/blueprint.py
           text: "A person, never the version's author, retires a published golden path version, or keeps it."
 
+  # ── AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) ──
+  # Targets registered and authorised by a person (scope-locked), discovery from SAST,
+  # SCA, an agentic review (proposes only) and fuzz harnesses, a finding only with a
+  # proof of vulnerability replayed in the sandbox, patches a person reviews (never
+  # applied), FP/FN measured on planted labels, and one icos-findings/v1 bundle per
+  # target, prepared by one person and published by another.
+  - key: vulnresearch.discovery
+    component: vulnresearch
+    label: "Vulnerability discovery: authorised targets, PoV-proven findings, reviewed patches, findings bundles"
+    endpoints:
+      - vulnresearch.vr_page
+      - vulnresearch.vr_api_targets
+      - vulnresearch.vr_api_target_register
+      - vulnresearch.vr_api_target
+      - vulnresearch.vr_api_target_authorise
+      - vulnresearch.vr_api_target_revoke
+      - vulnresearch.vr_api_run
+      - vulnresearch.vr_api_measure
+      - vulnresearch.vr_api_patch_propose
+      - vulnresearch.vr_api_patch_review
+      - vulnresearch.vr_api_bundle_prepare
+      - vulnresearch.vr_api_bundle_publish
+      - vulnresearch.vr_api_bundle
+      - vulnresearch.vr_api_twin
+    mcp_tools: [vulnresearch_status, vulnresearch_prepare]
+    declared_decisions:
+      - id: vulnresearch.target.authorise
+        endpoint: vulnresearch.vr_api_target_authorise
+        evidence:
+          file: tools/vulnresearch/blueprint.py
+          text: "A person, never the registrant, authorises a registered target for testing, or refuses it."
+      - id: vulnresearch.patch.review
+        endpoint: vulnresearch.vr_api_patch_review
+        evidence:
+          file: tools/vulnresearch/blueprint.py
+          text: "A person, never the proposer, accepts or rejects a proposed patch. Nothing is applied."
+      - id: vulnresearch.bundle.publish
+        endpoint: vulnresearch.vr_api_bundle_publish
+        evidence:
+          file: tools/vulnresearch/blueprint.py
+          text: "A person, never the preparer, publishes a target's prepared findings bundle to ICDEV[OS], or refuses it."
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory

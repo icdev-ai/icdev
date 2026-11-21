@@ -677,6 +677,11 @@ _THREAD_TABLES = {
     "coe_golden_path": ("core", "coe_golden_path_events", "event_id",
                         ("event_id", "path_id", "version", "event", "actor", "actor_kind", "actor_role",
                          "step_id", "reason", "entry_digest", "row_hash", "created_at")),
+    # icx-ent-01: one event of AI-assisted vulnerability discovery (a target, a run, a measurement, a patch,
+    # a findings bundle), on its stream's hash chain.
+    "vulnresearch": ("core", "vr_events", "event_id",
+                     ("event_id", "stream", "event", "subject", "actor", "actor_kind", "actor_role", "step_id",
+                      "reason", "content_digest", "row_hash", "created_at")),
     # icx-coe-04: one declared decision step (its rows in wf_decision_steps), the thread a service
     # scaffolded on a golden path gives its findings.
     "wf_step": ("rls", "wf_decision_steps", "step_id",
