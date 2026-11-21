@@ -6,12 +6,12 @@ CONFIG_RELPATH = "args/evidence_collectors.yaml"
 CONFIG_SCHEMA = "icdev-evidence-collectors/v1"
 
 #: ICDEV[OS]'s objective-evidence contract (osx-ent-02, contracts/schemas/objective-evidence.schema.json at contract
-#: SCHEMA_CONTRACT), vendored verbatim. A changed file is refused, never silently used. It is re-pinned when
-#: ICDEV[OS] merges osx-ent-02.
+#: SCHEMA_CONTRACT), vendored verbatim. A changed file is refused, never silently used. Re-pinned to ICDEV[OS]
+#: main after osx-ent-02 merged (merge cfe0b91e).
 SCHEMA = "icos-objective-evidence/v1"
 SCHEMA_RELPATH = "context/icos/objective-evidence.schema.json"
-SCHEMA_SHA256 = "c2773691383e16c4ce831f57d098080b64c297979c04a4f24e75a61607a54817"
-SCHEMA_CONTRACT = "1.196.0"
+SCHEMA_SHA256 = "adea74c3cc1e384f7fae9250098e6460c7966467e1ebc48b75bc651273c563d7"
+SCHEMA_CONTRACT = "1.199.0"
 #: The fields ICDEV[OS]'s Publication model admits (extra fields are refused there): the publication is EMBEDDED in
 #: the report (its ``publication`` field), the placement icdev_os/publication.py ``split(raw, "embedded")`` reads.
 PUBLICATION_FIELDS = ("prepared_by", "signed_by", "step_id", "decided_at", "content_digest")

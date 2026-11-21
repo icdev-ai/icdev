@@ -35,10 +35,10 @@ preparer. To take a newer contract: copy the new schema, update the digest in `c
 ## The objective-evidence report (icx-ent-02; ICDEV[OS] osx-ent-02)
 
 `objective-evidence.schema.json` is ICDEV[OS]'s `icos-objective-evidence/v1` schema
-(`urn:icdev-os:contract:objective-evidence:1`), copied verbatim from the ICDEV[OS] branch `kanban/osx-ent-02`
-(commit d7cadf18, `contracts/schemas/objective-evidence.schema.json`, contract version 1.196.0, SHA-256
-`c2773691383e16c4ce831f57d098080b64c297979c04a4f24e75a61607a54817`). It is NOT `icos-evidence/v1`, which is ICDEV[OS]'s
-own CI evidence bundle. It will be re-pinned when ICDEV[OS] merges osx-ent-02. It is licensed Apache-2.0 (`LICENSE`,
+(`urn:icdev-os:contract:objective-evidence:1`), copied verbatim from ICDEV[OS] `main` after
+osx-ent-02 merged (merge cfe0b91e, `contracts/schemas/objective-evidence.schema.json`, contract version 1.199.0, SHA-256
+`adea74c3cc1e384f7fae9250098e6460c7966467e1ebc48b75bc651273c563d7`). It is NOT `icos-evidence/v1`, which is ICDEV[OS]'s
+own CI evidence bundle. It is licensed Apache-2.0 (`LICENSE`,
 `NOTICE` here), unlike the rest of this repository.
 
 `tools/evidence_collectors/bundle.py` validates every report against it and refuses to run if the file's digest is not
