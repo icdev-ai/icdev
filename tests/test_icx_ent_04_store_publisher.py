@@ -53,6 +53,32 @@ def people(monkeypatch):
     return rows
 
 
+def _bandit_runs() -> bool:
+    """Whether bandit runs under THIS interpreter, as asset_scanner runs it (``sys.executable -m bandit``). The SAST
+    tests state which engine they expect from this and check it: a runner with bandit and one without both test the
+    gate, never one by skipping."""
+    import subprocess
+    import sys
+
+    r = subprocess.run([sys.executable, "-m", "bandit", "--version"], capture_output=True, text=True, timeout=60)
+    return r.returncode == 0 and "bandit" in (r.stdout + r.stderr).lower()
+
+
+BANDIT = _bandit_runs()
+
+
+@pytest.fixture(params=["as_installed", "bandit_absent"])
+def sast_engine(request, monkeypatch):
+    """Both paths of the SAST gate on every runner: bandit as this runner has it (or not), and bandit made absent (the
+    AST checks only)."""
+    from tools.marketplace import asset_scanner
+
+    if request.param == "bandit_absent":
+        monkeypatch.setattr(asset_scanner, "_bandit", lambda path: (None, set()))
+        return "ast"
+    return "bandit+ast" if BANDIT else "ast"
+
+
 def reader(u: dict) -> dict:
     return {"id": u["id"], "role": u["role"], "clearance": u["clearance_level"], "org": u["tenant_id"]}
 
@@ -296,7 +322,8 @@ def test_every_kind_builds_a_package_that_meets_the_contract(sp, signer):
         assert [s["id"] for s in out["agent_card"]["skills"]] == out["tools"]
 
 
-def test_the_seven_gates_run_on_the_package_and_a_gate_that_cannot_run_is_unverified(sp, signer, monkeypatch):
+def test_the_seven_gates_run_on_the_package_and_a_gate_that_cannot_run_is_unverified(sp, signer, monkeypatch,
+                                                                                      sast_engine):
     from tools.marketplace import asset_scanner
     from tools.store_publisher import package
 
@@ -304,7 +331,7 @@ def test_the_seven_gates_run_on_the_package_and_a_gate_that_cannot_run_is_unveri
     assert agent["sast_scan"] == "not_applicable", "an agent carries no code"
     assert {k for k, v in agent.items() if v != "pass"} == {"sast_scan"}
     mcp = _build(sp, signer, MCP_PKG)
-    assert mcp["package"]["scan"]["sast_scan"] == "pass" and mcp["record"]["gates"]["sast_scan"]["engine"] == "bandit+ast"
+    assert mcp["package"]["scan"]["sast_scan"] == "pass" and mcp["record"]["gates"]["sast_scan"]["engine"] == sast_engine
 
     def boom(_path):
         raise RuntimeError("the analysis could not run")
@@ -766,7 +793,7 @@ def _with_sources(sp, *srcs):
     return p
 
 
-def test_m1_the_analysed_code_cannot_switch_the_sast_gate_off(sp, signer):
+def test_m1_the_analysed_code_cannot_switch_the_sast_gate_off(sp, signer, sast_engine):
     """``# nosec``, a ``.bandit`` ini the sources carry, and a directory bandit skips by default each hid a finding."""
     from tools.store_publisher import config, package
 
@@ -783,9 +810,15 @@ def test_m1_the_analysed_code_cannot_switch_the_sast_gate_off(sp, signer):
     (d / "x" / "c.py").write_text("exec(input())\n")
     (d / ".tox" / "b.py").write_text("eval(input())\n")
     r = sast_findings(d)
-    assert r["status"] == "fail" and r["findings"]["unanalysed"] == []
-    ids = {i.get("test_id") for i in r["findings"]["issues"]}
-    assert {"B102", "B307"} <= ids, "the .bandit ini in the sources is never read, and .tox is analysed"
+    assert r["engine"] == sast_engine and r["status"] == "fail" and r["findings"]["unanalysed"] == []
+    # the AST checks always run, over every file (.tox included): exec in x/c.py and eval in .tox/b.py
+    assert {(i["file"], i["severity"]) for i in r["findings"]["issues"] if not i.get("test_id")} >= \
+        {("x/c.py", "critical"), (".tox/b.py", "critical")}
+    if sast_engine == "bandit+ast":
+        # bandit ran: its own ids for both, so the sources' .bandit (skips=B102,B307) was never read and .tox was
+        # analysed (bandit's --ini replaces its .bandit discovery, -x its default excludes)
+        ids = {i.get("test_id") for i in r["findings"]["issues"]}
+        assert {"B102", "B307"} <= ids, "the .bandit ini in the sources is never read, and .tox is analysed"
     cfg = copy.deepcopy(sp["cfg"])
     cfg.pop("_digest")
     for bad in (".bandit", "x/.bandit", ".tox/b.py"):
@@ -795,20 +828,19 @@ def test_m1_the_analysed_code_cannot_switch_the_sast_gate_off(sp, signer):
 
 
 def test_m1_a_python_file_bandit_did_not_analyse_is_unverified_and_named(sp, monkeypatch):
+    """bandit's JSON ``metrics`` lists every file it read; a Python file missing from it was not analysed. The report
+    here is bandit's shape, made by the test, so the rule is tested whichever engine the runner has."""
     from tools.marketplace import asset_scanner
 
     d = sp["root"] / "m1b"
     d.mkdir(parents=True)
     (d / "a.py").write_text("print('a')\n")
     (d / "b.py").write_text("print('b')\n")
-    real = asset_scanner._bandit
-
-    def partial(path):
-        out, analysed = real(path)
-        return out, {x for x in analysed if not x.endswith("b.py")}
-
-    monkeypatch.setattr(asset_scanner, "_bandit", partial)
+    only_a = str((d / "a.py").resolve())
+    report = {"errors": [], "results": [], "metrics": {only_a: {"loc": 1}, "_totals": {"loc": 1}}}
+    monkeypatch.setattr(asset_scanner, "_bandit", lambda path: (report, {only_a}))
     r = asset_scanner.sast_findings(d)
+    assert r["engine"] == "bandit+ast"
     assert r["status"] == "unverified" and r["findings"]["unanalysed"] == ["b.py"]
 
 
