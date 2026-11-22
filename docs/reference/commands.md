@@ -7777,6 +7777,33 @@ python tools/idp/conformance_export.py --repo ft --snapshot
 python tools/idp/dora.py --repo-path . --ref origin/main --at 2026-11-17 --json
 ```
 
+### AI-assisted vulnerability discovery, proven or dropped (icx-ent-01)
+
+Defensive research on AUTHORISED targets only (`args/vuln_research.yaml`). A target is a local tree under
+`scope.allowed_roots`, registered at its digest and authorised on `/vulnresearch/` by a person who did not
+register it. Discovery reads and runs it only through the scope lock and the isolated sandbox
+(`SandboxExecutor.run_isolated`, no network). A candidate becomes a finding only with a proof of vulnerability
+replayed through `reproduction_validator`; patches are proposals a person reviews; one `icos-findings/v1`
+bundle per target goes to ICDEV[OS], prepared by one person and published by another, its publication beside it
+(`context/icos/findings.schema.json`, `findings-publication.schema.json`, vendored from ICDEV[OS] contract 1.201.0, pinned). The CLI acts as an
+agent and takes no person's step.
+
+```bash
+python tools/vulnresearch/cli.py status
+python tools/vulnresearch/cli.py register --name bench --root context/vulnresearch/benchmark --src-root src \
+    --test-dir tests --fuzz vb_parser:parse_record --reason "synthetic benchmark"
+python tools/vulnresearch/cli.py run --target vrt-0123456789 --no-model      # after a person authorised it
+python tools/vulnresearch/cli.py measure --target vrt-0123456789             # FP/FN against the planted labels
+python tools/vulnresearch/cli.py prepare --target vrt-0123456789             # a draft; a person publishes it
+python tools/vulnresearch/cli.py export --target vrt-0123456789 --published --out .tmp/vr
+python tools/vulnresearch/cli.py verify .tmp/vr --ledger
+# Inside the isolated sandbox only (run by pov.py / harness.py, never on the host):
+#   python tools/vulnresearch/sandbox_runtime/pov_runner.py /harness/spec.json
+#   python tools/vulnresearch/sandbox_runtime/fuzz_runner.py /harness/spec.json
+# The fuzz image with atheris 3.1.0 (optional; else the built-in coverage-guided fuzzer runs):
+docker build -t icdev-vuln-sandbox:atheris-3.1.0 deploy/vuln-sandbox
+```
+
 ### Signed factory builds (icx-ent-03)
 
 One signed `icos-artefact/v1` (ICDEV[OS]'s contract, vendored and pinned, `context/icos/artefact.schema.json`) per

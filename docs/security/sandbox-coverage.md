@@ -2790,6 +2790,14 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
 - **Residual:** responses come from `invoke()`, not `invoke_streaming` -- the streaming path does not de-anonymize or write telemetry yet (owui-api-02). A router response-cache hit writes no `ai_telemetry` row, and that row records the router's default classification rather than the request's. The per-exchange audit row of owui-flow-02 closes both.
 - **Revisit if:** the endpoint starts accepting native tool calls, fetching URLs or files named in a message, or streaming through `invoke_streaming`.
 
+## icx-ent-01: AI-assisted vulnerability discovery (`tools/vulnresearch`)
+
+| Ingress | Module | Decision | Why |
+|---|---|---|---|
+| `vr_target_tree` | `tools/vulnresearch/targets.py::register` | **trusted-first-party** (read only) | A target tree is READ to digest it and to index its functions (`ast.parse`, never executed); only under `scope.allowed_roots`, a symlink out of the root refused. |
+| `vr_target_code` | `tools/vulnresearch/pov.py::run_in_sandbox` | **sandboxed** | Target code is only ever EXECUTED inside `SandboxExecutor.run_isolated`: a fresh container, `--network none`, read-only root, `--cap-drop ALL`, no new privileges, user nobody, pids/memory capped, the target mounted read-only and only `/out` writable. PoV replays, generated fuzz harnesses and a patched copy's tests all go through it. A container is not a microVM; `sandbox.isolated.oci_runtime` takes gVisor or a microVM runtime when an operator installs one. |
+| `vr_patch_diff` | `tools/vulnresearch/patches.py::validate` | **sandboxed** | A proposed diff is applied with `git apply` to a throwaway COPY (paths limited to in-scope files) and its effect is only judged in the sandbox. The target is never written. |
+| `vr_model_output` | `tools/vulnresearch/discovery.py::agent_review` | **trusted-first-party** (data only) | The agentic review's reply (Cortex governance, LLM router) is parsed as JSON data; a proposal naming a file or function outside the target is dropped. It never runs and never becomes a finding without a PoV. |
 
 ## icx-ent-03: signed factory builds (`tools/factory_builds`)
 
