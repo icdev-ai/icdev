@@ -2455,3 +2455,38 @@ evidence_collectors:
     Collector entries cite nothing ICDEV[OS] resolves, so there they stand as unverified until an assessor's
     determination cites the report (report:<content digest>). This is evidence, never an assessment.
 
+# Signed factory builds (icx-ent-03)
+#
+# Enforced by tools/factory_builds/* (config.validate, config.read_confined, build.build, build.self_check,
+# aibom.promoted_version, aibom.check_binding, service.visible, service.prepare, service.publish, service.export),
+# tools/crypto/artefact_signer.py and the declared template args/workflow_hitl_templates/fb-build-publish.yaml; tested in
+# tests/test_icx_ent_03_*.py (gated: core.d/icx-ent-03.txt).
+factory_builds:
+  blocking:
+    - no_signing_key                # no key configured: refused, never a MAC or an unsigned build
+    - test_key_outside_tmp          # a file: key is a throwaway test key in the temporary directory only
+    - keyless_without_issuer        # keyless needs a configured OIDC issuer, Fulcio URL and token: no public default
+    - certificate_mismatch          # Fulcio's leaf must carry the ephemeral key and name the configured issuer
+    - signature_does_not_verify     # every signature is checked under the key's own public key before it is used
+    - agent_signs                   # an agent or a service key never makes the factory's key sign
+    - preparer_publishes            # the preparer never publishes (separate_from: builders)
+    - other_org_or_uncleared        # outside the target's org or below its marking: "no such target"
+    - publish_on_stale_digest       # the prepared build changed since the person read it
+    - build_off_contract            # a manifest, SBOM or VEX off ICDEV[OS]'s pinned contracts is refused
+    - schema_unpinned               # a vendored schema whose SHA-256 is not its pin is refused, never used
+    - model_not_promoted            # a model is built only from a promoted fine-tuning registry version
+    - promotion_withdrawn           # a model demoted since it was built is never published
+    - model_marking_above_target    # registry rows above the target's marking (or another tenant's) are refused
+    - path_outside_root_or_symlink  # inputs only under the reviewed roots, regular files with one link, no symlinks
+    - vex_unexpressible             # nothing to state: refused, never an invented OpenVEX statement
+    - export_without_step           # a publication counts only with its declared step recorded, by that person
+    - outbound_redirect             # Fulcio and Rekor calls are https, never follow a redirect, one deadline
+    - chain_broken                  # an fb_events row that does not verify blocks new events for that target
+  warning:
+    - target_unpublished            # twin: factory_builds.<target> unverified (never passed)
+    - awaiting_publish              # twin: factory_builds.awaiting_publish
+    - keyless_not_admitted          # twin: ICDEV[OS]'s register admits key-based builds only, for now
+  note: >
+    The transparency log is off by default and a build records that it is; with rekor configured, the log's
+    entries are recorded as receipts, NOT verified (no log key is pinned). A build is evidence for ICDEV[OS]'s
+    admission, never an approval: ICDEV[OS] admits, and its people approve the release.

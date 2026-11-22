@@ -700,3 +700,27 @@ features:
           file: tools/evidence_collectors/blueprint.py
           text: "A person, never the preparer, publishes a system's prepared objective-evidence report to ICDEV[OS], or refuses it."
 
+  # ── Signed factory builds (icx-ent-03) ───────────────────────────────────
+  # One signed icos-artefact/v1 per built artefact (image, model, agent, IaC): CycloneDX 1.7 SBOM
+  # or AI-BOM (a model's linked to its fine-tuning registry promotion), SLSA v1.2 provenance,
+  # OpenVEX, Sigstore bundles signed by the factory's KMS, keyring or keyless key, OpenSSF
+  # model-signing, OCI referrers; prepared by a person, published by another of the target's org
+  # (decl-wft-fb-build-publish), exported for ICDEV[OS]'s release register (osx-ent-06).
+  - key: factory_builds.signed_builds
+    component: factory_builds
+    label: "Signed factory builds: signed artefacts with SBOM/AI-BOM, provenance and VEX for ICDEV[OS]"
+    endpoints:
+      - factory_builds.fb_page
+      - factory_builds.fb_api_targets
+      - factory_builds.fb_api_target
+      - factory_builds.fb_api_prepare
+      - factory_builds.fb_api_publish
+      - factory_builds.fb_api_export
+      - factory_builds.fb_api_twin
+    mcp_tools: [factory_builds_status]
+    declared_decisions:
+      - id: factory_builds.publish
+        endpoint: factory_builds.fb_api_publish
+        evidence:
+          file: tools/factory_builds/blueprint.py
+          text: "A person, never the preparer, publishes a target's signed build to ICDEV[OS], or refuses it."

@@ -1,0 +1,7 @@
+{
+  "description": "signed factory build ledger: a target's build prepared (signed by the factory's key), then a person publishes or refuses; append-only and hash-chained per target (icx-ent-03)",
+  "date": "2026-11-21",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

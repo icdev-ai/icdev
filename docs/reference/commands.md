@@ -7777,6 +7777,27 @@ python tools/idp/conformance_export.py --repo ft --snapshot
 python tools/idp/dora.py --repo-path . --ref origin/main --at 2026-11-17 --json
 ```
 
+### Signed factory builds (icx-ent-03)
+
+One signed `icos-artefact/v1` (ICDEV[OS]'s contract, vendored and pinned, `context/icos/artefact.schema.json`) per
+built artefact of a target in `args/factory_builds.yaml`: a CycloneDX 1.7 SBOM (an AI-BOM for a model, linked to its
+fine-tuning registry promotion), SLSA v1.2 provenance, OpenVEX, Sigstore bundles signed by the factory's key (KMS or
+the OS keyring; keyless only with a configured OIDC issuer), OpenSSF model-signing for model weights, and OCI
+referrers. A person prepares a build on `/factory-builds/`; another person of the target's org publishes it
+(`decl-wft-fb-build-publish`); only then is it exported for ICDEV[OS]'s release register.
+
+```bash
+# Check the configuration (signing mode and whether a key is set, the transparency log, the targets)
+python -m tools.factory_builds.cli check-config --json
+
+# The synthetic targets an agent may see, and the labelled synthetic inputs for the demo and the e2e
+python -m tools.factory_builds.cli targets --json
+python -m tools.factory_builds.cli seed-synthetic --json
+
+# The newest PUBLISHED synthetic build, as ICDEV[OS] imports it ({bundle, publication}; POST /api/v1/artefacts)
+python -m tools.factory_builds.cli export --target syn-ent03-portal --out .tmp/factory-builds/portal.json
+```
+
 ### Evidence collectors for customer environments (icx-ent-02)
 
 Four read-only collectors (cloud configuration via AWS Config, the identity provider via OIDC

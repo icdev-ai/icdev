@@ -90,3 +90,8 @@ engineering_standards:
 # published report older than the shortest collector budget (args/evidence_collectors.yaml) is stale.
 evidence_collectors:
   waiting_warn_days: 7
+
+# icx-ent-03: signed factory builds (tools/factory_builds), canvas key factory_builds. A prepared signed build waiting
+# this long for a person to publish or refuse it is a finding.
+factory_builds:
+  waiting_warn_days: 7
