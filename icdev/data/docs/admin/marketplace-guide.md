@@ -45,6 +45,13 @@ Every asset passes through the following gates before publication:
 | 8 | Prompt injection scan | Yes -- 0 high-confidence injection patterns |
 | 9 | Behavioral sandbox | Warning -- 0 critical dangerous code patterns (eval, exec, os.system) |
 
+> **Retired (icx-ent-04).** `publish_pipeline.py` and `review_queue.py` refuse (code `superseded`). An agent, crew,
+> skill, MCP server or plugin is now a signed ICDEV[OS] store package: a person prepares it on `/store-publisher/`
+> (`tools/store_publisher`, ICDEV's seven scanner gates run on it and the publisher's key signs its Agent Card),
+> another person publishes it (the declared step `icos-store-publish`), and ICDEV[OS] imports it, re-runs its gates
+> and a reviewer who is none of them certifies it. See `docs/features/icx-ent-04-store-publisher.md`. The commands
+> below are kept for the record and refuse.
+
 ### Publish a Skill
 
 ```bash
@@ -182,7 +189,8 @@ python tools/marketplace/compatibility_checker.py \
 
 ## Review Queue
 
-Cross-tenant asset sharing requires mandatory human review by an ISSO or security officer. The review queue tracks all pending reviews.
+Cross-tenant asset sharing requires mandatory human review by an ISSO or security officer. **Retired (icx-ent-04):** the review
+queue refuses; a store package is reviewed and certified in ICDEV[OS] (its `store-review` workflow).
 
 ### List Pending Reviews
 

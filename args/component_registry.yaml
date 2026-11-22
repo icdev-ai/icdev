@@ -2384,6 +2384,35 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/factory_builds/
+# icx-ent-04: the store publisher. Its own blueprint (tools/store_publisher/blueprint.py, mounted at /store-publisher/);
+# a person prepares a signed icos-store-package/v1 and another person publishes it for ICDEV[OS]'s agent store.
+- key: store_publisher
+  kind: canvas
+  cli_name: store-publisher
+  display_name: Store Publisher
+  description: Signed ICDEV[OS] store packages (agent, crew, skill, MCP server, plugin) -- a JWS-signed A2A Agent
+    Card binding the package's content, SBOM and dependency report, declared tools and ceilings, the publisher's
+    red-team report and ICDEV's seven scanner gates -- prepared by one person and published by another, replacing the
+    deprecated marketplace publish and review tools.
+  env_flag: ICDEV_STORE_PUBLISHER_ENABLED
+  default_enabled: true
+  module: tools.store_publisher.blueprint
+  blueprint_attr: sp_bp
+  url_prefix: /store-publisher
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Store Publisher
+    links:
+    - label: Store Publisher
+      href: /store-publisher/
+  completeness:
+    template: tools/dashboard/templates/store_publisher/index.html
+    blueprint: true
+    constants: tools/store_publisher/constants.py
+    db_migration: tools/db/migrations/20261122112221_sp_events
+    nav_link: true
 
 # ═══════════════════════════════════════════════════════════════════════════
 # IQE / AI-brief path → canvas map (cvx-nav-01)
@@ -2483,3 +2512,5 @@ iqe_path_canvas:
 - {path: /evidence-collectors, canvas: evidence_collectors}
 # icx-ent-03: signed factory builds
 - {path: /factory-builds, canvas: factory_builds}
+# icx-ent-04: the store publisher
+- {path: /store-publisher, canvas: store_publisher}

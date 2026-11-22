@@ -2490,3 +2490,40 @@ factory_builds:
     The transparency log is off by default and a build records that it is; with rekor configured, the log's
     entries are recorded as receipts, NOT verified (no log key is pinned). A build is evidence for ICDEV[OS]'s
     admission, never an approval: ICDEV[OS] admits, and its people approve the release.
+
+# Store publisher (icx-ent-04)
+#
+# Enforced by tools/store_publisher/* (config.validate, package.build, package.self_check, gates.run, service.visible,
+# service.prepare, service.publish, service.export), tools/store_publisher/card.py, tools/common/confined_read.py and the
+# declared template args/workflow_hitl_templates/store-publish.yaml; tested in tests/test_icx_ent_04_*.py (gated:
+# core.d/icx-ent-04.txt).
+store_publisher:
+  blocking:
+    - no_publisher_key              # no key configured: refused, never an unsigned card
+    - key_not_pinned                # signing.kid set and the key is another: refused (key_mismatch)
+    - signature_does_not_verify     # every card signature is checked under the key's own public key before it is used
+    - card_not_bound                # the card's icos.store/package_digest is not the package's digest, or its skills
+                                    # are not exactly the declared tools
+    - agent_signs                   # an agent or a service key never makes the publisher's key sign, never publishes
+    - preparer_publishes            # the preparer never publishes (separate_from: builders)
+    - other_org_or_uncleared        # outside the package's org or below its marking: "no such package"
+    - publish_on_stale_digest       # the prepared package changed since the person read it
+    - package_off_contract          # a package off ICDEV[OS]'s pinned store-package schema is refused
+    - schema_unpinned               # a vendored schema whose SHA-256 is not its pin is refused, never used
+    - ceiling_needs_accreditation   # a marking or egress ceiling of cui or above is the owner's, never a package's
+    - redteam_incomplete            # a red-team report that answers no result for an id its kind needs
+    - time_in_future                # any produced_at in the future, or a time with no zone
+    - path_outside_root_or_symlink  # inputs only under package_root, regular files with one link, no symlinks
+    - export_without_step           # a publication counts only with its declared step recorded, by that person
+    - chain_broken                  # an sp_events row that does not verify blocks new events for that package
+  warning:
+    - package_unpublished           # twin: store_publisher.<package> unverified (never passed)
+    - awaiting_publish              # twin: store_publisher.awaiting_publish
+    - gate_not_passed               # twin: published with a scanner gate that did not pass (ICDEV[OS] will block it)
+    - redteam_not_passed            # twin: published with a failed or unverified red-team id
+    - key_unverified                # twin: published with no signing.kid or key here to confirm the card's key
+  note: >
+    The seven scanner gates' results ship as the publisher's own report (scan); ICDEV[OS] re-runs its gates and shows
+    ours as claimed. A gate that cannot run is unverified, never pass. A package is offered to ICDEV[OS]'s store, never
+    certified here: ICDEV[OS] imports it, and a reviewer who is neither its importer nor one of the publisher's people
+    certifies it.
