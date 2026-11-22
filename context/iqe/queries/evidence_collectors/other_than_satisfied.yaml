@@ -1,0 +1,12 @@
+# CUI // SP-CTI
+collection: evidence_collectors.objectives
+query: "Show objectives observed other than satisfied"
+description: >-
+  Objectives a read-only collector observed other than satisfied in a system's newest published report. An
+  objective that could not be judged is unverified and never a row here.
+iqe: >-
+  foreach o in evidence_collectors.objectives where o.result == "other_than_satisfied"
+  select o.system, o.objective, o.observed_at
+example_questions:
+  - "Show objectives observed other than satisfied"
+  - "Which objectives did the collectors find not satisfied?"

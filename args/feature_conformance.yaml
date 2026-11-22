@@ -674,3 +674,29 @@ features:
       - twin_observatory.conformance_page
       - twin_observatory.api_conformance
     mcp_tools: [feature_conformance]
+
+  # ── Evidence collectors for customer environments (icx-ent-02) ──────────
+  # Read-only collectors (cloud configuration, identity provider, endpoints, SIEM) with
+  # credentials by reference; observations with a freshness budget; a reviewed mapping to
+  # SP 800-171 Rev. 2 and SP 800-53 Rev. 5 objectives; one icos-objective-evidence/v1
+  # report per system per run, prepared by one person and published by another of the
+  # system's org (decl-wft-ec-evidence-publish).
+  - key: evidence_collectors.objective_evidence
+    component: evidence_collectors
+    label: "Evidence collectors: read-only customer sources, objective evidence for ICDEV[OS]"
+    endpoints:
+      - evidence_collectors.ec_page
+      - evidence_collectors.ec_api_systems
+      - evidence_collectors.ec_api_system
+      - evidence_collectors.ec_api_prepare
+      - evidence_collectors.ec_api_publish
+      - evidence_collectors.ec_api_bundle
+      - evidence_collectors.ec_api_twin
+    mcp_tools: [evidence_collectors_status, evidence_collectors_prepare]
+    declared_decisions:
+      - id: evidence_collectors.publish
+        endpoint: evidence_collectors.ec_api_publish
+        evidence:
+          file: tools/evidence_collectors/blueprint.py
+          text: "A person, never the preparer, publishes a system's prepared objective-evidence report to ICDEV[OS], or refuses it."
+
