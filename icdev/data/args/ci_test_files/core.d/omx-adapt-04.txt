@@ -1,0 +1,3 @@
+tests/llm/test_claude_http_bridge.py
+tests/test_omarchy_claude_bridge.py
+tests/agents/test_claude_route_capability.py

@@ -380,10 +380,22 @@ def _mirror_scope(name_status: list[tuple[str, str]]) -> list[str]:
 
     A deletion has no bytes to compare, and a top-level tools/*.py has no package
     twin. Returns [] for the common commit, which then pays nothing.
+
+    A path in a ``mirror_parity.DATA_MIRRORS`` tree is in scope for a DELETION
+    too: its twin must go with it, or the packaged copy keeps a file the source
+    no longer has.
     """
+    from tools.dx.mirror_parity import data_mirror_pair  # noqa: PLC0415
+
     out: list[str] = []
     for status, path in name_status:
-        if not status or status[0] not in ("A", "M", "R"):
+        if not status:
+            continue
+        if data_mirror_pair(path) is not None:
+            if status[0] in ("A", "M", "R", "D"):
+                out.append(path)
+            continue
+        if status[0] not in ("A", "M", "R"):
             continue
         parts = path.split("/")
         if parts[:2] == ["icdev", "tools"]:
@@ -440,9 +452,32 @@ def _run_mirror_parity(files: list[str], root: Path = BASE_DIR) -> bool:
             print(result.stderr.strip())
         return True
 
+    from tools.dx.mirror_parity import data_mirror_pair, source_of, twin_of  # noqa: PLC0415
+
+    # A DATA_MIRRORS tree has no grandfathered backlog and no extension policy:
+    # every difference blocks, missing and mirror-only included. That is the
+    # drift it exists for -- 75 core.d fragments were added with no packaged
+    # twin, which the tools/ rule below would only have NOTED.
+    data_drift = [
+        f for bucket in ("content_drift", "missing_from_mirror", "mirror_only")
+        for f in report.get(bucket) or [] if data_mirror_pair(f) is not None
+    ]
     excluded = _mirror_excluded_extensions()
-    drift = [f for f in report.get("content_drift") or [] if Path(f).suffix not in excluded]
-    missing = [f for f in report.get("missing_from_mirror") or [] if Path(f).suffix not in excluded]
+    drift = [f for f in report.get("content_drift") or []
+             if Path(f).suffix not in excluded and data_mirror_pair(f) is None]
+    missing = [f for f in report.get("missing_from_mirror") or []
+               if Path(f).suffix not in excluded and data_mirror_pair(f) is None]
+    if data_drift:
+        print("[pre-commit] BLOCKED: a staged file differs from its packaged icdev/data/ twin:")
+        for key in data_drift:
+            print(f"  {source_of(key)}  !=  {twin_of(key)}")
+        print(
+            "[pre-commit] An installed wheel and every `icdev init` project read the packaged copy. "
+            "Reconcile with:\n"
+            f"  python tools/dx/mirror_parity.py --files {','.join(data_drift)} --fix\n"
+            "then `git add` (or `git rm`, for a source you deleted) the icdev/data/ copies and retry."
+        )
+        return False
     if missing:
         print(
             f"[pre-commit] NOTE: {len(missing)} staged file(s) have no icdev/tools/ twin "

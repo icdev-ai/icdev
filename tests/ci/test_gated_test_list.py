@@ -255,12 +255,14 @@ def test_two_prs_sharing_the_workflow_are_still_held():
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("name", sorted(LISTS))
 def test_packaged_copy_is_present_and_parses(name: str):
-    """Byte-identity is deliberately NOT asserted.
+    """The wheel ships a usable list rather than nothing.
 
-    `tools/installer/sync_package_tree.py` refreshes icdev/data/args/ at release.
-    Requiring a hand-sync would make every test addition a two-file edit again —
-    exactly the cost this task removed. What must hold is that the wheel ships a
-    usable list rather than nothing.
+    Byte identity is asserted separately, by tests/ci/test_packaged_args_parity.py.
+    It used to be left to `tools/installer/sync_package_tree.py` at release, so
+    that a test addition stayed a one-file edit; six weeks after release 1.2.44
+    the packaged core.txt was 19 lines short and 75 core.d fragments were
+    missing, and nothing had noticed. The second file is now one command
+    (`mirror_parity.py --files <paths> --fix`), and the pre-commit hook names it.
     """
     mirrored = ROOT / "icdev" / "data" / "args" / "ci_test_files" / LISTS[name]
     assert mirrored.is_file()

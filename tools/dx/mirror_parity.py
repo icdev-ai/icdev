@@ -32,6 +32,11 @@ the question in 79ms; it never
 calls ``git ls-files --ignored`` because a staged file is by definition tracked.
 Either spelling of a path is accepted (``tools/…`` or ``icdev/tools/…``) and is
 resolved to the SAME pair, so a change to the mirror alone is drift too.
+
+``DATA_MIRRORS`` adds packaged data trees to the same audit: today
+``args/ci_test_files`` <-> ``icdev/data/args/ci_test_files``, the allowlist an
+installed wheel reads. ``--all`` and ``--files`` cover it; see the constant for
+why that tree and not the rest of ``icdev/data/args``.
 """
 
 import argparse
@@ -45,6 +50,32 @@ import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+#: Packaged DATA trees that must be byte-identical to their source on every
+#: commit, not only after a release sync: ``(source dir, packaged twin)``,
+#: both repo-relative.
+#:
+#: ``args/ci_test_files`` is here because an installed wheel READS its twin:
+#: ``tools/ci/gated_test_list.repo_root`` resolves ``<pkg>/data/args/
+#: ci_test_files`` when there is no checkout, and ``icdev init`` copies
+#: ``icdev/data/args`` into every child project. It used to be left to
+#: ``sync_package_tree`` at release, and nothing compared the two in between,
+#: because this tool only knew ``tools/`` <-> ``icdev/tools/``. Measured on
+#: origin/main 2026-11-22, six weeks after release 1.2.44 left them identical:
+#: the packaged ``core.txt`` was 19 lines short (``test_competitive_intel_web``,
+#: ``test_creative_engine_sources`` and three more) and 75 ``core.d/``
+#: fragments were missing, so the wheel's allowlist was a different list from
+#: the one CI gates on. ``.gitattributes`` already declares both copies
+#: ``merge=union``, so the twin was always meant to be kept, not regenerated.
+#:
+#: The rest of ``icdev/data/args`` is still a release snapshot refreshed by
+#: ``sync_package_tree`` -- adding a tree here is a decision about that tree,
+#: made with evidence, never a sweep. Unlike ``tools/`` there is no grandfathered
+#: backlog, so EVERY difference is drift: a missing twin and a twin whose source
+#: was deleted block just as content drift does.
+DATA_MIRRORS = (
+    ("args/ci_test_files", "icdev/data/args/ci_test_files"),
+)
 
 
 def _sha256(path: Path) -> str:
@@ -130,6 +161,7 @@ def audit_all(fix: bool = False, root: Path = BASE_DIR) -> dict:
     report nobody reads.
     """
     reports = [audit_path(p, fix=fix, root=root) for p in discover_mirrored_paths(root)]
+    reports += audit_data_mirrors(fix=fix, root=root)
     drifting = [r for r in reports if not r["clean"]]
     return {
         "packages_audited": len(reports),
@@ -149,11 +181,18 @@ def audit_path(subpath: str, fix: bool = False, root: Path = BASE_DIR) -> dict:
     missing from or differing in icdev/ are copied from tools/ (the
     authority). icdev-only files are never deleted.
     """
-    live = root / "tools" / subpath
-    mirror = root / "icdev" / "tools" / subpath
+    return _compare_trees(subpath, root / "tools" / subpath, root / "icdev" / "tools" / subpath, fix, root)
 
+
+def audit_data_mirrors(fix: bool = False, root: Path = BASE_DIR) -> list:
+    """One report per ``DATA_MIRRORS`` pair, in the same shape as ``audit_path``."""
+    return [_compare_trees(src, root / src, root / dst, fix, root) for src, dst in DATA_MIRRORS]
+
+
+def _compare_trees(label: str, live: Path, mirror: Path, fix: bool, root: Path) -> dict:
+    """Byte-compare two trees; ``live`` is the authority. Never deletes."""
     result = {
-        "path": subpath,
+        "path": label,
         "live_dir": str(live.relative_to(root)),
         "mirror_dir": str(mirror.relative_to(root)),
         "live_exists": live.is_dir(),
@@ -263,6 +302,42 @@ def normalise_live_rel(path, root: Path = BASE_DIR):
     return "/".join(parts)
 
 
+def data_mirror_pair(path, root: Path = BASE_DIR):
+    """``(source_rel, packaged_rel)`` for a path inside a ``DATA_MIRRORS`` tree, else None.
+
+    Either spelling -- ``args/ci_test_files/x`` or ``icdev/data/args/
+    ci_test_files/x`` -- names the SAME pair, as ``normalise_live_rel`` does for
+    ``tools/``.
+    """
+    p = Path(str(path).replace("\\", "/"))
+    if p.is_absolute():
+        try:
+            p = p.resolve().relative_to(root.resolve())
+        except ValueError:
+            return None
+    posix = p.as_posix()
+    if "__pycache__" in posix.split("/"):
+        return None
+    for src, dst in DATA_MIRRORS:
+        for side in (src, dst):
+            if posix.startswith(side + "/"):
+                rest = posix[len(side) + 1:]
+                return f"{src}/{rest}", f"{dst}/{rest}"
+    return None
+
+
+def twin_of(key: str) -> str:
+    """The packaged twin's repo-relative path for an ``audit_files`` key."""
+    pair = data_mirror_pair(key)
+    return pair[1] if pair else f"icdev/tools/{key}"
+
+
+def source_of(key: str) -> str:
+    """The source's repo-relative path for an ``audit_files`` key."""
+    pair = data_mirror_pair(key)
+    return pair[0] if pair else f"tools/{key}"
+
+
 def audit_files(files, fix: bool = False, root: Path = BASE_DIR) -> dict:
     """Audit ONLY the named files against their twins. No package walk, no git.
 
@@ -277,6 +352,10 @@ def audit_files(files, fix: bool = False, root: Path = BASE_DIR) -> dict:
                            names resolve to ONE module object, so there is no
                            stale half and comparing bytes is meaningless
       outside              not under tools/ or icdev/tools/ (ignored, listed)
+
+    A ``tools/`` file is keyed ``<pkg>/<rel>``; a file in a ``DATA_MIRRORS``
+    tree is keyed by its SOURCE path (``args/ci_test_files/<rel>``), and
+    ``twin_of`` / ``source_of`` spell either kind back out.
 
     ``audit_path`` / ``audit_all`` deliberately do NOT apply the shim rule: the
     recorded baseline (args/mirror_drift_baseline.yaml) was measured without it
@@ -298,6 +377,24 @@ def audit_files(files, fix: bool = False, root: Path = BASE_DIR) -> dict:
     }
     seen = set()
     for raw in files:
+        pair = data_mirror_pair(raw, root)
+        if pair is not None:
+            key, (src_rel, dst_rel) = pair[0], pair
+            if key in seen:
+                continue
+            seen.add(key)
+            result["files"].append(key)
+            live, mirror = root / src_rel, root / dst_rel
+            if live.is_file() and not mirror.is_file():
+                result["missing_from_mirror"].append(key)
+            elif mirror.is_file() and not live.is_file():
+                result["mirror_only"].append(key)
+            elif live.is_file() and mirror.is_file():
+                if _sha256(live) != _sha256(mirror):
+                    result["content_drift"].append(key)
+                else:
+                    result["in_parity"].append(key)
+            continue
         rel = normalise_live_rel(raw, root)
         if rel is None:
             result["outside"].append(str(raw))
@@ -326,9 +423,9 @@ def audit_files(files, fix: bool = False, root: Path = BASE_DIR) -> dict:
         # neither side exists (a staged deletion): nothing to compare
     if fix:
         for rel in result["missing_from_mirror"] + result["content_drift"]:
-            dst = root / "icdev" / "tools" / rel
+            dst = root / twin_of(rel)
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(root / "tools" / rel, dst)
+            shutil.copy2(root / source_of(rel), dst)
             result["copied"].append(rel)
     result["clean"] = not (result["content_drift"] or result["missing_from_mirror"] or result["mirror_only"])
     return result
@@ -345,11 +442,13 @@ def main() -> int:
     parser.add_argument(
         "--all",
         action="store_true",
-        help="Audit every tools/<pkg> that has an icdev/tools/<pkg> twin (auto-discovered).",
+        help="Audit every tools/<pkg> that has an icdev/tools/<pkg> twin (auto-discovered), "
+        "plus every DATA_MIRRORS tree (args/ci_test_files <-> icdev/data/args/ci_test_files).",
     )
     parser.add_argument(
         "--files",
-        help="Comma-separated files (tools/... or icdev/tools/...) audited against their twins only.",
+        help="Comma-separated files (tools/..., icdev/tools/..., or a DATA_MIRRORS path such as "
+        "args/ci_test_files/core.txt) audited against their twins only.",
     )
     parser.add_argument(
         "--root",
@@ -419,6 +518,8 @@ def main() -> int:
                     print(f"      content-drift:       {rel}")
                 for rel in r["missing_from_mirror"]:
                     print(f"      missing-from-mirror: {rel}")
+                for rel in r["mirror_only"]:
+                    print(f"      mirror-only (INVESTIGATE, not deleted): {rel}")
         if args.gate and not summary["clean"]:
             return 1
         return 0
