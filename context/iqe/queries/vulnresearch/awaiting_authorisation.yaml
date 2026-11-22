@@ -1,0 +1,13 @@
+# CUI // SP-CTI
+collection: vulnresearch.targets
+query: "Which targets are awaiting authorisation?"
+description: >-
+  Registered targets no person has decided yet. Nothing scans them until a person who did not register them
+  authorises them.
+iqe: >-
+  foreach t in vulnresearch.targets where t.status == "awaiting_authorisation"
+  select t.target_id, t.name, t.registered_by, t.registered_at
+example_questions:
+  - "Which targets are awaiting authorisation?"
+  - "Show targets nobody has authorised"
+  - "List pending targets"

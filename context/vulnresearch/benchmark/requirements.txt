@@ -1,0 +1,2 @@
+# SYNTHETIC benchmark manifest (icx-ent-01): an old pin, so the SCA step has an advisory to carry as unproven.
+jinja2==2.10

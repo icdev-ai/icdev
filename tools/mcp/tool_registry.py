@@ -9277,6 +9277,29 @@ RESOURCE_REGISTRY = {
             "required": ["path_id", "version"],
         },
     },
+    # -- AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) ---
+    "vulnresearch_status": {
+        "category": "security",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_vulnresearch_status",
+        "description": "Read AI-assisted vulnerability discovery (/vulnresearch/). With no target_id: every registered target and its state (awaiting_authorisation, authorised, refused, revoked, expired) and the newest false-positive / false-negative measurement on the labelled benchmark (judged by planted labels, no model judges). With target_id: its registration (tree digest), the person's authorisation, its newest discovery run (findings, each confirmed by a proof of vulnerability replayed in the sandbox; dropped candidates counted by reason; dependency advisories carried as unproven with their KEV flag), its patch proposals and reviews, and its findings bundle ledger. Proofs of vulnerability are sealed: only their digest and replay outcomes are returned. Read-only: registers, runs, proposes and publishes nothing.",
+        "input_schema": {"type": "object", "properties": {
+            "target_id": {"type": "string", "description": "A registered target (vrt-...)"}}},
+    },
+    "vulnresearch_prepare": {
+        "category": "security",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_vulnresearch_prepare",
+        "description": "Prepare a target's icos-findings/v1 bundle as a DRAFT, recorded as the agent's (agent:<name>): built from the target's newest discovery run and recorded at its digest. It decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or refuses it on /vulnresearch/, a declared step an agent cannot take. Give target_id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The preparing agent's name (recorded as agent:<name>)"},
+                "target_id": {"type": "string"}, "note": {"type": "string"},
+            },
+            "required": ["target_id"],
+        },
+    },
 }
 
 # ==== END GENERATED REGISTRY — generate_registry.py PRESERVES EVERYTHING BELOW ====
@@ -10000,6 +10023,10 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
     "coe_conformance":                          True,
     "coe_conformance_prepare":                  False,
+    # icx-ent-01: vulnerability discovery. The read reads (sealed PoVs withheld); prepare records a
+    # draft bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
+    "vulnresearch_status":                      True,
+    "vulnresearch_prepare":                     False,
     # icx-ent-02: evidence collectors. The read reads; prepare collects read-only and records a draft
     # report (one ledger row), decides nothing, so it is not read-only and halts at the gate.
     "evidence_collectors_status":               True,

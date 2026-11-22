@@ -114,7 +114,7 @@ class SandboxResult:
     runtime_ms: int = 0
     artifacts: List[str] = field(default_factory=list)
     container_id: str = ""
-    status: str = "completed"  # completed | failed | timeout | disabled | unavailable
+    status: str = "completed"  # completed | failed | timeout | disabled | unavailable | refused
     error: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -475,6 +475,107 @@ class SandboxExecutor:
         return health
 
     # ------------------------------------------------------------------
+    # Isolated runs for target code (icx-ent-01)
+    # ------------------------------------------------------------------
+
+    def run_isolated(
+        self,
+        argv: List[str],
+        *,
+        image: str,
+        mounts: List[tuple],
+        timeout_seconds: Optional[int] = None,
+        max_memory_mb: Optional[int] = None,
+        pids_limit: int = 128,
+        executor_type: str = "vuln_research",
+        actor: Optional[str] = None,
+        project_id: Optional[str] = None,
+        runner: Any = None,
+        requires_strong_isolation: bool = False,
+        waiver: Optional[Dict[str, Any]] = None,
+        waiver_tree_digest: str = "",
+    ) -> SandboxResult:
+        """Run ``argv`` in a fresh container with NO network (icx-ent-01).
+
+        For code that is not ours: a proof of vulnerability replay, a generated
+        fuzz harness, a patched copy's tests. There is no parameter that turns the
+        network on. The container is the hardened profile in
+        :func:`isolated_profile` (read-only root, every capability dropped, no new
+        privileges, an unprivileged user, a pids and memory cap, a small /tmp);
+        ``sandbox.isolated.oci_runtime`` (e.g. ``runsc``, gVisor) is used when an
+        operator configured one. ``mounts`` are ``(host_path, container_path,
+        mode)``: ``ro`` anywhere, ``rw`` only under ``/out``. A missing host path,
+        a writable mount elsewhere, or no container engine is refused, never
+        run some other way. ``runner`` replaces ``subprocess.run`` (tests).
+
+        ``requires_strong_isolation`` (vulnerability research on a real target): the run is REFUSED unless the
+        configured OCI runtime is gVisor or a microVM; a plain container (runc) is allowed only with a named
+        ``waiver`` the caller carries (the synthetic benchmark's), and the waiver is the caller's to record.
+        """
+        import shutil
+        import subprocess  # nosec B404 — fixed argv, never a shell
+
+        if not self._enabled:
+            return SandboxResult(status="disabled", error="Sandbox is disabled (sandbox.enabled=false)")
+        iso = dict(self._config.get("isolated") or {})
+        for host, ctr, mode in mounts:
+            if mode not in ("ro", "rw") or (mode == "rw" and not str(ctr).startswith("/out")):
+                return SandboxResult(status="failed", error=f"refused mount {ctr!r} ({mode}): only /out may be written")
+            if not Path(host).exists():
+                return SandboxResult(status="failed", error=f"refused mount: {host} does not exist")
+        prof = isolated_profile(self._config)
+        if requires_strong_isolation and prof["isolation"] not in ("gvisor", "microvm"):
+            why = _waiver_problem(waiver, waiver_tree_digest, mounts)
+            if why:
+                return SandboxResult(status="refused", error=(
+                    f"refused: this run needs gVisor or a microVM and the engine runs {prof['oci_runtime']} "
+                    f"(a plain container), and {why}"))
+        engine = str(iso.get("engine") or "docker")
+        if runner is None and not shutil.which(engine):
+            return SandboxResult(status="unavailable", error=f"no container engine ({engine}) on this host")
+        _timeout = int(min(timeout_seconds or self._config.get("default_timeout_seconds", 30),
+                           self._config.get("max_timeout_seconds", 300)))
+        _memory = int(min(max_memory_mb or self._config.get("default_max_memory_mb", 512),
+                          self._config.get("max_memory_mb", 2048)))
+        name = "icdev-sbx-" + uuid.uuid4().hex[:12]
+        cmd = [engine, "run", "--rm", "--name", name, *isolated_profile(self._config)["flags"],
+               "--memory", f"{_memory}m", "--memory-swap", f"{_memory}m", "--pids-limit", str(int(pids_limit))]
+        resolved = resolve_runtime(self._config)
+        if resolved:
+            cmd += ["--runtime", resolved]
+        if iso.get("pull"):
+            cmd += ["--pull", str(iso["pull"])]
+        for host, ctr, mode in mounts:
+            cmd += ["-v", f"{Path(host).resolve()}:{ctr}:{mode}"]
+        cmd += [image, *argv]
+        run = runner or subprocess.run
+        start = time.time()
+        try:
+            proc = run(cmd, capture_output=True, text=True, timeout=_timeout)
+            result = SandboxResult(stdout=_safe_str(proc.stdout), stderr=_safe_str(proc.stderr),
+                                   exit_code=int(proc.returncode), container_id=name,
+                                   runtime_ms=int((time.time() - start) * 1000), status="completed")
+            if proc.returncode == 125:   # the engine itself refused (bad image, unknown runtime)
+                result.status, result.error = "failed", _safe_str(proc.stderr)[:500]
+        except subprocess.TimeoutExpired:
+            if runner is None:
+                subprocess.run([engine, "rm", "-f", name], capture_output=True, timeout=30)  # nosec B603
+            result = SandboxResult(status="timeout", error=f"timed out after {_timeout}s", container_id=name,
+                                   runtime_ms=_timeout * 1000)
+        except Exception as exc:  # noqa: BLE001 — not run is not run
+            result = SandboxResult(status="failed", error=str(exc), container_id=name)
+        if self._config.get("audit_all_executions", True):
+            self._log_execution(_ExecutionLog(
+                exec_id="sbx-" + name[-12:], executor_type=executor_type, language="python",
+                code_hash=hashlib.sha256(json.dumps([image, argv]).encode("utf-8")).hexdigest(),
+                runtime=f"{engine}:{iso.get('oci_runtime') or 'default'}", exit_code=result.exit_code,
+                runtime_ms=result.runtime_ms, stdout=result.stdout, stderr=result.stderr, network=0,
+                memory=_memory, timeout=_timeout, container_id=name, artifacts=[],
+                status=result.status if result.status in ("completed", "failed", "timeout") else "failed",
+                actor=actor, project_id=project_id))
+        return result
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
@@ -692,6 +793,130 @@ class SandboxExecutor:
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+
+
+def _waiver_problem(waiver: Any, tree_digest: str, mounts: List[tuple]) -> str:
+    """Why ``waiver`` does NOT let a plain container run ('' when it does). Checked here, from the reviewed config,
+    never from what the caller says about it (icx-ent-01):
+
+    * its id is a waiver ``args/vuln_research.yaml`` holds, for the synthetic benchmark;
+    * ``tree_digest`` (the scope-locked target's) is the benchmark's PINNED tree digest, and the committed benchmark
+      recomputes to it;
+    * the ``/target`` mount holds EXACTLY the benchmark's hashed files -- regular files only, nothing else (no
+      shared object, bytecode, .pth or symlink) -- and each is either the committed file or, in a patched copy,
+      one of the benchmark's committed reference fixes (``benchmark.reference_fixes``). Recomputed here.
+    """
+    import os as _os
+    import stat as _stat
+
+    if not isinstance(waiver, dict) or not waiver.get("id"):
+        return "no waiver was given"
+    try:
+        from tools.vulnresearch import targets
+    except Exception:  # noqa: BLE001
+        return "the waiver register could not be read"
+    cfg = targets.load_config()
+    held = {w.get("id"): w for w in (cfg.get("isolation") or {}).get("waivers") or []}
+    w = held.get(waiver.get("id"))
+    if not w or w.get("applies_to") != "synthetic_benchmark":
+        return f"{waiver.get('id')!r} is not a waiver args/vuln_research.yaml holds"
+    root, pin = targets.benchmark_pin(cfg)
+    if not pin or tree_digest != pin:
+        return "the target's tree is not the pinned synthetic benchmark"
+    base = targets.tree(root, cfg)
+    if base["digest"] != pin:
+        return "the committed benchmark no longer has its pinned tree digest"
+    target = next((Path(h) for h, ctr, _m in mounts if ctr == "/target"), None)
+    if target is None:
+        return "no /target mount"
+    want = {f["path"]: f["sha256"] for f in base["files"]}
+    seen: Dict[str, str] = {}
+    for dirpath, dirnames, filenames in _os.walk(target):
+        for name in dirnames + filenames:
+            full = Path(dirpath) / name
+            rel = full.relative_to(target).as_posix()
+            st = _os.lstat(full)
+            if _stat.S_ISDIR(st.st_mode):
+                continue
+            if not _stat.S_ISREG(st.st_mode):
+                return f"the mounted tree holds {rel}, which is not a regular file"
+            if rel not in want:
+                return f"the mounted tree holds {rel}, which the pinned tree does not"
+            seen[rel] = hashlib.sha256(full.read_bytes()).hexdigest()
+    if set(seen) != set(want):
+        return "the mounted tree is missing files of the pinned benchmark"
+    changed = {p: s for p, s in seen.items() if want[p] != s}
+    bad = targets.not_reference_fixes(changed, cfg)
+    if bad:
+        return f"the mounted copy changes {', '.join(bad)} to content that is not a committed reference fix"
+    return ""
+
+
+#: The container flags of :meth:`SandboxExecutor.run_isolated` (icx-ent-01). Fixed:
+#: none of them is configurable, because each one is a control.
+ISOLATED_FLAGS = (
+    "--network", "none", "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+    "--user", "65534:65534", "--ipc", "none", "--cpus", "1",
+    "--tmpfs", "/tmp:rw,nosuid,nodev,size=64m", "--workdir", "/tmp",
+    "-e", "HOME=/tmp", "-e", "PYTHONDONTWRITEBYTECODE=1", "-e", "PYTHONHASHSEED=0",
+)
+
+
+#: OCI runtime name -> what boundary it gives (the record says this, never more).
+RUNTIME_KINDS = {"runsc": "gvisor", "kata": "microvm", "kata-runtime": "microvm", "kata-qemu": "microvm",
+                 "kata-fc": "microvm"}
+
+_RUNTIME_CACHE: Dict[str, frozenset] = {}
+
+
+def engine_runtimes(engine: str = "docker") -> frozenset:
+    """The OCI runtimes the container engine has registered (``docker info``), read once per process. Empty when
+    the engine is absent or does not answer: then only its default (a plain container) is possible."""
+    import shutil
+    import subprocess  # nosec B404 — fixed argv
+
+    if engine not in _RUNTIME_CACHE:
+        found: frozenset = frozenset()
+        if shutil.which(engine):
+            try:
+                out = subprocess.run([engine, "info", "--format", "{{json .Runtimes}}"],  # nosec B603
+                                     capture_output=True, text=True, timeout=20)
+                if out.returncode == 0 and out.stdout.strip():
+                    found = frozenset(json.loads(out.stdout))
+            except Exception:  # noqa: BLE001 — an engine that does not answer has no stronger runtime
+                found = frozenset()
+        _RUNTIME_CACHE[engine] = found
+    return _RUNTIME_CACHE[engine]
+
+
+def resolve_runtime(config: Optional[Dict[str, Any]] = None, runtimes: Optional[frozenset] = None) -> str:
+    """The OCI runtime a run will use: ``isolated.oci_runtime``, else the first of ``isolated.fallback_runtimes``,
+    that the engine actually has; '' (the engine default, runc) when none of them is there."""
+    cfg = config if config is not None else _load_config()
+    iso = dict(cfg.get("isolated") or {})
+    have = runtimes if runtimes is not None else engine_runtimes(str(iso.get("engine") or "docker"))
+    for rt in [iso.get("oci_runtime"), *(iso.get("fallback_runtimes") or [])]:
+        if rt and str(rt) in have:
+            return str(rt)
+    return ""
+
+
+def isolated_profile(config: Optional[Dict[str, Any]] = None, runtimes: Optional[frozenset] = None) -> Dict[str, Any]:
+    """What an isolated run IS, said plainly (shown on the page and carried in a bundle).
+
+    The runtime reported is the one the run will actually use (:func:`resolve_runtime`): the configured one when
+    the engine has it, else a configured fallback, else the engine default. A container is NOT a microVM:
+    ``microvm`` is true only for a VM runtime (Kata), ``gvisor`` for runsc (a user-space kernel); with neither
+    available it says ``container`` and so does every record.
+    """
+    cfg = config if config is not None else _load_config()
+    iso = dict(cfg.get("isolated") or {})
+    rt = resolve_runtime(cfg, runtimes)
+    kind = RUNTIME_KINDS.get(rt, "container")
+    return {"engine": str(iso.get("engine") or "docker"), "oci_runtime": rt or "engine default (runc)",
+            "configured": str(iso.get("oci_runtime") or "") or None,
+            "isolation": kind, "microvm": kind == "microvm", "network": "none",
+            "flags": list(ISOLATED_FLAGS)}
 
 
 def _safe_str(value: Any) -> str:

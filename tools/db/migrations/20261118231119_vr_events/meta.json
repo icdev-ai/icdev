@@ -1,0 +1,7 @@
+{
+  "description": "AI-assisted vulnerability discovery ledger: targets, runs, measurements, patch proposals and findings bundles; append-only and hash-chained (icx-ent-01)",
+  "date": "2026-11-18",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

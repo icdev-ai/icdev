@@ -1,0 +1,13 @@
+# CUI // SP-CTI
+collection: vulnresearch.findings
+query: "Show critical findings"
+description: >-
+  Confirmed findings (each proven by a PoV replayed in the sandbox) whose weakness class is critical. A dropped
+  candidate is never a row here.
+iqe: >-
+  foreach f in vulnresearch.findings where f.severity == "critical"
+  select f.target, f.function, f.cwe, f.pov_digest
+example_questions:
+  - "Show critical findings"
+  - "Which confirmed vulnerabilities are critical?"
+  - "List critical findings by target"

@@ -1,0 +1,247 @@
+# CUI // SP-CTI
+# ICDEV platform model: AI-assisted vulnerability discovery, proven or dropped (icx-ent-01).
+# Targets registered and authorised by a person (scope-locked); candidates from SAST, SCA, an agentic source
+# review (proposes only) and generated coverage-guided fuzz harnesses; a finding only with a proof of
+# vulnerability replayed in the isolated sandbox through reproduction_validator; patches proposed only when the
+# PoV fails and the tests pass, reviewed by another person, never applied; FP/FN measured on planted labels; and
+# one icos-findings/v1 bundle per target for ICDEV[OS], prepared by one person and published by another.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the header of
+# args/platform_model/cortex.yaml.
+
+component: vulnresearch
+project_id: icdev-platform
+
+elements:
+  - id: vr.scope
+    type: sysml_element
+    kind: block
+    name: Target register and scope lock (allowed roots, tree digest, a person's authorisation, revoke)
+    features: [vulnresearch.discovery]
+    code:
+      - args/vuln_research.yaml
+      - tools/vulnresearch/targets.py::register
+      - tools/vulnresearch/targets.py::authorise
+      - tools/vulnresearch/targets.py::revoke
+      - tools/vulnresearch/targets.py::assert_in_scope
+      - tools/vulnresearch/targets.py::tree
+      - tools/security/redteam_scope.py
+      - args/workflow_hitl_templates/vr-target-authorise.yaml
+
+  - id: vr.sandbox
+    type: sysml_element
+    kind: block
+    name: Isolated sandbox runs of target code (no network, read-only root, capabilities dropped)
+    features: [vulnresearch.discovery]
+    code:
+      - tools/security/sandbox_executor.py::isolated_profile
+      - tools/vulnresearch/pov.py::run_in_sandbox
+      - tools/vulnresearch/sandbox_runtime/pov_runner.py
+      - tools/vulnresearch/sandbox_runtime/fuzz_runner.py
+      - args/sandbox_config.yaml
+
+  - id: vr.discovery
+    type: sysml_element
+    kind: block
+    name: Discovery pipeline (SAST, SCA with KEV, agentic review, fuzz harnesses) and proof or drop
+    features: [vulnresearch.discovery]
+    code:
+      - tools/vulnresearch/discovery.py::run
+      - tools/vulnresearch/discovery.py::sast
+      - tools/vulnresearch/discovery.py::sca
+      - tools/vulnresearch/discovery.py::agent_review
+      - tools/vulnresearch/harness.py::fuzz
+      - tools/vulnresearch/harness.py::generate
+      - tools/vulnresearch/pov.py::replay_pair
+      - tools/vulnresearch/pov.py::materialise
+      - tools/security/reproduction_validator.py::register_pov_replayer
+      - hardprompts/vulnresearch/source_review.md
+
+  - id: vr.patches
+    type: sysml_element
+    kind: block
+    name: Patch proposals validated in the sandbox and reviewed by a person
+    features: [vulnresearch.discovery]
+    code:
+      - tools/vulnresearch/patches.py::validate
+      - tools/vulnresearch/patches.py::propose
+      - tools/vulnresearch/patches.py::review
+      - tools/vulnresearch/patches.py::draft
+      - args/workflow_hitl_templates/vr-patch-review.yaml
+      - hardprompts/vulnresearch/patch_draft.md
+
+  - id: vr.measurement
+    type: sysml_element
+    kind: block
+    name: False-positive and false-negative rates on the labelled synthetic benchmark
+    features: [vulnresearch.discovery]
+    code:
+      - tools/vulnresearch/benchmark.py::score
+      - tools/vulnresearch/benchmark.py::measure
+      - context/vulnresearch/benchmark/labels.yaml
+
+  - id: vr.bundle
+    type: sysml_element
+    kind: block
+    name: The icos-findings/v1 bundle, prepared by one person and published by another, its publication beside it
+    features: [vulnresearch.discovery]
+    code:
+      - tools/vulnresearch/bundle.py::build
+      - tools/vulnresearch/bundle.py::prepare
+      - tools/vulnresearch/bundle.py::publish
+      - tools/vulnresearch/bundle.py::published
+      - tools/vulnresearch/bundle.py::verify
+      - tools/vulnresearch/ledger.py::chain
+      - tools/vulnresearch/ledger.py::append
+      - tools/db/migrations/20261118231119_vr_events/up.py
+      - context/icos/findings.schema.json
+      - context/icos/findings-publication.schema.json
+      - args/workflow_hitl_templates/vr-findings-publish.yaml
+
+  - id: vr.twin
+    type: sysml_element
+    kind: block
+    name: The vulnerability discovery governance twin (threads to vr_events, replay)
+    features: [vulnresearch.discovery]
+    code:
+      - tools/twin_core/adapters/vulnresearch.py::VulnResearchTwin
+      - tools/vulnresearch/twin.py::twin_evidence
+      - tools/vulnresearch/twin.py::twin_judge
+
+interfaces:
+  - id: if.vr.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /vulnresearch/ and its routes
+    features: [vulnresearch.discovery]
+    code:
+      - tools/dashboard/templates/vulnresearch/index.html
+      - tools/vulnresearch/blueprint.py::vr_page
+      - tools/vulnresearch/blueprint.py::vr_api_target_authorise
+      - tools/vulnresearch/blueprint.py::vr_api_patch_review
+      - tools/vulnresearch/blueprint.py::vr_api_bundle_publish
+
+  - id: if.vr.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP vulnresearch_status (read) and vulnresearch_prepare (draft only)
+    features: [vulnresearch.discovery]
+    code:
+      - tools/mcp/gap_handlers.py::handle_vulnresearch_status
+      - tools/mcp/gap_handlers.py::handle_vulnresearch_prepare
+
+requirements:
+  - id: PM-VR-01
+    title: A target is scanned only when registered and authorised by a person who did not register it
+    text: >-
+      A target is a local tree under an allowed root, registered at the SHA-256 of its in-scope files. Only a person
+      who did not register it authorises it (decl-wft-vr-target-authorise), bound to the registration digest; it
+      lapses; any person revokes it at once. assert_in_scope refuses an unregistered, unauthorised, refused,
+      revoked, expired or changed target, and a root outside the allowlist, with no warn-and-continue path.
+    type: functional
+    priority: high
+    features: [vulnresearch.discovery]
+    elements: [vr.scope]
+    controls: [CA-8, AC-5, RA-5]
+    tests:
+      - tests/test_icx_ent_01_vulnresearch.py::test_a_target_is_scanned_only_when_registered_and_authorised_by_another_person
+      - tests/test_icx_ent_01_vulnresearch.py::test_a_root_outside_the_allowlist_is_refused
+      - tests/test_icx_ent_01_vulnresearch.py::test_a_changed_revoked_or_expired_target_is_refused
+
+  - id: PM-VR-02
+    title: Target code runs only in an isolated sandbox with no network
+    text: >-
+      PoV replays, fuzz harnesses and a patched copy's tests run only through SandboxExecutor.run_isolated: a fresh
+      container, network none (no switch for it), read-only root, every capability dropped, no new privileges, user
+      nobody, pids and memory capped, a writable mount only under /out. A container says it is not a microVM.
+    type: security
+    priority: high
+    features: [vulnresearch.discovery]
+    elements: [vr.sandbox]
+    controls: [SC-39, SC-7, CM-7]
+    tests:
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_isolated_run_has_no_network_and_writes_only_under_out
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_real_sandbox_end_to_end
+
+  - id: PM-VR-03
+    title: A candidate becomes a finding only with a discriminating proof of vulnerability
+    text: >-
+      Candidates come from SAST, SCA, the agentic review (it only proposes, through Cortex governance and the LLM
+      router) and generated coverage-guided fuzz harnesses. Each is proven by a canary-only PoV replayed as a
+      sandbox_pov reproduction through reproduction_validator; it is a finding only when the PoV fires and its benign
+      control does not. Every other candidate is dropped and counted by reason. PoVs are sealed.
+    type: functional
+    priority: high
+    features: [vulnresearch.discovery]
+    elements: [vr.discovery]
+    controls: [RA-5, SA-11, SI-2]
+    tests:
+      - tests/test_icx_ent_01_vulnresearch.py::test_a_candidate_becomes_a_finding_only_with_a_discriminating_pov
+      - tests/test_icx_ent_01_vulnresearch.py::test_a_pov_that_also_fires_on_its_control_or_cannot_run_is_dropped
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_recipes_are_canary_only_and_mapped_from_sast
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_agentic_review_only_proposes_and_an_invented_function_is_dropped
+      - tests/test_icx_ent_01_vulnresearch.py::test_reproduction_validator_replays_a_sandbox_pov_only_through_a_registered_engine
+
+  - id: PM-VR-04
+    title: A patch is a proposal whose PoV now fails and whose tests pass, reviewed by another person
+    text: >-
+      A diff touching only in-scope files is applied to a throwaway copy; it is proposed only when the finding's PoV
+      fires on the vulnerable tree and fails on the copy and the target's tests pass on the copy. A person who did
+      not propose it accepts or rejects it (decl-wft-vr-patch-review). Nothing is applied to the target.
+    type: functional
+    priority: high
+    features: [vulnresearch.discovery]
+    elements: [vr.patches]
+    controls: [SI-2, CM-3, AC-5]
+    tests:
+      - tests/test_icx_ent_01_vulnresearch.py::test_a_patch_is_proposed_only_when_its_pov_fails_and_the_tests_pass
+      - tests/test_icx_ent_01_vulnresearch.py::test_a_patch_is_reviewed_by_a_person_never_its_proposer_and_never_applied
+
+  - id: PM-VR-05
+    title: False-positive and false-negative rates are measured on planted labels, no model judging
+    text: >-
+      The benchmark is synthetic planted code with labels by construction (awaiting a person's review). A
+      measurement is an ordinary discovery run on the registered benchmark target, scored against the labels only,
+      and recorded at its digest.
+    type: functional
+    priority: medium
+    features: [vulnresearch.discovery]
+    elements: [vr.measurement]
+    controls: [SA-11, CA-2]
+    tests:
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_rates_are_measured_against_planted_labels_with_no_model_judging
+
+  - id: PM-VR-06
+    title: The icos-findings/v1 bundle is prepared by one person and published by another
+    text: >-
+      The bundle validates against ICDEV[OS]'s pinned contract schema, its digest recomputes, it carries no PoV input. Preparing
+      records it at its digest and decides nothing; publishing is a person's declared step (decl-wft-vr-findings-
+      publish), never the preparer's. Its publication (the Academy publication's shape) travels beside it and
+      verifies against the append-only, hash-chained ledger.
+    type: functional
+    priority: high
+    features: [vulnresearch.discovery]
+    elements: [vr.bundle]
+    controls: [AU-9, AU-10, AC-5]
+    tests:
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_schemas_are_pinned_and_the_publication_has_the_academy_shape
+      - tests/test_icx_ent_01_vulnresearch.py::test_publishing_is_a_persons_step_never_the_preparers_and_it_verifies
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_ledger_is_append_only_and_hash_chained
+      - tests/test_icx_ent_01_ambient.py::test_discovery_and_a_bundle_on_the_platform_database
+
+  - id: PM-VR-07
+    title: The console page, the twin with threads, and MCP read and draft
+    text: >-
+      /vulnresearch/ (in the nav) registers, authorises, runs, proposes, reviews, prepares and publishes by endpoint
+      id. The twin observes vulnresearch.discovery: an authorised target with no published bundle and a pipeline with
+      no measurement are unverified; an unpatched finding is a finding threaded to its run's row; an observation
+      replays. MCP vulnresearch_status reads with sealed PoVs withheld; vulnresearch_prepare only drafts and halts.
+    type: functional
+    priority: medium
+    features: [vulnresearch.discovery]
+    elements: [if.vr.console, vr.twin, if.vr.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_routes_and_the_page
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_twin_observes_with_threads_and_replays
+      - tests/test_icx_ent_01_vulnresearch.py::test_the_mcp_tools_read_without_sealed_povs_and_only_prepare
