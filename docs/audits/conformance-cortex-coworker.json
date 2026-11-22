@@ -2823,6 +2823,138 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "factory_builds_status read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-FB-01 -> fb.key -> tests/test_icx_ent_03_factory_builds.py::test_no_key_is_refused_never_a_mac_and_a_test_key_lives_only_in_tmp, tests/test_icx_ent_03_factory_builds.py::test_a_keyring_key_and_a_kms_key_sign_and_every_signature_is_verified_first, tests/test_icx_ent_03_factory_builds.py::test_keyless_needs_a_configured_issuer_and_a_certificate_for_the_key_that_asked, tests/test_icx_ent_03_factory_builds.py::test_a_configured_rekor_log_receives_each_bundle_and_its_answer_is_recorded_not_trusted, tests/test_icx_ent_03_factory_builds.py::test_outbound_calls_are_https_or_loopback_only, tests/test_icx_ent_03_factory_builds.py::test_the_shipped_configuration_loads_with_no_key_and_the_log_off",
+            "PM-FB-02 -> fb.build -> tests/test_icx_ent_03_factory_builds.py::test_icos_contracts_are_vendored_verbatim_and_pinned, tests/test_icx_ent_03_factory_builds.py::test_an_image_build_is_icos_shaped_signed_and_deterministic, tests/test_icx_ent_03_factory_builds.py::test_a_tampered_file_or_another_key_fails_the_self_check, tests/test_icx_ent_03_factory_builds.py::test_nothing_to_state_is_refused_never_an_invented_vex_and_a_scan_must_match_the_sbom, tests/test_icx_ent_03_factory_builds.py::test_inputs_are_read_only_under_the_root_never_through_a_symlink_or_a_hard_link",
+            "PM-FB-03 -> fb.aibom -> tests/test_icx_ent_03_factory_builds.py::test_a_model_build_carries_an_aibom_linked_to_its_registry_promotion_and_signed_weights, tests/test_icx_ent_03_factory_builds.py::test_only_a_promoted_version_is_built_and_an_override_is_said_to_be_one, tests/test_icx_ent_03_factory_builds.py::test_a_model_of_another_tenant_or_marked_above_the_target_is_refused, tests/test_icx_ent_03_factory_builds.py::test_a_symlinked_weights_file_is_never_followed, tests/test_icx_ent_03_factory_builds.py::test_a_model_demoted_since_it_was_built_is_never_published",
+            "PM-FB-04 -> fb.publish -> tests/test_icx_ent_03_factory_builds.py::test_a_person_prepares_another_of_the_org_publishes_and_only_then_it_leaves, tests/test_icx_ent_03_factory_builds.py::test_an_agent_never_makes_the_factory_key_sign, tests/test_icx_ent_03_factory_builds.py::test_a_publication_counts_only_with_its_declared_step, tests/test_icx_ent_03_factory_builds.py::test_what_a_reader_may_not_see_is_no_such_target_byte_for_byte, tests/test_icx_ent_03_factory_builds.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_icx_ent_03_ambient.py::test_builds_prepared_and_published_on_the_platform_database",
+            "PM-FB-05 -> if.fb.console, fb.twin, if.fb.mcp -> tests/test_icx_ent_03_factory_builds.py::test_the_routes_and_the_page, tests/test_icx_ent_03_factory_builds.py::test_the_twin_observes_with_threads_and_replays, tests/test_icx_ent_03_factory_builds.py::test_the_mcp_tool_only_reads"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "factory_builds.fb_api_prepare called from tools/dashboard/templates/factory_builds/index.html",
+            "factory_builds.fb_api_publish called from tools/dashboard/templates/factory_builds/index.html",
+            "nav links /factory-builds",
+            "page /factory-builds/ renders factory_builds/index.html",
+            "registry entry 'factory_builds'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/factory-builds/",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "factory_builds.fb_api_targets",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/factory-builds/api/targets",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "factory_builds.fb_api_target",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/factory-builds/api/targets/<tid>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_api_export",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/factory-builds/api/targets/<tid>/export",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_api_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/factory-builds/api/targets/<tid>/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_api_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/factory-builds/api/targets/<tid>/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_api_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/factory-builds/api/twin",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/factory_builds.py::FactoryBuildsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "factory_builds.fb_api_publish (declared (tools/factory_builds/blueprint.py: \"A person, never the preparer, publishes a target's signed build to ICDEV[OS], or refuses it.\")) -> template decl-wft-fb-build-publish (args/workflow_hitl_templates/fb-build-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "factory_builds",
+      "key": "factory_builds.signed_builds",
+      "label": "Signed factory builds: signed artefacts with SBOM/AI-BOM, provenance and VEX for ICDEV[OS]"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
             "aiify_promotions read-only, tool_authorization tier 'read'"
           ],
           "gaps": [],
@@ -3648,6 +3780,7 @@
       "tools/dashboard/templates/coworker/trust.html",
       "tools/dashboard/templates/coworkers/index.html",
       "tools/dashboard/templates/document_intelligence/explorer.html",
+      "tools/dashboard/templates/factory_builds/index.html",
       "tools/dashboard/templates/idp/adrs.html",
       "tools/dashboard/templates/idp/conformance.html",
       "tools/dashboard/templates/idp/exemptions.html",
@@ -3678,8 +3811,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 28,
-    "features_conforming": 28,
+    "features": 29,
+    "features_conforming": 29,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3835,6 +3968,13 @@
         "twin": 0,
         "workflow": 0
       },
+      "factory_builds.signed_builds": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
       "mdz.aiify": {
         "ai_native": 0,
         "architecture": 0,
@@ -3886,11 +4026,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 175,
-    "routes_by_id": 149,
-    "routes_observed": 132,
-    "writes_by_id": 73,
-    "writes_observed": 73
+    "routes": 182,
+    "routes_by_id": 154,
+    "routes_observed": 136,
+    "writes_by_id": 75,
+    "writes_observed": 75
   },
   "tool": "feature_audit",
   "version": 1

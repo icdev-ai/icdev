@@ -82,7 +82,7 @@ def _ft_ddl() -> list[str]:
 
     out = []
     for t in ("ft_datasets", "ft_training_jobs", "ft_model_versions", "ft_promotion_log"):
-        m = re.search(rf"CREATE TABLE IF NOT EXISTS {t} \(.*?\n\);", SCHEMA_SQL, re.S)
+        m = re.search(rf"CREATE TABLE IF NOT EXISTS {t} \(.*?\n\);", SCHEMA_SQL, re.DOTALL)
         assert m, t
         out.append(m.group(0))
     return out
@@ -148,8 +148,7 @@ def test_icos_contracts_are_vendored_verbatim_and_pinned(monkeypatch):
     import yaml
 
     from tools.factory_builds import build
-    from tools.factory_builds.constants import (PUBLICATION_RELPATH, PUBLICATION_SHA256, SCHEMA_RELPATH,
-                                                SCHEMA_SHA256)
+    from tools.factory_builds.constants import PUBLICATION_RELPATH, PUBLICATION_SHA256, SCHEMA_RELPATH, SCHEMA_SHA256
 
     assert hashlib.sha256((ROOT / SCHEMA_RELPATH).read_bytes()).hexdigest() == SCHEMA_SHA256
     assert hashlib.sha256((ROOT / PUBLICATION_RELPATH).read_bytes()).hexdigest() == PUBLICATION_SHA256
@@ -273,7 +272,7 @@ def test_an_image_build_is_icos_shaped_signed_and_deterministic(fb, signer):
     assert bd["buildType"] and bd["externalParameters"]["commit"] == COMMIT and rd["builder"]["id"] == m["builder"]
     assert rd["metadata"]["startedOn"] == AT == m["produced_at"]
     assert rd["byproducts"][0]["digest"]["sha256"] == hashlib.sha256(f["sbom.cdx.json"]).hexdigest()
-    for role, (path, pt) in build.BUNDLES.items():
+    for (path, pt) in build.BUNDLES.values():
         b = json.loads(f[path])
         assert b["verificationMaterial"]["publicKey"]["hint"] == sigstore.hint(signer.spki())
         assert b["verificationMaterial"]["tlogEntries"] == []
@@ -661,6 +660,19 @@ def test_a_publication_counts_only_with_its_declared_step(fb, signer, monkeypatc
 
     p = _prepare(fb, signer)
     _publish(fb, p)
+    real_events = declared._events
+
+    def other_digest(sid, conn=None):
+        ev = real_events(sid, conn)
+        d = dict(ev["decided"])
+        d["payload_json"] = json.dumps({**json.loads(d["payload_json"]), "content_digest": "sha256:" + "1" * 64})
+        return {**ev, "decided": d}
+
+    monkeypatch.setattr(declared, "_events", other_digest)
+    with pytest.raises(service.Refused) as e:
+        service.export("syn-ent03-portal", reader(PUBLISHER))
+    assert e.value.code == "step_missing", "a step that signed another digest publishes nothing"
+    monkeypatch.setattr(declared, "_events", real_events)
     monkeypatch.setattr(declared, "step_state", lambda sid: None)
     with pytest.raises(service.Refused) as e:
         service.export("syn-ent03-portal", reader(PUBLISHER))
@@ -843,3 +855,29 @@ def test_the_mcp_tool_only_reads(fb, signer):
     assert handle_factory_builds_status({"target": "syn-ent03-portal", "export": True})["code"] == "unpublished"
     assert handle_factory_builds_status({"target": "nope"}) == {"error": "no such target", "code": "not_found",
                                                                  "refused": True}
+
+
+def test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request(wf_db):
+    """The page's POST from a signed-in person's session reached canvas_access.check_access under the row-security
+    predicate of that person's context, which names a classification column canvas_access_grants does not have: the
+    query raised and the person was refused (403) every write on a granted canvas. icx-ent-02 found and fixed it; this
+    card's e2e met it again on main. The grants are read without the label predicate; each query names its tenant."""
+    from tools.db import storage
+    from tools.security import canvas_access
+
+    canvas_access.grant_access(ORG, "user", "u-ent03-granted", "factory_builds", "read", granted_by="test-admin")
+    real = storage.get_connection
+
+    def predicated(*a, **k):
+        conn = real(*a, **k)
+        conn.set_security_context(type("Ctx", (), {"tenant_id": None, "classification": "CUI",
+                                                   "compartments": frozenset()})())
+        return conn
+
+    storage.get_connection = predicated
+    try:
+        assert canvas_access.check_access("u-ent03-granted", ORG, "factory_builds", "read", "reviewer")
+        assert not canvas_access.check_access("u-ent03-granted", "another-org", "factory_builds", "read",
+                                              "reviewer"), "the tenant still scopes the grant"
+    finally:
+        storage.get_connection = real

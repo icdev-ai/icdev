@@ -172,10 +172,15 @@ def step_ok(pub: dict) -> bool:
 
     try:
         st = declared.step_state(str(pub.get("step_id") or ""))
+        decided = (declared._events(str(pub.get("step_id") or "")) or {}).get("decided") or {} if st else {}
+        signed = json.loads(decided.get("payload_json") or "{}") if decided else {}
     except Exception:  # noqa: BLE001 — unreadable: not recorded
         return False
+    # The step must say what was signed: this template, this build's digest, its prepared event.
     return bool(st) and st["status"] in ("decided", "spent") and st["affirmative"] is True \
-        and str(st["decided_by"]) == str(pub["actor"])
+        and str(st["decided_by"]) == str(pub["actor"]) and decided.get("template_id") == TEMPLATE \
+        and signed.get("content_digest") == pub["content_digest"] \
+        and signed.get("prepared_event") == pub.get("prepared_event")
 
 
 # ── signing ──────────────────────────────────────────────────────────────────

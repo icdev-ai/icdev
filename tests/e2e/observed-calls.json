@@ -415,6 +415,24 @@
     "Cortex findings: adjudicate an open finding with a reason"
    ]
   },
+  "GET factory_builds.fb_api_twin": {
+   "endpoint": "factory_builds.fb_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
+   ]
+  },
+  "GET factory_builds.fb_page": {
+   "endpoint": "factory_builds.fb_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
+   ]
+  },
   "GET idp.idp_adrs_page": {
    "endpoint": "idp.idp_adrs_page",
    "method": "GET",
@@ -1062,6 +1080,24 @@
    "test": false,
    "tests": [
     "Cortex findings: adjudicate an open finding with a reason"
+   ]
+  },
+  "POST factory_builds.fb_api_prepare": {
+   "endpoint": "factory_builds.fb_api_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
+   ]
+  },
+  "POST factory_builds.fb_api_publish": {
+   "endpoint": "factory_builds.fb_api_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
    ]
   },
   "POST idp.idp_api_adr_accept": {
