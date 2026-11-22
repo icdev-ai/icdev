@@ -2823,6 +2823,140 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "evidence_collectors_prepare mutating, approval tier 'unknown' (default_tier) halts",
+            "evidence_collectors_status read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-EC-01 -> ec.collectors -> tests/test_icx_ent_02_evidence_collectors.py::test_every_collector_reads_its_source_and_every_observation_says_when_who_and_how_fresh, tests/test_icx_ent_02_evidence_collectors.py::test_a_source_that_says_no_is_false_and_one_that_cannot_say_is_unverified, tests/test_icx_ent_02_evidence_collectors.py::test_the_transport_only_reads_and_stays_on_its_host, tests/test_icx_ent_02_evidence_collectors.py::test_sigv4_matches_aws_published_get_vanilla_vector",
+            "PM-EC-02 -> ec.credentials -> tests/test_icx_ent_02_evidence_collectors.py::test_credentials_are_references_only_and_never_quoted, tests/test_icx_ent_02_evidence_collectors.py::test_the_ledger_is_append_only_hash_chained_on_the_shared_helper_and_holds_no_secret",
+            "PM-EC-03 -> ec.judge -> tests/test_icx_ent_02_evidence_collectors.py::test_freshness_parses_instants_and_never_passes_stale_future_or_timeless_evidence, tests/test_icx_ent_02_evidence_collectors.py::test_satisfied_needs_every_fact_and_a_fresh_false_is_a_finding_even_beside_an_unverified_one, tests/test_icx_ent_02_evidence_collectors.py::test_a_device_that_has_not_reported_leaves_its_fleet_unverified, tests/test_icx_ent_02_evidence_collectors.py::test_an_unreachable_source_or_an_unreadable_credential_is_unverified_with_why, tests/test_icx_ent_02_evidence_collectors.py::test_the_shipped_configuration_loads_and_every_mapping_row_is_bounded",
+            "PM-EC-04 -> ec.bundle -> tests/test_icx_ent_02_evidence_collectors.py::test_the_contract_is_icos_verbatim_and_pinned, tests/test_icx_ent_02_evidence_collectors.py::test_the_report_meets_icos_contract_and_icos_digest_rule, tests/test_icx_ent_02_evidence_collectors.py::test_one_person_prepares_and_another_of_the_org_publishes_the_embedded_report, tests/test_icx_ent_02_evidence_collectors.py::test_an_agent_only_prepares_and_a_changed_configuration_needs_a_new_report, tests/test_icx_ent_02_ambient.py::test_a_report_prepared_and_published_on_the_platform_database",
+            "PM-EC-05 -> ec.visibility -> tests/test_icx_ent_02_evidence_collectors.py::test_what_a_reader_may_not_see_is_counted_never_described, tests/test_icx_ent_02_evidence_collectors.py::test_the_reader_s_org_and_clearance_are_read_fresh_from_their_own_row, tests/test_icx_ent_02_evidence_collectors.py::test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request",
+            "PM-EC-06 -> if.ec.console, ec.twin, if.ec.mcp -> tests/test_icx_ent_02_evidence_collectors.py::test_the_routes_and_the_page, tests/test_icx_ent_02_evidence_collectors.py::test_the_twin_observes_with_threads_and_replays, tests/test_icx_ent_02_evidence_collectors.py::test_the_mcp_tools_read_and_only_prepare"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "evidence_collectors.ec_api_prepare called from tools/dashboard/templates/evidence_collectors/index.html",
+            "evidence_collectors.ec_api_publish called from tools/dashboard/templates/evidence_collectors/index.html",
+            "nav links /evidence-collectors",
+            "page /evidence-collectors/ renders evidence_collectors/index.html",
+            "registry entry 'evidence_collectors'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/evidence-collectors/",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "evidence_collectors.ec_api_systems",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/evidence-collectors/api/systems",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "evidence_collectors.ec_api_system",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/evidence-collectors/api/systems/<sid>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_api_bundle",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/evidence-collectors/api/systems/<sid>/bundle",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_api_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/evidence-collectors/api/systems/<sid>/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_api_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/evidence-collectors/api/systems/<sid>/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_api_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/evidence-collectors/api/twin",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/evidence_collectors.py::EvidenceCollectorsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "evidence_collectors.ec_api_publish (declared (tools/evidence_collectors/blueprint.py: \"A person, never the preparer, publishes a system's prepared objective-evidence report to ICDEV[OS], or refuses it.\")) -> template decl-wft-ec-evidence-publish (args/workflow_hitl_templates/ec-evidence-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "evidence_collectors",
+      "key": "evidence_collectors.objective_evidence",
+      "label": "Evidence collectors: read-only customer sources, objective evidence for ICDEV[OS]"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
             "factory_builds_status read-only, tool_authorization tier 'read'"
           ],
           "gaps": [],
@@ -3780,6 +3914,7 @@
       "tools/dashboard/templates/coworker/trust.html",
       "tools/dashboard/templates/coworkers/index.html",
       "tools/dashboard/templates/document_intelligence/explorer.html",
+      "tools/dashboard/templates/evidence_collectors/index.html",
       "tools/dashboard/templates/factory_builds/index.html",
       "tools/dashboard/templates/idp/adrs.html",
       "tools/dashboard/templates/idp/conformance.html",
@@ -3811,8 +3946,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 29,
-    "features_conforming": 29,
+    "features": 30,
+    "features_conforming": 30,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3968,6 +4103,13 @@
         "twin": 0,
         "workflow": 0
       },
+      "evidence_collectors.objective_evidence": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
       "factory_builds.signed_builds": {
         "ai_native": 0,
         "architecture": 0,
@@ -4026,11 +4168,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 182,
-    "routes_by_id": 154,
-    "routes_observed": 136,
-    "writes_by_id": 75,
-    "writes_observed": 75
+    "routes": 189,
+    "routes_by_id": 159,
+    "routes_observed": 140,
+    "writes_by_id": 77,
+    "writes_observed": 77
   },
   "tool": "feature_audit",
   "version": 1

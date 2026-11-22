@@ -7796,6 +7796,30 @@ python -m tools.factory_builds.cli seed-synthetic --json
 
 # The newest PUBLISHED synthetic build, as ICDEV[OS] imports it ({bundle, publication}; POST /api/v1/artefacts)
 python -m tools.factory_builds.cli export --target syn-ent03-portal --out .tmp/factory-builds/portal.json
+### Evidence collectors for customer environments (icx-ent-02)
+
+Four read-only collectors (cloud configuration via AWS Config, the identity provider via OIDC
+Discovery and SCIM 2.0, endpoints via Intune through Microsoft Graph, the SIEM via Splunk's REST
+API) read each customer system declared in `args/evidence_collectors.yaml`, with credentials by
+reference only (`keyring:` or `vault:`). A reviewed mapping turns fresh observations into
+SP 800-171 Rev. 2 and SP 800-53 Rev. 5 objective results, and each system's
+`icos-objective-evidence/v1` report (ICDEV[OS]'s contract, vendored and pinned,
+`context/icos/objective-evidence.schema.json`) is prepared on `/evidence-collectors/` (or by an
+agent) and published only by another person of the system's organisation.
+
+```bash
+# Check the configuration (refuses a literal credential, an unknown field, a non-loopback http base)
+python -m tools.evidence_collectors.cli check-config --json
+
+# The systems an agent may see at the MCP marking, and one system's observations (records nothing)
+python -m tools.evidence_collectors.cli systems --json
+python -m tools.evidence_collectors.cli collect --system syn-dib-01 --json
+
+# Prepare a draft as an agent (a person publishes it on /evidence-collectors/)
+python -m tools.evidence_collectors.cli prepare --system syn-dib-01 --agent drafter
+
+# The newest PUBLISHED report, as ICDEV[OS] imports it (POST /api/v1/controls/evidence)
+python -m tools.evidence_collectors.cli export --system syn-dib-01 --out .tmp/evidence
 ```
 
 ### Golden paths (icx-coe-04)

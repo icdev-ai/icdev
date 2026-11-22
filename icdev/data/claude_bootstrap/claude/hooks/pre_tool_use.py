@@ -700,6 +700,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # icx-coe-03, migration 20261118024513: the conformance bundle ledger (prepared, then a
         # person publishes or refuses), hash-chained per repo. Only a published bundle leaves.
         "coe_conformance_events",
+        # icx-ent-02, migration 20261119040000: the objective-evidence ledger (a system's report
+        # prepared, then a person of its org publishes or refuses), hash-chained per system.
+        "ec_events",
         # icx-ent-03, migration 20261122003636: the signed factory build ledger (a target's build
         # prepared and signed by the factory's key, then a person of its org publishes or refuses).
         "fb_events",

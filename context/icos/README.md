@@ -32,6 +32,24 @@ it. ICDEV[OS] recomputes the digest on import and refuses a mismatch, a bundle n
 preparer. To take a newer contract: copy the new schema, update the digest in `conformance.SCHEMA_SHA256`,
 `conformance.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_coe_03_conformance.py`.
 
+## The objective-evidence report (icx-ent-02; ICDEV[OS] osx-ent-02)
+
+`objective-evidence.schema.json` is ICDEV[OS]'s `icos-objective-evidence/v1` schema
+(`urn:icdev-os:contract:objective-evidence:1`), copied verbatim from ICDEV[OS] `main` after
+osx-ent-02 merged (merge cfe0b91e, `contracts/schemas/objective-evidence.schema.json`, contract version 1.199.0, SHA-256
+`adea74c3cc1e384f7fae9250098e6460c7966467e1ebc48b75bc651273c563d7`). It is NOT `icos-evidence/v1`, which is ICDEV[OS]'s
+own CI evidence bundle. It is licensed Apache-2.0 (`LICENSE`,
+`NOTICE` here), unlike the rest of this repository.
+
+`tools/evidence_collectors/bundle.py` validates every report against it and refuses to run if the file's digest is not
+the one pinned in `tools/evidence_collectors/constants.py` (`SCHEMA_SHA256`, `SCHEMA_CONTRACT`). `content_digest` is
+ICDEV[OS]'s rule: SHA-256 over the canonical JSON of the report without `content_digest` and `publication`. The
+publication is EMBEDDED in the report with exactly the contract's five fields (prepared_by, signed_by, step_id,
+decided_at, content_digest) -- the placement ICDEV[OS]'s `icdev_os/publication.py` reads with `split(raw, "embedded")`
+and checks with `check_publication` (refusing `unpublished`, `tampered`, a publication by its preparer or by an agent).
+To take a newer contract: copy the new schema, update the digest and contract version in `constants.py` and this file,
+and run `tests/test_icx_ent_02_evidence_collectors.py`.
+
 ## The customer artefact (icx-ent-03; ICDEV[OS] osx-ent-06)
 
 `artefact.schema.json` is ICDEV[OS]'s `icos-artefact/v1` manifest schema (`contracts/schemas/artefact.schema.json`,

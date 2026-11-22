@@ -9207,6 +9207,30 @@ RESOURCE_REGISTRY = {
             "required": ["repo"],
         },
     },
+    # -- evidence collectors for customer environments (icx-ent-02) ----------
+    "evidence_collectors_status": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_evidence_collectors_status",
+        "description": "Read the read-only evidence collectors for customer systems (/evidence-collectors/, args/evidence_collectors.yaml): with no system, the systems you may see at the MCP marking (CUI) and each one's newest prepared and published icos-objective-evidence/v1 report (digest, who prepared it, who published it), the others only counted; the reviewed mapping from observed facts (cloud configuration via AWS Config, the identity provider via OIDC discovery and SCIM, endpoints via Intune, the SIEM via Splunk) to SP 800-171 Rev. 2 and SP 800-53 Rev. 5 objectives. With system: its collectors, the observations its newest report rests on (each with observed_at, collector and freshness budget; unverified with why), the objectives judged satisfied or other than satisfied and those left unverified. published=true returns the newest published report as ICDEV[OS] imports it. Reads only: collects, prepares and publishes nothing; credentials are never returned.",
+        "input_schema": {"type": "object", "properties": {
+            "system": {"type": "string", "description": "A system id (args/evidence_collectors.yaml)"},
+            "published": {"type": "boolean", "description": "Return the newest published report of system"}}},
+    },
+    "evidence_collectors_prepare": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_evidence_collectors_prepare",
+        "description": "Collect (read-only) from a customer system's declared sources and prepare its icos-objective-evidence/v1 report as a DRAFT, recorded as the agent's (agent:<name>) at its digest. It decides nothing and nothing leaves: a person of the system's org who did not prepare it publishes it to ICDEV[OS] or refuses it on /evidence-collectors/, a declared step an agent cannot take. Give system.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The preparing agent's name (recorded as agent:<name>)"},
+                "system": {"type": "string"}, "note": {"type": "string"},
+            },
+            "required": ["system"],
+        },
+    },
     # -- signed factory builds (icx-ent-03) -----------------------------------
     "factory_builds_status": {
         "category": "compliance",
@@ -9967,6 +9991,10 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
     "coe_conformance":                          True,
     "coe_conformance_prepare":                  False,
+    # icx-ent-02: evidence collectors. The read reads; prepare collects read-only and records a draft
+    # report (one ledger row), decides nothing, so it is not read-only and halts at the gate.
+    "evidence_collectors_status":               True,
+    "evidence_collectors_prepare":              False,
     # icx-coe-04: golden paths. The read reads; propose records a draft version (one ledger row)
     # and decides nothing, so it is not read-only and halts at the gate.
     # icx-ent-03: signed factory builds. Reads only (an agent never makes the factory's key sign).
