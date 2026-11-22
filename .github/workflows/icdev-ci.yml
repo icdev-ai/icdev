@@ -134,6 +134,18 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e . 2>/dev/null || true
+      # icx-ent-01: the vulnerability-discovery tests run target code only in the isolated sandbox, a
+      # container of the pinned python image; pull it up front, with retries, so a registry hiccup is a
+      # retry here and not a red test (the test stays unskippable). Digest = args/vuln_research.yaml sandbox.image.
+      - name: Pre-pull the vulnerability-discovery sandbox image
+        run: |
+          img="$(python -c "import yaml; print(yaml.safe_load(open('args/vuln_research.yaml'))['sandbox']['image'])")"
+          for attempt in 1 2 3 4 5; do
+            if docker pull "$img"; then echo "pulled $img (attempt $attempt)"; exit 0; fi
+            echo "::warning::docker pull $img failed (attempt $attempt/5); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::could not pull $img after 5 attempts"; exit 1
       # Runs AFTER lint (this job `needs: lint`) and BEFORE the pytest step, so a
       # swallowed write fails in ~1 min instead of at the end of the suite. It
       # lives in this job rather than in `lint` because the detector is reached
@@ -548,6 +560,18 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e . 2>/dev/null || true
+      # icx-ent-01: the vulnerability-discovery tests run target code only in the isolated sandbox, a
+      # container of the pinned python image; pull it up front, with retries, so a registry hiccup is a
+      # retry here and not a red test (the test stays unskippable). Digest = args/vuln_research.yaml sandbox.image.
+      - name: Pre-pull the vulnerability-discovery sandbox image
+        run: |
+          img="$(python -c "import yaml; print(yaml.safe_load(open('args/vuln_research.yaml'))['sandbox']['image'])")"
+          for attempt in 1 2 3 4 5; do
+            if docker pull "$img"; then echo "pulled $img (attempt $attempt)"; exit 0; fi
+            echo "::warning::docker pull $img failed (attempt $attempt/5); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::could not pull $img after 5 attempts"; exit 1
       - name: Resolve gated test list (shard)
         working-directory: ${{ github.workspace }}
         # Belt-and-braces: `--check` validates the FULL list (floor, duplicates,
@@ -1135,6 +1159,18 @@ jobs:
           node-version: "20"
       - name: Install Python dependencies
         run: pip install -r requirements.txt
+      # icx-ent-01: the vulnerability-discovery tests run target code only in the isolated sandbox, a
+      # container of the pinned python image; pull it up front, with retries, so a registry hiccup is a
+      # retry here and not a red test (the test stays unskippable). Digest = args/vuln_research.yaml sandbox.image.
+      - name: Pre-pull the vulnerability-discovery sandbox image
+        run: |
+          img="$(python -c "import yaml; print(yaml.safe_load(open('args/vuln_research.yaml'))['sandbox']['image'])")"
+          for attempt in 1 2 3 4 5; do
+            if docker pull "$img"; then echo "pulled $img (attempt $attempt)"; exit 0; fi
+            echo "::warning::docker pull $img failed (attempt $attempt/5); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::could not pull $img after 5 attempts"; exit 1
       - name: Install Node dependencies
         run: npm ci
       - name: Install Playwright browsers

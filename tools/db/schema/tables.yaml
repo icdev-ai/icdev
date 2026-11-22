@@ -1496,6 +1496,7 @@ tables:
   verify_loop_runs: it
   voc_documents: it
   voc_job_statements: it
+  vr_events: it
   vulnerability_records: it
   web_fetch_provenance: it
   webhook_deliveries: it

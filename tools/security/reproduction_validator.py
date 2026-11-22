@@ -147,7 +147,11 @@ PREDICATE_TYPES = frozenset(
 #: never stand alone — it must be conjoined with a positive assertion.
 _NEGATIVE_ONLY = frozenset({"body_not_contains"})
 
-REPRODUCTION_KINDS = frozenset({"http", "agent_trace"})
+#: ``sandbox_pov`` (icx-ent-01): a proof of vulnerability against a SOURCE TREE, replayed in
+#: the sandbox executor with no network by the engine tools/vulnresearch registers
+#: (:func:`register_pov_replayer`). Its ``predicate`` is ``{"type": "pov_oracle", "oracle": ...}``
+#: -- the oracle is judged inside the sandbox, not over an HTTP response.
+REPRODUCTION_KINDS = frozenset({"http", "agent_trace", "sandbox_pov"})
 
 DEFAULT_POLICY: dict[str, Any] = {
     "target_allowlist": ["localhost", "127.0.0.1", "::1"],
@@ -409,6 +413,13 @@ def validate_reproduction(repro: Reproduction, *, effective_target: Optional[str
                 continue
             if not str(step.get("path", "")).strip():
                 errors.append(f"step {i} requires a 'path'")
+    if repro.kind == "sandbox_pov":
+        pred = repro.predicate if isinstance(repro.predicate, dict) else {}
+        if pred.get("type") != "pov_oracle" or not str(pred.get("oracle") or "").strip():
+            errors.append("sandbox_pov reproduction needs predicate {type: pov_oracle, oracle: <name>}")
+        if not str(repro.target or "").strip():
+            errors.append("sandbox_pov reproduction requires a 'target' (the registered target id)")
+        return errors
     errors.extend(validate_predicate(repro.predicate))
     return errors
 
@@ -461,6 +472,18 @@ def register_trace_replayer(replayer: Callable[[Reproduction], ReplayResult]) ->
     """Install the agent-action-trace replay engine."""
     global _TRACE_REPLAYER
     _TRACE_REPLAYER = replayer
+
+
+#: Pluggable replayer for ``sandbox_pov`` reproductions (icx-ent-01). tools/vulnresearch/pov.py
+#: registers one that scope-locks the target and runs the PoV in the sandbox executor with no
+#: network. Until one is registered a PoV replays as ``unavailable`` and its candidate stays a lead.
+_POV_REPLAYER: Optional[Callable[[Reproduction], ReplayResult]] = None
+
+
+def register_pov_replayer(replayer: Callable[[Reproduction], ReplayResult]) -> None:
+    """Install the sandbox proof-of-vulnerability replay engine."""
+    global _POV_REPLAYER
+    _POV_REPLAYER = replayer
 
 
 def _truncate(body: str, limit: int) -> str:
@@ -580,6 +603,15 @@ def replay(repro: Reproduction, *, target: Optional[str] = None) -> ReplayResult
             return _TRACE_REPLAYER(repro)
         except Exception as exc:  # noqa: BLE001
             return ReplayResult(outcome=ReplayOutcome.error, detail=f"trace replayer failed: {exc}")
+
+    if repro.kind == "sandbox_pov":
+        if _POV_REPLAYER is None:
+            return ReplayResult(outcome=ReplayOutcome.unavailable,
+                                detail="no sandbox PoV replayer registered (tools/vulnresearch not loaded)")
+        try:
+            return _POV_REPLAYER(repro)
+        except Exception as exc:  # noqa: BLE001
+            return ReplayResult(outcome=ReplayOutcome.error, detail=f"PoV replayer failed: {exc}")
 
     effective = target or repro.target
     if not is_target_allowed(effective):
@@ -834,6 +866,27 @@ REPLAY_VOCABULARY = DiscriminationVocabulary(
     indecisive=(
         "indecisive replay (vulnerable={before}, fixed={after}) — discrimination cannot be established"
     ),
+)
+
+
+#: A proof of vulnerability against its benign control (icx-ent-01): it must fire on the PoV input
+#: and stay quiet on the control, or the oracle is insensitive and the candidate is dropped.
+POV_VOCABULARY = DiscriminationVocabulary(
+    discriminating="the proof of vulnerability fired and its benign control did not",
+    tautology="the oracle fires on the benign control too: it proves nothing",
+    inverted="only the benign control fired: the oracle is inverted",
+    never_established="the proof of vulnerability did not fire: the candidate was not reproduced",
+    indecisive="indecisive sandbox replay (pov={before}, control={after}): nothing is established",
+)
+
+#: A candidate patch against the vulnerable tree (icx-ent-01): the same PoV must fire before the
+#: patch and stop firing after it.
+PATCH_VOCABULARY = DiscriminationVocabulary(
+    discriminating="the proof of vulnerability fired on the vulnerable tree and fails on the patched copy",
+    tautology="the proof of vulnerability still fires on the patched copy: the patch does not fix it",
+    inverted="the proof of vulnerability fires only on the patched copy: the patch introduces it",
+    never_established="the proof of vulnerability did not fire on the vulnerable tree: nothing to fix",
+    indecisive="indecisive sandbox replay (vulnerable={before}, patched={after}): the patch is not shown",
 )
 
 

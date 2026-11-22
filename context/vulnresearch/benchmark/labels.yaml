@@ -1,0 +1,40 @@
+# CUI // SP-CTI
+# Ground truth for the icx-ent-01 benchmark: SYNTHETIC, PLANTED code (src/), labelled by construction.
+#
+# Who judged it: the labels are the planted defects themselves -- each vulnerable module was written to carry
+# exactly the weakness listed, and each SAFE module is a look-alike written not to. They were written and
+# labelled by the card's builder (an AI agent, icx-ent-01) and are AWAITING a person's review: until a person
+# signs reviewed_by, say "labelled by construction", never "people-judged". No model judges a result: the
+# measurement (tools/vulnresearch/benchmark.py) compares confirmed findings with these labels and nothing else.
+#
+# Scoring, per labelled (module, function, weakness):
+#   TP  a labelled weakness confirmed (its PoV discriminated in the sandbox);
+#   FN  a labelled weakness not confirmed;
+#   FP  a confirmed finding that matches no label (any module);
+#   TN  a SAFE module with no confirmed finding.
+#   false-positive rate = FP / (FP + TN); false-negative rate = FN / (TP + FN).
+schema: icdev-vulnbench-labels/v1
+synthetic: true
+labelled_by: "icx-ent-01 builder (AI agent): planted by construction"
+reviewed_by: null
+reviewed_at: null
+target:
+  root: context/vulnresearch/benchmark
+  src_root: src
+  test_dir: tests
+  fuzz_targets: ["vb_parser:parse_record", "vb_parser_safe:parse_record"]
+cases:
+  - {module: vb_cmdi, vulnerable: [{function: greet, cwe: CWE-78}]}
+  - {module: vb_cmdi_safe, vulnerable: []}
+  - {module: vb_cmdi_hidden, vulnerable: [{function: greet, cwe: CWE-78}],
+     note: "no SAST rule sees an indirect os.system; only the agentic review can propose it"}
+  - {module: vb_traversal, vulnerable: [{function: read_doc, cwe: CWE-22}],
+     note: "no SAST rule here flags open() on a joined path; only the agentic review can propose it"}
+  - {module: vb_traversal_safe, vulnerable: []}
+  - {module: vb_sqli, vulnerable: [{function: find_user, cwe: CWE-89}]}
+  - {module: vb_sqli_safe, vulnerable: []}
+  - {module: vb_eval, vulnerable: [{function: calc, cwe: CWE-95}]}
+  - {module: vb_eval_safe, vulnerable: []}
+  - {module: vb_pickle, vulnerable: [{function: load_prefs, cwe: CWE-502}]}
+  - {module: vb_parser, vulnerable: [{function: parse_record, cwe: CWE-20}]}
+  - {module: vb_parser_safe, vulnerable: []}
