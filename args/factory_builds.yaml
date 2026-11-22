@@ -1,0 +1,96 @@
+# CUI // SP-CTI
+# Signed factory builds (icx-ent-03; tools/factory_builds, docs/features/icx-ent-03-signed-factory-builds.md).
+#
+# What ICDEV[IT] builds and signs for a customer system, so ICDEV[OS]'s release register (osx-ent-06) admits it: one
+# icos-artefact/v1 per built artefact -- its CycloneDX 1.7 SBOM (an AI-BOM for a model or an agent, a model's linked
+# to its fine-tuning registry promotion), SLSA v1.2 provenance, OpenVEX 0.2.0 VEX, the Sigstore bundles over the
+# artefact's digest, a model's weights signed with OpenSSF model-signing, and the OCI referrers. A person prepares the
+# build (the FACTORY's key signs it; never a person's, never the owner's operator or release key, and an agent never
+# triggers a signature); a different person publishes it (decl-wft-fb-build-publish), and only then is it exported.
+#
+# A reviewed config (changed like any other). No environment variable names another file, widens a root or adds a
+# target.
+schema: icdev-factory-builds/v1
+
+# The builder id every build's SLSA provenance names. ICDEV[OS] lists it in args/artefacts.yaml artefacts.icdev.builders,
+# so a build that names it must come with its publication (icdev_os/publication.py).
+builder_id: https://icdev.example/factory/v1
+build_type: https://icdev.example/icdev-it/factory-build/v1
+
+signing:
+  # key: sign with ONE key. kms:<key id or alias>?region=<region> (ECC_NIST_P256, ECDSA_SHA_256, FIPS endpoint) or
+  #   keyring:<service>/<name> (the OS keyring holds the PKCS#8 PEM). Null until the site sets it: a build with no key
+  #   is refused (no_key), never signed with a MAC or left unsigned. Never the owner's operator or release key.
+  # keyless: an ephemeral key certified by a CONFIGURED Fulcio for a CONFIGURED OIDC issuer (below). ICDEV[OS]'s
+  #   release register verifies key-based bundles against keys a system's owner pinned; a keyless build is refused
+  #   there until ICDEV[OS] pins certificate identities (docs/features/icx-ent-03-signed-factory-builds.md).
+  mode: key
+  key: null
+
+keyless:
+  oidc_issuer: null        # e.g. the site's own CI issuer; no default, so nothing reaches a public instance by accident
+  fulcio_url: null
+  token_file: null         # the CI's ambient OIDC token, a file (repo-relative or absolute)
+
+transparency_log:
+  # off (the default: an air-gapped factory reaches no log, and every build records "off") or rekor with a url.
+  mode: "off"
+  url: null
+
+limits:
+  max_file_bytes: 2097152         # any one input file read for a build
+  max_files: 2000                 # weights files of one model
+  max_vulnerabilities: 500
+  deadline_seconds: 30
+
+# Who may PREPARE a build -- that is, make the factory's key sign (icx-ent-03 review M4). Dashboard roles
+# (tools/dashboard/auth.py VALID_DASHBOARD_ROLES); a service key is never one. Publishing is decided separately, by the
+# declared step's holders (args/workflow_hitl_templates/fb-build-publish.yaml), and never by the preparer.
+builder_roles: [admin, developer, reviewer]
+
+# Inputs are read only under these roots (repo-relative), never through a symlink, regular files with one link.
+artefact_root: .tmp/factory-builds
+models_root: .tmp/factory-builds/models
+
+# The targets the factory builds. Each is bound to ONE ICDEV[OS] registered system (system_id) and shown only to a
+# reader of its org cleared for its marking. synthetic: true marks a labelled demonstration target (the e2e and the
+# tests); MCP and the platform twin name synthetic targets only.
+#   kind: image (an OCI image layout: its one manifest is the subject), agent or iac (a package file: its digest is
+#     the subject), model (a fine-tuning registry model version: the root digest of its signed weights files).
+#   platform_scoped: true only for a target the PLATFORM itself owns (no tenant): then a fine-tuning registry row with no
+#     tenant binds to it. Otherwise (the default) a registry row with an empty tenant_id is refused (other_org): an
+#     unowned row is never taken as the target organisation's.
+#   sbom_project: the project directory whose dependencies the SBOM resolves (tools/compliance/sbom_generator.py).
+#   scan: the factory scanner's findings for the artefact (JSON [{id, component, severity}]); each becomes an SBOM
+#     vulnerability and an OpenVEX statement, under_investigation unless vex below states it (with a justification
+#     for not_affected, an action for affected). OpenVEX holds at least one statement, so a build with nothing to state
+#     is refused (vex_unexpressible) rather than given an invented one.
+targets:
+  - id: syn-ent03-portal
+    synthetic: true
+    kind: image
+    system_id: syn-ent03-foundry
+    org: syn-ent03-org
+    marking: CUI
+    name: syn foundry portal
+    subject_name: registry.syn-foundry.invalid/foundry/portal
+    layout: syn-ent03/portal/oci
+    sbom_project: syn-ent03/portal/src
+    scan: syn-ent03/portal/scan.json
+    vex:
+      SYN-ENT03-0001:
+        status: not_affected
+        justification: vulnerable_code_not_in_execute_path
+  - id: syn-ent03-classifier
+    synthetic: true
+    kind: model
+    system_id: syn-ent03-foundry
+    org: syn-ent03-org
+    marking: CUI
+    name: syn foundry classifier
+    subject_name: syn-foundry/defect-classifier
+    model: syn-ent03-defect-classifier
+    scan: syn-ent03/classifier/scan.json
+    runtime:
+      - {name: torch, version: 2.5.1, purl: pkg:pypi/torch@2.5.1}
+      - {name: safetensors, version: 0.4.5, purl: pkg:pypi/safetensors@0.4.5}

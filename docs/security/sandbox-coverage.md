@@ -2799,3 +2799,11 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
 | `vr_patch_diff` | `tools/vulnresearch/patches.py::validate` | **sandboxed** | A proposed diff is applied with `git apply` to a throwaway COPY (paths limited to in-scope files) and its effect is only judged in the sandbox. The target is never written. |
 | `vr_model_output` | `tools/vulnresearch/discovery.py::agent_review` | **trusted-first-party** (data only) | The agentic review's reply (Cortex governance, LLM router) is parsed as JSON data; a proposal naming a file or function outside the target is dropped. It never runs and never becomes a finding without a PoV. |
 
+## icx-ent-03: signed factory builds (`tools/factory_builds`)
+
+| Ingress | Module | Decision | Why |
+|---|---|---|---|
+| `fb_build_inputs` | `tools/factory_builds/config.py::read_confined`, `build.py` | **trusted-first-party** (read only, data) | An OCI image layout's index and manifest, a package file and the factory scan are READ as bytes to hash them and parse them as JSON; nothing is executed. Only under the reviewed `artefact_root`, regular files with one link, no symlink on the way, size-capped; each file read once, so the bytes hashed are the bytes used. A caller names a target, never a path. |
+| `fb_sbom_project` | `tools/compliance/sbom_generator.py::cyclonedx_document` | **trusted-first-party** (read only) | The target's project manifests are parsed by the existing SBOM generator's declared parsers (no install, no build, no execution), only under `artefact_root`. |
+| `fb_model_weights` | `tools/factory_builds/aibom.py::weights` | **trusted-first-party** (read only) | Weights files are only HASHED (streamed SHA-256), never loaded or deserialised; only under the reviewed `models_root`, no symlink, regular files with one link, at most `max_files`. |
+| `fb_remote_answers` | `tools/crypto/artefact_signer.py::post_json` | **trusted-first-party** (data only) | A configured Fulcio's and Rekor's JSON answers are parsed with a size cap; https only (loopback http for tests), no redirects, one deadline over the exchange; a certificate is accepted only for the key that asked and the configured issuer. Their error text never travels on. |

@@ -38,6 +38,8 @@ from types import SimpleNamespace
 import pytest
 from flask import Flask, g
 
+from tests._schema_compat import ensure_table
+
 ROOT = Path(__file__).resolve().parents[1]
 BENCH = "context/vulnresearch/benchmark"
 REGISTRANT = {"id": "u-ent01-registrant", "role": "reviewer"}     # labelled test persons (synthetic)
@@ -868,13 +870,21 @@ def test_kev_is_unverified_unless_the_feed_is_populated_and_fresh(vr):
     from tools.vulnresearch import discovery
 
     conn = sqlite3.connect(str(vr))
-    conn.execute("CREATE TABLE IF NOT EXISTS sg_cve_feed (cve_id TEXT PRIMARY KEY, is_kev INTEGER DEFAULT 0, "
-                 "updated_at TEXT)")
+    # The schema of record's definition (tools/db/schema/pg_consolidated.sql), never a narrower copy, through
+    # ensure_table: CREATE TABLE IF NOT EXISTS never alters a table another module may have made first.
+    ensure_table(conn, """CREATE TABLE IF NOT EXISTS sg_cve_feed (
+        id TEXT PRIMARY KEY, cve_id TEXT UNIQUE, title TEXT NOT NULL, description TEXT, cvss_score REAL,
+        category TEXT DEFAULT 'security_vulnerability', source_signal_id TEXT,
+        status TEXT DEFAULT 'new' CHECK (status IN ('new', 'reviewed', 'mitigated', 'false_positive')),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, is_kev INTEGER DEFAULT 0, kev_due_date TEXT,
+        epss_score REAL, severity TEXT DEFAULT 'unknown', vendor TEXT, product TEXT, published_at TEXT,
+        modified_at TEXT, cvss_vector TEXT, classification VARCHAR(50) DEFAULT 'CUI')""")
     conn.commit()
     kev, why = discovery._kev(["CVE-2019-10906"])
     assert kev is None and "empty" in why
     old = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
-    conn.execute("INSERT INTO sg_cve_feed VALUES ('CVE-2021-44228', 1, ?)", (old,))
+    conn.execute("INSERT INTO sg_cve_feed (id, cve_id, title, is_kev, created_at, updated_at) "
+                 "VALUES ('cve-1', 'CVE-2021-44228', 'Log4Shell', 1, ?, ?)", (old, old))
     conn.commit()
     kev, why = discovery._kev(["CVE-2019-10906"])
     assert kev is None and "stale" in why, "a stale feed is unverified, never 'not in KEV'"

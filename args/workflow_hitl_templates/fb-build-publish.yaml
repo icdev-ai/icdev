@@ -1,0 +1,35 @@
+# CUI // SP-CTI
+id: decl-wft-fb-build-publish
+name: "Signed factory builds: a person publishes a target's signed build to ICDEV[OS], or refuses it (prepare -> publish)"
+description: >-
+  A signed factory build (icos-artefact/v1) is one artefact ICDEV[IT] built for a customer
+  system -- an image, a model, an agent or an IaC bundle -- with its CycloneDX 1.7 SBOM or
+  AI-BOM, its SLSA v1.2 provenance, its OpenVEX VEX and the Sigstore bundles the factory's
+  key signed. Leaving the factory is a release, so a person attests it. A person prepares a
+  target's build on /factory-builds/ (the factory's key signs; an agent never does), which
+  records it at its artefact digest and decides nothing. A person of the target's org who
+  did not prepare it reads it and publishes it or refuses, with a reason, bound to that
+  digest. Nothing publishes itself, and a newer build needs a new step.
+decides: [factory_builds.fb_api_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject:
+  "factory_build:<target>"; payload: the target, its system, the artefact digest and the
+  prepared event). fb_events appends a published or refused event on the target's stream,
+  chained to the row before it. Only a published build is exported, with its publication
+  BESIDE it ({"bundle": <icos-release-transfer/v1>, "publication": icdev-build-publication/v1}),
+  and only while this step is recorded, that way, by that person:
+  tools/factory_builds/cli.py export.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: prepare
+    step_type: automated
+    description: A person built the target; the factory's key signed it, and it was recorded at its artefact digest.
+  - name: publish
+    step_type: manual
+    role: build_publisher
+    holders: [admin, isso, reviewer]
+    # The person who prepared the build never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]

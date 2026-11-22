@@ -544,6 +544,7 @@ tables:
   dsoc_scrubbing_centers: it
   dsoc_threats: it
   dynamic_findings: it
+  ec_events: it
   emass_sync_log: it
   emass_systems: it
   enclave_scans: it
@@ -588,6 +589,7 @@ tables:
   fabric_audit: it
   fabric_shares: it
   fairness_assessments: it
+  fb_events: it
   federal_ip_space_definitions: it
   federal_peering_requests: it
   fedramp_assessments: it

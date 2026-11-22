@@ -2210,3 +2210,319 @@ agent_detection_rules:
     someone believes it does. A finding is a RULE MATCH AND NOT PROOF OF
     EXECUTION; see docs/features/agov-det-coverage-and-limits.md for what the
     detector does not see before treating a clean run as evidence.
+
+# Feature conformance gate (icx-cnf-01)
+#
+# Each feature in args/feature_conformance.yaml is judged against the five rules
+# (GUI, workflow, twin, architecture, AI-native). WARN while the gaps queued as
+# icx-cnf-02..05 remain; `enforcement: fail` in that file promotes the open-gap
+# condition to blocking in the coherence check.
+# Run: python tools/conformance/feature_audit.py --check
+#      python tools/workflow/coherence_checker.py --check feature_conformance --json
+feature_conformance:
+  blocking: []            # every condition blocks once enforcement: fail
+  warning:
+    - open_conformance_gap        # a feature misses a rule with no stated reason
+    - unregistered_conformance_gap  # a gap with no line in args/feature_conformance_census.txt
+    - stale_conformance_record    # the doc, snapshot or a stated reason no longer matches the evidence
+    - hand_written_route_path     # icx-cnf-08: an audited file writes an /api/ path instead of an endpoint id
+    - stale_route_table           # icx-cnf-08: tools/dashboard/static/js/routes.gen.js is not the url_map's
+    - unsent_credited_write       # icx-cnf-08: e2e gate -- a write credited to a page that no page sent
+  note: >
+    A stated reason excuses only its own rule and goes stale when the rule
+    holds without it. The census enumerates every open gap by name and its
+    ceiling (census_max) may only go down.
+
+# Platform model trace gate (icx-cnf-04)
+#
+# ICDEV's own architecture (args/platform_model/*.yaml) for the features the
+# conformance audit judges: requirement -> element -> code -> EXISTING test.
+# ivv.rtm_completeness_pct is project-wide with no per-feature consumer, so these
+# features are held here instead.
+# Run: python tools/mbse/platform_model.py --check
+#      python tools/workflow/coherence_checker.py --check platform_model_trace --json
+platform_model_trace:
+  blocking:
+    - invented_test_or_code       # a cited test (file and function) or code path that does not exist
+    - orphan_platform_element     # an element no requirement of its feature names
+  warning:
+    - untested_requirement        # a requirement no test covers yet: a gap, never a pass
+    - feature_without_requirement # a feature in args/feature_conformance.yaml the model does not cover
+  note: >
+    Seeding the digital thread (--seed) refuses a model with a blocking
+    condition, so an invented test never reaches the RTM.
+
+# Declared decision gate (icx-cnf-02)
+#
+# Every decision a person takes in Cortex and ACE runs through a template under
+# args/workflow_hitl_templates/ (a manual stage held by a role). The coherence
+# check hitl_workflow fails on a malformed template, a template no code runs, a
+# surface decided twice, or a decision endpoint the feature audit finds with no
+# template (a workflow: line in args/feature_conformance_census.txt).
+# Run: python tools/workflow/coherence_checker.py --check hitl_workflow --json
+declared_decisions:
+  blocking:
+    - undeclared_decision          # a decision endpoint with no declared template
+    - template_without_manual_stage  # no manual stage, no role, or a service key as holder
+    - template_not_run             # a template no route or tool takes a step through
+  warning: []
+  note: >
+    A step that cannot be recorded is refused and its effect does not run. A
+    service key never holds a person's step; it proposes, and re-posts the decided
+    step id once. ACE abort stays an immediate stop with its stated reason.
+
+
+# ACE auto-dispatch gate (icx-ace-01)
+#
+# Every ACE event is a recommendation a person decides (decl-wft-ace-run-launch).
+# A role/topic launches on its own only under a live grant. Enforced by
+# tools/ace/auto_dispatch.py and tested in tests/ace/ (gated: core.d/icx-ace-01.txt).
+ace_auto_dispatch:
+  blocking:
+    - grant_without_eligibility     # the role YAML does not declare the topic auto-eligible
+    - grant_below_trust             # NOVA band below min_trust_band (args/ace/auto_dispatch.yaml)
+    - grant_without_reason          # turning auto on needs a stated reason
+    - grant_past_max_expiry         # expiry later than max_grant_days, or none
+    - grant_by_non_person           # a service key or agent cannot take the step
+    - launch_without_decided_step   # no launch from an event without a spent step or a live grant
+  warning:
+    - recommendation_undecided      # twin: ace.recommendation.undecided
+    - grant_expiring                # twin: ace.grant.expiring
+  note: >
+    Revoke and stop-all are stops: immediate, with a stated reason, no approval.
+    Lifting stop-all is the holder's step. A grant suspends itself when trust falls.
+
+
+# Engineering standards register gate (icx-coe-01)
+#
+# One entry per standard (args/engineering_standards.yaml seeds; status is the
+# replay of coe_standard_events). Enforced by tools/idp/standards.py and its
+# declared templates (args/workflow_hitl_templates/coe-standard-*.yaml); tested
+# in tests/test_icx_coe_01_standards.py (gated: core.d/icx-coe-01.txt).
+engineering_standards:
+  blocking:
+    - adopt_without_check            # no existing scorecard rule and no named manual evidence step: a wish
+    - author_takes_own_step          # review, adopt or deprecate by the version's author (separate_from: builders)
+    - step_by_non_person             # a service key or agent cannot review, adopt or deprecate; it drafts
+    - step_out_of_order              # adopt needs reviewed, deprecate needs in force: nothing advances by itself
+    - step_on_stale_digest           # the entry changed since the steward read it
+    - seed_adopted_without_check     # a seed enters adopted only when its check resolves
+    - chain_broken                   # a ledger row that does not verify blocks any change to that standard
+  warning:
+    - in_force_check_unresolved      # twin: coe.in_force.check_unresolved
+    - in_force_source_drifted        # twin: coe.in_force.source_drifted
+    - in_force_bootstrap_only        # twin: coe.in_force.bootstrap_only (seeded, no person signed)
+    - draft_waiting                  # twin: coe.draft.waiting
+  note: >
+    Seeds are recorded by the labelled bootstrap identity in seed_identity, never
+    as a person's signature. args/standards_registry.yaml (the WG 22 citation
+    catalog) is a different file and is cited, not changed.
+
+
+# Exemptions that expire, and ADRs as records (icx-coe-02)
+#
+# Enforced by tools/idp/exemptions.py, tools/idp/scorecard.py and tools/idp/adrs.py
+# and their declared templates (args/workflow_hitl_templates/coe-exemption-*.yaml,
+# coe-adr-*.yaml); tested in tests/test_icx_coe_02_*.py (gated: core.d/icx-coe-02.txt).
+# CI runs `python tools/idp/exemptions.py --check --gate` and `python tools/idp/adrs.py --check`.
+coe_exemptions:
+  blocking:
+    - exemption_without_expiry       # a request with no expiry, one not after today, or beyond max_expiry_days
+    - exemption_expired              # past its expiry: the scorecard's exemptions.gate fails, and the CI check
+    - exemption_in_config            # a grant written into scorecard YAML is not a person's step: inert, fails the check
+    - auto_approve_set               # autoApprove is refused at request and fails the check
+    - requester_grants_own           # grant or renew by the requester or the renewal's asker (separate_from: builders)
+    - step_by_non_person             # a service key or agent cannot grant or renew; it drafts
+    - step_on_stale_digest           # the exemption changed since the person read it
+    - unknown_scope_or_standard      # an undeclared scope, an unknown rule, a standard not in the register
+    - chain_broken                   # a log row that does not verify blocks any change to that exemption
+  warning:
+    - exemption_expiring             # twin: coe.exemption.expiring
+    - exemption_migrated             # twin: coe.exemption.migrated (an expiry given by the bootstrap migration)
+    - exemption_self_approved        # twin: coe.exemption.self_approved (legacy)
+  note: >
+    Expiry only removes an exemption; nothing renews by itself and no timer decides.
+    Approved exemptions with no expiry are given one by migration_identity, never granted again.
+coe_adrs:
+  blocking:
+    - doc_drift                      # docs/reference/adrs.md differs from what the records generate
+    - author_takes_own_step          # accept or supersede by the ADR's (or the successor's) author
+    - step_by_non_person             # an agent drafts; it never accepts or supersedes
+    - step_out_of_order              # accept needs proposed; supersede needs accepted and in force
+    - successor_not_accepted         # supersede names an accepted successor
+    - link_unknown                   # a link to a requirement or standard that does not exist
+    - chain_broken                   # a ledger row that does not verify blocks any change to that ADR
+  warning:
+    - record_not_in_ledger           # twin: coe.adrs.recorded unverified (never passed)
+    - ledger_not_exported            # twin: coe.adr.unexported
+    - proposal_waiting               # twin: coe.adr.proposed.waiting
+  note: >
+    The 676 ADRs migrated from the flat log were recorded by the labelled bootstrap identity
+    (args/coe_records.yaml adrs.seed_identity), never a person's signature.
+
+
+# Scorecards against adopted standards, delivery evidence, conformance bundles (icx-coe-03)
+#
+# Enforced by tools/idp/conformance.py, tools/idp/dora.py and the declared template
+# args/workflow_hitl_templates/coe-conformance-publish.yaml; tested in
+# tests/test_icx_coe_03_*.py (gated: core.d/icx-coe-03.txt). The bundle is validated against
+# the pinned ICOS contract schema context/icos/conformance.schema.json before it is recorded.
+coe_conformance:
+  blocking:
+    - manual_step_scored_as_pass     # a manual evidence step is needs_evidence, never pass
+    - expired_exemption_passes       # an expired exemption FAILS the standard whose rule it waived
+    - unadopted_standard_scored      # a standard not in force is listed (not_scored), never scored
+    - metric_without_data_valued     # no data is unverified (value null, why given), never zero
+    - preparer_publishes             # the preparer never publishes (separate_from: builders)
+    - step_by_non_person             # a service key or agent prepares a draft; it never publishes
+    - publish_on_stale_digest        # the prepared bundle changed since the person read it
+    - bundle_off_schema              # a bundle that does not meet the pinned ICOS contract, or whose digest is not its content's
+    - schema_unpinned                # context/icos/conformance.schema.json changed without re-pinning
+    - chain_broken                   # a ledger row that does not verify blocks any new event for that repo
+  warning:
+    - repo_unpublished               # twin: coe.conformance.<repo> unverified (never passed)
+    - standard_failing               # twin: coe.conformance.standard_failing
+    - exemption_expired_in_bundle    # twin: coe.conformance.expired_exemption
+    - metric_unverified              # twin: coe.conformance.metric_unverified
+    - bundle_stale                   # twin: coe.conformance.stale
+    - awaiting_publish               # twin: coe.conformance.awaiting_publish
+  note: >
+    Delivery metrics are computed from declared sources only (git history of main, a CI-run
+    snapshot passed in, a board export), never the live board and never a live CI fetch.
+    Outcomes, not adoption counts.
+
+
+# Golden paths: a new service conformant by construction (icx-coe-04)
+#
+# Enforced by tools/idp/golden_paths.py, tools/cli/scaffold.py (`icdev scaffold service`) and the
+# declared templates args/workflow_hitl_templates/coe-golden-path-{publish,retire}.yaml; tested in
+# tests/test_icx_coe_04_*.py (gated: core.d/icx-coe-04.txt). CI runs
+# `python tools/idp/golden_paths.py --check` and `--drift` (.github/workflows/icdev-ci.yml).
+coe_golden_paths:
+  blocking:
+    - path_behind_standards_in_force   # a standard in force that applies is not declared, or at another version
+    - scaffold_drift                   # a machine-checkable standard does not PASS on the scaffold, a feature_audit gap,
+                                       # a piece missing or malformed, or the generated tests not red-first
+    - manual_standard_scored_as_pass   # a manual evidence step is needs_evidence on a scaffold, never pass
+    - unmeasured_scored_as_pass        # a rule that measured nothing on the scaffold is unverified, never pass
+    - author_publishes                 # the version's author never publishes or retires it (separate_from: builders)
+    - step_by_non_person               # an agent or service key proposes and drift-checks; it never decides
+    - publish_without_passing_drift    # no drift check, a failed one, or one on another template digest
+    - publish_on_stale_digest          # the version changed since the person read it
+    - generator_accepts_adr            # the generator writes a PROPOSED ADR record, never accepted
+    - chain_broken                     # a ledger row that does not verify blocks any new event for that path
+  warning:
+    - path_unpublished                 # twin: coe.golden_path.<id> unverified (never passed)
+    - path_never_drift_checked         # twin: coe.golden_path.<id>.drift unverified
+    - path_behind                      # twin: coe.golden_path.behind
+    - drift_failed_or_stale            # twin: coe.golden_path.drift / .drift_stale / .drift_old
+    - bootstrap_only                   # twin: coe.golden_path.bootstrap_only
+  note: >
+    The drift check scaffolds into a temporary tree laid over the checkout and never writes to a
+    database or to the repo. The standards that apply to a path are derived from the register and
+    args/coe_conformance.yaml, never listed by hand.
+
+
+# AI-assisted vulnerability discovery, proven or dropped (icx-ent-01)
+#
+# Enforced by tools/vulnresearch/* (targets.assert_in_scope, pov.replay_pair, patches.validate, bundle.verify), the
+# isolated sandbox (tools/security/sandbox_executor.py::SandboxExecutor.run_isolated) and the declared templates
+# args/workflow_hitl_templates/vr-*.yaml; tested in tests/test_icx_ent_01_*.py (gated: core.d/icx-ent-01.txt).
+vuln_research:
+  blocking:
+    - target_not_authorised          # a target not authorised by a person (or refused, revoked, expired) is never scanned
+    - self_authorised                # the registrant never authorises their own target (separate_from: builders)
+    - root_not_allowlisted           # a tree outside scope.allowed_roots is refused at registration and every scan
+    - tree_changed                   # a tree whose digest moved since registration is a different target
+    - network_in_sandbox             # run_isolated has no network switch; --network none is fixed
+    - isolation_container            # a real target runs only under gVisor or a microVM; runc is refused
+                                     # (only the synthetic benchmark's named waiver, recorded in the run and the
+                                     # bundle; twin: vulnresearch.isolation_container critical when unwaived)
+    - finding_without_pov            # a candidate whose PoV did not discriminate is dropped, never a finding
+    - pov_exported                   # a sealed PoV input never appears in a view, an MCP result or a bundle
+    - patch_without_proof            # a patch is proposed only when its PoV fails on the copy and the tests pass
+    - patch_applied                  # nothing in this feature writes to the target
+    - self_reviewed_patch            # the proposer never reviews their own patch
+    - preparer_publishes             # the preparer never publishes the findings bundle
+    - bundle_off_schema              # a bundle that does not meet the pinned draft, or whose digest is not its content's
+    - schema_unpinned                # context/icos/findings*.schema.json changed without re-pinning
+    - chain_broken                   # a vr_events row that does not verify blocks new events on that stream
+  warning:
+    - finding_unpatched              # twin: vulnresearch.finding_unpatched
+    - bundle_unpublished             # twin: vulnresearch.bundle.<target> unverified (never passed)
+    - measurement_missing            # twin: vulnresearch.measurement unverified
+    - labels_unreviewed              # twin: vulnresearch.labels_unreviewed (planted by construction)
+    - isolation_waived               # twin: vulnresearch.isolation_waived (the benchmark ran under its waiver)
+    - authorisation_expired          # twin: vulnresearch.authorisation_expired
+  note: >
+    A dependency advisory has no PoV recipe: it is carried as UNPROVEN with its KEV flag (null when KEV was not
+    read), never a finding. The model (Cortex governance, llm_function vuln_source_review / vuln_patch_draft) only
+    proposes candidates and drafts; no model judges a finding or a measurement.
+
+# Evidence collectors for customer environments (icx-ent-02)
+#
+# Enforced by tools/evidence_collectors/* (config.validate, transport.request_json, bundle.evaluate,
+# bundle.validate, service.visible, service.publish) and the declared template
+# args/workflow_hitl_templates/ec-evidence-publish.yaml; tested in tests/test_icx_ent_02_*.py (gated:
+# core.d/icx-ent-02.txt).
+evidence_collectors:
+  blocking:
+    - credential_literal             # a credential that is not a keyring:/vault: reference is refused on load
+    - secret_outside_credentials     # a secret-looking key anywhere else in the configuration is refused
+    - collector_writes               # a collector sends GET or a named read POST, nothing else
+    - off_host_or_redirect           # a request off the configured host, or a redirect, is refused
+    - met_from_absence               # an objective is satisfied only when every mapped fact is fresh and true
+    - stale_or_future_evidence       # past its budget, after the report or without a zoned time: unverified
+    - preparer_publishes             # the preparer never publishes (separate_from: builders)
+    - agent_publishes                # an agent prepares a draft; it never publishes
+    - other_org_or_uncleared         # outside the system's org or below its marking: "no such system"
+    - publish_on_stale_digest        # the prepared report changed since the person read it
+    - config_changed_since_prepare   # the system's endpoints, references or the mapping changed: prepare again
+    - report_off_schema              # a report that does not meet the pinned contract or its digest rule
+    - schema_unpinned                # context/icos/objective-evidence.schema.json changed without re-pinning
+    - chain_broken                   # an ec_events row that does not verify blocks new events for that system
+  warning:
+    - system_unpublished             # twin: evidence_collectors.<system> unverified (never passed)
+    - objective_other_than_satisfied # twin: evidence_collectors.other_than_satisfied
+    - report_stale                   # twin: evidence_collectors.stale
+    - objectives_unverified          # twin: evidence_collectors.unverified_objectives
+    - awaiting_publish               # twin: evidence_collectors.awaiting_publish
+  note: >
+    Collector entries cite nothing ICDEV[OS] resolves, so there they stand as unverified until an assessor's
+    determination cites the report (report:<content digest>). This is evidence, never an assessment.
+
+# Signed factory builds (icx-ent-03)
+#
+# Enforced by tools/factory_builds/* (config.validate, config.read_confined, build.build, build.self_check,
+# aibom.promoted_version, aibom.check_binding, service.visible, service.prepare, service.publish, service.export),
+# tools/crypto/artefact_signer.py and the declared template args/workflow_hitl_templates/fb-build-publish.yaml; tested in
+# tests/test_icx_ent_03_*.py (gated: core.d/icx-ent-03.txt).
+factory_builds:
+  blocking:
+    - no_signing_key                # no key configured: refused, never a MAC or an unsigned build
+    - test_key_outside_tmp          # a file: key is a throwaway test key in the temporary directory only
+    - keyless_without_issuer        # keyless needs a configured OIDC issuer, Fulcio URL and token: no public default
+    - certificate_mismatch          # Fulcio's leaf must carry the ephemeral key and name the configured issuer
+    - signature_does_not_verify     # every signature is checked under the key's own public key before it is used
+    - agent_signs                   # an agent or a service key never makes the factory's key sign
+    - preparer_publishes            # the preparer never publishes (separate_from: builders)
+    - other_org_or_uncleared        # outside the target's org or below its marking: "no such target"
+    - publish_on_stale_digest       # the prepared build changed since the person read it
+    - build_off_contract            # a manifest, SBOM or VEX off ICDEV[OS]'s pinned contracts is refused
+    - schema_unpinned               # a vendored schema whose SHA-256 is not its pin is refused, never used
+    - model_not_promoted            # a model is built only from a promoted fine-tuning registry version
+    - promotion_withdrawn           # a model demoted since it was built is never published
+    - model_marking_above_target    # registry rows above the target's marking (or another tenant's) are refused
+    - path_outside_root_or_symlink  # inputs only under the reviewed roots, regular files with one link, no symlinks
+    - vex_unexpressible             # nothing to state: refused, never an invented OpenVEX statement
+    - export_without_step           # a publication counts only with its declared step recorded, by that person
+    - outbound_redirect             # Fulcio and Rekor calls are https, never follow a redirect, one deadline
+    - chain_broken                  # an fb_events row that does not verify blocks new events for that target
+  warning:
+    - target_unpublished            # twin: factory_builds.<target> unverified (never passed)
+    - awaiting_publish              # twin: factory_builds.awaiting_publish
+    - keyless_not_admitted          # twin: ICDEV[OS]'s register admits key-based builds only, for now
+  note: >
+    The transparency log is off by default and a build records that it is; with rekor configured, the log's
+    entries are recorded as receipts, NOT verified (no log key is pinned). A build is evidence for ICDEV[OS]'s
+    admission, never an approval: ICDEV[OS] admits, and its people approve the release.

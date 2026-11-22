@@ -26,8 +26,10 @@ from tools.twin_core.registry import TwinRegistry, known_canvas_keys
 
 # icx-mdz-01 added "mdc", the modernisation twin (tools/twin_core/adapters/modernisation.py); icx-coe-01 added
 # "idp", the engineering standards register twin (tools/twin_core/adapters/coe_standards.py).
-# icx-ent-01 adds vulnresearch (AI-assisted vulnerability discovery).
-GOVERNANCE_KEYS = {"cortex", "ace", "cwk", "twin_observatory", "mdc", "idp", "vulnresearch"}
+# icx-ent-01 adds vulnresearch (AI-assisted vulnerability discovery); icx-ent-02 adds evidence_collectors
+# (evidence collectors for customer environments); icx-ent-03 adds factory_builds (signed factory builds).
+GOVERNANCE_KEYS = {"cortex", "ace", "cwk", "twin_observatory", "mdc", "idp", "vulnresearch", "evidence_collectors",
+                   "factory_builds"}
 
 
 def _ago(**kw) -> str:
