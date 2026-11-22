@@ -10,9 +10,10 @@
 * The labelled synthetic inputs of the two synthetic targets (``tools/factory_builds/synthetic.py``): an OCI image
   layout, a project, a factory scan, a model's weights files, and the fine-tuning registry rows of a promoted
   synthetic model version (a run-named promoter).
-* One build of EACH target, PREPARED by ent03-preparer through the product's own ``service.prepare``, signed with a
-  THROWAWAY P-256 key made here in the temporary directory (never a real key). The shipped configuration names no
-  factory key, so pressing "Build and sign" on the page is refused ``no_key``: the journey shows it.
+* A THROWAWAY P-256 factory key at tests/e2e/fixtures/.ent03_factory_key.pem (git-ignored), which the e2e dashboard
+  signs with through ICDEV_FACTORY_BUILDS_E2E_KEY (honoured only there, and only while the shipped configuration names
+  no key). The image target is built on the page by the journey; the MODEL target's build is PREPARED here by
+  ent03-preparer through the product's own ``service.prepare``, with that same key.
 
 Everything goes through the product's own functions; the registry rows are synthetic and labelled. The server must
 be on a throwaway database (globalSetup asserts it). Prints one JSON line: the run id, each person's id and raw key (a
@@ -22,7 +23,6 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import uuid
 from pathlib import Path
 
@@ -43,16 +43,26 @@ def person(name: str, role: str, run: str, tenant: str) -> dict:
     return {"id": user["id"], "name": name, "role": role, "key": key["raw_key"], "org": tenant}
 
 
+KEY = ROOT / "tests" / "e2e" / "fixtures" / ".ent03_factory_key.pem"
+
+
 def throwaway_signer():
+    """A THROWAWAY P-256 key, written where the e2e dashboard reads it (ICDEV_FACTORY_BUILDS_E2E_KEY, git-ignored), so
+    the page's Build and sign uses the same key the seed's model build was signed with. Never a real key."""
+    import os
+
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import ec
 
-    from tools.crypto import artefact_signer as asig
+    from tools.factory_builds import config, service
 
-    p = Path(tempfile.mkdtemp(prefix="icx-ent-03-e2e-")) / "throwaway.pem"
-    p.write_bytes(ec.generate_private_key(ec.SECP256R1()).private_bytes(
-        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-    return asig.open_signer(f"file:{p}")
+    if not KEY.exists():
+        KEY.write_bytes(ec.generate_private_key(ec.SECP256R1()).private_bytes(
+            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        os.chmod(KEY, 0o600)
+    os.environ[service.E2E_KEY_ENV] = str(KEY)
+    s = service.signer_for(config.load())
+    return s
 
 
 def main() -> int:
@@ -79,7 +89,7 @@ def main() -> int:
     who = {"id": preparer["id"], "role": preparer["role"]}
     rdr = {**who, "clearance": "CUI", "org": ORG}
     builds = {}
-    for tid in ("syn-ent03-portal", "syn-ent03-classifier"):
+    for tid in ("syn-ent03-classifier",):
         p = service.prepare(tid, who, rdr, version=f"1.0.{int(run[:4], 16)}", signer=signer,
                             note="Synthetic (icx-ent-03 e2e): built by the seed with a throwaway key")
         builds[tid] = {"digest": p["digest"], "event_id": p["event_id"]}

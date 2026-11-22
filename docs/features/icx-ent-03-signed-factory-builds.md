@@ -60,13 +60,40 @@ cap the answer and hold one deadline over the whole exchange. Rekor's verifier e
 Sigstore clients; the schema says only "base64-encoded strings" (not verified against a live log).
 
 ## Who decides
-- **Prepare** (`/factory-builds/`, a person): builds and signs, records the whole artefact at its digest in the
-  append-only, hash-chained `fb_events`. An agent or a service key never prepares: preparing makes the factory's key
-  sign, and an agent never signs.
+- **Prepare** (`/factory-builds/`, a person in `builder_roles`, `args/factory_builds.yaml`): builds and signs, records
+  the whole artefact at its digest in the append-only, hash-chained `fb_events`. An agent or a service key never
+  prepares: preparing makes the factory's key sign, and an agent never signs. A person outside `builder_roles` is
+  refused (`role`).
 - **Publish** (`decl-wft-fb-build-publish`): a person of the target's org, cleared for its marking, never the preparer,
   with a reason, bound to the digest read. The build is verified again first.
 - **Export**: `{"bundle": icos-release-transfer/v1, "publication": icdev-build-publication/v1}`, only for a published
   build whose declared step is recorded that way by that person.
+
+**"A person" includes that person's dashboard API key** (review M3). ICDEV resolves a dashboard API key to the
+person who owns it, with that person's role, org and clearance, and every declared step on the platform treats it the
+same way: a person's key is that person acting. A service key (role `service`) is never a person and is refused.
+ICDEV has no marker today that separates an interactive session from a person's key at the route, so prepare and
+publish do not require a session; requiring one is a platform-wide change to every declared step, not this card's.
+
+**Only the factory's current key publishes** (review L5): at publish, the build's key id must be the configured
+signer's (a keyless build must name the configured OIDC issuer). A key rotated or withdrawn since stops its builds
+leaving (`key_mismatch`, `no_key`); ICDEV[OS] verifies again against the keys a system's owner pinned. The page's
+self-check is re-run on every read under the build's recorded key, and says "verified now" or "fails now".
+
+**A registry row with no tenant** binds only to a target the config declares `platform_scoped: true` (review M2);
+`ft_model_versions.tenant_id` defaults to empty, and an unowned row is never taken as an organisation's. A promoted
+version whose job or dataset row is missing is refused (`no_provenance`), and one archived since no longer stands.
+
+**The SBOM is resolved from a confined copy** (review M1): only the named dependency manifests and lockfiles at the
+project's top level (and `gradle/dependency-locks/*.lockfile`, `obj/project.assets.json`) are copied, each through the
+confined reader (under the root, opened component by component with no symlink followed, a regular file with one
+link, O_NONBLOCK, size-capped), into a fresh per-run directory that the SBOM generator reads. No installed
+environment, source or include is read. The provenance names each copied manifest with its SHA-256.
+
+**The e2e's key.** The shipped configuration names no key. The e2e dashboard signs with a throwaway key the seed writes
+to `tests/e2e/fixtures/.ent03_factory_key.pem` (git-ignored), named by `ICDEV_FACTORY_BUILDS_E2E_KEY`, which is
+honoured only for a file under `tests/e2e/fixtures/` and only while the config names no key (the precedent is
+`ICDEV_MODERNISATION_CAPACITY_E2E`, honoured only under `tests/`). An installed deployment has no `tests/`.
 
 A target the reader may not see is "no such target", byte for byte; lists count what they hold back. MCP
 (`factory_builds_status`) only reads, and an agent sees synthetic targets only.

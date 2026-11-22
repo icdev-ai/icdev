@@ -43,6 +43,11 @@ limits:
   max_vulnerabilities: 500
   deadline_seconds: 30
 
+# Who may PREPARE a build -- that is, make the factory's key sign (icx-ent-03 review M4). Dashboard roles
+# (tools/dashboard/auth.py VALID_DASHBOARD_ROLES); a service key is never one. Publishing is decided separately, by the
+# declared step's holders (args/workflow_hitl_templates/fb-build-publish.yaml), and never by the preparer.
+builder_roles: [admin, developer, reviewer]
+
 # Inputs are read only under these roots (repo-relative), never through a symlink, regular files with one link.
 artefact_root: .tmp/factory-builds
 models_root: .tmp/factory-builds/models
@@ -52,6 +57,9 @@ models_root: .tmp/factory-builds/models
 # tests); MCP and the platform twin name synthetic targets only.
 #   kind: image (an OCI image layout: its one manifest is the subject), agent or iac (a package file: its digest is
 #     the subject), model (a fine-tuning registry model version: the root digest of its signed weights files).
+#   platform_scoped: true only for a target the PLATFORM itself owns (no tenant): then a fine-tuning registry row with no
+#     tenant binds to it. Otherwise (the default) a registry row with an empty tenant_id is refused (other_org): an
+#     unowned row is never taken as the target organisation's.
 #   sbom_project: the project directory whose dependencies the SBOM resolves (tools/compliance/sbom_generator.py).
 #   scan: the factory scanner's findings for the artefact (JSON [{id, component, severity}]); each becomes an SBOM
 #     vulnerability and an OpenVEX statement, under_investigation unless vex below states it (with a justification

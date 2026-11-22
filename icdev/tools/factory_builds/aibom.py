@@ -74,6 +74,10 @@ def promoted_version(model_name: str, conn=None) -> dict:
             dcols = ("id", "name", "version", "content_hash", "example_count", "classification")
             ds = next(iter(_rows(conn, f"SELECT {', '.join(dcols)} FROM ft_datasets WHERE id = %s",  # nosec B608
                                  ((job or {}).get("dataset_id"),), dcols)), None) if job else None
+            if job is None or ds is None:
+                raise AibomError("no_provenance", f"the promoted version of {model_name} names a training job or "
+                                                  "dataset the registry does not hold: an AI-BOM is never built on a "
+                                                  "missing row")
             return {"version": v, "job": job, "dataset": ds, "promotion": log[-1], "promotions": log}
     finally:
         if own:
@@ -89,9 +93,13 @@ def still_promoted(model_version_id: str, promotion_id, conn=None) -> bool:
     try:
         log = _rows(conn, "SELECT id, action FROM ft_promotion_log WHERE model_version_id = %s ORDER BY id",
                     (model_version_id,), ("id", "action"))
+        status = _rows(conn, "SELECT status FROM ft_model_versions WHERE id = %s", (model_version_id,), ("status",))
     finally:
         if own:
             conn.close()
+    # archived, demoted or gone in the registry since: the promotion no longer stands
+    if [r["status"] for r in status] != ["promoted"]:
+        return False
     return bool(log) and str(log[-1]["id"]) == str(promotion_id) and log[-1]["action"] in PROMOTED \
         and not any(r["action"] in DEMOTED and int(r["id"]) > int(promotion_id) for r in log)
 
@@ -120,7 +128,7 @@ def weights(adapter_path: str, models_root: Path, *, max_files: int) -> list[dic
         for f in sorted(filenames):
             fp = Path(dirpath) / f
             try:
-                fd = os.open(fp, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+                fd = os.open(fp, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
             except OSError as exc:      # ELOOP: a symlink; anything else: unreadable
                 raise AibomError("weights_file", "a weights file is a symlink or cannot be read") from exc
             try:
@@ -145,7 +153,13 @@ def weights(adapter_path: str, models_root: Path, *, max_files: int) -> list[dic
 def check_binding(found: dict, target: dict) -> None:
     """The registry rows must be the target's org and never above its marking (marking never widens)."""
     v = found["version"]
-    if str(v.get("tenant_id") or "").strip() and str(v["tenant_id"]).strip() != str(target["org"]).strip():
+    tenant = str(v.get("tenant_id") or "").strip()
+    if not tenant:
+        # ft_model_versions.tenant_id defaults to '': an unowned row binds to no organisation's target, only to one the
+        # reviewed config declares platform-scoped (review M2).
+        if target.get("platform_scoped") is not True:
+            raise AibomError("other_org", "the model version names no tenant: it binds only to a platform-scoped target")
+    elif tenant != str(target["org"]).strip():
         raise AibomError("other_org", "the model version belongs to another tenant than the target's org")
     for row in (v, found.get("dataset") or {}):
         m = str(row.get("classification") or "").strip().upper()

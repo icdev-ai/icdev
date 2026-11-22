@@ -30,9 +30,9 @@ VEX_STATUSES = ("not_affected", "affected", "fixed", "under_investigation")
 JUSTIFICATIONS = ("component_not_present", "vulnerable_code_not_present", "vulnerable_code_not_in_execute_path",
                   "vulnerable_code_cannot_be_controlled_by_adversary", "inline_mitigations_already_exist")
 TOP = {"schema", "builder_id", "build_type", "signing", "keyless", "transparency_log", "limits", "artefact_root",
-       "models_root", "targets"}
+       "models_root", "builder_roles", "targets"}
 TARGET_KEYS = {"id", "synthetic", "kind", "system_id", "org", "marking", "name", "subject_name", "layout", "package",
-               "model", "sbom_project", "scan", "vex", "runtime"}
+               "model", "sbom_project", "scan", "vex", "runtime", "platform_scoped"}
 
 
 class ConfigError(ValueError):
@@ -73,6 +73,17 @@ def validate(cfg: dict) -> None:
     if key is not None and not (isinstance(key, str) and re.fullmatch(r"(kms|keyring):[A-Za-z0-9/_.:=?&-]{1,300}",
                                                                       key, re.ASCII)):
         no("signing.key is kms:<key>?region=<region> or keyring:<service>/<name> (a file: key is for tests only)")
+    roles = cfg.get("builder_roles")
+    if not isinstance(roles, list) or not roles or not all(isinstance(r, str) and r.strip() for r in roles) \
+            or "service" in roles:
+        no("builder_roles is a non-empty list of dashboard roles (never service): who may make the factory's key sign")
+    try:
+        from tools.dashboard.auth import VALID_DASHBOARD_ROLES
+    except Exception:  # noqa: BLE001 — the role vocabulary unreadable: every role unknown, fail closed
+        VALID_DASHBOARD_ROLES = frozenset()
+    unknown = sorted(set(roles) - set(VALID_DASHBOARD_ROLES))
+    if unknown:
+        no(f"builder_roles names roles the dashboard does not know: {', '.join(unknown)[:120]}")
     tl = cfg.get("transparency_log") or {}
     if tl.get("mode") not in ("off", "rekor") or (tl.get("mode") == "rekor" and not str(tl.get("url") or "").strip()):
         no("transparency_log.mode is off, or rekor with a url")
@@ -93,6 +104,8 @@ def validate(cfg: dict) -> None:
             no(f"{tid}: system_id is an ICDEV[OS] system id")
         if t.get("marking") not in MARKINGS:
             no(f"{tid}: marking is one of {', '.join(MARKINGS)}")
+        if "platform_scoped" in t and not isinstance(t["platform_scoped"], bool):
+            no(f"{tid}: platform_scoped is true or false")
         if not str(t.get("org") or "").strip():
             no(f"{tid}: org (the owning tenant) is required")
         if not NAME.fullmatch(str(t.get("name") or "")) or not SUBJECT_NAME.fullmatch(str(t.get("subject_name") or "")):
@@ -122,17 +135,51 @@ def root(cfg: dict, which: str = "artefact_root") -> Path:
     return (BASE_DIR / cfg[which]).resolve()
 
 
-def read_confined(base: Path, rel: str, *, max_bytes: int) -> bytes:
-    """The bytes of ``base/rel``: a regular file with one link, under ``base``, no symlink on the way, within the size
-    limit. Read once, so what is hashed is what is used."""
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+_NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+
+
+def _open_under(base: Path, rel: str, *, last_flags: int) -> int:
+    """An fd for ``base/rel`` opened component by component (``openat``): every directory with O_NOFOLLOW|O_DIRECTORY
+    relative to the one before it, the last with ``last_flags``|O_NOFOLLOW, so a symlink anywhere on the path, or one
+    swapped in after a check, is refused rather than followed. Where ``dir_fd`` is unsupported (Windows) each
+    component is checked with ``is_symlink`` instead."""
     if not _rel_ok(rel):
         raise ConfigError("a path is relative, ASCII and inside its root")
+    parts = rel.split("/")
+    if os.open in os.supports_dir_fd:
+        try:
+            fd = os.open(base, os.O_RDONLY | _DIRECTORY)
+        except OSError as exc:
+            raise ConfigError("the root cannot be opened") from exc
+        try:
+            for part in parts[:-1]:
+                nxt = os.open(part, os.O_RDONLY | _DIRECTORY | _NOFOLLOW, dir_fd=fd)
+                os.close(fd)
+                fd = nxt
+            out = os.open(parts[-1], last_flags | _NOFOLLOW, dir_fd=fd)
+        except OSError as exc:      # ELOOP / ENOTDIR: a symlink on the way; ENOENT: not there
+            raise ConfigError(f"{rel}: missing, or a symlink, which is never followed") from exc
+        finally:
+            os.close(fd)
+        return out
     p = base
-    for part in rel.split("/"):
+    for part in parts:
         p = p / part
         if p.is_symlink():
             raise ConfigError(f"{rel}: a symlink is never followed")
-    fd = os.open(p, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        return os.open(p, last_flags | _NOFOLLOW)
+    except OSError as exc:
+        raise ConfigError(f"{rel}: missing, or a symlink, which is never followed") from exc
+
+
+def read_confined(base: Path, rel: str, *, max_bytes: int) -> bytes:
+    """The bytes of ``base/rel``: a regular file with one link, under ``base``, no symlink on the way, within the size
+    limit. Opened O_NONBLOCK so a FIFO or a device is refused at fstat instead of hanging the build. Read once, so what
+    is hashed is what is used."""
+    fd = _open_under(base, rel, last_flags=os.O_RDONLY | _NONBLOCK)
     try:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1:
@@ -149,17 +196,10 @@ def read_confined(base: Path, rel: str, *, max_bytes: int) -> bytes:
 
 
 def confined_dir(base: Path, rel: str) -> Path:
-    """A directory under ``base``, no symlink on the way."""
-    if not _rel_ok(rel):
-        raise ConfigError("a path is relative, ASCII and inside its root")
-    p = base
-    for part in rel.split("/"):
-        p = p / part
-        if p.is_symlink():
-            raise ConfigError(f"{rel}: a symlink is never followed")
-    if not p.is_dir():
-        raise ConfigError(f"{rel}: not a directory")
-    return p
+    """A directory under ``base``, no symlink on the way (opened component by component, as :func:`read_confined`)."""
+    fd = _open_under(base, rel, last_flags=os.O_RDONLY | _DIRECTORY)
+    os.close(fd)
+    return base / rel
 
 
 __all__ = ["ConfigError", "confined_dir", "load", "read_confined", "root", "target", "validate"]

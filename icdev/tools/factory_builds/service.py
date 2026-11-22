@@ -186,17 +186,71 @@ def step_ok(pub: dict) -> bool:
 # ── signing ──────────────────────────────────────────────────────────────────
 
 
+#: The e2e server's throwaway factory key (icx-ent-03): honoured ONLY when the reviewed config names no key, and ONLY
+#: for a file under the repository's ``tests/e2e/fixtures/`` (as ICDEV_MODERNISATION_CAPACITY_E2E is honoured only under
+#: ``tests/``). A deployment installs no tests/, so it cannot swap a key in through it, and it never replaces a key a
+#: site configured.
+E2E_KEY_ENV = "ICDEV_FACTORY_BUILDS_E2E_KEY"
+
+
+def _e2e_signer(cfg: dict):
+    import os
+    from pathlib import Path
+
+    from tools.crypto import artefact_signer as asig
+
+    raw = os.environ.get(E2E_KEY_ENV, "").strip()
+    sg = cfg.get("signing") or {}
+    if not raw or sg.get("key") or sg.get("mode") != "key":
+        return None
+    fixtures = (cmod.BASE_DIR / "tests" / "e2e" / "fixtures").resolve()
+    p = Path(raw)
+    if p.is_symlink() or not p.resolve().is_relative_to(fixtures) or not p.is_file():
+        return None
+    return asig.PemSigner(p.read_bytes(), source="file:(e2e throwaway key under tests/e2e/fixtures)")
+
+
 def signer_for(cfg: dict):
     """The factory's signer from the reviewed config (no key configured: refused, ``no_key``)."""
     from tools.crypto import artefact_signer as asig
 
     try:
+        e2e = _e2e_signer(cfg)
+        if e2e is not None:
+            return e2e
         if (cfg.get("signing") or {}).get("mode") == "keyless":
             return asig.open_keyless(cfg.get("keyless") or {}, root=cmod.BASE_DIR,
                                      deadline_s=float(cfg["limits"]["deadline_seconds"]))
         return asig.open_signer((cfg.get("signing") or {}).get("key"))
     except asig.SigningError as exc:
         raise Refused(409 if exc.code == "no_key" else 503, exc.code, str(exc)) from exc
+
+
+def _factory_key_ok(cfg: dict, record: dict, manifest: dict, signer=None) -> None:
+    """The build was signed by the factory's CURRENT key (review L5): a key-mode build's key id is the configured
+    signer's; a keyless build names the configured OIDC issuer. A key rotated or withdrawn since stops its builds
+    leaving here (ICDEV[OS] verifies again against the keys a system's owner pinned)."""
+    from tools.crypto import artefact_signer as asig
+
+    sg = record.get("signing") or {}
+    if (cfg.get("signing") or {}).get("mode") == "keyless" and signer is None and _e2e_signer(cfg) is None:
+        want = str((cfg.get("keyless") or {}).get("oidc_issuer") or "")
+        if sg.get("mode") != "keyless" or not want or (sg.get("identity") or {}).get("issuer") != want:
+            raise Refused(409, "key_mismatch", "the build was not signed keyless for the configured OIDC issuer")
+        return
+    current = signer or signer_for(cfg)
+    if getattr(current, "mode", "key") == "keyless":
+        raise Refused(409, "key_mismatch", "the factory signs keyless now; this build is not that")
+    if asig.key_id(current.spki()) != manifest["key"]["id"]:
+        raise Refused(409, "key_mismatch", "the build was signed by a key that is not the factory's configured key")
+
+
+def _builder(actor: dict, cfg: dict) -> None:
+    """Making the factory's key sign is the sensitive act: only a person in ``builder_roles`` prepares (review M4)."""
+    if str(actor.get("role") or "") not in (cfg.get("builder_roles") or []):
+        raise Refused(403, "role", "preparing a build makes the factory's key sign: it is held by "
+                                   + ", ".join(cfg.get("builder_roles") or []) + f"; your role is "
+                                   f"{actor.get('role') or 'none'}")
 
 
 def _at(now: datetime | None) -> str:
@@ -214,6 +268,7 @@ def prepare(tid: str, actor: dict | None, reader: dict | None, *, version: str, 
     actor = _person(actor)
     cfg = cfg or cmod.load()
     t = _target(tid, reader, cfg)
+    _builder(actor, cfg)
     signer = signer or signer_for(cfg)
     own = conn is None
     conn = conn or ledger.connection()
@@ -242,7 +297,7 @@ def prepare(tid: str, actor: dict | None, reader: dict | None, *, version: str, 
 
 
 def publish(tid: str, *, decision: str, reason: str, read_digest: str, actor: dict | None, reader: dict | None,
-            cfg: dict | None = None, conn=None) -> dict:
+            cfg: dict | None = None, conn=None, signer=None) -> dict:
     """A person who did not prepare it publishes the target's prepared build to ICDEV[OS], or refuses it."""
     from tools.crypto import artefact_signer as asig
     from tools.factory_builds import aibom
@@ -274,6 +329,7 @@ def publish(tid: str, *, decision: str, reason: str, read_digest: str, actor: di
                 spki = asig.spki_from_pem((p.get("record") or {})["signing"]["public_key"])
             if spki is None or asig.key_id(spki) != m["key"]["id"] or bmod.self_check(files, spki):
                 raise Refused(409, "signature", "the recorded build no longer verifies under its own key")
+            _factory_key_ok(cfg, p.get("record") or {}, m, signer)
             promo = (p.get("record") or {}).get("promotion")
             if promo and not aibom.still_promoted(promo["model_version_id"], promo["promotion_log_id"], conn):
                 raise Refused(409, "promotion_withdrawn", "the model's promotion in the fine-tuning registry no longer "
@@ -286,11 +342,24 @@ def publish(tid: str, *, decision: str, reason: str, read_digest: str, actor: di
         except declared.StepRefused as exc:
             raise Refused(exc.status, exc.code, exc.message) from exc
         event = "published" if taken["affirmative"] else "refused"
-        row = ledger.append(conn, stream=_stream(t["id"]), event=event, target_id=t["id"], system_id=t["system_id"],
-                            actor=taken["decided_by"], actor_kind="person", actor_role=str(actor.get("role") or ""),
-                            step_id=taken["step_id"], reason=str(reason or "")[:2000], content_digest=p["content_digest"],
-                            prev_hash=ledger.head(ordered),
-                            body={"detail": {"prepared_event": p["event_id"], "decision": dec}})
+        try:
+            row = ledger.append(conn, stream=_stream(t["id"]), event=event, target_id=t["id"],
+                                system_id=t["system_id"], actor=taken["decided_by"], actor_kind="person",
+                                actor_role=str(actor.get("role") or ""), step_id=taken["step_id"],
+                                reason=str(reason or "")[:2000], content_digest=p["content_digest"],
+                                prev_hash=ledger.head(ordered),
+                                body={"detail": {"prepared_event": p["event_id"], "decision": dec}})
+        except Refused as exc:
+            # review L6: the declared step is recorded but the build ledger was not written. Nothing is published
+            # (export needs both); the step is named so it is reconciled, and the build may be decided again.
+            from tools.logging.icdev_logger import get_logger
+
+            get_logger("icdev.factory_builds").warning(
+                "declared step %s recorded but the fb_events row was not written (%s): nothing published",
+                taken["step_id"], exc.code)
+            raise Refused(exc.status, "not_recorded", f"your decision's step {taken['step_id']} was recorded but the "
+                                                      "build ledger could not be written, so nothing was published: "
+                                                      "decide it again") from exc
     finally:
         if own:
             conn.close()
@@ -416,8 +485,22 @@ def target_view(tid: str, reader: dict | None, *, cfg: dict | None = None) -> di
                                                          *(sb.get("components") or [])])},
                          "vex": [{"vulnerability": s["vulnerability"]["name"], "status": s["status"],
                                   "justification": s.get("justification")} for s in vex["statements"]],
-                         "self_check": "verified" if not problems else "not verified"}
+                         "self_check": _self_check_now(files, p.get("record") or {}, m)}
     return view
+
+
+def _self_check_now(files: dict[str, bytes], record: dict, manifest: dict) -> str:
+    """Re-run the build's self-check NOW, under the public key its record keeps (review L4): what the page says is what
+    is true of the recorded bytes at this read, not what was true at prepare."""
+    from tools.crypto import artefact_signer as asig
+
+    try:
+        spki = asig.spki_from_pem((record.get("signing") or {})["public_key"])
+    except (asig.SigningError, KeyError, TypeError):
+        return "fails now: no recorded key"
+    if asig.key_id(spki) != manifest["key"]["id"]:
+        return "fails now: the recorded key is not the manifest's"
+    return "verified now" if not bmod.self_check(files, spki) else "fails now"
 
 
 def thread_record(event_id: str, reader: dict | None, cfg: dict | None = None) -> dict | None:

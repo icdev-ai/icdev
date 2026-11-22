@@ -176,7 +176,11 @@ def fb_api_iqe_query():
     if not data.get("execute", True):
         return jsonify({"ok": True, "iqe": iqe_str, "explanation": translation.get("explanation", "")})
     try:
-        rows = execute_query(parse(iqe_str), None)
+        node = parse(iqe_str)
+        # review L9: this route answers over its own collection only, whatever the translation produced
+        if str(node.collection) not in IQE_COLLECTIONS:
+            return jsonify({"error": "this page answers over factory_builds.builds only", "iqe": iqe_str}), 400
+        rows = execute_query(node, None)
     except IQESyntaxError as exc:
         return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
     except Exception as exc:  # noqa: BLE001

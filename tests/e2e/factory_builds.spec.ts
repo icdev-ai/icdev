@@ -3,15 +3,14 @@
 //
 // Three fresh, card-named people (tests/e2e/fixtures/ent03_seed.py, synthetic), each in its own browser context
 // signed in by its own dashboard API key: ent03-preparer and ent03-publisher of the synthetic targets' organisation,
-// and ent03-outsider of another. The seed built and signed both synthetic targets as the preparer with a throwaway
-// key: an image (an OCI image layout, the factory scan's one finding stated not_affected) and a model (its AI-BOM
-// linked to a promoted fine-tuning registry version, its weights signed with OpenSSF model-signing).
-// The journey, every write pressed on the page:
+// and ent03-outsider of another. The e2e dashboard signs with a THROWAWAY factory key the seed wrote under
+// tests/e2e/fixtures (ICDEV_FACTORY_BUILDS_E2E_KEY; the shipped configuration names no key). The seed built the model
+// target with it (its AI-BOM linked to a promoted fine-tuning registry version, its weights signed with OpenSSF
+// model-signing). The journey, every write pressed on the page:
 //
-//   1. the preparer opens the image target: the signed build, its subject and key, its SBOM, the VEX statement, the
-//      transparency log said to be off, waiting for a person;
-//   2. the preparer presses Build and sign: the shipped configuration names no factory key, so it is refused no_key
-//      (never a MAC, never unsigned);
+//   1. the preparer opens the image target and presses Build and sign: the factory's key signs an OCI image build;
+//   2. the signed build shows: its subject and key, its SBOM, the VEX statement, the transparency log said to be off,
+//      the self-check re-run on this read, waiting for a person;
 //   3. the preparer is refused publishing their own build (separation of duties);
 //   4. the publisher, another person of the org, publishes it with a reason;
 //   5. the published build shows; the export route returns {bundle, publication} as ICDEV[OS] imports it;
@@ -37,7 +36,7 @@ const MODEL = '/factory-builds/?target=syn-ent03-classifier';
 type Person = { id: string; name: string; role: string; key: string; org: string };
 type Build = { digest: string; event_id: string };
 type Seeded = { run: string; preparer: Person; publisher: Person; outsider: Person;
-  builds: { 'syn-ent03-portal': Build; 'syn-ent03-classifier': Build } };
+  builds: { 'syn-ent03-classifier': Build } };
 
 function seed(): Seeded {
   // The seeder writes to the database the RUN asked for, never an ambient one.
@@ -74,27 +73,29 @@ test.describe('Signed factory builds: a signed artefact published to ICDEV[OS] b
 
   test.beforeAll(() => { s = seed(); });
 
-  test('see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org', async ({ browser }) => {
+  test('build and sign on the page, refuse the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org', async ({ browser }) => {
     test.setTimeout(300_000);
-    const image = s.builds['syn-ent03-portal'];
-    // 1. the preparer opens the image target
+    // 1. the preparer opens the image target and builds and signs it
     const preparer = await as(browser, s.preparer, IMAGE);
     const page = preparer.page;
     await expect(page.locator('#fb-help')).toContainText('CycloneDX 1.7');
     await expect(page.locator('#fb-help')).toContainText('SLSA v1.2');
     await expect(page.locator('#fb-tlog')).toContainText('off');
     await expect(page.locator('#fb-target')).toHaveAttribute('data-target', 'syn-ent03-portal');
-    await expect(page.locator('#fb-digest')).toHaveAttribute('data-digest', image.digest);
+    await page.fill('#fb-version', `1.0.${parseInt(s.run.slice(0, 4), 16)}`);
+    await page.fill('#fb-note', 'ent03 e2e: build and sign the synthetic image');
+    await sends(page, 'POST', /^\/factory-builds\/api\/targets\/syn-ent03-portal\/prepare$/, () => page.click('#fb-prepare'));
+
+    // 2. the signed build shows, waiting for a person
+    await expect(page.locator('#fb-prepared')).toContainText(`prepared by ${s.preparer.id}`, { timeout: T });
     await expect(page.locator('#fb-prepared')).toContainText('waiting for a person');
-    await expect(page.locator('#fb-self-check')).toContainText('verified');
+    const digest = (await page.locator('#fb-digest').getAttribute('data-digest')) || '';
+    expect(digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    const image = { digest };
+    await expect(page.locator('#fb-self-check')).toContainText('verified now');
     await expect(page.locator('#fb-sbom')).toContainText('SBOM: container registry.syn-foundry.invalid/foundry/portal');
     await expect(page.locator('tr[data-vuln="SYN-ENT03-0001"]')).toContainText('not affected');
     await expect(page.locator('#fb-files')).toContainText('bundles/provenance.sigstore.json');
-
-    // 2. building from the page is refused: the shipped configuration names no factory key
-    await page.fill('#fb-version', '1.0.1');
-    await sends(page, 'POST', /^\/factory-builds\/api\/targets\/syn-ent03-portal\/prepare$/, () => page.click('#fb-prepare'));
-    await expect(page.locator('#fb-prepare-msg')).toContainText('no_key', { timeout: T });
 
     // 3. the preparer is refused publishing their own build
     await page.fill('#fb-reason', 'ent03 e2e: my own (must be refused)');

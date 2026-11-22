@@ -90,7 +90,7 @@
       <table id="fb-build">
         <tbody>
           <tr><th scope="row">Subject</th><td><code>{{ b.subject.name }}</code> <code>{{ b.subject.digest }}</code> ({{ b.subject.mediaType }})</td></tr>
-          <tr><th scope="row">Self-check</th><td><span class="fb-tag ok" id="fb-self-check">{{ b.self_check }}</span> every bundle under the build's own key; ICDEV[OS] verifies again against the key its system's owner pinned</td></tr>
+          <tr><th scope="row">Self-check</th><td><span class="fb-tag {{ 'ok' if b.self_check == 'verified now' else 'no' }}" id="fb-self-check">{{ b.self_check }}</span> every file and bundle re-checked under the build's own key on this read; ICDEV[OS] verifies again against the key its system's owner pinned</td></tr>
           <tr><th scope="row">SBOM</th><td id="fb-sbom">{{ 'AI-BOM' if b.sbom.aibom else 'SBOM' }}: {{ b.sbom.root.type }} {{ b.sbom.root.name }} {{ b.sbom.root.version }}, {{ b.sbom.components }} component(s)</td></tr>
           <tr><th scope="row">Transparency log</th><td id="fb-build-tlog">{{ b.record.transparency_log.mode }}: {{ b.record.transparency_log.note }}</td></tr>
           {% if b.record.promotion %}

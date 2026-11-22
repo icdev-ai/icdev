@@ -83,7 +83,7 @@ def test_builds_prepared_and_published_on_the_platform_database(tmp_path):
                 service.publish(t["id"], decision="publish", reason="mine", read_digest=p["digest"], actor=a,
                                 reader=ra, cfg=cfg)
             out = service.publish(t["id"], decision="publish", reason="ambient (synthetic)", read_digest=p["digest"],
-                                  actor=b, reader=rb, cfg=cfg)
+                                  actor=b, reader=rb, cfg=cfg, signer=s)
             assert out["event"] == "published"
             ex = service.export(t["id"], rb, cfg=cfg)
             assert ex["publication"]["signed_by"] == b["id"] and ex["publication"]["content_digest"] == p["digest"]

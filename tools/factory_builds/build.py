@@ -27,9 +27,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess  # nosec B404 — one fixed argv: git rev-parse HEAD of the factory checkout
 from functools import lru_cache
+from pathlib import Path
 from typing import Callable
 
 from tools.factory_builds import aibom, sigstore
@@ -252,17 +254,69 @@ def openvex(target: dict, subject: dict, findings: list[dict], at: str) -> dict:
 # ── the SBOM ────────────────────────────────────────────────────────────────
 
 
+#: The dependency manifests and lockfiles the SBOM generator reads (tools/compliance/dependency_resolver.py and
+#: sbom_generator's declared parsers), by name at the project's top level, plus two fixed subpaths. Nothing else of the
+#: project is ever read: no installed environment (.venv), no source, no include.
+MANIFESTS = ("requirements.txt", "pyproject.toml", "setup.cfg", "Pipfile", "Pipfile.lock", "uv.lock", "poetry.lock",
+             "pdm.lock", "package.json", "package-lock.json", "yarn.lock", "go.mod", "go.sum", "Cargo.toml",
+             "Cargo.lock", "pom.xml", "build.gradle", "build.gradle.kts", "gradle.lockfile", "packages.config",
+             "packages.lock.json", "Gemfile", "Gemfile.lock")
+MANIFEST_SUFFIXES = (".csproj",)
+MANIFEST_DIRS = {"gradle/dependency-locks": ".lockfile", "obj": "project.assets.json"}
+MAX_MANIFESTS = 200
+
+
+def confined_manifests(target: dict, cfg: dict, dest: Path) -> dict[str, str]:
+    """Copy the target project's manifests into ``dest`` (a fresh per-run directory), each read once through
+    ``read_confined`` (under the root, no symlink, a regular file with one link, size-capped, O_NONBLOCK). Returns
+    ``{relative path: sha256}`` of what was copied: the SBOM is resolved from THIS copy, never the project tree."""
+    base = cmod.root(cfg)
+    rel = target["sbom_project"]
+    lim = int(cfg["limits"]["max_file_bytes"])
+    try:
+        cmod.confined_dir(base, rel)
+        names = sorted(os.listdir(base / rel))
+    except (cmod.ConfigError, OSError) as exc:
+        raise BuildRefused("sbom", f"the SBOM project cannot be read ({exc})"[:300]) from exc
+    wanted = [n for n in names if n in MANIFESTS or n.endswith(MANIFEST_SUFFIXES)]
+    for sub, pick in MANIFEST_DIRS.items():
+        try:
+            cmod.confined_dir(base, f"{rel}/{sub}")
+        except cmod.ConfigError:
+            continue        # absent (or a symlink): nothing of it is read
+        wanted += [f"{sub}/{n}" for n in sorted(os.listdir(base / rel / sub)) if n == pick or n.endswith(pick)]
+    if len(wanted) > MAX_MANIFESTS:
+        raise BuildRefused("sbom", f"the SBOM project holds more than {MAX_MANIFESTS} manifests")
+    copied: dict[str, str] = {}
+    for name in wanted:
+        if not cmod.REL.fullmatch(name):
+            continue        # a name that is not strict ASCII is never a manifest the generator reads
+        try:
+            raw = cmod.read_confined(base, f"{rel}/{name}", max_bytes=lim)
+        except cmod.ConfigError as exc:
+            raise BuildRefused("sbom", f"a manifest cannot be read ({exc})"[:300]) from exc
+        out = dest / name
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(raw)
+        copied[name] = hashlib.sha256(raw).hexdigest()
+    return copied
+
+
 def software_sbom(target: dict, cfg: dict, subject: dict, version: str, at: str,
                   generate: Callable | None = None) -> tuple[dict, dict]:
+    import shutil
+    import tempfile
+
     from tools.compliance import sbom_generator
 
+    work = Path(tempfile.mkdtemp(prefix="icdev-fb-sbom-"))
     try:
-        proj_dir = cmod.confined_dir(cmod.root(cfg), target["sbom_project"])
-    except cmod.ConfigError as exc:
-        raise BuildRefused("sbom", f"the SBOM project cannot be read ({exc})"[:300]) from exc
-    doc, summary = (generate or sbom_generator.cyclonedx_document)(
-        {"id": target["id"], "name": target["name"], "version": version, "classification": target["marking"]},
-        proj_dir)
+        copied = confined_manifests(target, cfg, work)
+        doc, summary = (generate or sbom_generator.cyclonedx_document)(
+            {"id": target["id"], "name": target["name"], "version": version, "classification": target["marking"]},
+            work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     hexd = subject["digest"].split(":", 1)[1]
     meta = doc.setdefault("metadata", {})
     root = meta.get("component") or {}
@@ -272,7 +326,7 @@ def software_sbom(target: dict, cfg: dict, subject: dict, version: str, at: str,
     serial = hashlib.sha256(f"{hexd}:{version}".encode()).hexdigest()
     doc["serialNumber"] = f"urn:uuid:{serial[:8]}-{serial[8:12]}-4{serial[13:16]}-8{serial[17:20]}-{serial[20:32]}"
     return doc, {"ecosystems": [{k: e.get(k) for k in ("ecosystem", "complete", "method", "component_count")}
-                                for e in summary.get("ecosystems") or []]}
+                                for e in summary.get("ecosystems") or []], "manifests": copied}
 
 
 # ── the provenance ──────────────────────────────────────────────────────────
@@ -340,8 +394,12 @@ def build(target: dict, cfg: dict, *, signer, version: str, at: str, commit: str
         subject = image_subject(target, cfg) if kind == "image" else package_subject(target, cfg)
         sbom, summary = software_sbom(target, cfg, subject, version, at, generate)
         record["sbom"] = summary
-        describes = ("the dependencies tools/compliance/sbom_generator.py resolves from the target's sbom_project; "
-                     "not a scan of the artefact's filesystem")
+        manifests = summary["manifests"]
+        describes = ("the dependencies tools/compliance/sbom_generator.py resolves from a confined copy of the target's "
+                     "sbom_project manifests (named, with their digests, in inputs.manifests); not a scan of the "
+                     "artefact's filesystem")
+    if kind == "model":
+        manifests = {}
     findings = scan(target, cfg)
     _attach(sbom, findings)
     errs = sbom_errors(sbom)
@@ -357,7 +415,8 @@ def build(target: dict, cfg: dict, *, signer, version: str, at: str, commit: str
         files[MODEL_SIG] = model_sig
     prov = provenance(subject, target, cfg, commit=commit, version=version, at=at,
                       sbom_sha256=hashlib.sha256(files[SBOM]).hexdigest(),
-                      inputs={"sbom_describes": describes, "digests": {"scan": len(findings)}})
+                      inputs={"sbom_describes": describes,
+                              "digests": {"scan": len(findings), "manifests": manifests}})
     files[PROVENANCE] = sigstore.text(prov)
     subj = _subj(subject)
     stmts = {"signature": sigstore.statement(subj, SIGN_PREDICATE, {}),
@@ -412,10 +471,20 @@ def _submit(cfg: dict, signed: dict, signer, tlog: Callable | None) -> dict:
 
     url = str(cfg["transparency_log"]["url"])
     verifier = asig.pem(signer.spki()) if getattr(signer, "mode", "key") != "keyless" else "\n".join(signer.chain_pem[:1])
-    submit = tlog or (lambda env, ver: asig.submit_dsse(url, env, ver,
-                                                        deadline_s=float(cfg["limits"]["deadline_seconds"])))
+    import time
+
+    # review L8: ONE deadline over every submission of this build, not one per bundle
+    end = time.monotonic() + float(cfg["limits"]["deadline_seconds"])
+
+    def left() -> float:
+        return end - time.monotonic()
+
+    submit = tlog or (lambda env, ver: asig.submit_dsse(url, env, ver, deadline_s=max(left(), 0.001)))
     entries = []
     for role, b in signed.items():
+        if left() <= 0:
+            raise BuildRefused("tlog", "the transparency log was configured and did not take every bundle within the "
+                                       "build's one deadline")
         try:
             got = submit(b["dsseEnvelope"], verifier)
         except asig.SigningError as exc:

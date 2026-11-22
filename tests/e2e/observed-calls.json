@@ -421,6 +421,7 @@
    "page": true,
    "test": false,
    "tests": [
+    "build and sign on the page, refuse the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org",
     "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
    ]
   },
@@ -430,6 +431,7 @@
    "page": true,
    "test": false,
    "tests": [
+    "build and sign on the page, refuse the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org",
     "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
    ]
   },
@@ -1088,6 +1090,7 @@
    "page": true,
    "test": false,
    "tests": [
+    "build and sign on the page, refuse the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org",
     "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
    ]
   },
@@ -1097,6 +1100,7 @@
    "page": true,
    "test": false,
    "tests": [
+    "build and sign on the page, refuse the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org",
     "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
    ]
   },

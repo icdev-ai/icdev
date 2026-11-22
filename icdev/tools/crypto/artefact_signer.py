@@ -203,6 +203,16 @@ def _keyring_pem(service: str, name: str, backend=None) -> bytes:
     return value.encode() if isinstance(value, str) else value
 
 
+def _test_key_root() -> Path:
+    """Where a throwaway ``file:`` test key may live (review L1): the system's real temporary root, ``/tmp`` resolved,
+    never ``tempfile.gettempdir()``, which honours TMPDIR and so would let an environment variable widen it. On
+    Windows (no /tmp) it is the platform's temporary directory."""
+    import os
+    import tempfile
+
+    return Path("/tmp").resolve() if os.name == "posix" else Path(tempfile.gettempdir()).resolve()  # nosec B108
+
+
 def open_signer(spec: str | None, *, kms_client=None, keyring_backend=None) -> ArtefactSigner:
     """``kms:<key>?region=<region>``, ``keyring:<service>/<name>`` or ``file:<path>`` (tests) -- nothing else, and
     nothing is created. No key configured is refused (``no_key``), never a MAC or an unsigned build."""
@@ -221,10 +231,8 @@ def open_signer(spec: str | None, *, kms_client=None, keyring_backend=None) -> A
         return PemSigner(_keyring_pem(service or KEYRING_DEFAULT[0], name or KEYRING_DEFAULT[1], keyring_backend),
                          source=f"keyring:{service or KEYRING_DEFAULT[0]}/{name or KEYRING_DEFAULT[1]}")
     if spec.startswith("file:"):
-        import tempfile
-
         p = Path(spec[len("file:"):]).resolve()
-        if not p.is_relative_to(Path(tempfile.gettempdir()).resolve()):
+        if not p.is_relative_to(_test_key_root()):
             raise SigningError("a file: key is a THROWAWAY test key in the temporary directory; a real key is kms: or "
                                "keyring:")
         if not p.is_file():

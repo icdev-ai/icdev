@@ -89,7 +89,7 @@ def _ft_ddl() -> list[str]:
 
 
 @pytest.fixture()
-def fb(wf_db, monkeypatch):
+def fb(wf_db, monkeypatch, signer):
     """The conftest platform DB with the fine-tuning registry tables, synthetic inputs under a private root inside the
     repo's git-ignored .tmp, and a configuration pointing at it (the shipped file is untouched)."""
     from tools.db.storage import get_canvas_connection
@@ -108,6 +108,10 @@ def fb(wf_db, monkeypatch):
     out = synthetic.write_all(cfg, conn)
     conn.close()
     monkeypatch.setattr(config, "load", lambda path=None: copy.deepcopy(cfg))
+    from tools.factory_builds import service
+
+    # The factory's configured key, as a site would set it, is the test's throwaway signer.
+    monkeypatch.setattr(service, "signer_for", lambda cfg: signer)
     yield {"cfg": cfg, "db": wf_db, "root": config.BASE_DIR / rel, "inputs": out}
     shutil.rmtree(config.BASE_DIR / rel, ignore_errors=True)
 
@@ -881,3 +885,226 @@ def test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request(wf_db):
                                               "reviewer"), "the tenant still scopes the grant"
     finally:
         storage.get_connection = real
+
+
+# ── the independent review's findings (each a fail-closed test) ─────────────
+
+
+def test_m1_the_sbom_is_resolved_from_a_confined_copy_of_the_manifests(fb, signer, tmp_path):
+    """A symlinked manifest never pulls an outside package into the signed SBOM, a FIFO never hangs the build, and
+    nothing but the named manifests is read (no installed environment)."""
+    from tools.factory_builds import build
+
+    proj = fb["root"] / "syn-ent03/portal/src"
+    outside = tmp_path / "outside-requirements.txt"
+    outside.write_text("syn-outside-package==6.6.6\n")
+    (proj / "requirements.txt").unlink()
+    (proj / "requirements.txt").symlink_to(outside)
+    with pytest.raises(build.BuildRefused) as e:
+        _build(fb, signer)
+    assert e.value.code == "sbom" and "symlink" in e.value.message
+    (proj / "requirements.txt").unlink()
+    os.mkfifo(proj / "requirements.txt")
+    with pytest.raises(build.BuildRefused, match="not a regular file"):
+        _build(fb, signer)          # O_NONBLOCK: refused at fstat, never a read that blocks
+    (proj / "requirements.txt").unlink()
+    (proj / "requirements.txt").write_text("requests==2.31.0\n")
+    dist = proj / ".venv/lib/python3.11/site-packages/syn_venv_only-1.0.dist-info"
+    dist.mkdir(parents=True)
+    (dist / "METADATA").write_text("Metadata-Version: 2.1\nName: syn-venv-only\nVersion: 1.0\n")
+    out = _build(fb, signer)
+    sbom = out["files"]["sbom.cdx.json"].decode()
+    assert "syn-outside-package" not in sbom and "syn-venv-only" not in sbom and "requests" in sbom
+    prov = json.loads(out["files"]["provenance.slsa.json"])
+    assert prov["predicate"]["buildDefinition"]["internalParameters"]["inputs"]["manifests"] == {
+        "requirements.txt": hashlib.sha256(b"requests==2.31.0\n").hexdigest()}
+
+
+def test_m2_a_registry_row_with_no_tenant_binds_only_to_a_platform_scoped_target(fb):
+    from tools.factory_builds import aibom
+
+    found = aibom.promoted_version("syn-ent03-defect-classifier")
+    t = _target(fb, "syn-ent03-classifier")
+    unowned = {**found, "version": {**found["version"], "tenant_id": ""}}
+    with pytest.raises(aibom.AibomError) as e:
+        aibom.check_binding(unowned, t)
+    assert e.value.code == "other_org", "an empty tenant never binds to an organisation's target"
+    aibom.check_binding(unowned, {**t, "platform_scoped": True})
+
+
+def test_l7_a_missing_dataset_is_refused_and_an_archived_version_no_longer_stands(fb, signer):
+    from tools.factory_builds import aibom
+
+    c = _conn()
+    # The foreign key stops this on PostgreSQL; a SQLite database with foreign keys off (their default) can hold it.
+    c.execute("PRAGMA foreign_keys = OFF")
+    c.execute("UPDATE ft_training_jobs SET dataset_id = %s WHERE id = %s",
+              ("ds-gone", "job-syn-ent03-defect-classifier-v3"))
+    c.commit()
+    with pytest.raises(aibom.AibomError) as e:
+        aibom.promoted_version("syn-ent03-defect-classifier", c)
+    assert e.value.code == "no_provenance"
+    c.execute("UPDATE ft_training_jobs SET dataset_id = %s WHERE id = %s",
+              ("ds-syn-ent03-defect-classifier-v3", "job-syn-ent03-defect-classifier-v3"))
+    c.commit()
+    found = aibom.promoted_version("syn-ent03-defect-classifier", c)
+    assert aibom.still_promoted(found["version"]["id"], found["promotion"]["id"], c)
+    c.execute("UPDATE ft_model_versions SET status = 'archived' WHERE id = %s", (found["version"]["id"],))
+    c.commit()
+    assert not aibom.still_promoted(found["version"]["id"], found["promotion"]["id"], c)
+    c.close()
+
+
+def test_m4_only_a_builder_role_makes_the_factory_key_sign(fb, signer):
+    from tools.factory_builds import config, service
+
+    pm = {"id": "u-ent03-pm", "role": "pm", "clearance_level": "CUI", "tenant_id": ORG}
+    with pytest.raises(service.Refused) as e:
+        _prepare(fb, signer, who=pm)
+    assert e.value.code == "role" and e.value.status == 403
+    bad = copy.deepcopy(fb["cfg"])
+    bad.pop("_digest")
+    for roles in ([], ["service"], ["no-such-role"]):
+        bad["builder_roles"] = roles
+        with pytest.raises(config.ConfigError):
+            config.validate(bad)
+
+
+def test_l1_a_test_key_is_pinned_to_the_real_temp_root_not_tmpdir(monkeypatch):
+    import tempfile
+
+    from tools.crypto import artefact_signer as asig
+
+    elsewhere = ROOT / ".tmp" / f"ent03-tmpdir-{uuid.uuid4().hex[:8]}"
+    elsewhere.mkdir(parents=True)
+    try:
+        (elsewhere / "k.pem").write_bytes(throwaway_pem())
+        monkeypatch.setattr(tempfile, "tempdir", str(elsewhere))      # what TMPDIR does
+        with pytest.raises(asig.SigningError, match="THROWAWAY"):
+            asig.open_signer(f"file:{elsewhere / 'k.pem'}")
+    finally:
+        shutil.rmtree(elsewhere, ignore_errors=True)
+
+
+def test_l2_l3_a_fifo_or_a_symlinked_directory_on_the_way_is_refused_promptly(fb, signer, tmp_path):
+    from tools.factory_builds import build
+
+    scan = fb["root"] / "syn-ent03/portal/scan.json"
+    scan.unlink()
+    os.mkfifo(scan)
+    with pytest.raises(build.BuildRefused) as e:
+        _build(fb, signer)
+    assert e.value.code == "scan"
+    scan.unlink()
+    oci = fb["root"] / "syn-ent03/portal/oci"
+    moved = tmp_path / "oci"
+    shutil.move(str(oci), moved)
+    oci.symlink_to(moved, target_is_directory=True)
+    with pytest.raises(build.BuildRefused, match="symlink"):
+        _build(fb, signer)
+
+
+def test_l4_the_page_s_self_check_is_re_run_on_read(fb, signer):
+    from tools.factory_builds import service
+
+    _prepare(fb, signer)
+    v = service.target_view("syn-ent03-portal", reader(PUBLISHER))
+    assert v["build"]["self_check"] == "verified now"
+    out = _build(fb, signer)
+    files = dict(out["files"])
+    files["vex.openvex.json"] = b"{}"
+    m = json.loads(files["artefact.json"])
+    assert service._self_check_now(files, out["record"], m) == "fails now"
+
+
+def test_l5_a_build_is_published_only_under_the_factory_s_current_key(fb, signer, tmp_path, monkeypatch):
+    from tools.crypto import artefact_signer as asig
+    from tools.factory_builds import service
+
+    p = _prepare(fb, signer)
+    other = tmp_path / "rotated.pem"
+    other.write_bytes(throwaway_pem())
+    monkeypatch.setattr(service, "signer_for", lambda cfg: asig.open_signer(f"file:{other}"))
+    with pytest.raises(service.Refused) as e:
+        _publish(fb, p)
+    assert e.value.code == "key_mismatch"
+
+    def none(cfg):
+        raise service.Refused(409, "no_key", "no factory signing key is configured")
+
+    monkeypatch.setattr(service, "signer_for", none)
+    with pytest.raises(service.Refused) as e:
+        _publish(fb, p)
+    assert e.value.code == "no_key", "a withdrawn key stops its builds leaving"
+    assert _publish(fb, p, signer=signer)["event"] == "published"
+
+
+def test_l6_a_ledger_write_lost_after_the_step_publishes_nothing_and_says_so(fb, signer, monkeypatch):
+    from tools.factory_builds import ledger, service
+
+    p = _prepare(fb, signer)
+    real = ledger.append
+
+    def lost(conn, **kw):
+        if kw.get("event") == "published":
+            raise ledger.Refused(503, "store_unavailable", "the build ledger could not be written")
+        return real(conn, **kw)
+
+    monkeypatch.setattr(ledger, "append", lost)
+    with pytest.raises(service.Refused) as e:
+        _publish(fb, p)
+    assert e.value.code == "not_recorded" and "step-" in e.value.message
+    with pytest.raises(service.Refused) as e:
+        service.export("syn-ent03-portal", reader(PUBLISHER))
+    assert e.value.code == "unpublished"
+    monkeypatch.setattr(ledger, "append", real)
+    assert _publish(fb, p)["event"] == "published", "it can be decided again"
+
+
+def test_l8_one_deadline_covers_every_rekor_submission_of_a_build(fb, signer):
+    import time
+
+    from tools.factory_builds import build
+
+    fb["cfg"]["transparency_log"] = {"mode": "rekor", "url": "http://127.0.0.1:9"}
+    fb["cfg"]["limits"] = {**fb["cfg"]["limits"], "deadline_seconds": 0.2}
+    calls = []
+
+    def slow(env, ver):
+        calls.append(1)
+        time.sleep(0.15)
+        return {"uuid": f"u{len(calls)}", "entry": {"logIndex": str(len(calls)), "logId": {"keyId": "AA=="},
+                                                    "kindVersion": {"kind": "dsse", "version": "0.0.1"},
+                                                    "integratedTime": "1"}}
+
+    with pytest.raises(build.BuildRefused) as e:
+        _build(fb, signer, tlog=slow)
+    assert e.value.code == "tlog" and "one deadline" in e.value.message and len(calls) == 2
+
+
+def test_l9_the_iqe_route_answers_over_its_own_collection_only(fb, signer, monkeypatch):
+    import tools.iqe.nl_to_iqe as nl
+
+    monkeypatch.setattr(nl, "nl_to_iqe", lambda q, cols: {"iqe": "foreach f in cortex.findings select f.id"})
+    r = _page_app(PUBLISHER).post("/factory-builds/api/iqe-query", json={"question": "anything"})
+    assert r.status_code == 400 and "factory_builds.builds only" in r.get_json()["error"]
+
+
+def test_the_e2e_key_is_honoured_only_under_tests_e2e_fixtures_and_only_with_no_configured_key(monkeypatch, tmp_path):
+    from tools.factory_builds import config, service
+
+    cfg = config.load()
+    fixtures = ROOT / "tests" / "e2e" / "fixtures"
+    inside = fixtures / f".ent03_test_key_{uuid.uuid4().hex[:8]}.pem"
+    inside.write_bytes(throwaway_pem())
+    outside = tmp_path / "k.pem"
+    outside.write_bytes(throwaway_pem())
+    try:
+        monkeypatch.setenv(service.E2E_KEY_ENV, str(outside))
+        assert service._e2e_signer(cfg) is None
+        monkeypatch.setenv(service.E2E_KEY_ENV, str(inside))
+        assert service._e2e_signer(cfg) is not None
+        assert service._e2e_signer({**cfg, "signing": {"mode": "key", "key": "keyring:site/key"}}) is None, \
+            "it never replaces a key a site configured"
+    finally:
+        inside.unlink()
