@@ -4330,8 +4330,10 @@ python tools/fathomdesk/openbb_gateway.py --ticker AAPL --method get_price --jso
 
 ## Marketplace — Federated FORGE Asset Registry (Phase 22)
 ```bash
-# Publish a skill to tenant-local catalog
-python tools/marketplace/publish_pipeline.py --asset-path /path --asset-type skill --tenant-id "tenant-abc" --publisher-user "user@mil" --json
+# RETIRED (icx-ent-04): publish_pipeline.py and review_queue.py refuse (code superseded). A person prepares a
+# signed ICDEV[OS] store package on /store-publisher/, another person publishes it, and ICDEV[OS] imports,
+# reviews and certifies it (docs/features/icx-ent-04-store-publisher.md):
+python -m tools.store_publisher.cli packages --json
 
 # Search the marketplace
 python tools/marketplace/search_engine.py --search "STIG checker" --json
@@ -4342,9 +4344,7 @@ python tools/marketplace/compatibility_checker.py --asset-id "asset-abc" --consu
 # Install an asset
 python tools/marketplace/install_manager.py --install --asset-id "asset-abc" --tenant-id "tenant-abc" --json
 
-# Review queue (ISSO/security officer)
-python tools/marketplace/review_queue.py --pending --json
-python tools/marketplace/review_queue.py --review --review-id "rev-abc" --reviewer-id "isso@mil" --decision approved --rationale "Passed review" --json
+# Review queue: RETIRED (icx-ent-04) -- a store package is reviewed and certified in ICDEV[OS]
 
 # Federation sync
 python tools/marketplace/federation_sync.py --status --json
@@ -6719,3 +6719,19 @@ python tools/ci/sibling_hold_survey.py --open-only
 # posture, each behind a sibling the forge would refuse to merge.
 # An unavailable corpus exits 2; a survey nobody could run is not a clean survey.
 ```
+
+### Store publisher (icx-ent-04)
+
+Signed ICDEV[OS] store packages (`icos-store-package/v1`, ICDEV[OS]'s contract vendored and pinned under
+`context/icos/`) for its agent store: an agent, crew, skill, MCP server or plugin declared in `args/store_publisher.yaml`,
+its A2A Agent Card JWS-signed (ES384) by the publisher's OS-keyring key and binding the package's content, and ICDEV's
+seven marketplace scanner gates run on it. A person prepares and another person publishes on `/store-publisher/`; the
+CLI never prepares or publishes, and exports only a published SYNTHETIC package (it reads as an agent).
+
+```bash
+python -m tools.store_publisher.cli check-config --json
+python -m tools.store_publisher.cli packages --json
+python -m tools.store_publisher.cli seed-synthetic --json
+python -m tools.store_publisher.cli export --package syn-ent04-ledger-agent --out /tmp/syn-ent04-ledger-agent.json
+```
+

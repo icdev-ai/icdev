@@ -19,8 +19,12 @@ The ICDEV™ Marketplace is a federated FORGE asset registry where customer deve
 
 ## Available Operations
 
-### Publish an Asset
+### Publish an Asset -- RETIRED (icx-ent-04)
+`publish_pipeline.py` refuses (code `superseded`): there is no auto-publish path, and no agent publishes. A person
+prepares a signed ICDEV[OS] store package on `/store-publisher/` and another person publishes it; read them with
+`python -m tools.store_publisher.cli packages --json` (or the MCP tool `store_publisher_status`).
 ```bash
+# Retired: refuses
 # Publish to tenant-local catalog (auto-approved on passing gates)
 python tools/marketplace/publish_pipeline.py \
     --asset-path /path/to/asset \
@@ -54,7 +58,8 @@ python tools/marketplace/install_manager.py --install \
     --project-id "proj-123" --json
 ```
 
-### Review Queue (ISSO/Security Officer)
+### Review Queue (ISSO/Security Officer) -- RETIRED (icx-ent-04)
+A store package is reviewed and certified in ICDEV[OS], by a person. These refuse:
 ```bash
 # List pending reviews
 python tools/marketplace/review_queue.py --pending --json
@@ -99,14 +104,13 @@ python tools/marketplace/catalog_manager.py --deprecate --asset-id "asset-abc" -
 
 ## Workflow Decision Tree
 
-1. **User wants to publish** → Run publish_pipeline.py
-   - Validates structure → Scans 7 gates → Signs → Publishes or submits for review
+1. **User wants to publish** → a PERSON prepares a store package on /store-publisher/; ANOTHER person publishes it
+   - The agent only reads (`store_publisher_status`); publish_pipeline.py is retired and refuses
 2. **User wants to find assets** → Run search_engine.py
    - Hybrid BM25 + semantic search across name, description, tags
 3. **User wants to install** → Run compatibility_checker.py first, then install_manager.py
    - Checks IL compatibility → Copies files → Records installation
-4. **ISSO wants to review** → Run review_queue.py --pending, then --review
-   - Lists pending → Reviews scan results + code → Approves/rejects
+4. **ISSO wants to review** → in ICDEV[OS] (its store-review workflow); review_queue.py is retired and refuses
 5. **Admin wants sync status** → Run federation_sync.py --status
    - Shows catalog tiers, pending reviews, eligible promotions
 

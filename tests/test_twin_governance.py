@@ -26,7 +26,8 @@ from tools.twin_core.registry import TwinRegistry, known_canvas_keys
 
 # icx-mdz-01 added "mdc", the modernisation twin (tools/twin_core/adapters/modernisation.py); icx-coe-01 added
 # "idp", the engineering standards register twin (tools/twin_core/adapters/coe_standards.py).
-GOVERNANCE_KEYS = {"cortex", "ace", "cwk", "twin_observatory", "mdc", "idp"}
+# icx-ent-04 adds store_publisher (the store publisher).
+GOVERNANCE_KEYS = {"cortex", "ace", "cwk", "twin_observatory", "mdc", "idp", "store_publisher"}
 
 
 def _ago(**kw) -> str:

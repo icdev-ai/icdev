@@ -140,19 +140,19 @@ goals:
           - asset_scanner
           - compatibility_checker
           - provenance_tracker
+      # icx-ent-04: publish_pipeline and review_queue are retired. An agent never reviews or publishes: a person
+      # prepares a signed store package on /store-publisher/ and another person publishes it; an agent only reads.
       review:
-        description: "Security review and approval"
+        description: "Read the prepared store package and its gates (a person decides on /store-publisher/)"
         type: llm_agent
         tools:
-          - review_queue
-          - publish_pipeline
+          - store_publisher_status
           - search_engine
           - audit_logger
       publish:
-        description: "Publish and sync to federation"
+        description: "Sync to federation (publishing is a person's declared step, icos-store-publish)"
         type: programmatic
         tools:
-          - publish_pipeline
           - federation_sync
           - catalog_manager
 

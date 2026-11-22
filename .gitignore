@@ -366,3 +366,5 @@ data/rag/*.db-wal
 tests/e2e/fixtures/.mdz05_capacity.yaml
 # icx-coe-03: the synthetic delivery sources the e2e seed writes for the conformance page
 tests/e2e/fixtures/.coe03_sources/
+# icx-ent-04: the e2e seed's throwaway publisher key (ICDEV_STORE_PUBLISHER_E2E_KEY)
+tests/e2e/fixtures/.ent04_publisher_key.pem

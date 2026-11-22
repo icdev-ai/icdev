@@ -31,3 +31,22 @@ in `conformance.SCHEMA_SHA256`. `content_digest` is SHA-256 over the canonical J
 it. ICDEV[OS] recomputes the digest on import and refuses a mismatch, a bundle nobody published, and one published by its
 preparer. To take a newer contract: copy the new schema, update the digest in `conformance.SCHEMA_SHA256`,
 `conformance.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_coe_03_conformance.py`.
+
+## The store package and its publication (icx-ent-04; ICDEV[OS] osx-ent-11)
+
+`store-package.schema.json` is ICDEV[OS]'s `icos-store-package/v1` schema (`urn:icdev-os:contract:store-package:1`) and
+`store-publication.schema.json` its `icos-store-publication/v1` (`urn:icdev-os:contract:store-publication:1`), copied
+verbatim from the ICDEV[OS] published contract on its main (commit ba4e0a56, contract version 1.207.0; SHA-256
+`07503b4e5468427b36c9582ccf6af6a3f555e74e3c966bbc8900231007293efa` and
+`2ecf86c73ec41cff5a57707f71a2a67b3d52f97115ffa86bcfb9055096ae4795`). A store package is an agent, crew, skill, MCP
+server or plugin offered to ICDEV[OS]'s agent store with its JWS-signed A2A Agent Card that binds the package's content
+digest (`metadata["icos.store/package_digest"]`); the publication beside it (`{"bundle": ..., "publication": ...}`)
+says a person who did not prepare it took the declared step `icos-store-publish` at its content digest, which is what
+ICDEV[OS]'s one shared bundle import (`icdev_os/publication.py`) checks. They are licensed Apache-2.0 (`LICENSE`,
+`NOTICE` here), unlike the rest of this repository.
+
+`tools/store_publisher/package.py` validates every package against the first and `service.py` every publication
+against the second, and each refuses to run if its file's digest is not the pin in `tools/store_publisher/constants.py`
+(`SCHEMA_SHA256`, `PUBLICATION_SHA256`). To take a newer contract: copy the schema, update the digest in
+`constants.py` and this file, and run `tests/test_icx_ent_04_store_publisher.py`.
+

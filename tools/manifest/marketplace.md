@@ -7,10 +7,10 @@
 |------|------|-------------|-------|--------|
 | Catalog Manager | tools/marketplace/catalog_manager.py | CRUD for marketplace assets and versions | --register/--list/--get/--add-version/--deprecate | Asset record JSON |
 | Asset Scanner | tools/marketplace/asset_scanner.py | 7-gate security scanning pipeline (SAST, secrets, deps, CUI, SBOM, provenance, signature) | --asset-id, --version-id, --asset-path | Scan results JSON |
-| Publish Pipeline [DEPRECATED] | tools/marketplace/publish_pipeline.py | Orchestrate validate → scan → sign → publish/review | --asset-path, --asset-type, --tenant-id | Pipeline result JSON |
+| Publish Pipeline [RETIRED] | tools/marketplace/publish_pipeline.py | icx-ent-04: a thin shim that refuses (`superseded`) and points to the Store Publisher. It auto-published tenant-local assets with no review | (any) | Refusal JSON, exit 2 |
 | Install Manager | tools/marketplace/install_manager.py | Install/update/uninstall assets with IL compatibility | --install/--uninstall/--update/--check-updates | Installation record |
 | Search Engine | tools/marketplace/search_engine.py | Hybrid BM25 + semantic search (Ollama air-gapped) | --search query | Ranked results JSON |
-| Review Queue [DEPRECATED] | tools/marketplace/review_queue.py | Human review workflow for cross-tenant sharing | --submit/--review/--pending | Review record JSON |
+| Review Queue [RETIRED] | tools/marketplace/review_queue.py | icx-ent-04: a thin shim that refuses (`superseded`); a store package is reviewed and certified in ICDEV[OS] | (any) | Refusal JSON, exit 2 |
 | Provenance Tracker | tools/marketplace/provenance_tracker.py | Supply chain provenance recording and verification | --record/--get/--verify/--report | Provenance chain JSON |
 | Compatibility Checker | tools/marketplace/compatibility_checker.py | IL + version + dependency compatibility checks | --asset-id, --consumer-il | Compatibility result |
 | Federation Sync | tools/marketplace/federation_sync.py | Sync tenant-local ↔ central vetted registry | --promote/--pull/--status | Sync result JSON |
@@ -36,4 +36,12 @@
 | AAC Skill Pack Spec | docs/marketplace/aac-skill-pack-spec.md | Bundle format spec for framework-specific AAC rule packs (manifest, Semgrep rules, pattern catalog, guardrails) | (documentation) | Format definition |
 | AAC Pack Validator | tools/marketplace/aac_pack_validator.py | Validate AAC Skill Pack manifest, rules, and extensions | --input, --strict | Validation report JSON |
 | AAC Pack Builder | tools/marketplace/aac_pack_builder.py | Sign and package AAC Skill Packs into `.aacsp` archives | --input, --sign, --output | Signed `.aacsp` file |
+
+## Store Publisher (icx-ent-04; replaces the retired publish pipeline and review queue)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Store Publisher | tools/store_publisher/service.py | One signed `icos-store-package/v1` (ICDEV[OS]'s contract, vendored and pinned, `context/icos/store-package.schema.json`) per package declared in `args/store_publisher.yaml` -- an agent, crew, skill, MCP server or plugin -- with its publisher identity, an A2A Agent Card JWS-signed (ES384 over RFC 8785 JCS) by the publisher's OS-keyring key that binds the package's content digest (`icos.store/package_digest`) and whose skills are exactly its declared tools, its SBOM and a dependency report over exactly that SBOM, its ceilings and budget, the publisher's red-team report, and ICDEV's seven marketplace scanner gates run on it (`gates.py`; a gate that cannot run is unverified). A person prepares (never an agent); another person of the package's org publishes (`icos-store-publish`); `export` gives `{bundle, publication}` for ICDEV[OS]'s one shared bundle import only while that step is recorded. Append-only, hash-chained `sp_events` (`ledger.py`, on `tools/common/stream_chain.py`). Page `/store-publisher/`; MCP `store_publisher_status` (read). | (console) | icos-store-package/v1 + publication |
+| Store Publisher CLI | tools/store_publisher/cli.py | `python -m tools.store_publisher.cli check-config\|packages\|seed-synthetic\|export`. Never prepares or publishes; `export` reads as an agent at the MCP marking (synthetic packages only). | command, --package, --out, --json | JSON |
+| Store Card Signer | tools/store_publisher/card.py | icx-ent-04. The publisher's P-384 Agent Card key from `keyring:<service>/<name>` (no key is refused, never an unsigned card) and the card's JWS exactly as ICDEV[OS]'s `icdev_os/a2a/card_sign.py` verifies it; every signature verified before it is returned; the key is never printed. | (import) | signed card |
+| Confined Reader | tools/common/confined_read.py | Read a file under a reviewed root: `openat` component by component with O_NOFOLLOW, O_NONBLOCK, a regular file with one link, size-capped, read once. | (import) | bytes |
 

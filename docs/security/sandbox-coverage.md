@@ -2789,3 +2789,12 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
   - **No anonymous use.** A request without a principal is a 401, even if the blueprint is mounted outside the gateway.
 - **Residual:** responses come from `invoke()`, not `invoke_streaming` -- the streaming path does not de-anonymize or write telemetry yet (owui-api-02). A router response-cache hit writes no `ai_telemetry` row, and that row records the router's default classification rather than the request's. The per-exchange audit row of owui-flow-02 closes both.
 - **Revisit if:** the endpoint starts accepting native tool calls, fetching URLs or files named in a message, or streaming through `invoke_streaming`.
+
+
+## icx-ent-04: the store publisher (`tools/store_publisher`)
+
+| Ingress | Module | Decision | Why |
+|---|---|---|---|
+| `sp_package_inputs` | `tools/common/confined_read.py::read_confined`, `tools/store_publisher/package.py` | **trusted-first-party** (read only, data) | A declared package's prompt, instructions, tool listing, crew, plugin manifest and config, SBOM, dependency findings, red-team results and source files are READ as bytes and parsed as UTF-8 text or JSON (NaN and infinity refused); nothing is executed. Only under the reviewed `package_root`, regular files with one link, no symlink on the way, size-capped; each read once. A caller names a package, never a path. |
+| `sp_gate_analysis` | `tools/store_publisher/gates.py`, `tools/marketplace/asset_scanner.py::sast_findings` | **trusted-first-party** (read only) | The package is written once into a fresh private directory (0700, new files only) and the scanner's analyses READ it: `ast.parse` and `bandit -r` (argument list, this interpreter, a timeout) parse the source and never run it; the secret and CUI-banner checks are regular expressions. The directory is removed afterwards. |
+

@@ -1,0 +1,41 @@
+# CUI // SP-CTI
+# The id is ICDEV[OS]'s: its store contract pins the step a publication is taken in (icdev_os/store/package.TEMPLATE,
+# `template: icos-store-publish` in store-publication.schema.json), so ICDEV[IT]'s declared template carries exactly that
+# id and the publication names the template the step was really taken in.
+id: icos-store-publish
+name: "Store packages: a person publishes a prepared store package for ICDEV[OS]'s agent store, or refuses it (prepare -> publish)"
+description: >-
+  A store package (icos-store-package/v1) is an agent, a crew, a skill, an MCP server
+  or a plugin that ICDEV[IT] offers to ICDEV[OS]'s private, curated agent store, with
+  its publisher identity, its JWS-signed A2A Agent Card that binds the package's
+  content, its SBOM and dependency report, its declared tools, ceilings and budget,
+  its red-team report and ICDEV's seven scanner gates. Leaving the factory is a
+  release, so a person attests it. A person prepares a package on /store-publisher/
+  (the publisher's key signs its card; an agent never does), which records it at its
+  content digest and decides nothing. A person of the package's org who did not
+  prepare it reads it and publishes it or refuses, with a reason, bound to that
+  digest. Importing it into ICDEV[OS] is a third person's act there; nothing
+  publishes itself, and a new version needs a new step.
+decides: [store_publisher.sp_api_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject:
+  "store_package:<id>"; payload: the package, its version, its content digest and the
+  prepared event). sp_events appends a published or refused event on the package's
+  stream, chained to the row before it. Only a published package is exported, with
+  its publication BESIDE it ({"bundle": <icos-store-package/v1>, "publication":
+  icos-store-publication/v1}), and only while this step is recorded, that way, by
+  that person: /store-publisher/api/packages/<id>/export.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: prepare
+    step_type: automated
+    description: A person built the package; the publisher's key signed its card, and it was recorded at its content digest.
+  - name: publish
+    step_type: manual
+    role: store_publisher
+    holders: [admin, isso, reviewer]
+    # The person who prepared the package never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]

@@ -3,14 +3,14 @@
 """Marketplace MCP server exposing FORGE asset registry tools.
 
 Tools:
-    publish_asset    - Publish an asset through the 7-gate pipeline
+    publish_asset    - RETIRED (icx-ent-04): refuses; use the store publisher (tools/store_publisher)
     install_asset    - Install a marketplace asset to a project
     uninstall_asset  - Uninstall an asset
     search_assets    - Search the marketplace catalog
     list_assets      - List assets with filters
     get_asset        - Get full asset details
-    review_asset     - Complete a review (approve/reject/conditional)
-    list_pending     - List pending reviews
+    review_asset     - RETIRED (icx-ent-04): refuses; ICDEV[OS] reviews and certifies store packages
+    list_pending     - RETIRED (icx-ent-04): refuses; see store_publisher_status
     check_compat     - Check IL/version/dependency compatibility
     sync_status      - Get federation sync status
     asset_scan       - Run security scanning on an asset
@@ -23,7 +23,7 @@ Tools:
 
 Resources:
     marketplace://catalog         - Full asset catalog
-    marketplace://pending-reviews - Pending review queue
+    marketplace://pending-reviews - RETIRED (icx-ent-04): refuses
 
 Runs as an MCP server over stdio with Content-Length framing.
 """
@@ -47,16 +47,11 @@ try:
         get_asset,
         list_assets,
     )
-    from tools.marketplace.publish_pipeline import publish_asset as _publish_asset
     from tools.marketplace.install_manager import (
         install_asset as _install_asset,
         uninstall_asset as _uninstall_asset,
     )
     from tools.marketplace.search_engine import search_assets as _search_assets
-    from tools.marketplace.review_queue import (
-        complete_review,
-        list_pending as _list_pending,
-    )
     from tools.marketplace.compatibility_checker import full_compatibility_check
     from tools.marketplace.asset_scanner import run_full_scan
     from tools.marketplace.federation_sync import get_sync_status
@@ -94,30 +89,11 @@ def _audit(event_type, actor, action, project_id=None, details=None):
 
 
 def handle_publish_asset(args: dict) -> dict:
-    """Publish a FORGE asset through the 7-gate security pipeline."""
-    if not _MODULES_LOADED:
-        raise RuntimeError(f"Marketplace modules not loaded: {_IMPORT_ERROR}")
+    """RETIRED (icx-ent-04): the marketplace publish pipeline is superseded by the store publisher. An agent never
+    publishes: a person prepares a signed store package on /store-publisher/ and another person publishes it."""
+    from tools.marketplace.superseded import Superseded
 
-    asset_path = args.get("asset_path")
-    asset_type = args.get("asset_type")
-    tenant_id = args.get("tenant_id")
-    publisher_user = args.get("publisher_user", "mcp-user")
-
-    if not all([asset_path, asset_type, tenant_id]):
-        raise ValueError("'asset_path', 'asset_type', and 'tenant_id' are required")
-
-    return _publish_asset(
-        asset_path=asset_path,
-        asset_type=asset_type,
-        tenant_id=tenant_id,
-        publisher_user=publisher_user,
-        publisher_org=args.get("publisher_org"),
-        target_tier=args.get("target_tier", "tenant_local"),
-        asset_id=args.get("asset_id"),
-        new_version=args.get("new_version"),
-        changelog=args.get("changelog"),
-        signing_key_path=args.get("signing_key"),
-    )
+    return Superseded("publish_asset (tools/marketplace/publish_pipeline.py)").to_dict()
 
 
 def handle_install_asset(args: dict) -> dict:
@@ -207,33 +183,18 @@ def handle_get_asset(args: dict) -> dict:
 
 
 def handle_review_asset(args: dict) -> dict:
-    """Complete a review decision on a marketplace asset."""
-    if not _MODULES_LOADED:
-        raise RuntimeError(f"Marketplace modules not loaded: {_IMPORT_ERROR}")
+    """RETIRED (icx-ent-04): a store package is reviewed and certified in ICDEV[OS] by a person, never here and never
+    by an agent."""
+    from tools.marketplace.superseded import Superseded
 
-    review_id = args.get("review_id")
-    reviewer_id = args.get("reviewer_id")
-    decision = args.get("decision")
-    rationale = args.get("rationale")
-
-    if not all([review_id, reviewer_id, decision, rationale]):
-        raise ValueError("'review_id', 'reviewer_id', 'decision', 'rationale' are required")
-
-    return complete_review(
-        review_id=review_id,
-        reviewer_id=reviewer_id,
-        decision=decision,
-        rationale=rationale,
-        conditions=args.get("conditions"),
-    )
+    return Superseded("review_asset (tools/marketplace/review_queue.py)").to_dict()
 
 
 def handle_list_pending(args: dict) -> dict:
-    """List pending review requests."""
-    if not _MODULES_LOADED:
-        raise RuntimeError(f"Marketplace modules not loaded: {_IMPORT_ERROR}")
+    """RETIRED (icx-ent-04): packages waiting for a person are on /store-publisher/ (MCP store_publisher_status)."""
+    from tools.marketplace.superseded import Superseded
 
-    return _list_pending(reviewer_id=args.get("reviewer_id"))
+    return Superseded("list_pending (tools/marketplace/review_queue.py)").to_dict()
 
 
 def handle_check_compat(args: dict) -> dict:
@@ -374,15 +335,10 @@ def handle_catalog_resource(uri: str) -> dict:
 
 
 def handle_pending_resource(uri: str) -> dict:
-    """Return pending review queue."""
-    if not _MODULES_LOADED:
-        return {"error": _IMPORT_ERROR}
-    return _list_pending()
+    """RETIRED (icx-ent-04): the review queue is superseded (see handle_list_pending)."""
+    from tools.marketplace.superseded import Superseded
 
-
-# ---------------------------------------------------------------------------
-# Server setup
-# ---------------------------------------------------------------------------
+    return Superseded("marketplace://pending-reviews (tools/marketplace/review_queue.py)").to_dict()
 
 
 def create_server() -> MCPServer:
@@ -391,7 +347,7 @@ def create_server() -> MCPServer:
     # --- Tools ---
     server.register_tool(
         "publish_asset",
-        "Publish a FORGE asset (skill/goal/hardprompt/context/args/compliance) through 7-gate security pipeline",
+        "RETIRED (icx-ent-04): refuses. A person prepares a signed store package on /store-publisher/ and another person publishes it",
         {
             "type": "object",
             "properties": {
@@ -504,7 +460,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         "review_asset",
-        "Complete review decision (approve/reject/conditional) for cross-tenant sharing",
+        "RETIRED (icx-ent-04): refuses. ICDEV[OS] reviews and certifies store packages; no agent reviews",
         {
             "type": "object",
             "properties": {
@@ -521,7 +477,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         "list_pending",
-        "List pending review requests for marketplace assets",
+        "RETIRED (icx-ent-04): refuses. See store_publisher_status for packages waiting for a person",
         {
             "type": "object",
             "properties": {

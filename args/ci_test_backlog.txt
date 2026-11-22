@@ -1090,7 +1090,6 @@ tests/test_lpx_proxy_reconcile.py
 tests/test_lpx_team_budgets.py
 tests/test_lpx_team_limits.py
 tests/test_lpx_team_spend.py
-tests/test_marketplace_publish.py
 tests/test_marketplace_search.py
 tests/test_markitdown_adapter.py
 tests/test_markov_sequencer.py

@@ -1,0 +1,203 @@
+# CUI // SP-CTI
+# ICDEV platform model: the store publisher (icx-ent-04).
+# Signed ICDEV[OS] store packages (agent, crew, skill, MCP server, plugin) for ICDEV[OS]'s agent store (osx-ent-11): a
+# JWS-signed A2A Agent Card that binds the package's content and declared tools, SBOM and dependency report, ceilings
+# and budget, the publisher's red-team report and ICDEV's seven scanner gates; prepared by a person, published by another
+# of the package's org, exported only then. Replaces the retired marketplace publish and review tools.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the header of
+# args/platform_model/cortex.yaml.
+
+component: store_publisher
+project_id: icdev-platform
+
+elements:
+  - id: sp.card
+    type: sysml_element
+    kind: block
+    name: The publisher's Agent Card key (the OS keyring, P-384) and the card's JWS (ES384 over RFC 8785 JCS)
+    features: [store_publisher.signed_packages]
+    code:
+      - tools/store_publisher/card.py::open_signer
+      - tools/store_publisher/card.py::PemSigner
+      - tools/store_publisher/card.py::sign_card
+      - tools/store_publisher/card.py::verify_card
+      - tools/store_publisher/card.py::jcs
+      - args/store_publisher.yaml
+
+  - id: sp.package
+    type: sysml_element
+    kind: block
+    name: One signed icos-store-package/v1 against ICDEV[OS]'s pinned contract, its card binding its content and tools
+    features: [store_publisher.signed_packages]
+    code:
+      - tools/store_publisher/package.py::build
+      - tools/store_publisher/package.py::self_check
+      - tools/store_publisher/package.py::schema_errors
+      - tools/store_publisher/config.py::validate
+      - tools/common/confined_read.py::read_confined
+      - context/icos/store-package.schema.json
+
+  - id: sp.gates
+    type: sysml_element
+    kind: block
+    name: ICDEV's seven marketplace scanner gates run on the package (a gate that cannot run is unverified)
+    features: [store_publisher.signed_packages]
+    code:
+      - tools/store_publisher/gates.py::run
+      - tools/marketplace/asset_scanner.py::sast_findings
+      - tools/marketplace/asset_scanner.py::secret_findings
+      - tools/marketplace/asset_scanner.py::cui_banner_files
+
+  - id: sp.publish
+    type: sysml_element
+    kind: block
+    name: Prepared by a person, published by another of the package's org, exported with its publication beside it
+    features: [store_publisher.signed_packages]
+    code:
+      - tools/store_publisher/service.py::prepare
+      - tools/store_publisher/service.py::publish
+      - tools/store_publisher/service.py::export
+      - tools/store_publisher/ledger.py
+      - tools/common/stream_chain.py
+      - args/workflow_hitl_templates/store-publish.yaml
+      - context/icos/store-publication.schema.json
+
+  - id: sp.retired
+    type: sysml_element
+    kind: block
+    name: The retired marketplace publish and review tools (thin shims that refuse and point here)
+    features: [store_publisher.signed_packages]
+    code:
+      - tools/marketplace/superseded.py
+      - tools/marketplace/publish_pipeline.py
+      - tools/marketplace/review_queue.py
+      - tools/mcp/marketplace_server.py::handle_publish_asset
+      - tools/mcp/marketplace_server.py::handle_review_asset
+
+  - id: sp.twin
+    type: sysml_element
+    kind: block
+    name: The store publisher governance twin (threads to sp_events, replay)
+    features: [store_publisher.signed_packages]
+    code:
+      - tools/twin_core/adapters/store_publisher.py
+      - tools/store_publisher/service.py::twin_evidence
+      - tools/store_publisher/service.py::twin_judge
+
+interfaces:
+  - id: if.sp.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /store-publisher/ and its routes
+    features: [store_publisher.signed_packages]
+    code:
+      - tools/store_publisher/blueprint.py
+      - tools/dashboard/templates/store_publisher/index.html
+      - tools/security/canvas_access.py
+
+  - id: if.sp.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP store_publisher_status (read only)
+    features: [store_publisher.signed_packages]
+    code:
+      - tools/mcp/gap_handlers.py::handle_store_publisher_status
+
+requirements:
+  - id: PM-SP-01
+    title: Only the publisher's keyring key signs the card, ES384 over JCS, and every signature verifies before it is used
+    text: >-
+      The publisher's key is keyring:<service>/<name> (an unencrypted PKCS#8 P-384 PEM), set by the site; no key is
+      refused (no_key), never an unsigned card, and a key whose id is not the one ICDEV[OS] pins is refused. The card's
+      JWS is ES384 over the RFC 8785 canonical card without signatures or default-valued fields (A2A v1.0 8.4), verified
+      under the key before it is returned; a key the card names is never trusted. The key is never printed.
+    type: security
+    priority: high
+    features: [store_publisher.signed_packages]
+    elements: [sp.card]
+    controls: [SC-12, SC-13, SI-7, AU-10]
+    tests:
+      - tests/test_icx_ent_04_store_publisher.py::test_no_key_is_refused_and_only_a_keyring_p384_key_signs
+      - tests/test_icx_ent_04_store_publisher.py::test_the_card_is_jws_es384_over_jcs_and_verifies_only_under_a_pinned_key
+      - tests/test_icx_ent_04_store_publisher.py::test_a_package_is_published_only_under_the_publisher_s_current_key
+      - tests/test_icx_ent_04_store_publisher.py::test_the_e2e_key_is_honoured_only_under_tests_e2e_fixtures_and_only_with_no_configured_key
+
+  - id: PM-SP-02
+    title: A package meets ICDEV[OS]'s pinned contract and its card binds its content digest and declared tools
+    text: >-
+      A package is one icos-store-package/v1 valid against ICDEV[OS]'s store-package schema, vendored verbatim and pinned
+      by SHA-256 (a changed file is refused, never used). Its card's metadata icos.store/package_digest is the package's
+      digest (every field but the card and content_digest), its name and version are the package's, and its skills are
+      exactly the declared tools; an MCP server declares exactly the tools its listing names. Inputs are read only under
+      the reviewed root, never through a symlink or a hard link; ceilings that need an accreditation, an incomplete
+      red-team report and a time in the future are refused.
+    type: functional
+    priority: high
+    features: [store_publisher.signed_packages]
+    elements: [sp.package]
+    controls: [SA-15, SR-4, CM-14, SI-7]
+    tests:
+      - tests/test_icx_ent_04_store_publisher.py::test_icos_store_contracts_are_vendored_verbatim_and_pinned
+      - tests/test_icx_ent_04_store_publisher.py::test_a_package_meets_icos_contract_and_its_card_binds_its_content_and_tools
+      - tests/test_icx_ent_04_store_publisher.py::test_inputs_are_read_only_under_the_root_never_through_a_symlink_or_a_hard_link
+      - tests/test_icx_ent_04_store_publisher.py::test_the_shipped_configuration_loads_with_no_key_and_fails_closed
+      - tests/test_icx_ent_04_store_publisher.py::test_the_red_team_report_answers_every_id_and_no_time_is_in_the_future
+
+  - id: PM-SP-03
+    title: ICDEV's seven scanner gates run on the package; a gate that cannot run is unverified, never pass
+    text: >-
+      sast_scan, secret_detection, dependency_audit, cui_marking_validation, sbom_generation, supply_chain_provenance and
+      digital_signature run on the package's own bytes and ship in its scan as the publisher's report (ICDEV[OS] re-runs
+      its gates). A gate that cannot run, or runs on nothing it needs, is unverified; the scanner's SAST no longer reads
+      an empty bandit report as a pass.
+    type: security
+    priority: high
+    features: [store_publisher.signed_packages]
+    elements: [sp.gates]
+    controls: [SA-11, RA-5, SR-4, SI-7]
+    tests:
+      - tests/test_icx_ent_04_store_publisher.py::test_the_seven_gates_run_on_the_package_and_a_gate_that_cannot_run_is_unverified
+      - tests/test_icx_ent_04_store_publisher.py::test_the_scanner_sast_gate_never_passes_when_bandit_cannot_run
+
+  - id: PM-SP-04
+    title: A person prepares, another person of the package's org publishes, and only a published package leaves
+    text: >-
+      Preparing makes the publisher's key sign, so an agent or a service key never prepares, and only a packager role
+      does. Publishing is a person's declared step (icos-store-publish) of the package's org, cleared for its marking,
+      never the preparer's, bound to the digest read. The export is {bundle, publication}, the publication beside it with
+      the preparer and the publisher, and counts only while its declared step is recorded that way by that person. A
+      package the reader may not see is "no such package". The retired marketplace publish and review refuse.
+    type: functional
+    priority: high
+    features: [store_publisher.signed_packages]
+    elements: [sp.publish, sp.retired]
+    controls: [AC-5, AC-3, AU-9, AU-10, CM-3]
+    tests:
+      - tests/test_icx_ent_04_store_publisher.py::test_a_person_prepares_another_of_the_org_publishes_and_only_then_it_leaves
+      - tests/test_icx_ent_04_store_publisher.py::test_an_agent_never_prepares_or_publishes
+      - tests/test_icx_ent_04_store_publisher.py::test_only_a_packager_role_makes_the_publisher_key_sign
+      - tests/test_icx_ent_04_store_publisher.py::test_a_publication_counts_only_with_its_declared_step
+      - tests/test_icx_ent_04_store_publisher.py::test_what_a_reader_may_not_see_is_no_such_package_byte_for_byte
+      - tests/test_icx_ent_04_store_publisher.py::test_the_ledger_is_append_only_and_hash_chained
+      - tests/test_icx_ent_04_store_publisher.py::test_the_declared_publish_template_is_icos_s_step_and_separates_the_preparer
+      - tests/test_icx_ent_04_ambient.py::test_packages_prepared_and_published_on_the_platform_database
+      - tests/test_marketplace_publish.py::test_the_retired_marketplace_publish_and_review_refuse_and_point_to_the_packager
+
+  - id: PM-SP-05
+    title: The console page, the twin with threads, and MCP read
+    text: >-
+      /store-publisher/ (in the nav) prepares and publishes by endpoint id and shows the package's card, gates, red-team
+      summary and ceilings. The twin observes store_publisher.signed_packages: a package with no published version is
+      unverified; a self-published package, a missing step, a gate or red-team id not passed is a finding threaded to
+      its ledger row; an observation replays. MCP store_publisher_status only reads, synthetic packages only.
+    type: functional
+    priority: medium
+    features: [store_publisher.signed_packages]
+    elements: [if.sp.console, sp.twin, if.sp.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_icx_ent_04_store_publisher.py::test_the_routes_and_the_page
+      - tests/test_icx_ent_04_store_publisher.py::test_the_twin_observes_with_threads_and_replays
+      - tests/test_icx_ent_04_store_publisher.py::test_the_mcp_tool_only_reads
+      - tests/test_icx_ent_04_store_publisher.py::test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request
