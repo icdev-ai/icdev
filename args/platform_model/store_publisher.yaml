@@ -140,6 +140,7 @@ requirements:
     tests:
       - tests/test_icx_ent_04_store_publisher.py::test_icos_store_contracts_are_vendored_verbatim_and_pinned
       - tests/test_icx_ent_04_store_publisher.py::test_a_package_meets_icos_contract_and_its_card_binds_its_content_and_tools
+      - tests/test_icx_ent_04_store_publisher.py::test_every_kind_builds_a_package_that_meets_the_contract
       - tests/test_icx_ent_04_store_publisher.py::test_inputs_are_read_only_under_the_root_never_through_a_symlink_or_a_hard_link
       - tests/test_icx_ent_04_store_publisher.py::test_the_shipped_configuration_loads_with_no_key_and_fails_closed
       - tests/test_icx_ent_04_store_publisher.py::test_the_red_team_report_answers_every_id_and_no_time_is_in_the_future

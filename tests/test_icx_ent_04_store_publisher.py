@@ -256,6 +256,34 @@ def test_a_package_meets_icos_contract_and_its_card_binds_its_content_and_tools(
     assert e.value.code == "no_key"
 
 
+def test_every_kind_builds_a_package_that_meets_the_contract(sp, signer):
+    """A skill, a crew and a plugin as well as an agent and an MCP server: each one's payload is its kind's, and each
+    meets ICDEV[OS]'s pinned schema with its card bound."""
+    from tools.store_publisher import config, package, synthetic
+
+    base = _pkg(sp)
+    extra = {
+        "skill": dict(base, id="syn-ent04-summary-skill", kind="skill", tools=[], budget=None,
+                      inputs="syn-ent04/summary-skill"),
+        "crew": dict(base, id="syn-ent04-ledger-crew", kind="crew", inputs="syn-ent04/ledger-crew"),
+        "plugin": dict(base, id="syn-ent04-ledger-plugin", kind="plugin", tools=[], budget=None,
+                       inputs="syn-ent04/ledger-plugin", sources=["plugin.py"], distribution_sha256="e" * 64),
+    }
+    cfg = copy.deepcopy(sp["cfg"])
+    cfg["packages"] += [extra[k] for k in ("skill", "crew", "plugin")]
+    cfg.pop("_digest")
+    config.validate(cfg)
+    for k, p in extra.items():
+        synthetic.write_package(sp["root"], p, now=NOW)
+        out = package.build(p, cfg, signer=signer, version="1.0.0", now=NOW)["package"]
+        assert package.schema_errors(out) == [] and package.self_check(out, signer.spki()) == [], k
+        assert out["kind"] == k and set(out["payload"]) == {"skill": {"instructions"}, "crew": {"crew"},
+                                                             "plugin": {"manifest", "distribution_sha256", "config",
+                                                                        "sources"}}[k]
+        assert out["scan"]["sast_scan"] == ("pass" if k == "plugin" else "not_applicable"), k
+        assert [s["id"] for s in out["agent_card"]["skills"]] == out["tools"]
+
+
 def test_the_seven_gates_run_on_the_package_and_a_gate_that_cannot_run_is_unverified(sp, signer, monkeypatch):
     from tools.marketplace import asset_scanner
     from tools.store_publisher import package

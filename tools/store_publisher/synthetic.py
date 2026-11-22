@@ -69,6 +69,12 @@ def write_package(base: Path, p: dict, *, now: dt.datetime) -> Path:
                                                 "system": {"type": "string"}}}} for t in p["tools"]], indent=2))
         for s in p.get("sources") or []:
             _put(d / "src" / s, SERVER)
+    elif p["kind"] == "plugin":
+        _put(d / "manifest.json", json.dumps({"name": p["id"], "version": "SYNTHETIC", "entry": "plugin:main",
+                                              "label": "SYNTHETIC plugin (icx-ent-04)"}, indent=2))
+        _put(d / "config.json", json.dumps({"release_ceiling": p["egress_ceiling"], "label": "SYNTHETIC"}, indent=2))
+        for s in p.get("sources") or []:
+            _put(d / "src" / s, SERVER)
     return d
 
 

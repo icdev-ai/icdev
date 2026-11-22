@@ -14,7 +14,6 @@ and point here; they are removed with the other deprecated duplicates once nothi
 from __future__ import annotations
 
 import json
-import sys
 
 USE = ("the store publisher: a person prepares a signed store package on /store-publisher/ "
        "(python -m tools.store_publisher.cli), another person publishes it (icos-store-publish), and ICDEV[OS] "
@@ -47,6 +46,3 @@ def cli(tool: str) -> int:
 
 __all__ = ["Superseded", "USE", "cli", "refuse"]
 
-
-if __name__ == "__main__":
-    sys.exit(cli("tools/marketplace"))
