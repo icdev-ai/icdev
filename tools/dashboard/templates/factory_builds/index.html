@@ -1,0 +1,201 @@
+<!-- CUI // SP-CTI — Signed factory builds (icx-ent-03) -->
+{% extends "base.html" %}
+{% block title %}Signed factory builds — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .fb-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .fb-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .fb-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .fb-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .fb-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .fb-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .fb-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .fb-card th, .fb-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .fb-card th { color: var(--text-secondary); font-weight: 600; }
+  .fb-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .fb-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .fb-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .fb-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .fb-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .fb-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .fb-btn.deny { border-color: var(--status-red); }
+  .fb-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .fb-wrap input { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .fb-wrap code { color: var(--text-primary); word-break: break-all; }
+  .fb-wrap { --fb-link: #8cc4ff; }
+  html[data-theme="light"] .fb-wrap { --fb-link: #0d4f9e; }
+  .fb-wrap a, .fb-wrap .fb-link { color: var(--fb-link); text-decoration: underline; }
+  /* The shared IQE widget's badge is #5a9fd4 on #0f3460 (4.37:1); on this page it is at AA (axe, e2e). */
+  .fb-wrap .iqe-badge { color: #8cc4ff; }
+  .fb-link { background: none; border: none; padding: 0; cursor: pointer; font: inherit; }
+</style>
+
+<div class="fb-wrap">
+  <nav aria-label="Breadcrumb" class="fb-help"><a href="/evidence">Evidence</a> / Signed factory builds</nav>
+  <h1>Signed factory builds</h1>
+  <p class="fb-help" id="fb-help">
+    For each target the factory builds <b>one signed <code>{{ schema }}</code></b> (ICDEV[OS] contract {{ contract }}):
+    a <b>CycloneDX 1.7 SBOM</b> (an <b>AI-BOM</b> for a model, linked to its fine-tuning registry promotion),
+    <b>SLSA v1.2 provenance</b>, an <b>OpenVEX</b> statement for each vulnerability the factory scan found,
+    <b>Sigstore bundles</b> over the artefact's digest, a model's weights signed with <b>OpenSSF model-signing</b>,
+    and the bundles as <b>OCI referrers</b>. The factory's own key signs (KMS or the OS keyring; keyless only with a
+    configured OIDC issuer) &mdash; never a person's key, and never an agent's request. Signing:
+    <b id="fb-signing">{{ view.signing.mode or 'unknown' }}{% if not view.signing.configured %}, no key configured: a build is refused until the site sets one{% endif %}</b>.
+    Transparency log: <b id="fb-tlog">{{ view.transparency_log.mode or 'unknown' }}</b>{% if view.transparency_log.mode == 'off' %} (the
+    default: nothing is sent to a log, and every build records that){% endif %}.
+    A person prepares a build; <b>another person</b> of the target's organisation publishes it to ICDEV[OS]'s release
+    register (<code>{{ template }}</code>). A build is evidence for ICDEV[OS]'s admission, never an approval.
+  </p>
+  {% if error %}<p class="fb-msg">{{ error }}</p>{% endif %}
+
+  <section class="fb-card" aria-labelledby="fb-targets-h">
+    <h2 id="fb-targets-h">Targets</h2>
+    {% if view.held_back %}<p class="fb-help" id="fb-held">{{ view.held_back }} target(s) not shown: outside your organisation or above your clearance.</p>{% endif %}
+    <table id="fb-targets">
+      <thead><tr><th scope="col">Target</th><th scope="col">Kind</th><th scope="col">ICDEV[OS] system</th><th scope="col">Marking</th><th scope="col">Newest prepared</th><th scope="col">Newest published</th></tr></thead>
+      <tbody>
+      {% for t in view.targets %}
+        <tr data-target="{{ t.id }}">
+          <td><a href="{{ url_for('factory_builds.fb_page', target=t.id) }}">{{ t.id }}</a>{% if t.synthetic %} <span class="fb-tag">synthetic</span>{% endif %}</td>
+          <td>{{ t.kind }}</td><td><code>{{ t.system_id }}</code></td><td>{{ t.marking }}</td>
+          <td>{% if t.prepared %}<code>{{ t.prepared.content_digest[7:19] }}</code> {% if t.prepared.decided %}<span class="fb-tag">{{ t.prepared.decided }}</span>{% else %}<span class="fb-tag wait">waiting for a person</span>{% endif %}{% else %}none{% endif %}</td>
+          <td>{% if t.published %}<code>{{ t.published.content_digest[7:19] }}</code> by {{ t.published.actor }}{% else %}<span class="fb-tag wait">unverified</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6">No target you may see is declared.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {% if detail %}
+  <section class="fb-card" aria-labelledby="fb-target-h" id="fb-target" data-target="{{ detail.id }}">
+    <h2 id="fb-target-h">{{ detail.id }}{% if detail.synthetic %} (synthetic){% endif %}: {{ detail.kind }} for <code>{{ detail.system_id }}</code></h2>
+    <h3>Build and sign</h3>
+    <p class="fb-help">Builds the target now and the factory's key signs it; recorded at its artefact digest. It decides nothing.</p>
+    <label for="fb-version">Version</label><input id="fb-version" autocomplete="off" placeholder="1.0.0">
+    <label for="fb-note">Note (optional)</label><input id="fb-note" autocomplete="off">
+    <p><button type="button" class="fb-btn" id="fb-prepare">Build and sign</button></p>
+    <p class="fb-msg" id="fb-prepare-msg" role="status"></p>
+
+    {% set p = detail.prepared %}
+    <h3>Newest signed build</h3>
+    {% if p and detail.build %}
+      {% set b = detail.build %}
+      <p class="fb-help" id="fb-prepared">Artefact digest <code id="fb-digest" data-digest="{{ p.content_digest }}">{{ p.content_digest }}</code>,
+        prepared by {{ p.actor }} at {{ p.created_at }}, signed by key <code>{{ b.key_id[:16] }}</code>
+        ({{ b.record.signing.mode }}{% if b.record.signing.note %}: {{ b.record.signing.note }}{% endif %}).
+        {% if p.decided %}<span class="fb-tag {{ 'ok' if p.decided == 'published' else 'no' }}" id="fb-decided">{{ p.decided }}</span>
+        {% else %}<span class="fb-tag wait">waiting for a person</span>{% endif %}</p>
+      <table id="fb-build">
+        <tbody>
+          <tr><th scope="row">Subject</th><td><code>{{ b.subject.name }}</code> <code>{{ b.subject.digest }}</code> ({{ b.subject.mediaType }})</td></tr>
+          <tr><th scope="row">Self-check</th><td><span class="fb-tag ok" id="fb-self-check">{{ b.self_check }}</span> every bundle under the build's own key; ICDEV[OS] verifies again against the key its system's owner pinned</td></tr>
+          <tr><th scope="row">SBOM</th><td id="fb-sbom">{{ 'AI-BOM' if b.sbom.aibom else 'SBOM' }}: {{ b.sbom.root.type }} {{ b.sbom.root.name }} {{ b.sbom.root.version }}, {{ b.sbom.components }} component(s)</td></tr>
+          <tr><th scope="row">Transparency log</th><td id="fb-build-tlog">{{ b.record.transparency_log.mode }}: {{ b.record.transparency_log.note }}</td></tr>
+          {% if b.record.promotion %}
+          <tr><th scope="row">Fine-tuning registry</th><td id="fb-promotion">{{ b.record.promotion.model_name }} v{{ b.record.promotion.version }} (<code>{{ b.record.promotion.model_version_id }}</code>),
+            <span class="fb-tag {{ 'wait' if b.record.promotion.action == 'override_promoted' else 'ok' }}">{{ b.record.promotion.action | replace('_', ' ') }}</span>
+            by {{ b.record.promotion.promoted_by }} for {{ b.record.promotion.function }} at {{ b.record.promotion.promoted_at }}
+            (promotion log row {{ b.record.promotion.promotion_log_id }}); {{ b.record.promotion.weights_files }} weights file(s) signed with OpenSSF model-signing</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+      <h3>Vulnerabilities and VEX</h3>
+      <table id="fb-vex">
+        <thead><tr><th scope="col">Vulnerability</th><th scope="col">Severity (factory scan)</th><th scope="col">VEX status (the factory's claim)</th></tr></thead>
+        <tbody>
+        {% for s in b.vex %}
+          <tr data-vuln="{{ s.vulnerability }}"><td><code>{{ s.vulnerability }}</code></td>
+            <td>{% for v in b.sbom.vulnerabilities if v.id == s.vulnerability %}{{ v.severity }}{% endfor %}</td>
+            <td><span class="fb-tag {{ 'wait' if s.status == 'under_investigation' else '' }}">{{ s.status | replace('_', ' ') }}</span>{% if s.justification %} ({{ s.justification | replace('_', ' ') }}){% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      <p class="fb-help">The artefact's own VEX is a supplier's claim: at ICDEV[OS] it can add a block, never lift one.</p>
+      <h3>Files</h3>
+      <table id="fb-files">
+        <thead><tr><th scope="col">File</th><th scope="col">Role</th><th scope="col">SHA-256</th></tr></thead>
+        <tbody>
+        {% for f in b.files %}<tr><td><code>{{ f.path }}</code></td><td>{{ f.role }}</td><td><code>{{ f.sha256[:16] }}</code></td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% if not p.decided %}
+        <h3>Your step: publish to ICDEV[OS]</h3>
+        <p class="fb-help">May not publish it: <b id="fb-builders">{{ detail.builders.keys() | join(', ') }}</b>. A reason is required.
+          Bound to artefact digest <code>{{ p.content_digest[7:23] }}</code>.</p>
+        <label for="fb-reason">Reason</label><input id="fb-reason" autocomplete="off">
+        <p><button type="button" class="fb-btn" data-publish="publish">Publish to ICDEV[OS]</button>
+          <button type="button" class="fb-btn deny" data-publish="refuse">Refuse</button></p>
+      {% endif %}
+      <p class="fb-msg" id="fb-publish-msg" role="status"></p>
+    {% else %}
+      <p class="fb-help">No build of this target has been prepared.</p>
+    {% endif %}
+
+    <h3>Published</h3>
+    {% if detail.published %}
+      <p class="fb-help" id="fb-published" data-event="{{ detail.published.event_id }}">Build <code>{{ detail.published.content_digest[7:23] }}</code>, prepared by {{ detail.published.prepared_by }},
+        published by {{ detail.published.actor }} (step <code>{{ detail.published.step_id }}</code>) at {{ detail.published.created_at }}.
+        <a id="fb-export-link" href="{{ url_for('factory_builds.fb_api_export', tid=detail.id) }}">The build and its publication as ICDEV[OS] imports them</a>.
+        Twin thread: <button type="button" class="fb-link" id="fb-thread" data-thread="factory_builds:{{ detail.published.event_id }}">factory_builds:{{ detail.published.event_id }}</button></p>
+      <p class="fb-msg" id="fb-thread-msg" role="status"></p>
+    {% else %}
+      <p class="fb-help" id="fb-unpublished">No build of this target has been published: nothing has left for ICDEV[OS].</p>
+    {% endif %}
+    <h3>Ledger</h3>
+    <p class="fb-help" id="fb-chain">Hash chain {{ 'intact' if detail.chain_intact else 'BROKEN' }}; {{ detail.history | length }} event(s).</p>
+  </section>
+  {% endif %}
+
+  <section class="fb-card" id="fb-iqe" aria-label="Query published builds">
+    {% include "includes/iqe_query_widget.html" %}
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var box = document.getElementById('fb-target');
+  if (!box) return;
+  var tid = box.getAttribute('data-target');
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  function say(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  var prep = document.getElementById('fb-prepare');
+  if (prep) prep.addEventListener('click', function () {
+    say('fb-prepare-msg', 'Building and signing…');
+    getJson(icdevFetch('factory_builds.fb_api_prepare', {tid: tid}, postInit({
+      version: ((document.getElementById('fb-version') || {}).value || '').trim(),
+      note: (document.getElementById('fb-note') || {}).value || ''}))).then(function (res) {
+      if (!res.ok) { say('fb-prepare-msg', 'Not built (' + (res.j.code || 'error') + '): ' + (res.j.error || '')); return; }
+      window.location.reload();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-publish]'), function (b) {
+    b.addEventListener('click', function () {
+      var d = document.getElementById('fb-digest');
+      getJson(icdevFetch('factory_builds.fb_api_publish', {tid: tid}, postInit({
+        decision: b.getAttribute('data-publish'), reason: ((document.getElementById('fb-reason') || {}).value || '').trim(),
+        digest: d ? d.getAttribute('data-digest') : ''}))).then(function (res) {
+        if (!res.ok) { say('fb-publish-msg', 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || '')); return; }
+        window.location.reload();
+      });
+    });
+  });
+  var th = document.getElementById('fb-thread');
+  if (th) th.addEventListener('click', function () {
+    getJson(icdevFetch('factory_builds.fb_api_twin', {}, {}, {thread: th.getAttribute('data-thread')})).then(function (res) {
+      if (!res.ok || !res.j.resolved) { say('fb-thread-msg', 'Not resolved: ' + ((res.j && res.j.reason) || 'error')); return; }
+      var r = res.j.record || {};
+      say('fb-thread-msg', 'Resolved: ' + r.event + ' by ' + r.actor + ' at ' + r.created_at + ', step ' + r.step_id + ', digest ' + String(r.content_digest || '').slice(7, 23) + '.');
+    });
+  });
+})();
+</script>
+{% endblock %}

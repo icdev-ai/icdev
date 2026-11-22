@@ -9207,6 +9207,16 @@ RESOURCE_REGISTRY = {
             "required": ["repo"],
         },
     },
+    # -- signed factory builds (icx-ent-03) -----------------------------------
+    "factory_builds_status": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_factory_builds_status",
+        "description": "Read the signed factory builds (/factory-builds/, args/factory_builds.yaml): with no target, the SYNTHETIC targets you may see at the MCP marking (CUI) and each one's newest prepared and published icos-artefact/v1 build (artefact digest, who prepared it, who published it, the signing mode and whether a transparency log was used), the others only counted. With target: its newest build's record (subject, key id, a model's fine-tuning registry promotion it rests on), the SBOM or AI-BOM summary, the VEX statements and the history. export=true returns the newest PUBLISHED build as ICDEV[OS] imports it ({bundle, publication}). Reads only: it never builds, signs or publishes; an agent never makes the factory's key sign.",
+        "input_schema": {"type": "object", "properties": {
+            "target": {"type": "string", "description": "A target id (args/factory_builds.yaml)"},
+            "export": {"type": "boolean", "description": "Return the newest published build of target"}}},
+    },
     # -- golden paths: a new service conformant by construction (icx-coe-04) ---
     "coe_golden_paths": {
         "category": "conformance",
@@ -9959,6 +9969,8 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "coe_conformance_prepare":                  False,
     # icx-coe-04: golden paths. The read reads; propose records a draft version (one ledger row)
     # and decides nothing, so it is not read-only and halts at the gate.
+    # icx-ent-03: signed factory builds. Reads only (an agent never makes the factory's key sign).
+    "factory_builds_status":                    True,
     "coe_golden_paths":                         True,
     "coe_golden_path_propose":                  False,
 })

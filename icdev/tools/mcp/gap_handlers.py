@@ -5234,3 +5234,28 @@ def handle_coe_golden_path_propose(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_coe_golden_path_propose: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_factory_builds_status(args: dict) -> dict:
+    """MCP (icx-ent-03): the signed factory builds' targets, one target's newest build, or its published build.
+
+    Read-only, at the MCP results' marking, and SYNTHETIC targets only: an agent is in no org, so no
+    customer's target is ever shown; the rest are counted, never described, and a target id that is
+    not visible reads exactly as one that does not exist. It never builds, signs or publishes.
+    """
+    try:
+        from tools.factory_builds import service
+
+        reader = service.mcp_reader(str(args.get("agent_id") or "mcp").strip() or "mcp")
+        tid = str(args.get("target") or "").strip()
+        try:
+            if not tid:
+                return {"classification": CORTEX_CLASSIFICATION, "targets": service.targets_view(reader)}
+            if args.get("export"):
+                return {"classification": CORTEX_CLASSIFICATION, "export": service.export(tid, reader)}
+            return {"classification": CORTEX_CLASSIFICATION, "target": service.target_view(tid, reader)}
+        except service.Refused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_factory_builds_status: %s", type(exc).__name__)
+        return {"error": f"the factory builds could not be read ({type(exc).__name__})"}

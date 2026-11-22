@@ -588,6 +588,7 @@ tables:
   fabric_audit: it
   fabric_shares: it
   fairness_assessments: it
+  fb_events: it
   federal_ip_space_definitions: it
   federal_peering_requests: it
   fedramp_assessments: it

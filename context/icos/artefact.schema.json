@@ -1,0 +1,220 @@
+{
+  "$defs": {
+    "File": {
+      "additionalProperties": false,
+      "properties": {
+        "mediaType": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Mediatype",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 200,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._/-]+$",
+          "title": "Path",
+          "type": "string"
+        },
+        "predicateType": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Predicatetype"
+        },
+        "role": {
+          "enum": [
+            "sbom",
+            "provenance",
+            "vex",
+            "model-signature",
+            "signature",
+            "sbom-attestation",
+            "provenance-attestation",
+            "vex-attestation"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "role",
+        "mediaType",
+        "sha256",
+        "size"
+      ],
+      "title": "File",
+      "type": "object"
+    },
+    "Key": {
+      "additionalProperties": false,
+      "properties": {
+        "alg": {
+          "const": "ecdsa-p256-sha256",
+          "description": "the release key's algorithm",
+          "title": "Alg",
+          "type": "string"
+        },
+        "id": {
+          "description": "SHA-256 of the public key's SubjectPublicKeyInfo DER: each bundle's hint",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alg",
+        "id"
+      ],
+      "title": "Key",
+      "type": "object"
+    },
+    "Subject": {
+      "additionalProperties": false,
+      "description": "What is released: an image's manifest descriptor, a model's signed weights manifest, an agent's package, an IaC\nbundle. Its digest is what every bundle is about and what admission at deploy checks.",
+      "properties": {
+        "digest": {
+          "description": "sha256 of the image manifest, of the model's weights (model-signing root digest), of the agent package or of the IaC bundle",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "mediaType": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Mediatype",
+          "type": "string"
+        },
+        "name": {
+          "description": "the image repository (no tag), the model's name, the agent's package, the IaC bundle",
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "title": "Size",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "digest",
+        "mediaType",
+        "size"
+      ],
+      "title": "Subject",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:artefact:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One signed customer artefact, bound to ONE registered system.",
+  "properties": {
+    "builder": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Builder",
+      "type": "string"
+    },
+    "commit": {
+      "pattern": "^[0-9a-f]{7,64}$",
+      "title": "Commit",
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "$ref": "#/$defs/File"
+      },
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Files",
+      "type": "array"
+    },
+    "key": {
+      "$ref": "#/$defs/Key"
+    },
+    "kind": {
+      "enum": [
+        "image",
+        "model",
+        "agent",
+        "iac"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._ -]*$",
+      "title": "Name",
+      "type": "string"
+    },
+    "produced_at": {
+      "maxLength": 40,
+      "minLength": 10,
+      "title": "Produced At",
+      "type": "string"
+    },
+    "schema": {
+      "const": "icos-artefact/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "subject": {
+      "$ref": "#/$defs/Subject"
+    },
+    "system_id": {
+      "description": "the registered system (osx-ent-01) it is released into",
+      "pattern": "^[a-z][a-z0-9-]{1,62}$",
+      "title": "System Id",
+      "type": "string"
+    },
+    "version": {
+      "maxLength": 50,
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "kind",
+    "system_id",
+    "name",
+    "version",
+    "commit",
+    "produced_at",
+    "builder",
+    "subject",
+    "key",
+    "files"
+  ],
+  "title": "Artefact",
+  "type": "object",
+  "x-icos-contract": "1.205.0",
+  "x-license": "Apache-2.0"
+}

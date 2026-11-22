@@ -1,0 +1,200 @@
+# CUI // SP-CTI
+# ICDEV platform model: signed factory builds (icx-ent-03).
+# One signed icos-artefact/v1 per built artefact (image, model, agent, IaC) for ICDEV[OS]'s release register
+# (osx-ent-06): CycloneDX 1.7 SBOM or AI-BOM (a model's linked to its fine-tuning registry promotion), SLSA v1.2
+# provenance, OpenVEX, Sigstore bundles signed by the factory's KMS, keyring or keyless key, OpenSSF model-signing, OCI
+# referrers; prepared by a person, published by another of the target's org, exported only then.
+#
+# requirement -> element -> code -> test (-> NIST control). Rules: see the header of
+# args/platform_model/cortex.yaml.
+
+component: factory_builds
+project_id: icdev-platform
+
+elements:
+  - id: fb.key
+    type: sysml_element
+    kind: block
+    name: The factory's artefact key (KMS, the OS keyring, keyless with a configured issuer; never a MAC)
+    features: [factory_builds.signed_builds]
+    code:
+      - tools/crypto/artefact_signer.py::open_signer
+      - tools/crypto/artefact_signer.py::open_keyless
+      - tools/crypto/artefact_signer.py::KmsSigner
+      - tools/crypto/artefact_signer.py::KeylessSigner
+      - tools/crypto/artefact_signer.py::submit_dsse
+      - tools/crypto/artefact_signer.py::post_json
+      - args/factory_builds.yaml
+
+  - id: fb.build
+    type: sysml_element
+    kind: block
+    name: One signed build (manifest, SBOM, SLSA provenance, OpenVEX, Sigstore bundles, OCI referrers, self-check)
+    features: [factory_builds.signed_builds]
+    code:
+      - tools/factory_builds/build.py::build
+      - tools/factory_builds/build.py::self_check
+      - tools/factory_builds/build.py::provenance
+      - tools/factory_builds/build.py::openvex
+      - tools/factory_builds/sigstore.py
+      - tools/factory_builds/config.py::read_confined
+      - tools/compliance/sbom_generator.py::cyclonedx_document
+      - context/icos/artefact.schema.json
+      - context/standards/cyclonedx-1.7/SOURCE.yaml
+      - context/standards/openvex/0.2.0/SOURCE.yaml
+
+  - id: fb.aibom
+    type: sysml_element
+    kind: block
+    name: A model's AI-BOM from its fine-tuning registry promotion, and its weights signed with OpenSSF model-signing
+    features: [factory_builds.signed_builds]
+    code:
+      - tools/factory_builds/aibom.py::promoted_version
+      - tools/factory_builds/aibom.py::still_promoted
+      - tools/factory_builds/aibom.py::check_binding
+      - tools/factory_builds/aibom.py::build
+      - tools/factory_builds/aibom.py::weights
+      - tools/finetune/model_registry.py
+
+  - id: fb.publish
+    type: sysml_element
+    kind: block
+    name: Prepared by a person, published by another of the target's org, exported with its publication beside it
+    features: [factory_builds.signed_builds]
+    code:
+      - tools/factory_builds/service.py::prepare
+      - tools/factory_builds/service.py::publish
+      - tools/factory_builds/service.py::export
+      - tools/factory_builds/ledger.py
+      - tools/common/stream_chain.py
+      - args/workflow_hitl_templates/fb-build-publish.yaml
+      - context/icos/build-publication.schema.json
+
+  - id: fb.twin
+    type: sysml_element
+    kind: block
+    name: The signed factory builds governance twin (threads to fb_events, replay)
+    features: [factory_builds.signed_builds]
+    code:
+      - tools/twin_core/adapters/factory_builds.py
+      - tools/factory_builds/service.py::twin_evidence
+      - tools/factory_builds/service.py::twin_judge
+
+interfaces:
+  - id: if.fb.console
+    type: sysml_element
+    kind: interface_block
+    name: Console /factory-builds/ and its routes
+    features: [factory_builds.signed_builds]
+    code:
+      - tools/factory_builds/blueprint.py
+      - tools/dashboard/templates/factory_builds/index.html
+      - tools/iqe/adapters/factory_builds.py
+
+  - id: if.fb.mcp
+    type: sysml_element
+    kind: interface_block
+    name: MCP factory_builds_status (read only)
+    features: [factory_builds.signed_builds]
+    code:
+      - tools/mcp/gap_handlers.py::handle_factory_builds_status
+
+requirements:
+  - id: PM-FB-01
+    title: Only a configured KMS, keyring or keyless key signs, and every signature verifies before it is used
+    text: >-
+      The factory's key is kms: (ECC_NIST_P256, ECDSA_SHA_256, FIPS endpoint) or keyring:, set by the site; a file:
+      key is a throwaway test key in the temporary directory only. No key is refused (no_key), never a MAC or an
+      unsigned build. Keyless needs a configured OIDC issuer, Fulcio URL and token, and a certificate for the key that
+      asked naming that issuer. The transparency log is off by default and a build says so; a configured Rekor's
+      answer is recorded as a receipt, not verified. Outbound calls are https, never follow a redirect, one deadline.
+    type: security
+    priority: high
+    features: [factory_builds.signed_builds]
+    elements: [fb.key]
+    controls: [SC-12, SC-13, SI-7, AU-10]
+    tests:
+      - tests/test_icx_ent_03_factory_builds.py::test_no_key_is_refused_never_a_mac_and_a_test_key_lives_only_in_tmp
+      - tests/test_icx_ent_03_factory_builds.py::test_a_keyring_key_and_a_kms_key_sign_and_every_signature_is_verified_first
+      - tests/test_icx_ent_03_factory_builds.py::test_keyless_needs_a_configured_issuer_and_a_certificate_for_the_key_that_asked
+      - tests/test_icx_ent_03_factory_builds.py::test_a_configured_rekor_log_receives_each_bundle_and_its_answer_is_recorded_not_trusted
+      - tests/test_icx_ent_03_factory_builds.py::test_outbound_calls_are_https_or_loopback_only
+      - tests/test_icx_ent_03_factory_builds.py::test_the_shipped_configuration_loads_with_no_key_and_the_log_off
+
+  - id: PM-FB-02
+    title: Each built artefact carries SLSA v1.2 provenance, a CycloneDX 1.7 SBOM and an OpenVEX VEX, signed over its digest
+    text: >-
+      A build is one icos-artefact/v1 valid against ICDEV[OS]'s pinned contract, with an SBOM valid against the pinned
+      CycloneDX 1.7 schema (ICDEV's own SBOM generator for software), SLSA v1.2 provenance naming the commit, version,
+      builder and SBOM, an OpenVEX 0.2.0 statement per scanned vulnerability (under_investigation unless the reviewed
+      config states it; nothing to state is refused), four Sigstore bundles over the artefact's digest and their OCI
+      referrers. It verifies under its own key before it is recorded; the same inputs give the same bytes. Inputs are
+      read only under the reviewed root, never through a symlink or a hard link.
+    type: functional
+    priority: high
+    features: [factory_builds.signed_builds]
+    elements: [fb.build]
+    controls: [SA-15, SR-4, CM-14, SI-7, RA-5]
+    tests:
+      - tests/test_icx_ent_03_factory_builds.py::test_icos_contracts_are_vendored_verbatim_and_pinned
+      - tests/test_icx_ent_03_factory_builds.py::test_an_image_build_is_icos_shaped_signed_and_deterministic
+      - tests/test_icx_ent_03_factory_builds.py::test_a_tampered_file_or_another_key_fails_the_self_check
+      - tests/test_icx_ent_03_factory_builds.py::test_nothing_to_state_is_refused_never_an_invented_vex_and_a_scan_must_match_the_sbom
+      - tests/test_icx_ent_03_factory_builds.py::test_inputs_are_read_only_under_the_root_never_through_a_symlink_or_a_hard_link
+
+  - id: PM-FB-03
+    title: A model's AI-BOM is linked to its fine-tuning registry promotion and its weights are signed
+    text: >-
+      A model is built only from its newest promoted fine-tuning registry version whose newest promotion-log row is a
+      promotion; the AI-BOM's root is the machine-learning-model with its model card and names the version, job and
+      promotion row it rests on (an override promotion is said to be one). Registry rows of another tenant or above the
+      target's marking are refused. The weights, read only under the reviewed root and never through a symlink, are
+      signed with OpenSSF model-signing; a model demoted since it was built is never published.
+    type: functional
+    priority: high
+    features: [factory_builds.signed_builds]
+    elements: [fb.aibom]
+    controls: [SR-4, SA-15, SI-7, CM-14]
+    tests:
+      - tests/test_icx_ent_03_factory_builds.py::test_a_model_build_carries_an_aibom_linked_to_its_registry_promotion_and_signed_weights
+      - tests/test_icx_ent_03_factory_builds.py::test_only_a_promoted_version_is_built_and_an_override_is_said_to_be_one
+      - tests/test_icx_ent_03_factory_builds.py::test_a_model_of_another_tenant_or_marked_above_the_target_is_refused
+      - tests/test_icx_ent_03_factory_builds.py::test_a_symlinked_weights_file_is_never_followed
+      - tests/test_icx_ent_03_factory_builds.py::test_a_model_demoted_since_it_was_built_is_never_published
+
+  - id: PM-FB-04
+    title: A person prepares, another person of the target's org publishes, and only a published build leaves
+    text: >-
+      Preparing makes the factory's key sign, so an agent or a service key never prepares. Publishing is a person's
+      declared step (decl-wft-fb-build-publish) of the target's org, cleared for its marking, never the preparer's,
+      bound to the digest read. The export is {bundle, publication}, the publication beside it, and counts only while
+      its declared step is recorded that way by that person. A target the reader may not see is "no such target".
+    type: functional
+    priority: high
+    features: [factory_builds.signed_builds]
+    elements: [fb.publish]
+    controls: [AC-5, AC-3, AU-9, AU-10, CM-3]
+    tests:
+      - tests/test_icx_ent_03_factory_builds.py::test_a_person_prepares_another_of_the_org_publishes_and_only_then_it_leaves
+      - tests/test_icx_ent_03_factory_builds.py::test_an_agent_never_makes_the_factory_key_sign
+      - tests/test_icx_ent_03_factory_builds.py::test_a_publication_counts_only_with_its_declared_step
+      - tests/test_icx_ent_03_factory_builds.py::test_what_a_reader_may_not_see_is_no_such_target_byte_for_byte
+      - tests/test_icx_ent_03_factory_builds.py::test_the_ledger_is_append_only_and_hash_chained
+      - tests/test_icx_ent_03_ambient.py::test_builds_prepared_and_published_on_the_platform_database
+
+  - id: PM-FB-05
+    title: The console page, the twin with threads, IQE and MCP read
+    text: >-
+      /factory-builds/ (in the nav) prepares and publishes by endpoint id and shows the build, its SBOM, VEX and
+      registry promotion. The twin observes factory_builds.signed_builds: a target with no published build is
+      unverified; a demoted model, a self-published build or a missing step is a finding threaded to its ledger row;
+      an observation replays. IQE reads only the reader's published builds; MCP factory_builds_status only reads.
+    type: functional
+    priority: medium
+    features: [factory_builds.signed_builds]
+    elements: [if.fb.console, fb.twin, if.fb.mcp]
+    controls: [AU-6, SI-4]
+    tests:
+      - tests/test_icx_ent_03_factory_builds.py::test_the_routes_and_the_page
+      - tests/test_icx_ent_03_factory_builds.py::test_the_twin_observes_with_threads_and_replays
+      - tests/test_icx_ent_03_factory_builds.py::test_the_mcp_tool_only_reads

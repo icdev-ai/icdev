@@ -84,3 +84,8 @@ engineering_standards:
   golden_paths:
     waiting_warn_days: 14
     drift_stale_days: 30
+
+# icx-ent-03: signed factory builds (tools/factory_builds), canvas key factory_builds. A prepared signed build waiting
+# this long for a person to publish or refuse it is a finding.
+factory_builds:
+  waiting_warn_days: 7
