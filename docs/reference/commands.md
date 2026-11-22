@@ -7796,6 +7796,8 @@ python -m tools.factory_builds.cli seed-synthetic --json
 
 # The newest PUBLISHED synthetic build, as ICDEV[OS] imports it ({bundle, publication}; POST /api/v1/artefacts)
 python -m tools.factory_builds.cli export --target syn-ent03-portal --out .tmp/factory-builds/portal.json
+```
+
 ### Evidence collectors for customer environments (icx-ent-02)
 
 Four read-only collectors (cloud configuration via AWS Config, the identity provider via OIDC
