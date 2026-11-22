@@ -5510,8 +5510,10 @@ python tools/research/research_engine.py --daemon --json
 
 ## Marketplace — Federated FORGE Asset Registry (Phase 22)
 ```bash
-# Publish a skill to tenant-local catalog
-python tools/marketplace/publish_pipeline.py --asset-path /path --asset-type skill --tenant-id "tenant-abc" --publisher-user "user@mil" --json
+# RETIRED (icx-ent-04): publish_pipeline.py and review_queue.py refuse (code superseded). A person prepares a
+# signed ICDEV[OS] store package on /store-publisher/, another person publishes it, and ICDEV[OS] imports,
+# reviews and certifies it (docs/features/icx-ent-04-store-publisher.md):
+python -m tools.store_publisher.cli packages --json
 
 # Search the marketplace
 python tools/marketplace/search_engine.py --search "STIG checker" --json
@@ -5522,9 +5524,7 @@ python tools/marketplace/compatibility_checker.py --asset-id "asset-abc" --consu
 # Install an asset
 python tools/marketplace/install_manager.py --install --asset-id "asset-abc" --tenant-id "tenant-abc" --json
 
-# Review queue (ISSO/security officer)
-python tools/marketplace/review_queue.py --pending --json
-python tools/marketplace/review_queue.py --review --review-id "rev-abc" --reviewer-id "isso@mil" --decision approved --rationale "Passed review" --json
+# Review queue: RETIRED (icx-ent-04) -- a store package is reviewed and certified in ICDEV[OS]
 
 # Federation sync
 python tools/marketplace/federation_sync.py --status --json
@@ -10299,3 +10299,19 @@ commands, its measurements and its refusals.
 | `kpr-watch-21` | A refusal that names no remedy: the done-gate says what is wrong, not what clears it | `python tools/kanban/cli.py --reverify <task-id>` | [kpr-watch-21.md](cards/kpr-watch-21.md) |
 | `kpr-watch-22` | Nothing consumed `union_refused`: the rung had resolved 2 conflicts in its lifetime | `python -m tools.kanban.union_candidates` | [kpr-watch-22.md](cards/kpr-watch-22.md) |
 | `kpr-watch-20` | The artifact-pin pair is DECLARED, and the survey that armed it counts HUNKS | `python -m tools.kanban.artifact_pin_union_survey` | [kpr-watch-20.md](cards/kpr-watch-20.md) |
+
+### Store publisher (icx-ent-04)
+
+Signed ICDEV[OS] store packages (`icos-store-package/v1`, ICDEV[OS]'s contract vendored and pinned under
+`context/icos/`) for its agent store: an agent, crew, skill, MCP server or plugin declared in `args/store_publisher.yaml`,
+its A2A Agent Card JWS-signed (ES384) by the publisher's OS-keyring key and binding the package's content, and ICDEV's
+seven marketplace scanner gates run on it. A person prepares and another person publishes on `/store-publisher/`; the
+CLI never prepares, publishes or exports (the full bundle is taken out only by a person who packages or publishes, from
+the console).
+
+```bash
+python -m tools.store_publisher.cli check-config --json
+python -m tools.store_publisher.cli packages --json
+python -m tools.store_publisher.cli seed-synthetic --json
+```
+

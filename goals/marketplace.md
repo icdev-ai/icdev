@@ -41,7 +41,10 @@ DEVELOPER WORKSPACE (local asset development)
 
 ### Publishing (Tenant-Local)
 1. Developer prepares asset directory with required structure
-2. Run `python tools/marketplace/publish_pipeline.py --asset-path <path> --asset-type <type> --tenant-id <id>`
+2. RETIRED (icx-ent-04): `publish_pipeline.py` refuses. An agent, crew, skill, MCP server or plugin for ICDEV[OS]'s
+   agent store is a signed store package: a person prepares it on `/store-publisher/` (`tools/store_publisher`),
+   another person publishes it, and ICDEV[OS] imports, reviews and certifies it. The steps below describe the
+   retired pipeline
 3. Pipeline validates structure and parses metadata
 4. Pipeline runs 7-gate security scanning:
    - Gate 1: SAST scan (bandit/ruff for Python)
@@ -83,10 +86,11 @@ DEVELOPER WORKSPACE (local asset development)
 |------|---------|
 | `tools/marketplace/catalog_manager.py` | CRUD for assets and versions |
 | `tools/marketplace/asset_scanner.py` | 7-gate security scanning pipeline |
-| `tools/marketplace/publish_pipeline.py` | Orchestrate scan + validate + sign + publish |
+| `tools/marketplace/publish_pipeline.py` | RETIRED (icx-ent-04): refuses; see `tools/store_publisher` |
 | `tools/marketplace/install_manager.py` | Install/update/uninstall with dependency resolution |
 | `tools/marketplace/search_engine.py` | Hybrid BM25 + semantic search (Ollama air-gapped) |
-| `tools/marketplace/review_queue.py` | Human review workflow management |
+| `tools/marketplace/review_queue.py` | RETIRED (icx-ent-04): refuses; ICDEV[OS] reviews and certifies store packages |
+| `tools/store_publisher/` | Prepare a signed ICDEV[OS] store package (a person), publish it (another person), export it |
 | `tools/marketplace/provenance_tracker.py` | Supply chain provenance tracking |
 | `tools/marketplace/compatibility_checker.py` | IL + version + dependency compatibility |
 | `tools/marketplace/federation_sync.py` | Tenant-local ↔ central registry sync |

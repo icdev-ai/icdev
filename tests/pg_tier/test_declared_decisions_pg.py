@@ -47,9 +47,14 @@ def test_seed_converges():
 
     declared.seed_declared_templates()
     assert declared.seed_declared_templates() == {"seeded": [], "updated": []}
-    rows = _one("SELECT COUNT(*) FROM wf_templates WHERE id LIKE %s AND is_default = 0",
-                ("decl-wft-%",))
-    assert rows == [(len(declared.load_templates()),)]
+    # Every declared template is seeded, counted by its id. Not by the decl-wft- prefix: icx-ent-04's
+    # icos-store-publish carries the id ICDEV[OS]'s store contract pins as the publication's template.
+    ids = sorted(declared.load_templates())
+    rows = _one("SELECT COUNT(*) FROM wf_templates WHERE id IN (" + ",".join(["%s"] * len(ids)) + ") "
+                "AND is_default = 0", tuple(ids))
+    assert rows == [(len(ids),)]
+    assert _one("SELECT COUNT(*) FROM wf_templates WHERE id = %s AND is_default = 0",
+                ("icos-store-publish",)) == [(1,)]
 
 
 def test_a_persons_step_runs_through_the_engine():

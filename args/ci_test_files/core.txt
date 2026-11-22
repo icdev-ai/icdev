@@ -2443,3 +2443,5 @@ tests/test_icx_modsamples_pipeline.py
 tests/test_iqe_seed_queries_parse.py
 tests/test_iqe_seed_join_views.py
 tests/test_iqe_parser.py
+# Every shipped .iqe seed query is free of merge-conflict markers (source and packaged copy; <2s).
+tests/test_iqe_seed_queries_no_conflict_markers.py

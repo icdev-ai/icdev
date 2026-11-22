@@ -29,12 +29,10 @@ SEED_ROOTS = (
     REPO / "icdev" / "data" / "context" / "iqe" / "queries",
 )
 
-# Excluded on purpose, and only this file: it carries unresolved merge-conflict
-# markers, which PR #2602 (feat/fix-iqe-conflict-markers) removes. Drop this entry
-# once #2602 has merged -- the file must then parse like every other seed.
-EXCLUDED = frozenset({
-    "icdev/data/context/iqe/queries/ai_augmentation/01_top_opportunities.iqe",  # PR #2602
-})
+# Nothing is excluded. (The packaged ai_augmentation/01_top_opportunities.iqe was,
+# until PR #2602 removed its merge-conflict markers.) An entry here is a seed that
+# is known not to parse and must name its fix; a stale entry fails below.
+EXCLUDED: frozenset[str] = frozenset()
 
 # A floor, so a broken glob or a moved directory cannot pass vacuously.
 MIN_SEED_FILES = 600

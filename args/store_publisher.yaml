@@ -1,0 +1,86 @@
+# CUI // SP-CTI
+# Store publisher (icx-ent-04; tools/store_publisher, docs/features/icx-ent-04-store-publisher.md).
+#
+# What ICDEV[IT] packages for ICDEV[OS]'s private, curated agent store (osx-ent-11): one signed icos-store-package/v1 per
+# declared package -- an agent, a crew, a skill, an MCP server or a plugin -- with its publisher identity, an A2A Agent
+# Card signed with JWS (ES384) that binds the package's content digest, its SBOM, a dependency report over exactly that
+# SBOM, its declared tools, marking and egress ceilings and budget, the publisher's red-team report, and ICDEV's seven
+# marketplace scanner gates run on it (the publisher's own report: ICDEV[OS] re-runs its gates and only shows ours).
+#
+# A person PREPARES a package (the publisher's key signs its card; an agent or a service key never does) and decides
+# nothing. A DIFFERENT person publishes it (the declared step icos-store-publish), and only then is it exported, with
+# its publication beside it, for a third person to import into ICDEV[OS] through its one shared bundle import. Nothing
+# publishes by itself, and a new version is a new package.
+#
+# Replaces the deprecated marketplace publish and review tools (tools/marketplace/publish_pipeline.py and
+# review_queue.py, now thin shims that point here).
+#
+# A reviewed config (changed like any other). No environment variable names another file, widens the root or adds a
+# package.
+schema: icdev-store-publisher/v1
+
+# The publisher ICDEV[OS] pins in its args/store.yaml (id, name, org, keys, people): pinning it is ICDEV[OS]'s owner's
+# reviewed change, never this file's. Until it is pinned there, ICDEV[OS] refuses every package as `publisher`.
+publisher:
+  id: icdev-it
+  name: ICDEV[IT] factory
+
+signing:
+  # key: keyring:<service>/<name> -- the OS keyring holds the publisher's unencrypted PKCS#8 P-384 PEM (ICDEV[OS]
+  #   verifies ES384). Null until the site sets it: a package with no key is refused (no_key), never left unsigned.
+  #   Never an operator's, the owner's or a release key.
+  # kid: the key id ICDEV[OS] pins for this publisher (16 hex). When set, a key with another id is refused (key_mismatch),
+  #   so a rotated key never signs a card ICDEV[OS] would not verify.
+  key: null
+  kid: null
+
+limits:
+  max_file_bytes: 262144          # any one input file of a package
+  max_sources: 64                 # source files of an MCP server or a plugin
+  max_package_bytes: 2097152      # the whole package (ICDEV[OS] args/store.yaml max_bytes)
+
+# Who may PREPARE a package -- that is, make the publisher's key sign its card. Dashboard roles
+# (tools/dashboard/auth.py VALID_DASHBOARD_ROLES); a service key is never one. Publishing is decided separately, by the
+# declared step's holders (args/workflow_hitl_templates/store-publish.yaml), and never by the preparer.
+packager_roles: [admin, developer, reviewer]
+
+# Inputs are read only under this root (repo-relative), never through a symlink, regular files with one link.
+package_root: .tmp/store-publisher
+
+# The packages. Each belongs to ONE ICDEV[IT] organisation (org) and is shown only to a reader of that org cleared for
+# its marking. synthetic: true marks a labelled demonstration package (the e2e and the tests); MCP and the platform
+# twin name synthetic packages only.
+#   kind: agent (prompt.md), skill (instructions.md), crew (crew.json), mcp_server (tools.json and its sources) or
+#     plugin (manifest.json, config.json, distribution_sha256 and its sources) -- file names are fixed per kind, under
+#     <package_root>/<inputs>/. Every kind also has sbom.cdx.json (CycloneDX 1.6 or 1.7), dependency-scan.json (the
+#     factory scanner's findings over that SBOM: {produced_at, tool, findings: [{id, package, severity}]}) and
+#     redteam.json ({produced_at, tool, results: {ASI01..LLM10: passed|failed|unverified}}: the publisher's attestation).
+#   marking, marking_ceiling, egress_ceiling: public or internal (cui and above needs an accreditation, the owner's).
+#   tools: what it declares (an agent's: ICDEV[OS] MCP tools that only read). Its Agent Card's skills are EXACTLY these.
+packages:
+  - id: syn-ent04-ledger-agent
+    synthetic: true
+    kind: agent
+    org: syn-ent04-org
+    title: Ledger coverage assistant (synthetic)
+    description: SYNTHETIC agent for the store publisher's tests and e2e journey; answers twin coverage questions and proposes nothing.
+    marking: internal
+    marking_ceiling: internal
+    egress_ceiling: internal
+    tools: [twin_coverage, sda_list]
+    budget: {turns: 4, calls: 8, tokens: 20000, seconds: 60}
+    inputs: syn-ent04/ledger-agent
+    provenance: {source: "https://git.icdev.invalid/synthetic/ledger-agent", commit: "e04e04e04e04e04e04e04e04e04e04e04e04e04e"}
+  - id: syn-ent04-coverage-mcp
+    synthetic: true
+    kind: mcp_server
+    org: syn-ent04-org
+    title: Coverage lookup MCP server (synthetic)
+    description: SYNTHETIC MCP server for the store publisher's tests; one read-only tool over a labelled fixture.
+    marking: internal
+    marking_ceiling: internal
+    egress_ceiling: internal
+    tools: [coverage_lookup]
+    inputs: syn-ent04/coverage-mcp
+    sources: [server.py]
+    provenance: {source: "https://git.icdev.invalid/synthetic/coverage-mcp", commit: "e04e04e04e04e04e04e04e04e04e04e04e04e04f"}
