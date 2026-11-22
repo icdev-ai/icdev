@@ -85,6 +85,17 @@ engineering_standards:
     waiting_warn_days: 14
     drift_stale_days: 30
 
+# icx-ent-02: evidence collectors for customer environments (tools/evidence_collectors), canvas key
+# evidence_collectors. A prepared objective-evidence report waiting this long for a person is a finding; a
+# published report older than the shortest collector budget (args/evidence_collectors.yaml) is stale.
+evidence_collectors:
+  waiting_warn_days: 7
+
+# icx-ent-03: signed factory builds (tools/factory_builds), canvas key factory_builds. A prepared signed build waiting
+# this long for a person to publish or refuse it is a finding.
+factory_builds:
+  waiting_warn_days: 7
+
 # icx-ent-04: the store publisher (tools/store_publisher), canvas key store_publisher. A prepared store package waiting
 # this long for a person to publish or refuse it is a finding.
 store_publisher:

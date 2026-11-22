@@ -32,6 +32,50 @@ it. ICDEV[OS] recomputes the digest on import and refuses a mismatch, a bundle n
 preparer. To take a newer contract: copy the new schema, update the digest in `conformance.SCHEMA_SHA256`,
 `conformance.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_coe_03_conformance.py`.
 
+## The objective-evidence report (icx-ent-02; ICDEV[OS] osx-ent-02)
+
+`objective-evidence.schema.json` is ICDEV[OS]'s `icos-objective-evidence/v1` schema
+(`urn:icdev-os:contract:objective-evidence:1`), copied verbatim from ICDEV[OS] `main` after
+osx-ent-02 merged (merge cfe0b91e, `contracts/schemas/objective-evidence.schema.json`, contract version 1.199.0, SHA-256
+`adea74c3cc1e384f7fae9250098e6460c7966467e1ebc48b75bc651273c563d7`). It is NOT `icos-evidence/v1`, which is ICDEV[OS]'s
+own CI evidence bundle. It is licensed Apache-2.0 (`LICENSE`,
+`NOTICE` here), unlike the rest of this repository.
+
+`tools/evidence_collectors/bundle.py` validates every report against it and refuses to run if the file's digest is not
+the one pinned in `tools/evidence_collectors/constants.py` (`SCHEMA_SHA256`, `SCHEMA_CONTRACT`). `content_digest` is
+ICDEV[OS]'s rule: SHA-256 over the canonical JSON of the report without `content_digest` and `publication`. The
+publication is EMBEDDED in the report with exactly the contract's five fields (prepared_by, signed_by, step_id,
+decided_at, content_digest) -- the placement ICDEV[OS]'s `icdev_os/publication.py` reads with `split(raw, "embedded")`
+and checks with `check_publication` (refusing `unpublished`, `tampered`, a publication by its preparer or by an agent).
+To take a newer contract: copy the new schema, update the digest and contract version in `constants.py` and this file,
+and run `tests/test_icx_ent_02_evidence_collectors.py`.
+
+## The customer artefact (icx-ent-03; ICDEV[OS] osx-ent-06)
+
+`artefact.schema.json` is ICDEV[OS]'s `icos-artefact/v1` manifest schema (`contracts/schemas/artefact.schema.json`,
+contract version 1.208.0, SHA-256 `cdc80df7a7565c23aa005342f6b615eda249788bf6de946f41487ef1458a04aa`), copied verbatim
+from ICDEV[OS] main (commit 9040bf4c, osx-ent-06 merged). One signed customer artefact (an image, a model, an agent or an IaC bundle) bound to one
+registered ICDEV[OS] system, listing every file of the artefact with its SHA-256; the artefact digest is the SHA-256
+of `artefact.json`. It is licensed Apache-2.0 (`LICENSE`, `NOTICE` here), unlike the rest of this repository.
+
+`build-publication.schema.json` is a **DRAFT** by ICDEV[IT] (`icdev-build-publication/v1`,
+`urn:icdev-it:contract:build-publication:1:draft`, SHA-256
+`18e0056f111d0ac03d9de8cb7100fed8c46844d6c33d6e4b78f7a8873c834985`) for ICDEV[OS] to adopt, in the shape of the
+findings publication: a person who did not prepare the build took `decl-wft-fb-build-publish`, bound to the artefact
+digest (`sha256:` form, the digest ICDEV[OS]'s admission recomputes), with the ledger event and its row hash. The
+artefact travels as an `icos-release-transfer/v1` document with the publication BESIDE it
+(`{"bundle": ..., "publication": ...}`), exactly what `icdev_os/release/admission.py` reads through the one shared import
+(`icdev_os/publication.py` `split(raw, "beside")`, `check_publication`). ICDEV[OS] pins the step by setting
+`artefacts.icdev.publication_template: decl-wft-fb-build-publish` in its `args/artefacts.yaml`.
+
+The CycloneDX 1.7 and OpenVEX 0.2.0 JSON schemas the factory validates against are vendored verbatim, with their pins,
+from ICDEV[OS] main under `context/standards/` (Apache-2.0 and CC0-1.0, each with its SOURCE.yaml).
+
+`tools/factory_builds/build.py` validates every manifest, SBOM and VEX against them and refuses to run if a file's
+digest is not its pin (`constants.SCHEMA_SHA256`, `constants.PUBLICATION_SHA256`, each SOURCE.yaml). To take a newer
+contract: copy the schema, update the digest in `tools/factory_builds/constants.py` and this file, and run
+`tests/test_icx_ent_03_factory_builds.py`.
+
 ## The store package and its publication (icx-ent-04; ICDEV[OS] osx-ent-11)
 
 `store-package.schema.json` is ICDEV[OS]'s `icos-store-package/v1` schema (`urn:icdev-os:contract:store-package:1`) and

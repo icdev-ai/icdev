@@ -2791,10 +2791,18 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
 - **Revisit if:** the endpoint starts accepting native tool calls, fetching URLs or files named in a message, or streaming through `invoke_streaming`.
 
 
+## icx-ent-03: signed factory builds (`tools/factory_builds`)
+
+| Ingress | Module | Decision | Why |
+|---|---|---|---|
+| `fb_build_inputs` | `tools/factory_builds/config.py::read_confined`, `build.py` | **trusted-first-party** (read only, data) | An OCI image layout's index and manifest, a package file and the factory scan are READ as bytes to hash them and parse them as JSON; nothing is executed. Only under the reviewed `artefact_root`, regular files with one link, no symlink on the way, size-capped; each file read once, so the bytes hashed are the bytes used. A caller names a target, never a path. |
+| `fb_sbom_project` | `tools/compliance/sbom_generator.py::cyclonedx_document` | **trusted-first-party** (read only) | The target's project manifests are parsed by the existing SBOM generator's declared parsers (no install, no build, no execution), only under `artefact_root`. |
+| `fb_model_weights` | `tools/factory_builds/aibom.py::weights` | **trusted-first-party** (read only) | Weights files are only HASHED (streamed SHA-256), never loaded or deserialised; only under the reviewed `models_root`, no symlink, regular files with one link, at most `max_files`. |
+| `fb_remote_answers` | `tools/crypto/artefact_signer.py::post_json` | **trusted-first-party** (data only) | A configured Fulcio's and Rekor's JSON answers are parsed with a size cap; https only (loopback http for tests), no redirects, one deadline over the exchange; a certificate is accepted only for the key that asked and the configured issuer. Their error text never travels on. |
+
 ## icx-ent-04: the store publisher (`tools/store_publisher`)
 
 | Ingress | Module | Decision | Why |
 |---|---|---|---|
 | `sp_package_inputs` | `tools/common/confined_read.py::read_confined`, `tools/store_publisher/package.py` | **trusted-first-party** (read only, data) | A declared package's prompt, instructions, tool listing, crew, plugin manifest and config, SBOM, dependency findings, red-team results and source files are READ as bytes and parsed as UTF-8 text or JSON (NaN and infinity refused); nothing is executed. Only under the reviewed `package_root`, regular files with one link, no symlink on the way, size-capped; each read once. A caller names a package, never a path. |
 | `sp_gate_analysis` | `tools/store_publisher/gates.py`, `tools/marketplace/asset_scanner.py::sast_findings` | **trusted-first-party** (read only) | The package is written once into a fresh private directory (0700, new files only) and the scanner's analyses READ it: `ast.parse` and `bandit -r` (argument list, this interpreter, a timeout) parse the source and never run it; the secret and CUI-banner checks are regular expressions. The directory is removed afterwards. |
-

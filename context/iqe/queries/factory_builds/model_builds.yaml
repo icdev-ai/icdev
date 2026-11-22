@@ -1,0 +1,12 @@
+# CUI // SP-CTI
+collection: factory_builds.builds
+query: "Show factory_builds builds where kind is model"
+description: >-
+  The newest published signed build of each model target the reader may see: its artefact digest, version and
+  who published it. A build whose declared step is not recorded is never a row here.
+iqe: >-
+  foreach b in factory_builds.builds where b.kind == "model"
+  select b.target, b.system, b.digest, b.version, b.published_by
+example_questions:
+  - "Show factory_builds builds where kind is model"
+  - "Which model builds have been published?"

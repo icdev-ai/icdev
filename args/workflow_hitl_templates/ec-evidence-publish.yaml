@@ -1,0 +1,36 @@
+# CUI // SP-CTI
+id: decl-wft-ec-evidence-publish
+name: "Objective evidence: a person publishes a customer system's prepared icos-objective-evidence/v1 report to ICDEV[OS], or refuses it (prepare -> publish)"
+description: >-
+  An objective-evidence report (icos-objective-evidence/v1) is what ICDEV[OS]'s control
+  backbone imports for one customer system (osx-ent-02): per assessment objective of SP
+  800-171 Rev. 2 or SP 800-53 Rev. 5, satisfied or other than satisfied, when it was observed
+  and by which read-only collector (cloud configuration, identity provider, endpoints, SIEM),
+  by the reviewed mapping; an objective that could not be judged is left out (unverified).
+  Leaving the factory is a release of a customer's evidence, so a person attests it. Anyone,
+  or an agent, collects and prepares a system's report on /evidence-collectors/, which records
+  it at its digest with the observations it rests on and decides nothing. A person of the
+  system's owning org, cleared for its marking, who did not prepare it, reads it and publishes
+  it or refuses, with a reason, bound to that digest and to the system's configuration digest.
+decides: [evidence_collectors.ec_api_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject:
+  "objective_evidence:<system id>"; payload: the system, its org, the report's content digest,
+  the prepared event and the system's configuration digest). ec_events appends a published or
+  refused event on the system's stream, chained to the row before it. Only a published report is
+  exported, with its publication EMBEDDED (prepared_by, signed_by, step_id, decided_at,
+  content_digest: the contract's Publication): tools/evidence_collectors/cli.py export.
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: prepare
+    step_type: automated
+    description: Someone (a person, or an agent's draft) collected from the system's sources and recorded its report at its digest.
+  - name: publish
+    step_type: manual
+    role: objective_evidence_publisher
+    holders: [admin, isso, reviewer]
+    # The person who prepared the report never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]
