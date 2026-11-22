@@ -8,6 +8,14 @@ Importing this module registers three collections on the module-level Executor:
                      design_id, score, omb_compliant, safety_impacting.
   aadc.artifacts   — Generated ATO/compliance artifacts (aadc_artifacts);
                      filter by artifact_type, design_id.
+  aadc.lifecycle_states — Lifecycle transitions (aadc_lifecycle_states) joined
+                     to their design: design_name, design_domain.
+  aadc.ato_readiness — Each design joined to its ATO reports and scorecard
+                     snapshots (aadc_ato_reports, aadc_scorecard_snapshots).
+
+The two joined views exist because IQE's ``join()`` built-in joins on one
+key name shared by both sides, and these joins pair ``design_id`` with the
+design's ``id`` (and ato_readiness is three-way).
 """
 from __future__ import annotations
 
@@ -116,8 +124,50 @@ def twin_snapshots_adapter(conn: Any) -> list[dict]:
             c.close()
 
 
+def _fetch_rows(conn: Any, sql: str, name: str) -> list[dict]:
+    c, owned = _aadc_conn(conn)
+    try:
+        cur = c.execute(sql)
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception as exc:  # noqa: BLE001 -- a canvas DB without the table (sqlite or PG error) answers no rows, like the adapters above
+        _log.warning("iqe %s adapter failed: %s", name, exc)
+        return []
+    finally:
+        if owned:
+            c.close()
+
+
+def lifecycle_states_adapter(conn: Any) -> list[dict]:
+    """Return lifecycle transitions with the design they belong to (inner join)."""
+    return _fetch_rows(
+        conn,
+        "SELECT l.id, l.design_id, d.name AS design_name, d.domain AS design_domain, "
+        "l.from_state, l.to_state, l.actor, l.reason, l.created_at "
+        "FROM aadc_lifecycle_states l "
+        "JOIN aadc_designs d ON d.id = l.design_id",
+        "aadc.lifecycle_states",
+    )
+
+
+def ato_readiness_adapter(conn: Any) -> list[dict]:
+    """Return each design joined to its ATO reports and scorecard snapshots (inner joins)."""
+    return _fetch_rows(
+        conn,
+        "SELECT d.id AS design_id, d.name AS design_name, d.domain AS design_domain, "
+        "a.ato_ready, a.score_pct, a.passed, a.failed, a.critical_failed, "
+        "s.overall_score, s.health "
+        "FROM aadc_designs d "
+        "JOIN aadc_ato_reports a ON a.design_id = d.id "
+        "JOIN aadc_scorecard_snapshots s ON s.design_id = d.id",
+        "aadc.ato_readiness",
+    )
+
+
 register_collection("aadc.designs", designs_adapter)
 register_collection("aadc.assessments", assessments_adapter)
 register_collection("aadc.artifacts", artifacts_adapter)
 register_collection("aadc.ai_decisions", ai_decisions_adapter)
 register_collection("aadc.twin_snapshots", twin_snapshots_adapter)
+register_collection("aadc.lifecycle_states", lifecycle_states_adapter)
+register_collection("aadc.ato_readiness", ato_readiness_adapter)

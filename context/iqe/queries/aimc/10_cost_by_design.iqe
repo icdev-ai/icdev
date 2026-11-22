@@ -1,4 +1,7 @@
-foreach d in aimc.designs
-  join ar in aimc.artifacts on ar.design_id == d.id
-  where ar.artifact_type == "model_card"
-  select d.name, d.il_level, d.adaptation_strategy, ar.title
+# Model-card artifacts with the design they document (name, IL level, adaptation).
+# Was `foreach d in aimc.designs join ar in aimc.artifacts on ar.design_id == d.id`;
+# IQE has no `join ... on` clause and its join() built-in needs one key name on both
+# sides, so aimc.design_artifacts is the artifact-to-design inner join itself.
+foreach a in aimc.design_artifacts
+  where a.artifact_type == "model_card"
+  select a.design_name, a.il_level, a.adaptation_strategy, a.title

@@ -2434,3 +2434,12 @@ tests/cortex/test_document_intelligence_lens.py
 tests/test_coherence_template_variable_parity.py
 # ICDEV[OS] Phase 254: the modernisation tooling over real-app-shaped trees (scratch sqlite, no model; ~7s).
 tests/test_icx_modsamples_pipeline.py
+# test_iqe_seed_queries_parse.py: every shipped .iqe seed (context/iqe/queries and the
+# packaged copy) parses with tools.iqe.parser.parse exactly as /iqe/run reads it; 164
+# had stopped parsing (other dialects, NL prompts, YAML, several queries per file).
+# test_iqe_seed_join_views.py runs the three join seeds over their joined-view
+# collections; test_iqe_parser.py leaves the backlog with the `//` comment and `*`/`/`
+# operand cases. Pure Python, scratch in-memory SQLite, ~2s.
+tests/test_iqe_seed_queries_parse.py
+tests/test_iqe_seed_join_views.py
+tests/test_iqe_parser.py

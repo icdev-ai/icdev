@@ -1,0 +1,5 @@
+# Platform Updates seed query (split from updates.iqe). Collection: updates.releases.
+# Prompt: show releases added in the last month
+foreach r in updates.releases
+select r.version, r.date, r.sections, r.item_count
+# Window (IQE has no relative dates; the reader applies it): r.date within the last month.

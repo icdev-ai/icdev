@@ -1,0 +1,5 @@
+# MCIP DAT seed query (split from mcip.iqe). Collection: dat.dti_history.
+# Prompt: show dti history for the last 48 hours
+foreach h in dat.dti_history
+select h.id, h.score, h.cable_sub, h.unsc_sub, h.backchannel_sub, h.event_count, h.computed_at
+# Window (IQE has no relative dates; the reader applies it): h.computed_at within the last 48 hours.

@@ -1,4 +1,9 @@
-collection: ccc.cross_connects
-query: pending cross connects installing
-description: Cross-connects awaiting LOA approval or currently being installed
-tags: [cross-connect, pending, loa]
+# collection: ccc.cross_connects
+# query: pending cross connects installing
+# description: Cross-connects awaiting LOA approval or currently being installed
+# tags: [cross-connect, pending, loa]
+# The IQE below is what the ccc adapter answers this prompt with (tools/iqe/adapters/ccc.py).
+foreach x in ccc.cross_connects
+where x.status == "pending_loa" or x.status == "installing"
+select x.xc_number, x.facility, x.port_a, x.port_z, x.speed_gbps, x.status
+# Presentation (IQE has no `order by`; the reader applies it): sort by x.created_at desc.

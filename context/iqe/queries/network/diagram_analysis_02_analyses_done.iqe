@@ -1,0 +1,5 @@
+# Network Diagram Analysis seed query (split from diagram_analysis.iqe).
+# Prompt: show diagram analyses with status done
+foreach a in network.diagram_analyses
+where a.status == "done"
+select a.id, a.upload_id, a.industry, a.topology_mode, a.status, a.created_at

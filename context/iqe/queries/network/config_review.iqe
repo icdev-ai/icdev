@@ -1,5 +1,8 @@
-# Network Configuration Review seed queries for IQE
-# Each line is a natural-language prompt the widget can translate to IQE.
-show config reviews created today
-show config review findings with severity CAT1
-show config reviews by network_engineer role
+# Network Configuration Review seed queries for IQE.
+# Collections: network.config_reviews, network.config_review_findings (tools/iqe/adapters/ndc.py).
+# The parser reads exactly ONE query per file and /iqe/run runs one, so this file
+# holds the first and config_review_02..03_*.iqe hold the others.
+# Prompt: show config reviews created today
+foreach r in network.config_reviews
+select r.id, r.title, r.vendor, r.role_key, r.status, r.created_at
+# Window (IQE has no relative dates; the reader applies it): r.created_at today.

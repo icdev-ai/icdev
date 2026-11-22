@@ -6,5 +6,4 @@
 foreach a in strategos.sio_assessments
   select a.id, a.lens_source, a.score, a.confidence, a.nato_reliability,
          a.narrative, a.created_at
-  order_by a.created_at desc
-  limit 8
+# Presentation (IQE has no `order by` or `limit`; the reader applies it): sort by a.created_at desc, keep the first 8 rows.

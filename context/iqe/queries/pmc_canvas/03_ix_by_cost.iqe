@@ -2,8 +2,13 @@
 # Canvas: pmc | Collection: pmc.ix_memberships
 # Description: Internet exchange memberships ordered by monthly cost
 
-show ix by cost
-list internet exchanges by cost
-which ix is most expensive
-show ix memberships
-list all internet exchanges
+# Prompt: show ix by cost
+# Prompt: list internet exchanges by cost
+# Prompt: which ix is most expensive
+# Prompt: show ix memberships
+# Prompt: list all internet exchanges
+# The lines above are paraphrases of ONE question for the NL widget. The IQE below
+# is what the pmc adapter answers it with (tools/iqe/adapters/pmc.py).
+foreach i in pmc.ix_memberships
+select i.id, i.ix_name, i.city, i.country, i.our_speed_gbps, i.monthly_cost_usd, i.status
+# Presentation (IQE has no `order by`; the reader applies it): sort by i.monthly_cost_usd desc.

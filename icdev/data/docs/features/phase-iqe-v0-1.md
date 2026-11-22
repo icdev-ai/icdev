@@ -52,11 +52,13 @@ predicate  := or_expr
 or_expr    := and_expr ("or" and_expr)*
 and_expr   := not_expr ("and" not_expr)*
 not_expr   := "not" not_expr | comparison
-comparison := attr_ref op value
+comparison := product op product
              | attr_ref "contains" value
              | attr_ref "startswith" value
 op         := "==" | "!=" | ">" | "<" | ">=" | "<="
 attr_ref   := IDENT ("." IDENT)*
+product    := factor (("*" | "/") factor)*      # first factor of the left side is an attr_ref
+factor     := value
 value      := STRING | NUMBER | "true" | "false" | "null" | attr_ref
 select_expr := "*" | attr_ref ("," attr_ref)*
 ```
@@ -107,6 +109,16 @@ foreach i in network.interfaces
 Multiple `where` clauses on consecutive lines are ANDed together.  Inline `and` / `or`
 are also supported for compound predicates in a single `where` clause.
 
+Comparison operands may multiply or divide (`where s.current_load_gbps / s.capacity_gbps > 0.7`),
+the multiplicative level of `tools/iqe/grammar.lark`'s `mul_expr`. Only real numbers take part: a
+NULL, string or boolean operand, a zero divisor or a non-finite result is NULL, which matches no
+comparison. `+` and `-` are not supported (`-` belongs to number literals).
+
+IQE has no `order by`, `limit`, `join ... on`, `in (...)` lists or parenthesised predicates. A seed
+query that wants an order or a row cap says so in a `# Presentation ...` comment, and the reader
+applies it; joins use the `join()` built-in or a joined-view collection; a list is an `or` chain; a
+parenthesised predicate is split across `where` clauses (which AND). One file holds one query.
+
 ---
 
 ## AST Node Types
@@ -132,8 +144,8 @@ All nodes are `dataclass`es with no mutable defaults — safe to pickle and cach
 
 **Tokenizer** uses a single compiled regex with named groups for each token type
 (`STRING`, `NUMBER`, `OP`, `COMMA`, `DOT`, `STAR`, `LPAREN`, `RPAREN`, `IDENT`,
-`NL`, `SKIP`, `MISMATCH`).  Whitespace, tabs, carriage returns, and `#`-prefixed
-comments are silently skipped.  Keywords are identified by membership in a frozenset
+`NL`, `SKIP`, `MISMATCH`, plus `COMMENT` and `SLASH`).  Whitespace, tabs, carriage returns,
+and `#`- or `//`-prefixed comments (`//` as `tools/iqe/grammar.lark` declares) are silently skipped.  Keywords are identified by membership in a frozenset
 at token-classification time.
 
 **Parser** walks the token stream with a position cursor:

@@ -1,0 +1,5 @@
+# Network Diagram Analysis seed query (split from diagram_analysis.iqe).
+# Prompt: show diagram findings from the last analysis
+foreach f in network.diagram_findings
+select f.id, f.analysis_id, f.tab, f.severity, f.title, f.remediation, f.industry, f.topology_mode
+# Window (IQE has no relative selection; the reader applies it): only f.analysis_id of the newest analysis.

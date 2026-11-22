@@ -17,6 +17,7 @@ its word — complete — which keeps every existing adapter working unchanged.
 from __future__ import annotations
 
 import logging as _log
+import math
 import re
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
 from concurrent.futures import as_completed as _as_completed
@@ -296,11 +297,34 @@ class Executor:
             return self._resolve(row, self._strip_var(node.parts, var))
         if isinstance(node, Literal):
             return node.value
+        if isinstance(node, BinOp) and node.op in ("*", "/"):
+            return _arith(node.op, self._val(row, var, node.left), self._val(row, var, node.right))
         return node
 
     @staticmethod
     def _strip_var(parts: list[str], var: str) -> list[str]:
         return parts[1:] if parts and parts[0] == var else parts
+
+
+def _arith(op: str, lv: Any, rv: Any) -> Any:
+    """``lv * rv`` or ``lv / rv``, or None when it is not a finite number.
+
+    Only real numbers take part: a NULL, a string, a boolean, a zero divisor or
+    a non-finite result is NULL, and a NULL operand matches no comparison (see
+    ``_compare``), so a row with an unusable value never passes a filter.
+    """
+    numeric = (int, float)
+    if isinstance(lv, bool) or isinstance(rv, bool):
+        return None
+    if not isinstance(lv, numeric) or not isinstance(rv, numeric):
+        return None
+    if op == "/" and rv == 0:
+        return None
+    try:
+        out = lv * rv if op == "*" else lv / rv
+        return out if math.isfinite(out) else None
+    except (OverflowError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------

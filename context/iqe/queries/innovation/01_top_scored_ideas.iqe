@@ -2,5 +2,4 @@
 foreach i in innovation.ideas
 where i.score_total > 0
 select i.id, i.title, i.status, i.phase_tag, i.score_total, i.submitter_role, i.department
-order by i.score_total desc
-limit 20
+# Presentation (IQE has no `order by` or `limit`; the reader applies it): sort by i.score_total desc, keep the first 20 rows.

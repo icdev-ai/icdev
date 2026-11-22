@@ -1,4 +1,9 @@
-collection: ccc.loa
-query: open loa requests pending approval
-description: Draft, submitted, or approved LOA requests not yet completed
-tags: [loa, authorization, pending]
+# collection: ccc.loa
+# query: open loa requests pending approval
+# description: Draft, submitted, or approved LOA requests not yet completed
+# tags: [loa, authorization, pending]
+# The IQE below is what the ccc adapter answers this prompt with (tools/iqe/adapters/ccc.py).
+foreach l in ccc.loa
+where l.status == "draft" or l.status == "submitted" or l.status == "approved"
+select l.loa_number, l.facility, l.requester_company, l.status, l.valid_days, l.created_at
+# Presentation (IQE has no `order by`; the reader applies it): sort by l.created_at desc.

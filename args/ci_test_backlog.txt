@@ -1009,7 +1009,6 @@ tests/test_iqe_nl_to_iqe_ip.py
 tests/test_iqe_nl_to_iqe_temporal.py
 tests/test_iqe_observability_adapter.py
 tests/test_iqe_observability_seeds.py
-tests/test_iqe_parser.py
 tests/test_iqe_pipeline_adapter.py
 tests/test_iqe_pipeline_seeds.py
 tests/test_iqe_route.py

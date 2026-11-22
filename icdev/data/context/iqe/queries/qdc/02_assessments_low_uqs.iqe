@@ -4,4 +4,4 @@
 foreach a in qdc.assessments
 where a.uqs_score < 0.6
 select a.design_id, a.design_name, a.uqs_score, a.score, a.created_at
-orderby a.uqs_score asc
+# Presentation (IQE has no `order by` or `limit`; the reader applies it): sort by a.uqs_score asc.

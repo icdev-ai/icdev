@@ -1,4 +1,9 @@
-collection: ccc.circuits
-query: show active circuits
-description: All active circuits with carrier, type, bandwidth, and utilization
-tags: [circuits, active, inventory]
+# collection: ccc.circuits
+# query: show active circuits
+# description: All active circuits with carrier, type, bandwidth, and utilization
+# tags: [circuits, active, inventory]
+# The IQE below is what the ccc adapter answers this prompt with (tools/iqe/adapters/ccc.py).
+foreach c in ccc.circuits
+where c.status == "active"
+select c.circuit_id, c.carrier, c.circuit_type, c.bandwidth_gbps, c.status, c.utilization_pct, c.mrr_usd
+# Presentation (IQE has no `order by`; the reader applies it): sort by c.carrier.

@@ -1,0 +1,7 @@
+# MCIP DAT seed query (split from mcip.iqe). Collection: dat.events.
+# Prompt: show events with high tension signal
+# "High" is the DTI high band, 67-100 (DTI_BANDS in tools/mcip/constants.py), on
+# tension_signal's 0-1 scale (tools/mcip/analytics.py clamps it to [0, 1]).
+foreach e in dat.events
+where e.tension_signal >= 0.67
+select e.id, e.source_type, e.sender, e.recipient, e.classification, e.tension_signal, e.ingested_at

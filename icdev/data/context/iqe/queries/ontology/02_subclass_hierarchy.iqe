@@ -3,5 +3,5 @@
 # Use: hierarchy traversal, lineage checks, ontology depth analysis.
 
 foreach pair in ontology.closure
+where pair.distance == 1
 select pair.subclass, pair.superclass, pair.distance
-where pair.distance = 1
