@@ -66,7 +66,7 @@ def test_packages_prepared_and_published_on_the_platform_database():
             out = service.publish(p["id"], decision="publish", reason="ambient (synthetic)",
                                   read_digest=got["digest"], actor=b, reader=rb, cfg=cfg, signer=s)
             assert out["event"] == "published"
-            ex = service.export(p["id"], rb, cfg=cfg)
+            ex = service.export(p["id"], rb, actor=b, cfg=cfg)
             assert ex["publication"]["signed_by"] == b["id"] and ex["publication"]["content_digest"] == got["digest"]
             assert package.schema_errors(ex["bundle"]) == []
             rows = ledger.read(stream=f"package:{p['id']}")

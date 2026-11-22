@@ -139,6 +139,9 @@ def _package(p, seen: set, no) -> None:
         if not isinstance(srcs, list) or not srcs or not all(rel_ok(str(s)) for s in srcs) \
                 or len(set(srcs)) != len(srcs):
             no(f"{pid}: a {p['kind']} lists its source files (relative, under inputs/src)")
+        if any(part.startswith(".") for x in srcs for part in str(x).split("/")):
+            # review M1: a dot-leading name is an analyser's config (.bandit) or a directory it skips (.tox)
+            no(f"{pid}: a source path has no component that starts with a dot")
     elif srcs:
         no(f"{pid}: an {p['kind']} carries no code, so no sources")
     if p["kind"] == "plugin" and not HEX64.fullmatch(str(p.get("distribution_sha256") or "")):
@@ -160,7 +163,13 @@ def package(cfg: dict, pid: str) -> dict | None:
 
 
 def root(cfg: dict) -> Path:
-    return (BASE_DIR / cfg["package_root"]).resolve()
+    """``<repo>/<package_root>``, never through a symlink (review L8): a symlinked component is refused, not resolved."""
+    p = BASE_DIR
+    for part in str(cfg["package_root"]).split("/"):
+        p = p / part
+        if p.is_symlink():
+            raise ConfigError(f"{CONFIG_RELPATH}: package_root passes through a symlink")
+    return p
 
 
 def read_input(cfg: dict, p: dict, rel: str) -> bytes:

@@ -95,12 +95,16 @@ def sast_scan(d: Path, kind: str, body: dict) -> dict:
     f = out.get("findings") or {}
     detail = {"engine": out.get("engine"), "files": out.get("files"), "critical": f.get("critical", 0),
               "high": f.get("high", 0), "issues": (f.get("issues") or [])[:10]}
-    if out["status"] == "skipped":
-        return gate("unverified", reason="no Python source: a source in any other language is not analysed here",
+    # review M2: a source that is not Python is not analysed here, and an unanalysed source never passes
+    other = sorted(str(s["path"]) for s in srcs if not str(s["path"]).endswith(".py"))
+    if out["status"] == "fail":
+        return gate("fail", not_analysed=other[:20], **detail)
+    if out["status"] == "skipped" or other:
+        return gate("unverified", reason="a source that is not Python is not analysed here", not_analysed=other[:20],
                     **detail)
     if out["status"] == "unverified":
-        return gate("unverified", reason="a source file could not be parsed, so it was not analysed",
-                    unparsed=(f.get("unparsed") or [])[:10], **detail)
+        return gate("unverified", reason="a source file was not analysed (unparsed, or not in the analyser's report)",
+                    not_analysed=sorted({*(f.get("unparsed") or []), *(f.get("unanalysed") or [])})[:20], **detail)
     return gate(out["status"], **detail)
 
 

@@ -154,7 +154,6 @@ goals:
         type: programmatic
         tools:
           - federation_sync
-          - catalog_manager
 
   proposal_genesis:
     description: "Autonomous proposal intelligence pipeline"

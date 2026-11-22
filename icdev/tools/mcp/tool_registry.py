@@ -2812,7 +2812,7 @@ TOOL_REGISTRY = {
         "category": "marketplace",
         "module": "tools.mcp.marketplace_server",
         "handler": "handle_openclaw_promote",
-        "description": "Promote a quarantined OpenClaw import to the ICDEV™ marketplace (requires passed gates + review)",
+        "description": "RETIRED (icx-ent-04): refuses. An agent never promotes into the marketplace; a person does, on the console",
         "input_schema": {
             "type": "object",
             "properties": {"import_id": {"type": "string"}, "promoted_by": {"type": "string"}},
@@ -9213,10 +9213,9 @@ RESOURCE_REGISTRY = {
         "category": "compliance",
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_store_publisher_status",
-        "description": "Read the store publisher (/store-publisher/, args/store_publisher.yaml): with no package, the SYNTHETIC store packages you may see at the MCP marking (CUI) and each one's newest prepared and published icos-store-package/v1 version (content digest, who prepared it, who published it), the others only counted. With package: its newest version's Agent Card (name, version, skills, the content digest it binds), its seven scanner gate results (the publisher's own report), its red-team summary, ceilings, budget and history. export=true returns the newest PUBLISHED version as ICDEV[OS] imports it ({bundle, publication}). Reads only: it never prepares, signs or publishes; an agent never makes the publisher's key sign.",
+        "description": "Read the store publisher (/store-publisher/, args/store_publisher.yaml): with no package, the SYNTHETIC store packages you may see at the MCP marking (CUI) and each one's newest prepared and published icos-store-package/v1 version (content digest, who prepared it, who published it), the others only counted. With package: its newest version's Agent Card (name, version, skills, the content digest it binds), its seven scanner gate results (the publisher's own report), its red-team summary, ceilings, budget and history. Reads only: it never prepares, signs, publishes or exports the bundle (a person takes it out); an agent never makes the publisher's key sign.",
         "input_schema": {"type": "object", "properties": {
-            "package": {"type": "string", "description": "A package id (args/store_publisher.yaml)"},
-            "export": {"type": "boolean", "description": "Return the newest published version of package"}}},
+            "package": {"type": "string", "description": "A package id (args/store_publisher.yaml)"}}},
     },
     "coe_golden_paths": {
         "category": "conformance",

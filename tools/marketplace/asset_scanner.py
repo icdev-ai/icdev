@@ -227,63 +227,82 @@ def _ast_sast_issues(asset_path: Path, py_files) -> dict:
     return findings
 
 
+def _bandit(asset_path: Path) -> tuple[dict | None, set[str]]:
+    """bandit's findings over ``asset_path`` and the files it analysed, run so the analysed code cannot switch it off
+    (icx-ent-04 review M1): ``--ignore-nosec`` (a ``# nosec`` comment is the author's), ``--ini`` an empty
+    ``[bandit]`` file of OUR making (so no ``.bandit`` the sources carry is read), and ``-x`` a path that matches nothing
+    (so bandit's default excludes -- ``.tox``, ``.git``, ``*.egg`` -- hide no file). None when it gave no report."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="icdev-bandit-") as cfg:
+        ini = Path(cfg) / "bandit.ini"
+        ini.write_text("[bandit]\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, "-m", "bandit", "-r", str(asset_path), "-f", "json", "--severity-level", "low", "-q",
+             "--ignore-nosec", "--ini", str(ini), "-x", str(Path(cfg) / "exclude-nothing")],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            stdin=subprocess.DEVNULL,
+            cwd=cfg,
+        )
+    out = json.loads(result.stdout) if result.stdout.strip() else None
+    if not (isinstance(out, dict) and isinstance(out.get("results"), list) and isinstance(out.get("metrics"), dict)):
+        return None, set()
+    analysed = {str(Path(k).resolve()) for k in out["metrics"] if k != "_totals"}
+    if out.get("errors"):
+        analysed -= {str(Path(e.get("filename", "")).resolve()) for e in out["errors"] if isinstance(e, dict)}
+    return out, analysed
+
+
 def sast_findings(asset_path) -> dict:
     """Gate 1's analysis of ``asset_path``, recorded nowhere (icx-ent-04: the store publisher runs it on a package).
 
-    ``{"engine": "bandit"|"ast"|None, "files": n, "status": pass|fail|skipped|unverified, "findings": {...}}``.
-    bandit runs under THIS interpreter (``sys.executable``), so the analysis is the one installed here; when it
-    produces no report it could not run, and the AST checks are used instead -- never an empty pass. A Python file
-    neither engine can parse is ``unverified``: it was not analysed.
+    ``{"engine": "bandit+ast"|"ast"|None, "files": n, "status": pass|fail|skipped|unverified, "findings": {...}}``.
+    bandit runs under THIS interpreter, hardened so the analysed code cannot switch it off (``_bandit``), and the AST
+    checks ALWAYS run as well: the worse result stands. A Python file bandit did not analyse (its report lists every
+    file it read) or that neither engine can parse is ``unverified``, named in ``unanalysed``/``unparsed``: it was not
+    analysed, so it never passes.
     """
     asset_path = Path(asset_path)
     py_files = sorted(asset_path.rglob("*.py"))
     if not py_files:
         return {"engine": None, "files": 0, "status": "skipped", "reason": "No Python files",
                 "findings": {"critical": 0, "high": 0, "medium": 0, "low": 0, "issues": []}}
-    findings = None
-    engine = None
+    findings = _ast_sast_issues(asset_path, py_files)
+    findings["unanalysed"] = []
+    engine = "ast"
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "bandit", "-r", str(asset_path), "-f", "json", "--severity-level", "low", "-q"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            stdin=subprocess.DEVNULL,
-        )
-        bandit_output = json.loads(result.stdout) if result.stdout.strip() else None
-        if isinstance(bandit_output, dict) and isinstance(bandit_output.get("results"), list) \
-                and not bandit_output.get("errors"):
-            engine = "bandit"
-            findings = {"critical": 0, "high": 0, "medium": 0, "low": 0, "issues": [], "unparsed": []}
-            for issue in bandit_output.get("results", []):
-                sev = issue.get("issue_severity", "LOW").lower()
-                if sev == "high":
-                    findings["critical"] += 1
-                elif sev == "medium":
-                    findings["high"] += 1
-                else:
-                    findings["low"] += 1
-                findings["issues"].append(
-                    {
-                        "file": issue.get("filename", ""),
-                        "line": issue.get("line_number", 0),
-                        "severity": sev,
-                        "text": issue.get("issue_text", ""),
-                        "test_id": issue.get("test_id", ""),
-                    }
-                )
+        bandit_output, analysed = _bandit(asset_path)
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError, json.JSONDecodeError):
-        findings = None
-    if findings is None:
-        # bandit is not available or reported nothing it could stand behind: use the AST checks
-        engine = "ast"
-        findings = _ast_sast_issues(asset_path, py_files)
-    if findings.get("unparsed"):
-        status = "unverified"
-    elif findings["critical"] == 0 and findings["high"] == 0:
-        status = "pass"
-    else:
+        bandit_output, analysed = None, set()
+    if bandit_output is not None:
+        engine = "bandit+ast"
+        findings["unanalysed"] = sorted(str(f.relative_to(asset_path)) for f in py_files
+                                        if str(f.resolve()) not in analysed)
+        for issue in bandit_output.get("results", []):
+            sev = str(issue.get("issue_severity", "LOW")).lower()
+            if sev == "high":
+                findings["critical"] += 1
+            elif sev == "medium":
+                findings["high"] += 1
+            else:
+                findings["low"] += 1
+            findings["issues"].append(
+                {
+                    "file": issue.get("filename", ""),
+                    "line": issue.get("line_number", 0),
+                    "severity": sev,
+                    "text": issue.get("issue_text", ""),
+                    "test_id": issue.get("test_id", ""),
+                }
+            )
+    if findings["critical"] or findings["high"]:
         status = "fail"
+    elif findings.get("unparsed") or findings["unanalysed"]:
+        status = "unverified"
+    else:
+        status = "pass"
     return {"engine": engine, "files": len(py_files), "status": status, "findings": findings}
 
 
@@ -318,7 +337,7 @@ def scan_sast(asset_path, asset_id, version_id, db_path=None):
         medium=findings["medium"],
         low=findings["low"],
         details={"issues": findings["issues"][:20], "engine": out["engine"],
-                 "unparsed": findings.get("unparsed", [])[:20]},
+                 "unparsed": findings.get("unparsed", [])[:20], "unanalysed": findings.get("unanalysed", [])[:20]},
         db_path=db_path,
     )
     return scan_id, {"status": status, "findings": findings}

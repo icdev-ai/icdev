@@ -125,9 +125,10 @@ def sp_api_publish(pid: str):
 def sp_api_export(pid: str):
     """The package's newest PUBLISHED version: {"bundle": icos-store-package/v1, "publication": ...}."""
     from tools.store_publisher import service
+    from tools.workflow_hitl.declared import current_actor
 
     try:
-        return jsonify(service.export(pid, service.current_reader()))
+        return jsonify(service.export(pid, service.current_reader(), actor=current_actor()))
     except service.Refused as exc:
         return _refused(exc)
 

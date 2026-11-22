@@ -36,45 +36,65 @@ def _sbom(name: str, comps: list[tuple[str, str]]) -> dict:
                             "bom-ref": f"{n}@{v}"} for n, v in comps]}
 
 
-def _put(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.is_symlink():
-        raise ValueError(f"{path}: a symlink is never written through")
-    path.write_text(text, encoding="utf-8")
+def _put(base: Path, rel: str, text: str) -> None:
+    """Write ``base/rel``: every directory on the way created or opened without following a symlink, the file opened
+    O_NOFOLLOW and truncated in the same call -- no check-then-write window (review L8)."""
+    import os
+
+    parts = rel.split("/")
+    fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in parts[:-1]:
+            try:
+                os.mkdir(part, 0o755, dir_fd=fd)
+            except FileExistsError:
+                pass
+            nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        out = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644, dir_fd=fd)
+    finally:
+        os.close(fd)
+    with os.fdopen(out, "w", encoding="utf-8") as fh:
+        fh.write(text)
 
 
 def write_package(base: Path, p: dict, *, now: dt.datetime) -> Path:
     d = base / p["inputs"]
+
+    def put(rel: str, text: str) -> None:
+        _put(base, f"{p['inputs']}/{rel}", text)
+
     comps = {"agent": [("pyyaml", "6.0.2")], "mcp_server": [("pydantic", "2.9.2"), ("pyyaml", "6.0.2")]}.get(
         p["kind"], [("pyyaml", "6.0.2")])
-    _put(d / "sbom.cdx.json", json.dumps(_sbom(p["id"], comps), indent=2))
-    _put(d / "dependency-scan.json", json.dumps({
+    put("sbom.cdx.json", json.dumps(_sbom(p["id"], comps), indent=2))
+    put("dependency-scan.json", json.dumps({
         "produced_at": _iso(now - dt.timedelta(days=1)), "tool": "osv-scanner (SYNTHETIC findings)",
         "findings": [{"id": "SYN-ENT04-0001", "package": comps[0][0], "severity": "low"}]}, indent=2))
-    _put(d / "redteam.json", json.dumps({
+    put("redteam.json", json.dumps({
         "produced_at": _iso(now - dt.timedelta(days=2)), "tool": "icdev red team (SYNTHETIC results)",
         "results": dict.fromkeys(REDTEAM_REQUIRED[p["kind"]], "passed")}, indent=2))
     if p["kind"] == "agent":
-        _put(d / "prompt.md", "SYNTHETIC agent (icx-ent-04): answer questions about the ledger system's twin coverage "
+        put("prompt.md", "SYNTHETIC agent (icx-ent-04): answer questions about the ledger system's twin coverage "
                               "from the tools you are given; propose nothing and change nothing.\n")
     elif p["kind"] == "skill":
-        _put(d / "instructions.md", "SYNTHETIC skill (icx-ent-04): summarise a twin coverage report in three lines.\n")
+        put("instructions.md", "SYNTHETIC skill (icx-ent-04): summarise a twin coverage report in three lines.\n")
     elif p["kind"] == "crew":
-        _put(d / "crew.json", json.dumps({"schema": "icos-crew/v1", "id": p["id"], "title": "SYNTHETIC crew",
+        put("crew.json", json.dumps({"schema": "icos-crew/v1", "id": p["id"], "title": "SYNTHETIC crew",
                                           "use_case": "store-synthetic", "roles": []}, indent=2))
     elif p["kind"] == "mcp_server":
-        _put(d / "tools.json", json.dumps([{"name": t, "description": f"SYNTHETIC: read the coverage of a labelled "
+        put("tools.json", json.dumps([{"name": t, "description": f"SYNTHETIC: read the coverage of a labelled "
                                                                        f"fixture system ({t})",
                                             "inputSchema": {"type": "object", "properties": {
                                                 "system": {"type": "string"}}}} for t in p["tools"]], indent=2))
         for s in p.get("sources") or []:
-            _put(d / "src" / s, SERVER)
+            put(f"src/{s}", SERVER)
     elif p["kind"] == "plugin":
-        _put(d / "manifest.json", json.dumps({"name": p["id"], "version": "SYNTHETIC", "entry": "plugin:main",
+        put("manifest.json", json.dumps({"name": p["id"], "version": "SYNTHETIC", "entry": "plugin:main",
                                               "label": "SYNTHETIC plugin (icx-ent-04)"}, indent=2))
-        _put(d / "config.json", json.dumps({"release_ceiling": p["egress_ceiling"], "label": "SYNTHETIC"}, indent=2))
+        put("config.json", json.dumps({"release_ceiling": p["egress_ceiling"], "label": "SYNTHETIC"}, indent=2))
         for s in p.get("sources") or []:
-            _put(d / "src" / s, SERVER)
+            put(f"src/{s}", SERVER)
     return d
 
 

@@ -78,14 +78,24 @@ def schema_errors(doc: dict) -> list[str]:
 # ── the inputs ───────────────────────────────────────────────────────────────
 
 
-def _json(cfg: dict, p: dict, rel: str):
+def _raw(cfg: dict, p: dict, rel: str) -> bytes:
     try:
-        return json.loads(cfgmod.read_input(cfg, p, rel).decode("utf-8"),
-                          parse_constant=lambda c: (_ for _ in ()).throw(ValueError(f"not JSON: {c}")))
+        return cfgmod.read_input(cfg, p, rel)
     except cfgmod.ConfigError as exc:
         raise PackageRefused("input", str(exc)) from exc
+
+
+def _parse(raw: bytes, p: dict, rel: str):
+    """The JSON of bytes already read (NaN and infinity refused): what is hashed is what is parsed."""
+    try:
+        return json.loads(raw.decode("utf-8"),
+                          parse_constant=lambda c: (_ for _ in ()).throw(ValueError(f"not JSON: {c}")))
     except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise PackageRefused("input", f"{p['inputs']}/{rel}: not a JSON document") from exc
+
+
+def _json(cfg: dict, p: dict, rel: str):
+    return _parse(_raw(cfg, p, rel), p, rel)
 
 
 def _text(cfg: dict, p: dict, rel: str) -> str:
@@ -161,8 +171,8 @@ def dependency_report(cfg: dict, p: dict, sbom: dict, now: dt.datetime) -> dict:
 
 def redteam_report(cfg: dict, p: dict, now: dt.datetime) -> dict:
     """The publisher's red-team results (ATTESTED; ICDEV[OS] never re-runs them). Every id the kind needs is answered."""
-    raw = cfgmod.read_input(cfg, p, "redteam.json")
-    rt = _json(cfg, p, "redteam.json")
+    raw = _raw(cfg, p, "redteam.json")          # read ONCE: the bytes hashed are the bytes parsed (review L1)
+    rt = _parse(raw, p, "redteam.json")
     if not isinstance(rt, dict) or set(rt) - {"produced_at", "tool", "results"} \
             or not (isinstance(rt.get("tool"), str) and 0 < len(rt["tool"].strip()) <= 200) \
             or not isinstance(rt.get("results"), dict) or len(rt["results"]) > 64 \

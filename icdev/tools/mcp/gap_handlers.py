@@ -5251,8 +5251,6 @@ def handle_store_publisher_status(args: dict) -> dict:
         try:
             if not pid:
                 return {"classification": CORTEX_CLASSIFICATION, "packages": service.packages_view(reader)}
-            if args.get("export"):
-                return {"classification": CORTEX_CLASSIFICATION, "export": service.export(pid, reader)}
             return {"classification": CORTEX_CLASSIFICATION, "package": service.package_view(pid, reader)}
         except service.Refused as exc:
             return exc.to_dict()

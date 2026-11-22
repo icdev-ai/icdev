@@ -3,14 +3,14 @@
 //
 // Three fresh, card-named people (tests/e2e/fixtures/ent04_seed.py, synthetic), each in its own browser context
 // signed in by its own dashboard API key: ent04-preparer and ent04-publisher of the synthetic packages' organisation,
-// and ent04-outsider of another. The e2e dashboard signs Agent Cards with a THROWAWAY publisher key the seed wrote
-// under tests/e2e/fixtures (ICDEV_STORE_PUBLISHER_E2E_KEY; the shipped configuration names no key). The seed prepared
-// the MCP server package with it. The journey, every write pressed on the page:
+// and ent04-outsider of another. The shipped configuration names no publisher key, so the dashboard signs nothing; the
+// seed prepared both packages in its own process with a THROWAWAY in-memory key. The journey, every write pressed on
+// the page:
 //
-//   1. the preparer opens the agent package and presses Prepare and sign: the seven scanner gates run on it and the
-//      publisher's key signs its Agent Card;
-//   2. the prepared version shows: its card's skills (its declared tools) and the content it binds, the self-check
-//      re-run on this read, each gate's result (SAST not applicable to an agent), waiting for a person;
+//   1. the preparer opens the agent package and presses Prepare and sign: refused (no_key), as the shipped config
+//      says -- a package is never left unsigned;
+//   2. the seeded prepared version shows: its card's skills (its declared tools) and the content it binds, the
+//      self-check re-run on this read, each gate's result (SAST not applicable to an agent), waiting for a person;
 //   3. the preparer is refused publishing their own package (separation of duties);
 //   4. the publisher, another person of the org, publishes it with a reason;
 //   5. the published version shows; the export route returns {bundle, publication} as ICDEV[OS] imports it;
@@ -36,7 +36,7 @@ const MCP = '/store-publisher/?package=syn-ent04-coverage-mcp';
 type Person = { id: string; name: string; role: string; key: string; org: string };
 type Prepared = { digest: string; event_id: string };
 type Seeded = { run: string; preparer: Person; publisher: Person; outsider: Person;
-  prepared: { 'syn-ent04-coverage-mcp': Prepared } };
+  prepared: { 'syn-ent04-ledger-agent': Prepared; 'syn-ent04-coverage-mcp': Prepared } };
 
 function seed(): Seeded {
   // The seeder writes to the database the RUN asked for, never an ambient one.
@@ -80,19 +80,20 @@ test.describe('Store publisher: a signed agent-store package published for ICDEV
     const page = preparer.page;
     await expect(page.locator('#sp-help')).toContainText('A2A Agent Card signed with JWS');
     await expect(page.locator('#sp-help')).toContainText('seven marketplace scanner gates');
-    await expect(page.locator('#sp-signing')).toContainText('configured');
+    await expect(page.locator('#sp-signing')).toContainText('none configured');
     await expect(page.locator('#sp-package')).toHaveAttribute('data-package', 'syn-ent04-ledger-agent');
     const version = `1.0.${parseInt(s.run.slice(0, 4), 16)}`;
     await page.fill('#sp-version', version);
-    await page.fill('#sp-note', 'ent04 e2e: prepare and sign the synthetic agent');
+    await page.fill('#sp-note', 'ent04 e2e: prepare and sign the synthetic agent (no key configured: refused)');
     await sends(page, 'POST', /^\/store-publisher\/api\/packages\/syn-ent04-ledger-agent\/prepare$/, () => page.click('#sp-prepare'));
+    await expect(page.locator('#sp-prepare-msg')).toContainText('Not prepared (no_key)', { timeout: T });
 
-    // 2. the prepared version shows, waiting for a person
+    // 2. the seeded prepared version shows, waiting for a person
     await expect(page.locator('#sp-prepared')).toContainText(`prepared by ${s.preparer.id}`, { timeout: T });
     await expect(page.locator('#sp-prepared')).toContainText(`Version ${version}`);
     await expect(page.locator('#sp-prepared')).toContainText('waiting for a person');
     const digest = (await page.locator('#sp-digest').getAttribute('data-digest')) || '';
-    expect(digest).toMatch(/^[0-9a-f]{64}$/);
+    expect(digest).toBe(s.prepared['syn-ent04-ledger-agent'].digest);
     await expect(page.locator('#sp-self-check')).toContainText('verified now');
     await expect(page.locator('#sp-card')).toContainText('skills: twin_coverage, sda_list');
     await expect(page.locator('tr[data-gate="sast_scan"]')).toContainText('not applicable');

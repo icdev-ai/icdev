@@ -52,10 +52,6 @@ from tools.store_publisher.constants import (
 Refused = ledger.Refused
 _ORDER = {m: i for i, m in enumerate(CLEARANCES)}
 NOT_FOUND = "no such package"
-#: The e2e server's THROWAWAY publisher key (icx-ent-04): honoured ONLY while the reviewed config names no key, and ONLY
-#: for a regular file under the repository's ``tests/e2e/fixtures/`` (a deployment installs no tests/, so it cannot swap
-#: a key in through it, and it never replaces a key a site configured).
-E2E_KEY_ENV = "ICDEV_STORE_PUBLISHER_E2E_KEY"
 
 
 # ── readers ──────────────────────────────────────────────────────────────────
@@ -76,18 +72,18 @@ def current_reader() -> dict | None:
     get = (u.get if isinstance(u, dict) else lambda k, d=None: getattr(u, k, d))
     if not get("id"):
         return None
-    clearance, org = get("clearance_level"), get("tenant_id")
-    if str(get("role") or "") != "service":
-        row = None
-        with contextlib.suppress(Exception):     # unreadable: what the request carried (fail closed below)
-            from tools.dashboard.auth import get_user_by_id
+    if str(get("role") or "") == "service":
+        return None              # a service key is no reader of a tenant's packages (review L7); agents read via MCP
+    row = None
+    with contextlib.suppress(Exception):         # unreadable: no reader at all (fail closed, review L7)
+        from tools.dashboard.auth import get_user_by_id
 
-            row = get_user_by_id(str(get("id")))
-        if row is not None:
-            row = dict(row)
-            clearance, org = row.get("clearance_level"), row.get("tenant_id")
-    return {"id": str(get("id")), "role": str(get("role") or ""), "clearance": str(clearance or ""),
-            "org": str(org or "")}
+        row = get_user_by_id(str(get("id")))
+    if row is None:
+        return None
+    row = dict(row)
+    return {"id": str(get("id")), "role": str(get("role") or ""), "clearance": str(row.get("clearance_level") or ""),
+            "org": str(row.get("tenant_id") or "")}
 
 
 def mcp_reader(agent: str) -> dict:
@@ -152,7 +148,8 @@ def replay(ordered: list[dict]) -> dict:
             prepared["decided"] = h
             if r["event"] == "published":
                 published = {**h, "prepared_event": prepared["event_id"], "prepared_by": prepared["actor"],
-                             "record": prepared["record"]}
+                             "record": prepared["record"],
+                             "key_currency": (b.get("detail") or {}).get("key_currency") or "unverified"}
     return {"prepared": prepared, "published": published, "history": history}
 
 
@@ -175,7 +172,7 @@ def _package_of(ordered: list[dict], event_id: str) -> dict:
     return pkg
 
 
-def step_ok(pub: dict) -> bool:
+def step_ok(pub: dict, org: str | None = None) -> bool:
     """The publication's declared step is recorded, decided affirmatively, by the person the ledger names, over this
     package's digest and its prepared event: an effect checks what was signed, never only the ledger's word."""
     from tools.workflow_hitl import declared
@@ -189,32 +186,16 @@ def step_ok(pub: dict) -> bool:
     return bool(st) and st["status"] in ("decided", "spent") and st["affirmative"] is True \
         and str(st["decided_by"]) == str(pub["actor"]) and decided.get("template_id") == TEMPLATE \
         and signed.get("content_digest") == pub["content_digest"] \
-        and signed.get("prepared_event") == pub.get("prepared_event")
+        and signed.get("prepared_event") == pub.get("prepared_event") \
+        and (org is None or str(signed.get("org") or "") == str(org))
 
 
 # ── the key ──────────────────────────────────────────────────────────────────
 
 
-def _e2e_signer(cfg: dict):
-    import os
-    from pathlib import Path
-
-    raw = os.environ.get(E2E_KEY_ENV, "").strip()
-    if not raw or (cfg.get("signing") or {}).get("key"):
-        return None
-    fixtures = (cfgmod.BASE_DIR / "tests" / "e2e" / "fixtures").resolve()
-    p = Path(raw)
-    if p.is_symlink() or not p.resolve().is_relative_to(fixtures) or not p.is_file():
-        return None
-    return cmod.PemSigner(p.read_bytes(), source="file:(e2e throwaway key under tests/e2e/fixtures)")
-
-
 def signer_for(cfg: dict):
     """The publisher's card key from the reviewed config (no key configured: refused, ``no_key``)."""
     try:
-        e2e = _e2e_signer(cfg)
-        if e2e is not None:
-            return e2e
         return cmod.open_signer((cfg.get("signing") or {}).get("key"))
     except cmod.CardError as exc:
         raise Refused(409 if exc.code == "no_key" else 503, exc.code, str(exc)) from exc
@@ -228,12 +209,23 @@ def _packager(actor: dict, cfg: dict) -> None:
                                    f"{actor.get('role') or 'none'}")
 
 
-def _key_current(cfg: dict, record: dict, signer=None) -> None:
-    """The package was signed by the publisher's CURRENT key: a key rotated or withdrawn since stops it leaving."""
-    current = signer or signer_for(cfg)
-    if cmod.kid(current.spki()) != record.get("kid"):
+def _key_current(cfg: dict, record: dict, signer=None) -> str:
+    """The package was signed by the publisher's CURRENT key: a key rotated or withdrawn since stops it leaving.
+    Publishing signs nothing, so this compares PUBLIC identity: ``signing.kid`` (the key ICDEV[OS] pins) when set,
+    else the configured key's id. With neither configured there is nothing here to compare against: the result is
+    ``unverified`` (recorded on the publication and shown by the twin) and ICDEV[OS] verifies the card against the key
+    it pins -- never a pass."""
+    sg = cfg.get("signing") or {}
+    if sg.get("kid"):
+        current = str(sg["kid"])
+    elif signer is not None or sg.get("key"):
+        current = cmod.kid((signer or signer_for(cfg)).spki())
+    else:
+        return "unverified"
+    if current != record.get("kid"):
         raise Refused(409, "key_mismatch", "the package was signed by a key that is not the publisher's current key: "
                                            "prepare it again")
+    return "verified"
 
 
 # ── prepare ──────────────────────────────────────────────────────────────────
@@ -296,6 +288,7 @@ def publish(pid: str, *, decision: str, reason: str, read_digest: str, actor: di
         if str(read_digest or "").strip() != prep["content_digest"]:
             raise Refused(409, "digest", "the prepared package is not the one you read: reload it")
         dec = str(decision or "").strip().lower()
+        key_currency = None
         if dec == "publish":
             body = _package_of(ordered, prep["event_id"])
             rec = prep.get("record") or {}
@@ -306,11 +299,12 @@ def publish(pid: str, *, decision: str, reason: str, read_digest: str, actor: di
             if spki is None or cmod.kid(spki) != rec.get("kid") or pkgmod.self_check(body, spki) \
                     or pkgmod.schema_errors(body):
                 raise Refused(409, "signature", "the recorded package no longer verifies under its own key")
-            _key_current(cfg, rec, signer)
+            key_currency = _key_current(cfg, rec, signer)
         try:
             taken = declared.take_step(TEMPLATE, surface=SURFACE, decision=dec, subject=f"store_package:{p['id']}",
                                        reason=str(reason or ""), actor=actor, separated_from=builders(st),
-                                       payload={"package": p["id"], "version": (prep.get("record") or {}).get("version"),
+                                       payload={"package": p["id"], "org": p["org"],
+                                                "version": (prep.get("record") or {}).get("version"),
                                                 "content_digest": prep["content_digest"],
                                                 "prepared_event": prep["event_id"]})
         except declared.StepRefused as exc:
@@ -322,7 +316,8 @@ def publish(pid: str, *, decision: str, reason: str, read_digest: str, actor: di
                                 actor_role=str(actor.get("role") or ""), step_id=taken["step_id"],
                                 reason=str(reason or "")[:2000], content_digest=prep["content_digest"],
                                 prev_hash=ledger.head(ordered),
-                                body={"detail": {"prepared_event": prep["event_id"], "decision": dec}})
+                                body={"detail": {"prepared_event": prep["event_id"], "decision": dec,
+                                                 "key_currency": key_currency}})
         except Refused as exc:
             # The declared step is recorded but the ledger was not written: nothing is published (export needs both);
             # the step is named so it is reconciled, and the package may be decided again.
@@ -331,6 +326,10 @@ def publish(pid: str, *, decision: str, reason: str, read_digest: str, actor: di
             get_logger("icdev.store_publisher").warning(
                 "declared step %s recorded but the sp_events row was not written (%s): nothing published",
                 taken["step_id"], exc.code)
+            # review L6: a decided step whose effect never happened is voided, so no decision surface shows it as
+            # published (step_state -> withdrawn; step_ok -> False)
+            declared.void_decided(taken["step_id"], f"the store publisher ledger was not written ({exc.code}): "
+                                                    "nothing was published")
             raise Refused(exc.status, "not_recorded", f"your decision's step {taken['step_id']} was recorded but the "
                                                       "ledger could not be written, so nothing was published: decide "
                                                       "it again") from exc
@@ -362,11 +361,23 @@ def _decided_at(created_at: str) -> str:
     return t.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def export(pid: str, reader: dict | None, *, cfg: dict | None = None, conn=None) -> dict:
-    """The newest PUBLISHED version of the package, as ICDEV[OS] imports it. Refused unless published, its step
-    recorded."""
+def _exporter(actor: dict | None, cfg: dict) -> dict:
+    """Who may take the full bundle out (review L4): a person in packager_roles or among the publish step's holders."""
+    from tools.workflow_hitl import declared
+
+    actor = _person(actor)
+    holders = declared.manual_stage(declared.load_templates()[TEMPLATE]).get("holders") or []
+    if str(actor.get("role") or "") not in {*(cfg.get("packager_roles") or []), *holders}:
+        raise Refused(403, "role", "exporting a package is held by its packagers and publishers")
+    return actor
+
+
+def export(pid: str, reader: dict | None, *, actor: dict | None, cfg: dict | None = None, conn=None) -> dict:
+    """The newest PUBLISHED version of the package, as ICDEV[OS] imports it, for a person who may take it out.
+    Refused unless published, its step recorded."""
     cfg = cfg or cfgmod.load()
     p = _package(pid, reader, cfg)
+    _exporter(actor, cfg)
     own = conn is None
     conn = conn or ledger.connection()
     try:
@@ -379,7 +390,7 @@ def export(pid: str, reader: dict | None, *, cfg: dict | None = None, conn=None)
     pub = st["published"]
     if pub is None:
         raise Refused(404, "unpublished", "no version of this package has been published: a draft never leaves")
-    if not step_ok(pub):
+    if not step_ok(pub, p["org"]):
         raise Refused(409, "step_missing", "the publication's declared step is not recorded that way, by that person: "
                                            "it publishes nothing")
     body = _package_of(ordered, pub["prepared_event"])
@@ -422,7 +433,7 @@ def packages_view(reader: dict | None, *, cfg: dict | None = None) -> dict:
         out.append(_summary(p, replay(ch.get(s, [])), [x for x in ch["_problems"] if x["stream"] == s]))
     sg = cfg.get("signing") or {}
     return {"packages": out, "held_back": held, "template": TEMPLATE, "publisher": dict(cfg["publisher"]),
-            "signing": {"configured": bool(sg.get("key")) or _e2e_signer(cfg) is not None, "kid": sg.get("kid")}}
+            "signing": {"configured": bool(sg.get("key")), "kid": sg.get("kid")}}
 
 
 def package_view(pid: str, reader: dict | None, *, cfg: dict | None = None) -> dict:
@@ -521,7 +532,8 @@ def twin_evidence(reader: dict | None = None, *, cfg: dict | None = None, check_
             row["published"] = {"event_id": pub["event_id"], "created_at": pub["created_at"],
                                 "self_published": str(pub["actor"]).strip().casefold() ==
                                 str(pub["prepared_by"]).strip().casefold(),
-                                "step_ok": step_ok(pub) if check_steps else True,
+                                "step_ok": step_ok(pub, p["org"]) if check_steps else True,
+                                "key_currency": pub.get("key_currency"),
                                 "gates_not_passed": sorted(k for k, v in (rec.get("gates") or {}).items()
                                                            if (v or {}).get("status") not in ("pass", "not_applicable")),
                                 "redteam_not_passed": sorted({*((rec.get("redteam") or {}).get("failed") or []),
@@ -572,6 +584,12 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
             findings.append(finding("store_publisher.step_missing", "high",
                                     f"{r['package']}: the publication's declared step is not recorded: it exports "
                                     "nothing", thread_id=th, recommendation="A person decides the package again."))
+        if pub.get("key_currency") != "verified":
+            findings.append(finding("store_publisher.key_unverified", "low",
+                                    f"{r['package']}: published with no publisher key configured here to confirm the "
+                                    "card's key is current", thread_id=th,
+                                    recommendation="Set signing.kid to the key ICDEV[OS] pins; ICDEV[OS] verifies the "
+                                                   "card against its own pin either way."))
         if pub.get("gates_not_passed"):
             findings.append(finding("store_publisher.gate_not_passed", "medium",
                                     f"{r['package']}: published with scanner gate(s) not passed: "

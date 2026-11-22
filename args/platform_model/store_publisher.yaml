@@ -23,6 +23,8 @@ elements:
       - tools/store_publisher/card.py::sign_card
       - tools/store_publisher/card.py::verify_card
       - tools/store_publisher/card.py::jcs
+      - tools/common/jcs.py
+      - tools/modernization/icos_decisions.py::jcs
       - args/store_publisher.yaml
 
   - id: sp.package
@@ -61,6 +63,7 @@ elements:
       - tools/store_publisher/ledger.py
       - tools/common/stream_chain.py
       - args/workflow_hitl_templates/store-publish.yaml
+      - tools/workflow_hitl/declared.py::void_decided
       - context/icos/store-publication.schema.json
 
   - id: sp.retired
@@ -74,6 +77,10 @@ elements:
       - tools/marketplace/review_queue.py
       - tools/mcp/marketplace_server.py::handle_publish_asset
       - tools/mcp/marketplace_server.py::handle_review_asset
+      - tools/mcp/marketplace_server.py::handle_openclaw_promote
+      - tools/marketplace/catalog_manager.py::update_status
+      - tools/marketplace/catalog_manager.py::promote_to_central
+      - tools/marketplace/federation_sync.py::promote_approved
 
   - id: sp.twin
     type: sysml_element
@@ -121,7 +128,9 @@ requirements:
       - tests/test_icx_ent_04_store_publisher.py::test_no_key_is_refused_and_only_a_keyring_p384_key_signs
       - tests/test_icx_ent_04_store_publisher.py::test_the_card_is_jws_es384_over_jcs_and_verifies_only_under_a_pinned_key
       - tests/test_icx_ent_04_store_publisher.py::test_a_package_is_published_only_under_the_publisher_s_current_key
-      - tests/test_icx_ent_04_store_publisher.py::test_the_e2e_key_is_honoured_only_under_tests_e2e_fixtures_and_only_with_no_configured_key
+      - tests/test_icx_ent_04_store_publisher.py::test_publishing_checks_the_key_by_public_identity_and_says_when_it_cannot
+      - tests/test_icx_ent_04_store_publisher.py::test_no_environment_variable_or_key_file_gives_the_product_a_key
+      - tests/test_icx_ent_04_store_publisher.py::test_m4_one_rfc_8785_copy_serves_the_card_and_the_portfolio_decisions
 
   - id: PM-SP-02
     title: A package meets ICDEV[OS]'s pinned contract and its card binds its content digest and declared tools
@@ -144,6 +153,8 @@ requirements:
       - tests/test_icx_ent_04_store_publisher.py::test_inputs_are_read_only_under_the_root_never_through_a_symlink_or_a_hard_link
       - tests/test_icx_ent_04_store_publisher.py::test_the_shipped_configuration_loads_with_no_key_and_fails_closed
       - tests/test_icx_ent_04_store_publisher.py::test_the_red_team_report_answers_every_id_and_no_time_is_in_the_future
+      - tests/test_icx_ent_04_store_publisher.py::test_l1_the_red_team_report_is_read_once
+      - tests/test_icx_ent_04_store_publisher.py::test_l8_a_symlinked_root_or_directory_is_never_written_or_read_through
 
   - id: PM-SP-03
     title: ICDEV's seven scanner gates run on the package; a gate that cannot run is unverified, never pass
@@ -160,6 +171,9 @@ requirements:
     tests:
       - tests/test_icx_ent_04_store_publisher.py::test_the_seven_gates_run_on_the_package_and_a_gate_that_cannot_run_is_unverified
       - tests/test_icx_ent_04_store_publisher.py::test_the_scanner_sast_gate_never_passes_when_bandit_cannot_run
+      - tests/test_icx_ent_04_store_publisher.py::test_m1_the_analysed_code_cannot_switch_the_sast_gate_off
+      - tests/test_icx_ent_04_store_publisher.py::test_m1_a_python_file_bandit_did_not_analyse_is_unverified_and_named
+      - tests/test_icx_ent_04_store_publisher.py::test_m2_a_source_that_is_not_python_is_never_analysed_so_never_passes
 
   - id: PM-SP-04
     title: A person prepares, another person of the package's org publishes, and only a published package leaves
@@ -184,6 +198,11 @@ requirements:
       - tests/test_icx_ent_04_store_publisher.py::test_the_declared_publish_template_is_icos_s_step_and_separates_the_preparer
       - tests/test_icx_ent_04_ambient.py::test_packages_prepared_and_published_on_the_platform_database
       - tests/test_marketplace_publish.py::test_the_retired_marketplace_publish_and_review_refuse_and_point_to_the_packager
+      - tests/test_icx_ent_04_store_publisher.py::test_m3_the_retired_pipeline_s_effect_is_not_reachable_another_way
+      - tests/test_icx_ent_04_store_publisher.py::test_l4_only_a_person_who_packages_or_publishes_takes_the_bundle_out
+      - tests/test_icx_ent_04_store_publisher.py::test_l5_the_signed_step_names_the_package_s_org
+      - tests/test_icx_ent_04_store_publisher.py::test_l6_a_lost_ledger_write_voids_the_decided_step
+      - tests/test_icx_ent_04_store_publisher.py::test_l7_no_fresh_person_row_is_no_reader
 
   - id: PM-SP-05
     title: The console page, the twin with threads, and MCP read

@@ -17,11 +17,11 @@ owner's) step, and it is never an operator or release key. There is no MAC and n
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import json
-import math
 import re
+
+from tools.common import jcs as _jcs
 
 ALG = "ES384"
 STRUCT_FIELDS = frozenset({"params", "metadata"})
@@ -36,15 +36,11 @@ class CardError(ValueError):
         self.code = code
 
 
-# ── base64url, the key's identity ────────────────────────────────────────────
+# ── base64url (tools/common/jcs.py), the key's identity ─────────────────────
 
 
-def b64u(b: bytes) -> str:
-    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
-
-
-def unb64u(s: str) -> bytes:
-    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+b64u = _jcs.b64u
+unb64u = _jcs.unb64u
 
 
 def kid(spki_der: bytes) -> str:
@@ -169,64 +165,12 @@ def open_signer(spec, *, keyring_backend=None) -> PemSigner:
     return PemSigner(_keyring_pem(m.group(1), m.group(2), keyring_backend), source=f"keyring:{m.group(1)}/{m.group(2)}")
 
 
-# ── RFC 8785 (JCS) and the card's payload ────────────────────────────────────
-
-
-def _num(x) -> str:
-    if isinstance(x, bool):
-        raise CardError("bool is not a number")
-    if isinstance(x, int):
-        if abs(x) > 2 ** 53:
-            raise CardError("integer outside the IEEE-754 safe range")
-        return str(x)
-    if not math.isfinite(x):
-        raise CardError("non-finite number")
-    if x == 0:
-        return "0"
-    sign = "-" if x < 0 else ""
-    mant, _, exp = repr(abs(x)).partition("e")
-    digits, _, frac = mant.partition(".")
-    e = int(exp or 0) + len(digits)
-    s = (digits + frac).lstrip("0")
-    e -= len(digits + frac) - len(s)
-    s = s.rstrip("0") or "0"
-    k, n = len(s), e
-    if k <= n <= 21:
-        out = s + "0" * (n - k)
-    elif 0 < n <= 21:
-        out = s[:n] + "." + s[n:]
-    elif -6 < n <= 0:
-        out = "0." + "0" * (-n) + s
-    else:
-        out = (s[0] + ("." + s[1:] if k > 1 else "")) + f"e{'+' if n - 1 >= 0 else '-'}{abs(n - 1)}"
-    return sign + out
-
-
-_ESC = {'"': '\\"', "\\": "\\\\", "\b": "\\b", "\f": "\\f", "\n": "\\n", "\r": "\\r", "\t": "\\t"}
-
-
-def _str(s: str) -> str:
-    return '"' + "".join(_ESC.get(ch) or (f"\\u{ord(ch):04x}" if ord(ch) < 0x20 else ch) for ch in s) + '"'
+# ── RFC 8785 (JCS, the one shared copy in tools/common/jcs.py) and the card's payload ──
 
 
 def jcs(v) -> str:
     """RFC 8785: keys by UTF-16 code units, ECMAScript number and string forms, no whitespace."""
-    if v is None:
-        return "null"
-    if v is True:
-        return "true"
-    if v is False:
-        return "false"
-    if isinstance(v, (int, float)):
-        return _num(v)
-    if isinstance(v, str):
-        return _str(v)
-    if isinstance(v, (list, tuple)):
-        return "[" + ",".join(jcs(x) for x in v) + "]"
-    if isinstance(v, dict):
-        items = sorted(v.items(), key=lambda kv: kv[0].encode("utf-16-be"))
-        return "{" + ",".join(_str(k) + ":" + jcs(x) for k, x in items) + "}"
-    raise CardError(f"not JSON: {type(v).__name__}")
+    return _jcs.jcs(v, CardError)
 
 
 def _prune(v, *, verbatim: bool = False):

@@ -41,6 +41,18 @@ UNCLEARED = {"id": "u-ent04-public", "role": "isso", "clearance_level": "PUBLIC"
 AGENT = {"id": "agent:ent04-helper", "role": "service"}
 
 
+@pytest.fixture(autouse=True)
+def people(monkeypatch):
+    """The labelled test people as the dashboard's own user rows: current_reader reads a person's org and clearance
+    FRESH from that row and denies when there is none (review L7)."""
+    from tools.dashboard import auth
+
+    rows = {u["id"]: dict(u) for u in (PREPARER, PUBLISHER, OUTSIDER, UNCLEARED)}
+    real = auth.get_user_by_id
+    monkeypatch.setattr(auth, "get_user_by_id", lambda uid, tenant_id=None: rows.get(uid) or real(uid, tenant_id))
+    return rows
+
+
 def reader(u: dict) -> dict:
     return {"id": u["id"], "role": u["role"], "clearance": u["clearance_level"], "org": u["tenant_id"]}
 
@@ -292,7 +304,7 @@ def test_the_seven_gates_run_on_the_package_and_a_gate_that_cannot_run_is_unveri
     assert agent["sast_scan"] == "not_applicable", "an agent carries no code"
     assert {k for k, v in agent.items() if v != "pass"} == {"sast_scan"}
     mcp = _build(sp, signer, MCP_PKG)
-    assert mcp["package"]["scan"]["sast_scan"] == "pass" and mcp["record"]["gates"]["sast_scan"]["engine"] == "bandit"
+    assert mcp["package"]["scan"]["sast_scan"] == "pass" and mcp["record"]["gates"]["sast_scan"]["engine"] == "bandit+ast"
 
     def boom(_path):
         raise RuntimeError("the analysis could not run")
@@ -435,7 +447,7 @@ def test_a_person_prepares_another_of_the_org_publishes_and_only_then_it_leaves(
     p = _prepare(sp, signer)
     assert p["prepared_by"] == PREPARER["id"] and p["template"] == "icos-store-publish"
     with pytest.raises(service.Refused) as e:
-        service.export(AGENT_PKG, reader(PUBLISHER))
+        service.export(AGENT_PKG, reader(PUBLISHER), actor=actor(PUBLISHER))
     assert e.value.code == "unpublished", "a draft never leaves"
     with pytest.raises(service.Refused) as e:
         _publish(sp, p, who=PREPARER)
@@ -451,7 +463,7 @@ def test_a_person_prepares_another_of_the_org_publishes_and_only_then_it_leaves(
     with pytest.raises(service.Refused) as e:
         _publish(sp, p)
     assert e.value.code == "already_decided"
-    ex = service.export(AGENT_PKG, reader(PUBLISHER))
+    ex = service.export(AGENT_PKG, reader(PUBLISHER), actor=actor(PUBLISHER))
     assert set(ex) == {"bundle", "publication"}, "the shape ICDEV[OS]'s import reads: the publication beside it"
     pub, body = ex["publication"], ex["bundle"]
     assert pub["content_digest"] == p["digest"] == body["content_digest"] == package.content_digest(body)
@@ -463,10 +475,10 @@ def test_a_person_prepares_another_of_the_org_publishes_and_only_then_it_leaves(
     assert package.schema_errors(body) == []
     # a new version is a new package and a new step
     p2 = _prepare(sp, signer, version="1.0.1")
-    assert service.export(AGENT_PKG, reader(PUBLISHER))["bundle"]["version"] == "1.0.0"
+    assert service.export(AGENT_PKG, reader(PUBLISHER), actor=actor(PUBLISHER))["bundle"]["version"] == "1.0.0"
     out = _publish(sp, p2, decision="refuse", reason="not this one (test)")
     assert out["event"] == "refused"
-    assert service.export(AGENT_PKG, reader(PUBLISHER))["bundle"]["version"] == "1.0.0", "a refusal leaves nothing"
+    assert service.export(AGENT_PKG, reader(PUBLISHER), actor=actor(PUBLISHER))["bundle"]["version"] == "1.0.0", "a refusal leaves nothing"
 
 
 def test_an_agent_never_prepares_or_publishes(sp, signer):
@@ -508,12 +520,12 @@ def test_a_publication_counts_only_with_its_declared_step(sp, signer, monkeypatc
 
     monkeypatch.setattr(declared, "_events", other_digest)
     with pytest.raises(service.Refused) as e:
-        service.export(AGENT_PKG, reader(PUBLISHER))
+        service.export(AGENT_PKG, reader(PUBLISHER), actor=actor(PUBLISHER))
     assert e.value.code == "step_missing", "a step that signed another digest publishes nothing"
     monkeypatch.setattr(declared, "_events", real_events)
     monkeypatch.setattr(declared, "step_state", lambda sid: None)
     with pytest.raises(service.Refused) as e:
-        service.export(AGENT_PKG, reader(PUBLISHER))
+        service.export(AGENT_PKG, reader(PUBLISHER), actor=actor(PUBLISHER))
     assert e.value.code == "step_missing"
 
     def down(sid):
@@ -521,7 +533,7 @@ def test_a_publication_counts_only_with_its_declared_step(sp, signer, monkeypatc
 
     monkeypatch.setattr(declared, "step_state", down)
     with pytest.raises(service.Refused) as e:
-        service.export(AGENT_PKG, reader(PUBLISHER))
+        service.export(AGENT_PKG, reader(PUBLISHER), actor=actor(PUBLISHER))
     assert e.value.code == "step_missing", "an unreadable step store publishes nothing"
 
 
@@ -553,7 +565,7 @@ def test_what_a_reader_may_not_see_is_no_such_package_byte_for_byte(sp, signer):
             service.prepare(pid, actor(who), reader(who), version="1.0.0", cfg=sp["cfg"], signer=signer)
         outs.append((e.value.status, e.value.message, e.value.code))
         with pytest.raises(service.Refused) as e:
-            service.export(pid, reader(who))
+            service.export(pid, reader(who), actor=actor(who))
         outs.append((e.value.status, e.value.message, e.value.code))
     assert len(set(outs)) == 1 and outs[0] == (404, "no such package", "not_found")
     v = service.packages_view(reader(OUTSIDER))
@@ -661,8 +673,12 @@ def test_the_twin_observes_with_threads_and_replays(sp, signer, monkeypatch):
     assert chk[f"store_publisher.{AGENT_PKG}"]["status"] == "verified"
     f = [v for v in env2["violations"] if v["rule_id"] == "store_publisher.redteam_not_passed"]
     assert f and f[0]["thread_id"] == f"store_publisher:{pub['event_id']}"
-    res = governance.resolve_thread(f"store_publisher:{pub['event_id']}")
-    assert res["resolved"] and res["record"]["event"] == "published" and "actor" not in res["record"]
+    # review L3: the generic resolver (any observer) does not resolve a store package's row, and a real event id reads
+    # exactly as one that does not exist; only the console's reader-filtered route resolves it
+    real = governance.resolve_thread(f"store_publisher:{pub['event_id']}")
+    fake = governance.resolve_thread("store_publisher:spe-" + "0" * 16)
+    assert not real["resolved"] and {k: v for k, v in real.items() if k != "thread_id"} == \
+        {k: v for k, v in fake.items() if k != "thread_id"}
     assert governance.replay(adapter, env2["extra"]["observation_id"])["match"]
     b, o = _page_app(PUBLISHER), _page_app(OUTSIDER)
     th = {"thread": f"store_publisher:{pub['event_id']}"}
@@ -683,33 +699,27 @@ def test_the_mcp_tool_only_reads(sp, signer):
     p = _prepare(sp, signer)
     out = handle_store_publisher_status({"package": AGENT_PKG})
     assert out["package"]["build"]["digest"] == p["digest"]
-    assert handle_store_publisher_status({"package": AGENT_PKG, "export": True})["code"] == "unpublished"
+    assert "export" not in handle_store_publisher_status({"package": AGENT_PKG, "export": True}), \
+        "an agent never takes the full bundle out (review L4)"
     assert handle_store_publisher_status({"package": "nope"}) == {"error": "no such package", "code": "not_found",
                                                                    "refused": True}
 
 
-def test_the_e2e_key_is_honoured_only_under_tests_e2e_fixtures_and_only_with_no_configured_key(monkeypatch, tmp_path):
+def test_no_environment_variable_or_key_file_gives_the_product_a_key(wf_db, monkeypatch):
+    """Review L2: the e2e path that let a PEM under tests/e2e/fixtures sign whenever signing.key was null is gone. The
+    product signs only with the configured keyring key; the e2e seed signs in its own process, in memory."""
     from tools.store_publisher import config, service
 
     cfg = config.load()
-    fixtures = ROOT / "tests" / "e2e" / "fixtures"
-    key = fixtures / f".ent04-unit-{uuid.uuid4().hex[:8]}.pem"
+    key = ROOT / "tests" / "e2e" / "fixtures" / f".ent04-unit-{uuid.uuid4().hex[:8]}.pem"
     key.write_bytes(throwaway_pem())
     try:
-        monkeypatch.setenv(service.E2E_KEY_ENV, str(key))
-        assert service._e2e_signer(cfg) is not None
-        outside = tmp_path / "k.pem"
-        outside.write_bytes(throwaway_pem())
-        monkeypatch.setenv(service.E2E_KEY_ENV, str(outside))
-        assert service._e2e_signer(cfg) is None, "a key outside tests/e2e/fixtures is never honoured"
-        monkeypatch.setenv(service.E2E_KEY_ENV, str(key))
-        configured = copy.deepcopy(cfg)
-        configured["signing"]["key"] = "keyring:site/publisher"
-        assert service._e2e_signer(configured) is None, "it never replaces a key a site configured"
-        monkeypatch.delenv(service.E2E_KEY_ENV)
+        monkeypatch.setenv("ICDEV_STORE_PUBLISHER_E2E_KEY", str(key))
         with pytest.raises(service.Refused) as e:
             service.signer_for(cfg)
         assert e.value.code == "no_key"
+        assert service.packages_view(reader(PUBLISHER), cfg=cfg)["signing"]["configured"] is False
+        assert "E2E" not in (ROOT / "tools/store_publisher/service.py").read_text()
     finally:
         key.unlink()
 
@@ -739,3 +749,244 @@ def test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request(wf_db):
                                               "reviewer"), "the tenant still scopes the grant"
     finally:
         storage.get_connection = real
+
+
+# ── the independent review's findings (each a fail-closed test) ─────────────
+
+
+def _src(sp, rel: str, text: str) -> None:
+    d = sp["root"] / _pkg(sp, MCP_PKG)["inputs"] / "src" / rel
+    d.parent.mkdir(parents=True, exist_ok=True)
+    d.write_text(text)
+
+
+def _with_sources(sp, *srcs):
+    p = _pkg(sp, MCP_PKG)
+    p["sources"] = list(srcs)
+    return p
+
+
+def test_m1_the_analysed_code_cannot_switch_the_sast_gate_off(sp, signer):
+    """``# nosec``, a ``.bandit`` ini the sources carry, and a directory bandit skips by default each hid a finding."""
+    from tools.store_publisher import config, package
+
+    _src(sp, "server.py", "import os\n\n\ndef handle(cmd):\n    return os.system(cmd)  # nosec\n")
+    out = package.build(_pkg(sp, MCP_PKG), sp["cfg"], signer=signer, version="1.0.0", now=NOW)
+    assert out["package"]["scan"]["sast_scan"] == "fail", "a # nosec comment is the author's, never the gate's"
+    from tools.marketplace.asset_scanner import sast_findings
+
+    d = sp["root"] / "m1"
+    (d / "x").mkdir(parents=True)
+    (d / ".tox").mkdir()
+    (d / "a.py").write_text("print('fine')\n")
+    (d / "x" / ".bandit").write_text("[bandit]\nskips=B102,B307,B605\n")
+    (d / "x" / "c.py").write_text("exec(input())\n")
+    (d / ".tox" / "b.py").write_text("eval(input())\n")
+    r = sast_findings(d)
+    assert r["status"] == "fail" and r["findings"]["unanalysed"] == []
+    ids = {i.get("test_id") for i in r["findings"]["issues"]}
+    assert {"B102", "B307"} <= ids, "the .bandit ini in the sources is never read, and .tox is analysed"
+    cfg = copy.deepcopy(sp["cfg"])
+    cfg.pop("_digest")
+    for bad in (".bandit", "x/.bandit", ".tox/b.py"):
+        cfg["packages"][1]["sources"] = ["server.py", bad]
+        with pytest.raises(config.ConfigError):
+            config.validate(cfg)
+
+
+def test_m1_a_python_file_bandit_did_not_analyse_is_unverified_and_named(sp, monkeypatch):
+    from tools.marketplace import asset_scanner
+
+    d = sp["root"] / "m1b"
+    d.mkdir(parents=True)
+    (d / "a.py").write_text("print('a')\n")
+    (d / "b.py").write_text("print('b')\n")
+    real = asset_scanner._bandit
+
+    def partial(path):
+        out, analysed = real(path)
+        return out, {x for x in analysed if not x.endswith("b.py")}
+
+    monkeypatch.setattr(asset_scanner, "_bandit", partial)
+    r = asset_scanner.sast_findings(d)
+    assert r["status"] == "unverified" and r["findings"]["unanalysed"] == ["b.py"]
+
+
+def test_m2_a_source_that_is_not_python_is_never_analysed_so_never_passes(sp, signer):
+    from tools.store_publisher import package
+
+    _src(sp, "helper.js", "require('child_process').exec(process.argv[2]);\n")
+    _src(sp, "run.sh", "#!/bin/sh\nexec \"$@\"\n")
+    out = package.build(_with_sources(sp, "server.py", "helper.js", "run.sh"), sp["cfg"], signer=signer,
+                        version="1.0.0", now=NOW)
+    g = out["record"]["gates"]["sast_scan"]
+    assert g["status"] == "unverified" and g["not_analysed"] == ["helper.js", "run.sh"]
+
+
+def test_m3_the_retired_pipeline_s_effect_is_not_reachable_another_way():
+    from tools.marketplace import catalog_manager, federation_sync
+    from tools.marketplace.superseded import Superseded
+    from tools.mcp import marketplace_server
+
+    with pytest.raises(Superseded):
+        catalog_manager.update_status("asset-x", "published")
+    with pytest.raises(Superseded):
+        catalog_manager.promote_to_central("asset-x")
+    with pytest.raises(Superseded):
+        federation_sync.promote_approved("tenant-x")
+    out = marketplace_server.handle_openclaw_promote({"import_id": "imp-x", "promoted_by": "anyone"})
+    assert out["code"] == "superseded", "no caller-named person promotes through MCP"
+    import yaml
+
+    stages = yaml.safe_load((ROOT / "args/tool_curation.yaml").read_text())["goals"]["marketplace_publish"]["phases"]
+    assert not any(t in ("catalog_manager", "publish_pipeline", "review_queue")
+                   for ph in stages.values() for t in ph.get("tools") or [] if ph is not stages["scan"])
+
+
+def test_m4_one_rfc_8785_copy_serves_the_card_and_the_portfolio_decisions():
+    from tools.common import jcs
+    from tools.modernization import icos_decisions
+    from tools.store_publisher import card
+
+    doc = {"b": [1, 1.5, 1e21, -0.0, "é\u2028\n"], "a": {"z": None, "é": True}, "€": 2 ** 53}
+    assert card.jcs(doc) == icos_decisions.jcs(doc) == jcs.jcs(doc)
+    assert icos_decisions._jcs is jcs and card._jcs is jcs
+    with pytest.raises(icos_decisions.Untrusted):
+        icos_decisions.jcs({"x": float("nan")})
+    with pytest.raises(card.CardError):
+        card.jcs({"x": 2 ** 60})
+    for mod in ("tools/store_publisher/card.py", "tools/modernization/icos_decisions.py"):
+        text = (ROOT / mod).read_text()
+        assert "def _num(" not in text.replace("def _num(x) -> str:\n    return _jcs.num", ""), mod
+
+
+def test_l1_the_red_team_report_is_read_once(sp, signer, monkeypatch):
+    from tools.store_publisher import config
+
+    reads = []
+    real = config.read_input
+    monkeypatch.setattr(config, "read_input", lambda cfg, p, rel: (reads.append(rel), real(cfg, p, rel))[1])
+    _build(sp, signer)
+    assert reads.count("redteam.json") == 1, "the bytes hashed are the bytes parsed"
+
+
+def test_l4_only_a_person_who_packages_or_publishes_takes_the_bundle_out(sp, signer):
+    from tools.store_publisher import service
+
+    _publish(sp, _prepare(sp, signer))
+    pm = {"id": "u-ent04-pm", "role": "pm", "clearance_level": "CUI", "tenant_id": ORG}
+    for who, code in ((None, "no_person"), (AGENT, "agent_cannot_sign"), ({"id": "u-svc", "role": "service"},
+                                                                            "agent_cannot_sign"),
+                      ({"id": "bootstrap:x", "role": "admin"}, "agent_cannot_sign"), (actor(pm), "role")):
+        with pytest.raises(service.Refused) as e:
+            service.export(AGENT_PKG, reader(PUBLISHER), actor=who)
+        assert e.value.code == code, who
+    assert service.export(AGENT_PKG, reader(PREPARER), actor=actor(PREPARER))["publication"]["prepared_by"] == \
+        PREPARER["id"]
+
+
+def test_l5_the_signed_step_names_the_package_s_org(sp, signer):
+    from tools.store_publisher import ledger, service
+    from tools.workflow_hitl import declared
+
+    out = _publish(sp, _prepare(sp, signer))
+    signed = json.loads(declared._events(out["step_id"])["decided"]["payload_json"])
+    assert signed["org"] == ORG
+    pub = service.replay(ledger.chain(ledger.read())[f"package:{AGENT_PKG}"])["published"]
+    assert service.step_ok(pub, ORG) and not service.step_ok(pub, "another-org")
+
+
+def test_l6_a_lost_ledger_write_voids_the_decided_step(sp, signer, monkeypatch):
+    from tools.store_publisher import ledger, service
+    from tools.workflow_hitl import declared
+
+    p = _prepare(sp, signer)
+    real = ledger.append
+    steps = []
+
+    def lost(conn, **kw):
+        if kw.get("event") == "published":
+            steps.append(kw["step_id"])
+            raise ledger.Refused(503, "store_unavailable", "the ledger could not be written")
+        return real(conn, **kw)
+
+    monkeypatch.setattr(ledger, "append", lost)
+    with pytest.raises(service.Refused) as e:
+        _publish(sp, p)
+    assert e.value.code == "not_recorded"
+    assert declared.step_state(steps[0])["status"] == "withdrawn", "no decision surface shows it as published"
+    assert [x["status"] for x in declared.list_steps() if x.get("step_id") == steps[0]] in ([], ["withdrawn"])
+    monkeypatch.setattr(ledger, "append", real)
+    assert _publish(sp, p)["event"] == "published", "the package may be decided again"
+
+
+def test_l7_no_fresh_person_row_is_no_reader(monkeypatch):
+    from tools.dashboard import auth
+    from tools.store_publisher import service
+
+    app = Flask(__name__)
+    with app.test_request_context():
+        g.current_user = {"id": "u-ent04-svc", "role": "service", "tenant_id": ORG, "clearance_level": "CUI"}
+        assert service.current_reader() is None, "a service key is no reader of a tenant's packages"
+
+        def down(uid):
+            raise RuntimeError("users table unreadable")
+
+        monkeypatch.setattr(auth, "get_user_by_id", down)
+        g.current_user = {"id": "u-ent04-x", "role": "isso", "tenant_id": ORG, "clearance_level": "CUI"}
+        assert service.current_reader() is None, "what the request carried is never trusted instead"
+        monkeypatch.setattr(auth, "get_user_by_id", lambda uid: None)
+        assert service.current_reader() is None
+
+
+def test_l8_a_symlinked_root_or_directory_is_never_written_or_read_through(sp, signer, tmp_path):
+    from tools.common.confined_read import ConfinedError, read_confined
+    from tools.store_publisher import config, synthetic
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "prompt.md").write_text("SYNTHETIC outside\n")
+    link = sp["root"] / "linked-root"
+    link.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ConfinedError):
+        read_confined(link, "prompt.md", max_bytes=1024)
+    cfg = copy.deepcopy(sp["cfg"])
+    cfg["package_root"] = f"{sp['cfg']['package_root']}/linked-root"
+    with pytest.raises(config.ConfigError):
+        config.root(cfg)
+    p = _pkg(sp)
+    p["inputs"] = "linked-root/agent"
+    with pytest.raises(OSError):
+        synthetic.write_package(sp["root"], p, now=NOW)
+    assert list(outside.iterdir()) == [outside / "prompt.md"], "nothing was written through the symlink"
+
+
+
+def test_publishing_checks_the_key_by_public_identity_and_says_when_it_cannot(sp, signer):
+    """Publishing signs nothing: the card's key is compared with signing.kid (what ICDEV[OS] pins) or the configured key.
+    With neither configured, its currency is unverified -- recorded and shown by the twin, never a pass."""
+    import tools.twin_core.adapters.store_publisher  # noqa: F401
+    from tools.store_publisher import card, ledger, service
+    from tools.twin_core import governance
+
+    _publish(sp, _prepare(sp, signer))
+    pub = service.replay(ledger.chain(ledger.read())[f"package:{AGENT_PKG}"])["published"]
+    assert pub["key_currency"] == "unverified"
+    env = governance.observe(governance.adapter_for("store_publisher"), record=False)
+    assert any(v["rule_id"] == "store_publisher.key_unverified" for v in env["violations"])
+    pinned = copy.deepcopy(sp["cfg"])
+    pinned["signing"]["kid"] = card.kid(signer.spki())
+    p2 = service.prepare(AGENT_PKG, actor(PREPARER), reader(PREPARER), version="1.0.1", cfg=pinned, signer=signer,
+                         now=NOW)
+    service.publish(AGENT_PKG, decision="publish", reason="pinned (test)", read_digest=p2["digest"],
+                    actor=actor(PUBLISHER), reader=reader(PUBLISHER), cfg=pinned)
+    pub = service.replay(ledger.chain(ledger.read())[f"package:{AGENT_PKG}"])["published"]
+    assert pub["key_currency"] == "verified"
+    p3 = service.prepare(AGENT_PKG, actor(PREPARER), reader(PREPARER), version="1.0.2", cfg=pinned, signer=signer,
+                         now=NOW)
+    rotated = copy.deepcopy(pinned)
+    rotated["signing"]["kid"] = "0" * 16
+    with pytest.raises(service.Refused) as e:
+        service.publish(AGENT_PKG, decision="publish", reason="rotated (test)", read_digest=p3["digest"],
+                        actor=actor(PUBLISHER), reader=reader(PUBLISHER), cfg=rotated)
+    assert e.value.code == "key_mismatch"

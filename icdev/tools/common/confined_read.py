@@ -38,9 +38,9 @@ def _open_under(base: Path, rel: str, *, last_flags: int) -> int:
     parts = rel.split("/")
     if os.open in os.supports_dir_fd:
         try:
-            fd = os.open(base, os.O_RDONLY | _DIRECTORY)
+            fd = os.open(base, os.O_RDONLY | _DIRECTORY | _NOFOLLOW)     # a symlinked root is refused (review L8)
         except OSError as exc:
-            raise ConfinedError("the root cannot be opened") from exc
+            raise ConfinedError("the root cannot be opened, or is a symlink") from exc
         try:
             for part in parts[:-1]:
                 nxt = os.open(part, os.O_RDONLY | _DIRECTORY | _NOFOLLOW, dir_fd=fd)

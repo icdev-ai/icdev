@@ -668,11 +668,6 @@ _THREAD_TABLES = {
     "coe_adr": ("core", "coe_adr_events", "event_id",
                 ("event_id", "adr_id", "version", "event", "actor", "actor_kind", "step_id",
                  "reason", "entry_digest", "row_hash", "created_at")),
-    # icx-ent-04: one event of a store package (prepared, published, refused). The package stays in payload_json,
-    # never in a thread, and this generic resolver (any observer, MCP twin_governance) names no package, person,
-    # reason or step: the console's /store-publisher/api/twin?thread= resolves the row for a reader who may see it.
-    "store_publisher": ("core", "sp_events", "event_id",
-                        ("event_id", "event", "actor_kind", "content_digest", "row_hash", "created_at")),
     # icx-coe-03: one event in a repo's conformance bundles (prepared, published, refused).
     "coe_conformance": ("core", "coe_conformance_events", "event_id",
                         ("event_id", "repo", "event", "actor", "actor_kind", "actor_role", "step_id",

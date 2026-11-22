@@ -2214,6 +2214,7 @@ store_publisher:
     - awaiting_publish              # twin: store_publisher.awaiting_publish
     - gate_not_passed               # twin: published with a scanner gate that did not pass (ICDEV[OS] will block it)
     - redteam_not_passed            # twin: published with a failed or unverified red-team id
+    - key_unverified                # twin: published with no signing.kid or key here to confirm the card's key
   note: >
     The seven scanner gates' results ship as the publisher's own report (scan); ICDEV[OS] re-runs its gates and shows
     ours as claimed. A gate that cannot run is unverified, never pass. A package is offered to ICDEV[OS]'s store, never

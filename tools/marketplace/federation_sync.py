@@ -107,54 +107,11 @@ def promote_approved(tenant_id, db_path=None):
     - status = 'published'
     - Has at least one approved review for the current version
     """
-    conn = _get_db(db_path)
-    try:
-        # Find assets with approved reviews
-        eligible = conn.execute(
-            """SELECT DISTINCT a.id, a.name, a.current_version, a.slug
-               FROM marketplace_assets a
-               JOIN marketplace_versions v ON v.asset_id = a.id AND v.version = a.current_version
-               JOIN marketplace_reviews r ON r.asset_id = a.id AND r.version_id = v.id
-               WHERE a.publisher_tenant_id = %s
-                 AND a.catalog_tier = 'tenant_local'
-                 AND a.status = 'published'
-                 AND r.decision = 'approved'""",
-            (tenant_id,),
-        ).fetchall()
+    # RETIRED (icx-ent-04 review M3): promotion to the central catalogue with no person and no review is the retired
+    # pipeline's effect. Cross-tenant sharing is ICDEV[OS]'s store review and certification.
+    from tools.marketplace.superseded import refuse
 
-        promoted = []
-        for asset in eligible:
-            conn.execute(
-                "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = %s WHERE id = %s",
-                (_now(), asset["id"]),
-            )
-            promoted.append(
-                {
-                    "asset_id": asset["id"],
-                    "name": asset["name"],
-                    "version": asset["current_version"],
-                    "slug": asset["slug"],
-                }
-            )
-
-        conn.commit()
-
-        if promoted:
-            _audit(
-                event_type="marketplace_federation_sync",
-                actor="federation-sync",
-                action=f"Promoted {len(promoted)} assets from tenant {tenant_id} to central",
-                details={"tenant_id": tenant_id, "promoted": promoted},
-            )
-
-        return {
-            "action": "promote",
-            "tenant_id": tenant_id,
-            "promoted_count": len(promoted),
-            "promoted": promoted,
-        }
-    finally:
-        conn.close()
+    refuse("tools/marketplace/federation_sync.py --promote")
 
 
 def pull_available(tenant_id, consumer_il, db_path=None):

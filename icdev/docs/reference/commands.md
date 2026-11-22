@@ -6726,12 +6726,12 @@ Signed ICDEV[OS] store packages (`icos-store-package/v1`, ICDEV[OS]'s contract v
 `context/icos/`) for its agent store: an agent, crew, skill, MCP server or plugin declared in `args/store_publisher.yaml`,
 its A2A Agent Card JWS-signed (ES384) by the publisher's OS-keyring key and binding the package's content, and ICDEV's
 seven marketplace scanner gates run on it. A person prepares and another person publishes on `/store-publisher/`; the
-CLI never prepares or publishes, and exports only a published SYNTHETIC package (it reads as an agent).
+CLI never prepares, publishes or exports (the full bundle is taken out only by a person who packages or publishes, from
+the console).
 
 ```bash
 python -m tools.store_publisher.cli check-config --json
 python -m tools.store_publisher.cli packages --json
 python -m tools.store_publisher.cli seed-synthetic --json
-python -m tools.store_publisher.cli export --package syn-ent04-ledger-agent --out /tmp/syn-ent04-ledger-agent.json
 ```
 

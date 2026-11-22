@@ -15,7 +15,7 @@ Tools:
     sync_status      - Get federation sync status
     asset_scan       - Run security scanning on an asset
     openclaw_import  - Import an OpenClaw skill into quarantine
-    openclaw_promote - Promote a quarantined import to marketplace
+    openclaw_promote - RETIRED (icx-ent-04): refuses; no agent promotes
     openclaw_reject  - Reject a quarantined import
     openclaw_export  - Export an ICDEV™ skill to OpenClaw format
     openclaw_list_quarantine - List quarantined imports
@@ -268,13 +268,11 @@ def handle_openclaw_import(args: dict) -> dict:
 
 
 def handle_openclaw_promote(args: dict) -> dict:
-    """Promote a quarantined OpenClaw import to the marketplace."""
-    try:
-        from tools.marketplace.openclaw_bridge import promote_import
+    """RETIRED (icx-ent-04 review M3): an agent never promotes into the marketplace, and ``promoted_by`` was whatever
+    the caller said. A person promotes on the console; a store package is published on /store-publisher/."""
+    from tools.marketplace.superseded import Superseded
 
-        return promote_import(args["import_id"], args["promoted_by"])
-    except ImportError as exc:
-        return {"error": f"OpenClaw bridge not available: {exc}"}
+    return Superseded("openclaw_promote (MCP)").to_dict()
 
 
 def handle_openclaw_reject(args: dict) -> dict:

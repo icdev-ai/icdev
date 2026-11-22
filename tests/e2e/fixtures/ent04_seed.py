@@ -8,10 +8,10 @@
   stops the preparer publishing their own package is separation of duties, not a missing role. Emails carry the run id.
 * The labelled synthetic inputs of the two synthetic packages (``tools/store_publisher/synthetic.py``): an agent's
   prompt, an MCP server's tool listing and source, each one's SBOM, dependency findings and red-team results.
-* A THROWAWAY P-384 publisher key at tests/e2e/fixtures/.ent04_publisher_key.pem (git-ignored), which the e2e dashboard
-  signs Agent Cards with through ICDEV_STORE_PUBLISHER_E2E_KEY (honoured only there, and only while the shipped
-  configuration names no key). The agent package is prepared on the page by the journey; the MCP SERVER package is
-  PREPARED here by ent04-preparer through the product's own ``service.prepare``, with that same key.
+* A THROWAWAY P-384 publisher key, made in memory here and never written anywhere. The shipped configuration names no
+  key, so the dashboard signs nothing (its Prepare refuses, ``no_key``, which the journey shows); BOTH packages are
+  PREPARED here by ent04-preparer through the product's own ``service.prepare``, signed with this key in this
+  process (review L2: no environment variable or key file gives the product a key).
 
 Everything goes through the product's own functions. The server must be on a throwaway database (globalSetup asserts
 it). Prints one JSON line: the run id, each person's id and raw key (a throwaway key on a throwaway database), and each
@@ -28,7 +28,6 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
 ORG, OTHER = "syn-ent04-org", "syn-ent04-elsewhere"
-KEY = ROOT / "tests" / "e2e" / "fixtures" / ".ent04_publisher_key.pem"
 
 
 def person(name: str, role: str, run: str, tenant: str) -> dict:
@@ -43,21 +42,15 @@ def person(name: str, role: str, run: str, tenant: str) -> dict:
 
 
 def throwaway_signer():
-    """A THROWAWAY P-384 key, written where the e2e dashboard reads it (ICDEV_STORE_PUBLISHER_E2E_KEY, git-ignored), so
-    the page's Prepare and sign uses the same key the seed's MCP package was signed with. Never a real key."""
-    import os
-
+    """A THROWAWAY P-384 key in memory, for this seed process only. Never a real key, never on disk."""
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import ec
 
-    from tools.store_publisher import config, service
+    from tools.store_publisher import card
 
-    if not KEY.exists():
-        KEY.write_bytes(ec.generate_private_key(ec.SECP384R1()).private_bytes(
-            serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
-        os.chmod(KEY, 0o600)
-    os.environ[service.E2E_KEY_ENV] = str(KEY)
-    return service.signer_for(config.load())
+    pem = ec.generate_private_key(ec.SECP384R1()).private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    return card.PemSigner(pem, source="test:e2e seed throwaway (in memory)")
 
 
 def main() -> int:
@@ -72,7 +65,7 @@ def main() -> int:
     who = {"id": preparer["id"], "role": preparer["role"]}
     rdr = {**who, "clearance": "CUI", "org": ORG}
     prepared = {}
-    for pid in ("syn-ent04-coverage-mcp",):
+    for pid in ("syn-ent04-ledger-agent", "syn-ent04-coverage-mcp"):
         p = service.prepare(pid, who, rdr, version=f"1.0.{int(run[:4], 16)}", signer=signer,
                             note="Synthetic (icx-ent-04 e2e): prepared by the seed with a throwaway key")
         prepared[pid] = {"digest": p["digest"], "event_id": p["event_id"]}
