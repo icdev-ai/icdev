@@ -5373,3 +5373,26 @@ def handle_factory_builds_status(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_factory_builds_status: %s", type(exc).__name__)
         return {"error": f"the factory builds could not be read ({type(exc).__name__})"}
+
+
+def handle_store_publisher_status(args: dict) -> dict:
+    """MCP (icx-ent-04): the store publisher's packages, one package's newest version, or its published version.
+
+    Read-only, at the MCP results' marking, and SYNTHETIC packages only: an agent is in no org, so no
+    customer's package is ever shown; the rest are counted, never described, and a package id that is
+    not visible reads exactly as one that does not exist. It never prepares, signs or publishes.
+    """
+    try:
+        from tools.store_publisher import service
+
+        reader = service.mcp_reader(str(args.get("agent_id") or "mcp").strip() or "mcp")
+        pid = str(args.get("package") or "").strip()
+        try:
+            if not pid:
+                return {"classification": CORTEX_CLASSIFICATION, "packages": service.packages_view(reader)}
+            return {"classification": CORTEX_CLASSIFICATION, "package": service.package_view(pid, reader)}
+        except service.Refused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_store_publisher_status: %s", type(exc).__name__)
+        return {"error": f"the store publisher could not be read ({type(exc).__name__})"}

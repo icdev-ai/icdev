@@ -160,3 +160,7 @@ tests/test_icx_ent_02_ambient.py
 # (PL/pgSQL append-only triggers, UNIQUE(stream, prev_hash)), the fine-tuning registry reads, and the
 # decl-wft-fb-build-publish step in wf_decision_steps.
 tests/test_icx_ent_03_ambient.py
+# icx-ent-04: two synthetic store packages (an agent and an MCP server) prepared and published on the ambient PG:
+# sp_events (PL/pgSQL append-only triggers, UNIQUE(stream, prev_hash)) and the icos-store-publish step in
+# wf_decision_steps.
+tests/test_icx_ent_04_ambient.py

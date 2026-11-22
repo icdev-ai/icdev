@@ -2434,3 +2434,5 @@ tests/cortex/test_document_intelligence_lens.py
 tests/test_coherence_template_variable_parity.py
 # ICDEV[OS] Phase 254: the modernisation tooling over real-app-shaped trees (scratch sqlite, no model; ~7s).
 tests/test_icx_modsamples_pipeline.py
+# Every shipped .iqe seed query is free of merge-conflict markers (source and packaged copy; <2s).
+tests/test_iqe_seed_queries_no_conflict_markers.py

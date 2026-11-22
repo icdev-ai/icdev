@@ -489,6 +489,29 @@ def withdraw(step_id: str, reason: str) -> None:
         logger.warning("could not withdraw %s: %s", step_id, exc)
 
 
+def void_decided(step_id: str, reason: str) -> bool:
+    """A DECIDED step whose effect was never recorded (the caller's own ledger write failed after the step): append
+    ``withdrawn`` so every decision surface shows it as not taken (``step_state`` -> withdrawn) and nothing counts it
+    as the effect's authority (icx-ent-04 review L6). Best effort; True when the void was recorded."""
+    try:
+        events = _events(step_id)
+        decided = events.get("decided")
+        if not decided or "withdrawn" in events or "spent" in events:
+            return False
+        conn = get_connection()
+        try:
+            _append(conn, step_id=step_id, event="withdrawn", template_id=decided["template_id"],
+                    surface=decided["surface"], subject=decided["subject"], actor="system",
+                    reason=str(reason or "")[:500])
+            conn.commit()
+        finally:
+            conn.close()
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("could not void %s: %s", step_id, exc)
+        return False
+
+
 def _events(step_id: str, conn=None) -> dict[str, dict]:
     own = conn is None
     conn = conn or get_connection()

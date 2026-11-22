@@ -708,6 +708,31 @@ features:
           file: tools/vulnresearch/blueprint.py
           text: "A person, never the preparer, publishes a target's prepared findings bundle to ICDEV[OS], or refuses it."
 
+  # ── Store publisher (icx-ent-04) ───────────────────────────────────────────
+  # Signed ICDEV[OS] store packages (agent, crew, skill, MCP server, plugin): a JWS-signed A2A
+  # Agent Card binding the package's content and its declared tools, SBOM and dependency report,
+  # ceilings and budget, the publisher's red-team report and ICDEV's seven scanner gates run on it;
+  # prepared by a person, published by another of the package's org (icos-store-publish), exported
+  # for ICDEV[OS]'s agent store (osx-ent-11). Replaces the retired marketplace publish and review.
+  - key: store_publisher.signed_packages
+    component: store_publisher
+    label: "Store publisher: signed agent-store packages for ICDEV[OS], prepared by one person and published by another"
+    endpoints:
+      - store_publisher.sp_page
+      - store_publisher.sp_api_packages
+      - store_publisher.sp_api_package
+      - store_publisher.sp_api_prepare
+      - store_publisher.sp_api_publish
+      - store_publisher.sp_api_export
+      - store_publisher.sp_api_twin
+    mcp_tools: [store_publisher_status]
+    declared_decisions:
+      - id: store_publisher.publish
+        endpoint: store_publisher.sp_api_publish
+        evidence:
+          file: tools/store_publisher/blueprint.py
+          text: "A person, never the preparer, publishes a prepared store package for ICDEV[OS], or refuses it."
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory

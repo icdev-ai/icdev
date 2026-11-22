@@ -698,6 +698,24 @@
     "7R: assess an application, then record the strategy it proposes"
    ]
   },
+  "GET store_publisher.sp_api_twin": {
+   "endpoint": "store_publisher.sp_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare and sign on the page, refuse the preparer, publish, export, open the thread, see the MCP gates, hide it from another org"
+   ]
+  },
+  "GET store_publisher.sp_page": {
+   "endpoint": "store_publisher.sp_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare and sign on the page, refuse the preparer, publish, export, open the thread, see the MCP gates, hide it from another org"
+   ]
+  },
   "GET twin_observatory.conformance_page": {
    "endpoint": "twin_observatory.conformance_page",
    "method": "GET",
@@ -1394,6 +1412,24 @@
    "test": false,
    "tests": [
     "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
+   ]
+  },
+  "POST store_publisher.sp_api_prepare": {
+   "endpoint": "store_publisher.sp_api_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare and sign on the page, refuse the preparer, publish, export, open the thread, see the MCP gates, hide it from another org"
+   ]
+  },
+  "POST store_publisher.sp_api_publish": {
+   "endpoint": "store_publisher.sp_api_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare and sign on the page, refuse the preparer, publish, export, open the thread, see the MCP gates, hide it from another org"
    ]
   },
   "POST vulnresearch.vr_api_bundle_prepare": {
