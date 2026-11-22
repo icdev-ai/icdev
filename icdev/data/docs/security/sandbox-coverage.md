@@ -2721,3 +2721,12 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
   - **REA's session state is not ICDEV's.** When the REA process dies and respawns, the server-side session is gone, and the next session-scoped call fails at the server. It does not fail at the gate.
   - **HAR evidence keeps body secrets.** rea-spike-01 found a CSRF token in a response body that survived verbatim. The caller must pass `sensitive_values` (the analyzer card's job) before HAR evidence is persisted.
 - **Revisit if:** containment lands (rea-wire-02, which changes the decision to **sandboxed**); a tool declaring `accessesNetwork`, `launchesProcess`-based capture, or `mutatesTarget` is added to the allowlist; the pin moves; or REA gains an HTTP transport.
+
+
+## icx-ent-04: the store publisher (`tools/store_publisher`)
+
+| Ingress | Module | Decision | Why |
+|---|---|---|---|
+| `sp_package_inputs` | `tools/common/confined_read.py::read_confined`, `tools/store_publisher/package.py` | **trusted-first-party** (read only, data) | A declared package's prompt, instructions, tool listing, crew, plugin manifest and config, SBOM, dependency findings, red-team results and source files are READ as bytes and parsed as UTF-8 text or JSON (NaN and infinity refused); nothing is executed. Only under the reviewed `package_root`, regular files with one link, no symlink on the way, size-capped; each read once. A caller names a package, never a path. |
+| `sp_gate_analysis` | `tools/store_publisher/gates.py`, `tools/marketplace/asset_scanner.py::sast_findings` | **trusted-first-party** (read only) | The package is written once into a fresh private directory (0700, new files only) and the scanner's analyses READ it: `ast.parse` and `bandit -r` (argument list, this interpreter, a timeout) parse the source and never run it; the secret and CUI-banner checks are regular expressions. The directory is removed afterwards. |
+

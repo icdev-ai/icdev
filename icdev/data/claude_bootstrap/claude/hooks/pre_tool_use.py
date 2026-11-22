@@ -709,6 +709,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # icx-coe-04, migration 20261118070149: the golden path ledger (seeded, proposed,
         # drift-checked, then a person publishes, refuses or retires), hash-chained per path.
         "coe_golden_path_events",
+        # icx-ent-04, migration 20261122112221: the store publisher ledger (a store package prepared
+        # and its card signed by the publisher's key, then a person of its org publishes or refuses).
+        "sp_events",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
         # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)

@@ -36,9 +36,9 @@ Usage:
         --changelog "Added Oracle DB support" \\
         --file-path "/path/to/asset.tar.gz" --json
 
-    # Update asset status
+    # Update asset status (published is RETIRED, icx-ent-04: it refuses -- see tools/store_publisher)
     python tools/marketplace/catalog_manager.py --update-status \\
-        --asset-id "asset-uuid" --status published --json
+        --asset-id "asset-uuid" --status deprecated --json
 
     # Deprecate an asset
     python tools/marketplace/catalog_manager.py --deprecate \\
@@ -309,9 +309,17 @@ def add_version(asset_id, version, changelog=None, file_path=None, published_by=
 
 
 def update_status(asset_id, status, db_path=None):
-    """Update asset status (draft -> scanning -> review -> published)."""
+    """Update asset status (draft -> scanning -> review; deprecated, revoked).
+
+    Setting ``published`` is RETIRED (icx-ent-04 review M3): with the publish pipeline and the review queue gone it
+    was the same effect with no person and no review. A package is published by a person on /store-publisher/,
+    never by setting a status. Refuses (``Superseded``)."""
     if status not in VALID_STATUSES:
         raise ValueError(f"Invalid status: {status}. Must be one of {VALID_STATUSES}")
+    if status == "published":
+        from tools.marketplace.superseded import refuse
+
+        refuse("tools/marketplace/catalog_manager.py --update-status --status published")
 
     conn = _get_db(db_path)
     try:
@@ -327,30 +335,11 @@ def update_status(asset_id, status, db_path=None):
 
 
 def promote_to_central(asset_id, db_path=None):
-    """Promote an asset from tenant_local to central_vetted catalog."""
-    conn = _get_db(db_path)
-    try:
-        row = conn.execute("SELECT status FROM marketplace_assets WHERE id = %s", (asset_id,)).fetchone()
-        if not row:
-            raise ValueError(f"Asset not found: {asset_id}")
-        if row["status"] != "published":
-            raise ValueError(f"Asset must be 'published' to promote. Current: {row['status']}")
+    """Promote an asset from tenant_local to central_vetted catalog -- RETIRED (icx-ent-04 review M3): refuses
+    (``Superseded``). Cross-tenant sharing is ICDEV[OS]'s store review and certification, by a person."""
+    from tools.marketplace.superseded import refuse
 
-        conn.execute(
-            "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = %s WHERE id = %s",
-            (_now(), asset_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    _audit(
-        event_type="marketplace_federation_sync",
-        actor="marketplace-catalog",
-        action=f"Promoted asset {asset_id} to central_vetted catalog",
-        details={"asset_id": asset_id},
-    )
-    return {"asset_id": asset_id, "catalog_tier": "central_vetted"}
+    refuse("tools/marketplace/catalog_manager.py --promote")
 
 
 def deprecate_asset(asset_id, replacement_slug=None, db_path=None):
