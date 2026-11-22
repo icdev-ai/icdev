@@ -144,6 +144,7 @@
       "type": "string"
     },
     "files": {
+      "description": "every file with its digest; the vex document and its vex-attestation are optional (absent: the artefact states nothing), and both or neither",
       "items": {
         "$ref": "#/$defs/File"
       },
@@ -215,6 +216,6 @@
   ],
   "title": "Artefact",
   "type": "object",
-  "x-icos-contract": "1.205.0",
+  "x-icos-contract": "1.208.0",
   "x-license": "Apache-2.0"
 }

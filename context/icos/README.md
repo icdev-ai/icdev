@@ -35,9 +35,8 @@ preparer. To take a newer contract: copy the new schema, update the digest in `c
 ## The customer artefact (icx-ent-03; ICDEV[OS] osx-ent-06)
 
 `artefact.schema.json` is ICDEV[OS]'s `icos-artefact/v1` manifest schema (`contracts/schemas/artefact.schema.json`,
-contract version 1.205.0, SHA-256 `89577b8045f268ec61c25b9a824ab221cb9ba1e88e338de8bcfdac9d7ebfaa27`), copied verbatim
-**from the osx-ent-06 branch** (commit 20d161a2), which had not merged when this card was built: re-pin it from
-ICDEV[OS] main when it merges. One signed customer artefact (an image, a model, an agent or an IaC bundle) bound to one
+contract version 1.208.0, SHA-256 `cdc80df7a7565c23aa005342f6b615eda249788bf6de946f41487ef1458a04aa`), copied verbatim
+from ICDEV[OS] main (commit 9040bf4c, osx-ent-06 merged). One signed customer artefact (an image, a model, an agent or an IaC bundle) bound to one
 registered ICDEV[OS] system, listing every file of the artefact with its SHA-256; the artefact digest is the SHA-256
 of `artefact.json`. It is licensed Apache-2.0 (`LICENSE`, `NOTICE` here), unlike the rest of this repository.
 

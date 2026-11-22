@@ -9,7 +9,7 @@ its people approve the release.
 
 | File | What it is | Standard (checked 2026-11-21) |
 |---|---|---|
-| `artefact.json` | `icos-artefact/v1`, valid against ICDEV[OS]'s pinned schema; its SHA-256 is the artefact digest | ICDEV[OS] contract 1.205.0 (osx-ent-06 branch) |
+| `artefact.json` | `icos-artefact/v1`, valid against ICDEV[OS]'s pinned schema; its SHA-256 is the artefact digest | ICDEV[OS] contract 1.208.0 |
 | `sbom.cdx.json` | the dependencies ICDEV's own SBOM generator resolves (`sbom_generator.cyclonedx_document`) for software; for a model the AI-BOM below | [CycloneDX 1.7](https://github.com/CycloneDX/specification/tree/1.7/schema), schema vendored and pinned |
 | `provenance.slsa.json` | an in-toto Statement v1: build type, external parameters (commit, version, target, kind, system), builder id, start/finish time, the SBOM as a byproduct | [SLSA v1.2 build provenance](https://slsa.dev/spec/v1.2/build-provenance); its predicate type is still `https://slsa.dev/provenance/v1` |
 | `vex.openvex.json` | one statement per factory-scan finding; `under_investigation` unless the reviewed config states it | [OpenVEX 0.2.0](https://github.com/openvex/spec), schema vendored and pinned |

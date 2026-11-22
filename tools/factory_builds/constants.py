@@ -6,12 +6,12 @@ CONFIG_RELPATH = "args/factory_builds.yaml"
 CONFIG_SCHEMA = "icdev-factory-builds/v1"
 
 #: ICDEV[OS]'s customer artefact contract (osx-ent-06, contracts/schemas/artefact.schema.json), vendored verbatim.
-#: Pinned from the osx-ent-06 BRANCH (commit 20d161a2, contract 1.205.0) while that card is unmerged: re-pin from
-#: ICDEV[OS] main when it merges. A changed file is refused, never silently used.
+#: Pinned from ICDEV[OS] main (commit 9040bf4c, contract 1.208.0, osx-ent-06 merged). A changed file is refused,
+#: never silently used.
 SCHEMA = "icos-artefact/v1"
 SCHEMA_RELPATH = "context/icos/artefact.schema.json"
-SCHEMA_SHA256 = "89577b8045f268ec61c25b9a824ab221cb9ba1e88e338de8bcfdac9d7ebfaa27"
-SCHEMA_CONTRACT = "1.205.0"
+SCHEMA_SHA256 = "cdc80df7a7565c23aa005342f6b615eda249788bf6de946f41487ef1458a04aa"
+SCHEMA_CONTRACT = "1.208.0"
 #: The draft publication contract ICDEV[IT] proposes for ICDEV[OS] to adopt (osx-ent-06 checks a publication with
 #: icdev_os/publication.py check_publication and no model yet: publication_template null until this card ships).
 PUBLICATION_SCHEMA = "icdev-build-publication/v1"
