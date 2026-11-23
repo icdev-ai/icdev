@@ -1,0 +1,6 @@
+# Network Diagram Analysis seed query (split from diagram_analysis.iqe).
+# Prompt: show diagram analyses with topology mode hybrid
+# a.topology_mode is one of DIAGRAM_TOPOLOGY_MODES (tools/network/constants.py).
+foreach a in network.diagram_analyses
+where a.topology_mode == "hybrid"
+select a.id, a.upload_id, a.industry, a.topology_mode, a.status, a.created_at

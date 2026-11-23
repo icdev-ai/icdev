@@ -2,8 +2,14 @@
 # Canvas: pmc | Collection: pmc.peering_requests
 # Description: Open/pending peering session requests awaiting response
 
-show pending peering requests
-list outstanding peering requests
-which peering requests are pending
-show peering requests not yet accepted
-open peering requests
+# Prompt: show pending peering requests
+# Prompt: list outstanding peering requests
+# Prompt: which peering requests are pending
+# Prompt: show peering requests not yet accepted
+# Prompt: open peering requests
+# The lines above are paraphrases of ONE question for the NL widget. The IQE below
+# is what the pmc adapter answers it with (tools/iqe/adapters/pmc.py).
+foreach r in pmc.peering_requests
+where r.status == "pending"
+select r.id, r.request_type, r.status, r.contact_method, r.created_at, r.asn, r.org_name
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by r.created_at desc.

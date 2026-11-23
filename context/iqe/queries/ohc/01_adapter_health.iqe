@@ -1,1 +1,4 @@
-foreach a in ohc.adapters select a.adapter_name, a.domain, a.available, a.latency_ms, a.error, a.last_checked
+# Adapter health per domain (ohc.adapters = ohc_adapter_status).
+# Was `select ... a.latency_ms, a.error, a.last_checked`, none of which is a column:
+# the probe's report is the JSON probe_result, and last_probe is when it ran.
+foreach a in ohc.adapters select a.adapter_name, a.domain, a.available, a.probe_result, a.last_probe

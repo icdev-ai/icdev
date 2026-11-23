@@ -1,1 +1,2 @@
-foreach r in ohc.runs select r.run_name, r.status, r.metrics, r.duration_ms, r.created_at
+# Experiment runs (ohc.runs = ohc_experiment_runs). The metrics column is metrics_json.
+foreach r in ohc.runs select r.run_name, r.status, r.metrics_json, r.duration_ms, r.created_at

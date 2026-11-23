@@ -10,7 +10,7 @@ Four tests using Flask test_client:
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from flask import Flask
@@ -52,34 +52,35 @@ def test_list_queries_returns_ok(client, tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_run_valid_query(client, tmp_path):
-    """POST /iqe/run with a parseable file returns 200 and rows structure."""
+    """POST /iqe/run with a parseable file over a registered collection returns 200 + rows.
+
+    The query names a registered collection (aadc.designs): an unregistered one
+    is now refused with 422 rather than answered with an empty success
+    (tests/test_iqe_run_routes_honest.py). Execution goes through
+    tools/iqe/catalog.py, so that is where the executor is stubbed.
+    """
+    from tools.iqe.executor import ExecutionResult
+
     iqe_file = tmp_path / "test.iqe"
     iqe_file.write_text(
-        "foreach d in devices select d.name", encoding="utf-8"
+        "foreach d in aadc.designs select d.name", encoding="utf-8"
     )
     fake_rows = [{"name": "router-1"}]
     with (
         patch("tools.dashboard.api.iqe._QUERIES_DIR", tmp_path),
-        patch("tools.dashboard.api.iqe.execute_query", return_value=fake_rows),
-        patch("tools.dashboard.api.iqe.get_connection", create=True),
+        patch("tools.iqe.catalog.execute_query_with_meta",
+              return_value=ExecutionResult(rows=fake_rows)),
     ):
-        # Patch the inner import of get_connection inside run_query
-        import tools.dashboard.api.iqe as iqe_mod
-        mock_conn = MagicMock()
-        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
-        mock_conn.__exit__ = MagicMock(return_value=False)
-        with patch.object(iqe_mod, "execute_query", return_value=fake_rows):
-            # Bypass DB by patching get_connection at module level
-            with patch("tools.db.storage.get_connection", return_value=mock_conn):
-                resp = client.post(
-                    "/iqe/run",
-                    json={"query_path": "test.iqe"},
-                )
+        resp = client.post(
+            "/iqe/run",
+            json={"query_path": "test.iqe"},
+        )
     assert resp.status_code == 200
     data = json.loads(resp.data)
     assert data["ok"] is True
     assert "rows" in data
     assert "count" in data
+    assert data["rows"] == fake_rows
 
 
 # ---------------------------------------------------------------------------

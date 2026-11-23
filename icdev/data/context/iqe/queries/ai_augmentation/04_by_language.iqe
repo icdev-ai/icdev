@@ -1,3 +1,8 @@
-foreach o in aac.opportunities
-  join sc in aac.scores on sc.opportunity_id == o.opportunity_id
-  select o.language, o.pattern_type, o.ai_paradigm, sc.composite_score, o.module_path
+# Scored opportunities by language, pattern and paradigm.
+# Was `foreach o in aac.opportunities join sc in aac.scores on sc.opportunity_id ==
+# o.opportunity_id`; IQE has no `join ... on` clause. aiify.opportunities (the aac.*
+# tables' current name) already joins each opportunity to its score, as a LEFT JOIN,
+# so the null-score filter keeps the original inner join's rows only.
+foreach o in aiify.opportunities
+  where o.composite_score != null
+  select o.language, o.pattern_type, o.ai_paradigm, o.composite_score, o.module_path

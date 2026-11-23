@@ -1,4 +1,6 @@
-foreach d in aadc.designs
-  join a in aadc.ato_reports on a.design_id == d.id
-  join s in aadc.scorecard_snapshots on s.design_id == d.id
-  select d.name, d.domain, a.ato_ready, a.score_pct, a.passed, a.failed, a.critical_failed, s.overall_score, s.health
+# Full ATO readiness per design: ATO report and scorecard health side by side.
+# Was a three-way `join ... on` (designs, aadc.ato_reports, aadc.scorecard_snapshots,
+# each on design_id == d.id); IQE has no `join ... on` clause, so aadc.ato_readiness is
+# that inner join itself.
+foreach r in aadc.ato_readiness
+  select r.design_name, r.design_domain, r.ato_ready, r.score_pct, r.passed, r.failed, r.critical_failed, r.overall_score, r.health

@@ -1,0 +1,4 @@
+# NSA ZIG IQE seed query (split from zig_queries.iqe). Collection: zig.*
+# Query 7: FY2027 readiness — all incomplete activities
+foreach a in zig.activities where a.completion_status != "complete" select a.phase, a.pillar_slug, a.title, a.completion_status
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by a.phase.

@@ -1,13 +1,16 @@
--- CUI // SP-CTI
--- IQE Query: FRH-001
--- Title: FedRAMP High — All Unsatisfied Controls
--- Framework: FedRAMP High
--- Category: gap-analysis
--- Severity: critical
--- Description: FedRAMP High represents the baseline for systems processing
---   highly sensitive government data. Any unsatisfied control is a critical
---   risk to the authorisation boundary and must appear in the POA&M immediately.
+# CUI // SP-CTI
+# IQE Query: FRH-001
+# Title: FedRAMP High — All Unsatisfied Controls
+# Framework: FedRAMP High
+# Category: gap-analysis
+# Severity: critical
+# Description: FedRAMP High represents the baseline for systems processing
+#   highly sensitive government data. Any unsatisfied control is a critical
+#   risk to the authorisation boundary and must appear in the POA&M immediately.
 
-foreach ctrl in framework('FedRAMP High').controls
+# Written in the retired cATO regex engine's dialect (framework('X').controls,
+# starts_with, is null); bdt-iqe-1 moved that surface to compliance.twin_snapshots,
+# startswith and == null (tools/genesis/reflexes/cato_twin.py), so this is the same query.
+foreach ctrl in compliance.twin_snapshots('FedRAMP High')
 where ctrl.status != 'satisfied'
 select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score

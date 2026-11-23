@@ -1,0 +1,6 @@
+# Platform Updates seed query (split from updates.iqe). Collection: updates.releases.
+# Prompt: show releases with security fixes
+# r.sections lists the release's Keep-a-Changelog section names, e.g. "Security".
+foreach r in updates.releases
+where r.sections contains "Security"
+select r.version, r.date, r.sections, r.item_count
