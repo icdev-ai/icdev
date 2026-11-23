@@ -10765,10 +10765,13 @@ def _mirror_drifted_files(extensions: Sequence[str]) -> List[str]:
     out: List[str] = []
     for report in result.get("reports") or []:
         pkg = report.get("path") or ""
+        # A DATA_MIRRORS report is rooted at its own tree (args/ci_test_files),
+        # not under tools/; live_dir names the root for either kind.
+        base = report.get("live_dir") or f"tools/{pkg}"
         for rel in report.get("content_drift") or []:
             if not str(rel).endswith(exts):
                 continue
-            rel_path = f"tools/{pkg}/{rel}".replace("\\", "/")
+            rel_path = f"{base}/{rel}".replace("\\", "/")
             if _is_mirror_shim(PROJECT_ROOT / rel_path):
                 continue
             out.append(rel_path)
