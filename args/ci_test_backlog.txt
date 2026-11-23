@@ -998,6 +998,7 @@ tests/test_iqe_adapter_govcon_requirements.py
 tests/test_iqe_adapter_proposals.py
 tests/test_iqe_bi_dashboard_adapter.py
 tests/test_iqe_cli.py
+tests/test_iqe_executor_fanout.py
 tests/test_iqe_ext_databridge.py
 tests/test_iqe_ext_governance.py
 tests/test_iqe_ext_lineage.py

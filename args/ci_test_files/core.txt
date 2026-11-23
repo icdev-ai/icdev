@@ -2453,12 +2453,11 @@ tests/test_iqe_seed_queries_no_conflict_markers.py
 # reason, in tools/iqe/catalog.py NO_EXECUTOR_SOURCE. test_iqe_canvas_seed_fields.py runs
 # the ccc/dsoc/pmc/ohc seeds over their real schemas and checks every field exists.
 # test_iqe_run_routes_honest.py: /iqe/run and /api/v1/iqe/query report an unreadable
-# collection as ok/false with the reason, never ok/true with zero rows. test_iqe_route.py,
-# test_iqe_executor_fanout.py and test_iqe_seed_queries.py leave the backlog: they
-# exercise the executor fallback this changes. Pure Python, scratch in-memory SQLite, ~5s.
+# collection as ok/false with the reason, never ok/true with zero rows. test_iqe_route.py
+# and test_iqe_seed_queries.py leave the backlog: they exercise the executor fallback this
+# changes. Pure Python, scratch in-memory SQLite, ~5s.
 tests/test_iqe_seed_collections_registered.py
 tests/test_iqe_canvas_seed_fields.py
 tests/test_iqe_run_routes_honest.py
 tests/test_iqe_route.py
-tests/test_iqe_executor_fanout.py
 tests/test_iqe_seed_queries.py
