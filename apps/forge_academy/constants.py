@@ -62,6 +62,9 @@ ROLES = {
     "pm":           {"label": "Program Manager",                "type": "guided",    "icon": "📊",  "color": "#28a745", "tier2_topic": "pm"},
     "analyst":      {"label": "Analyst (Intel / Financial)",    "type": "guided",    "icon": "🔍",  "color": "#20c997", "tier2_topic": "analyst"},
     "leadership":   {"label": "Leadership / Executive",         "type": "guided",    "icon": "🎯",  "color": "#e83e8c", "tier2_topic": "leadership"},
+    # osx-ent-13 (turnkey packaging): the assessor and agent-store reviewer tracks, beside the ISSO and ISSM tracks
+    "assessor":     {"label": "Security Control Assessor",      "type": "guided",    "icon": "§",   "color": "#6c757d", "tier2_topic": "assessor"},
+    "store_reviewer": {"label": "Agent-Store Reviewer",         "type": "guided",    "icon": "#",   "color": "#17a2b8", "tier2_topic": "store_reviewer"},
 }
 
 TECHNICAL_ROLES = {k for k, v in ROLES.items() if v["type"] == "technical"}

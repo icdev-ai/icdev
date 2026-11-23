@@ -1,0 +1,16 @@
+{
+  "slug": "m-issm-07-turnkey-review",
+  "title": "Turnkey: Reviewing Onboarding, Registration and the POA&M",
+  "tagline": "Review what others drafted -- a tenant, a system, a POA&M -- so that what is signed is exactly what you reviewed.",
+  "tier": 2,
+  "topic": "compliance",
+  "role_filter": "issm",
+  "mission_type": "guided",
+  "xp_reward": 350,
+  "order_idx": 7,
+  "difficulty": "intermediate",
+  "estimated_minutes": 40,
+  "prereqs": [
+    "m-issm-01-ato-acceleration"
+  ]
+}

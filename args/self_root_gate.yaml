@@ -45,7 +45,7 @@ self_root_census:
   # Ceiling on REGISTERED sites. MAY ONLY GO DOWN. Set at adoption to exactly
   # the measured count -- headroom is permission.
   self_root_max: 1318   # ratcheted DOWN by icx-ent-04: the retired marketplace publish_pipeline.py and
-                        # review_queue.py are shims the census no longer finds. Was 1320 --
+                        # review_queue.py are shims the census no longer finds (deleted at icx-ent-13). Was 1320 --
                         # ratcheted DOWN by icx-coe-04: tools/cli/scaffold.py's module-level REPO_ROOT
                         # site became repo_root_of(), which decides by what is there, so a checkout
                         # named `icdev` (CI) no longer climbs out of the repo. Was 1321 -- ratcheted

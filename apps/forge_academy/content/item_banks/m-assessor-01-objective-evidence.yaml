@@ -1,0 +1,173 @@
+# CUI // SP-CTI
+#
+# Item bank for m-assessor-01-objective-evidence (osx-ent-13, turnkey packaging: the Academy tracks for ISSO, ISSM,
+# assessor and agent-store reviewer). Every item is answerable from the lesson it assesses.
+
+mission: m-assessor-01-objective-evidence
+steps:
+- step: 1
+  items:
+  - key: a1-l2
+    prompt: What does CMMC Level 2 rest on as of November 2026?
+    options:
+    - ISO 27001
+    - SP 800-171 Rev. 3
+    - 'SP 800-171 Rev. 2: 110 requirements and 320 objectives'
+    - SP 800-53 High
+    correct: 2
+    explanation: Rev. 2 still binds; Rev. 3 is mapped in advance.
+    difficulty: core
+  - key: a1-met
+    prompt: When is a requirement met?
+    options:
+    - When the ISSO says so
+    - When its CRM row is shared
+    - When one objective is met
+    - When every objective is met, inherited or N/A, and at least one is met or inherited
+    correct: 3
+    explanation: Per objective, every one.
+    difficulty: core
+  - key: a1-unverified
+    prompt: No statement resolves an objective. What is it?
+    options:
+    - Not met
+    - Unverified
+    - Not applicable
+    - Met
+    correct: 1
+    explanation: Never met for want of evidence.
+    difficulty: core
+  - key: a1-icos
+    prompt: Does the platform's own register count for a customer's system?
+    options:
+    - 'Yes'
+    - 'No: it speaks only for system icos'
+    - Only for inherited controls
+    - Only at Level 3
+    correct: 1
+    explanation: Cross-system evidence never counts.
+    difficulty: core
+  - key: a1-marked
+    prompt: An evidence report is bound to the system but marked above it. Does it count?
+    options:
+    - Half
+    - 'Yes'
+    - 'No: it counts only when bound to exactly that system and marked no higher'
+    - Only for an admin
+    correct: 2
+    explanation: Bound and marked no higher.
+    difficulty: core
+  - key: a1-indep
+    prompt: Can the assessor also be the system's ISSO?
+    options:
+    - Only at Level 2
+    - Only with the AO's consent
+    - 'Yes'
+    - 'No: a static separation of duties'
+    correct: 3
+    explanation: sod-sca-isso.
+    difficulty: core
+- step: 2
+  items:
+  - key: a2-future
+    prompt: A report's timestamp is in the future. How is it read?
+    options:
+    - As unverified
+    - As the newest
+    - As the oldest
+    - As now
+    correct: 0
+    explanation: Future times are rejected.
+    difficulty: core
+  - key: a2-strings
+    prompt: How are report times compared?
+    options:
+    - As strings
+    - As parsed instants, with their offsets
+    - By filename
+    - Not at all
+    correct: 1
+    explanation: Parse times, never compare strings.
+    difficulty: core
+  - key: a2-fedramp
+    prompt: A system record states a provider's FedRAMP authorisation. What is it?
+    options:
+    - Inherited evidence
+    - Verified
+    - A claim, as stated
+    - An authorisation by ICDEV[OS]
+    correct: 2
+    explanation: 'Recorded as stated: a claim.'
+    difficulty: core
+  - key: a2-inherited
+    prompt: When is an objective inherited?
+    options:
+    - Always for cloud systems
+    - When the platform implements it
+    - When the CRM says shared
+    - When the system's own evidence says so, citing the provider's evidence
+    correct: 3
+    explanation: Only through the system's own evidence.
+    difficulty: core
+  - key: a2-never-provider
+    prompt: Why is no platform CRM row ever the provider's alone?
+    options:
+    - The platform's statements are its own reading, which no third party has checked
+    - Providers never provide controls
+    - It is shorter
+    - A bug
+    correct: 0
+    explanation: Shared is the most a tenant can inherit from it.
+    difficulty: core
+- step: 3
+  items:
+  - key: a3-binder
+    prompt: What does the evidence binder hold?
+    options:
+    - Screenshots
+    - Objective results as OSCAL assessment results and the POA&M, validated against NIST's schema, digest-pinned
+    - Only the SPRS score
+    - A certificate
+    correct: 1
+    explanation: Generated, validated and pinned.
+    difficulty: core
+  - key: a3-digest
+    prompt: Why is the binder digest-pinned?
+    options:
+    - To encrypt it
+    - For speed
+    - So the same evidence gives the same digest, and a handed-over binder can be checked
+    - For licensing
+    correct: 2
+    explanation: Reproducible artefacts can be checked.
+    difficulty: core
+  - key: a3-replay
+    prompt: A recorded verdict does not replay from its observation. What is it?
+    options:
+    - A pass
+    - A waiver
+    - Still evidence
+    - Not evidence
+    correct: 3
+    explanation: Every verdict must replay.
+    difficulty: core
+  - key: a3-certify
+    prompt: Who certifies a Level 2 system?
+    options:
+    - A C3PAO
+    - The ISSO
+    - The platform admin
+    - ICDEV[OS]
+    correct: 0
+    explanation: ICDEV[OS] never certifies.
+    difficulty: core
+  - key: a3-phase2
+    prompt: How does ICDEV[OS] treat CMMC Phase 2 as of November 2026?
+    options:
+    - As in force
+    - As suspended since 2026-07-13 pending a review, shown as a fact
+    - As cancelled
+    - It guesses a restart date
+    correct: 1
+    explanation: Shown, never guessed past.
+    difficulty: core

@@ -686,11 +686,9 @@ modules:
     description: "Publish, install, search, review, and sync skills/goals/hardprompts/context/args/compliance extensions across tenant orgs with 7-gate security pipeline, IL compatibility checks, and federation sync."
     required: false
     packages:
-      - tools/marketplace/publish_pipeline.py
       - tools/marketplace/search_engine.py
       - tools/marketplace/compatibility_checker.py
       - tools/marketplace/install_manager.py
-      - tools/marketplace/review_queue.py
       - tools/marketplace/federation_sync.py
       - tools/marketplace/asset_scanner.py
       - tools/marketplace/catalog_manager.py

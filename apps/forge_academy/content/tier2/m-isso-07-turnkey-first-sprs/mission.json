@@ -1,0 +1,16 @@
+{
+  "slug": "m-isso-07-turnkey-first-sprs",
+  "title": "Turnkey: From a Registered System to the First SPRS Score",
+  "tagline": "Register a customer system, start its CRM from the platform's template, bring evidence and read your first SPRS score -- with every gap left unverified.",
+  "tier": 2,
+  "topic": "compliance",
+  "role_filter": "isso",
+  "mission_type": "guided",
+  "xp_reward": 350,
+  "order_idx": 7,
+  "difficulty": "intermediate",
+  "estimated_minutes": 40,
+  "prereqs": [
+    "m-isso-02-poam"
+  ]
+}

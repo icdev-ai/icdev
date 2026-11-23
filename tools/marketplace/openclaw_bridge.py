@@ -114,12 +114,9 @@ try:
 except ImportError:
     _HAS_CATALOG = False
 
-try:
-    import importlib.util
-
-    _HAS_REVIEW = importlib.util.find_spec("tools.marketplace.review_queue") is not None
-except (ImportError, ModuleNotFoundError):
-    _HAS_REVIEW = False
+# The marketplace review queue is retired (icx-ent-04; deleted at icx-ent-13, args/retired_tools.yaml): a store
+# package is reviewed and certified in ICDEV[OS] (store-review), never here.
+_HAS_REVIEW = False
 
 try:
     from tools.security.prompt_injection_detector import scan_text

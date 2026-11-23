@@ -13,7 +13,7 @@
 # publishes by itself, and a new version is a new package.
 #
 # Replaces the deprecated marketplace publish and review tools (tools/marketplace/publish_pipeline.py and
-# review_queue.py, now thin shims that point here).
+# review_queue.py: shims at icx-ent-04, deleted at icx-ent-13; args/retired_tools.yaml).
 #
 # A reviewed config (changed like any other). No environment variable names another file, widens the root or adds a
 # package.

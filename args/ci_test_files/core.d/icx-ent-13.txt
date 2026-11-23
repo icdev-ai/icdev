@@ -1,0 +1,5 @@
+# icx-ent-13 (osx-ent-13, turnkey packaging): the Academy tracks for the ISSO, ISSM, assessor and agent-store reviewer
+# (catalogued, three graded lessons each, facts dated, no AWS training content, no claims); and the retirement of the
+# deprecated duplicates -- the two marketplace shims deleted once their replacement (the store publisher) passes, every
+# other generator the card names kept with what still calls it (args/retired_tools.yaml).
+tests/test_icx_ent_13_turnkey.py
