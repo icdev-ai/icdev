@@ -1,0 +1,5 @@
+# Platform Updates seed query (split from updates.iqe). Collection: updates.releases.
+# Prompt: show the latest release version
+foreach r in updates.releases
+select r.version, r.date
+# Not applied: IQE has no `order by` or `limit`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by r.date desc, keep the first 1 row.

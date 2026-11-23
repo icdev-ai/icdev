@@ -1,0 +1,3 @@
+# NSA ZIG IQE seed query (split from zig_queries.iqe). Collection: zig.*
+# Query 8: All external assessment targets with maturity level
+foreach t in zig.targets select t.name, t.app_type, t.owner_team, t.aggregate_score, t.maturity_level

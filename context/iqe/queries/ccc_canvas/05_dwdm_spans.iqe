@@ -1,4 +1,10 @@
-collection: ccc.dwdm_spans
-query: dwdm spans with available wavelengths
-description: DWDM spans showing available capacity and OSNR health
-tags: [dwdm, wavelength, capacity, optical]
+# collection: ccc.dwdm_spans
+# query: dwdm spans with available wavelengths
+# description: DWDM spans showing available capacity and OSNR health
+# tags: [dwdm, wavelength, capacity, optical]
+# The IQE below is what the ccc adapter answers this prompt with (tools/iqe/adapters/ccc.py).
+# osnr_db is selected too, because the description asks for OSNR health.
+foreach s in ccc.dwdm_spans
+where s.available_wavelengths > 0
+select s.span_id, s.fiber_route, s.available_wavelengths, s.total_capacity_tbps, s.used_capacity_tbps, s.osnr_db
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by s.available_wavelengths desc.

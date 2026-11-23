@@ -10,6 +10,8 @@ Importing this module registers four collections on the module-level Executor:
                      filter by framework_id, score, passed.
   aimc.artifacts   — Generated artifacts (aiml_artifacts); filter by
                      artifact_type, design_id.
+  aimc.design_artifacts — Artifacts joined to their design (design_name,
+                     il_level, adaptation_strategy).
 
 Note: AIMC is early-stage (v1). If tables are absent the adapters return []
 gracefully rather than raising an exception.
@@ -18,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.iqe.executor import register_collection
+from tools.iqe.executor import fetch_rows, register_collection
 
 
 def _aimc_conn(conn: Any) -> tuple[Any, bool]:
@@ -97,6 +99,29 @@ def artifacts_adapter(conn: Any) -> list[dict]:
             c.close()
 
 
+def design_artifacts_adapter(conn: Any) -> list[dict]:
+    """Return artifacts joined to their design (inner join): name, IL level, adaptation.
+
+    A view, because IQE's ``join()`` built-in needs one key name on both sides
+    and this join pairs the artifact's ``design_id`` with the design's ``id``.
+    """
+    c, owned = _aimc_conn(conn)
+    try:
+        # Raises on a read failure (fetch_rows) rather than _safe_fetch's [], which
+        # /iqe/run would report as a successful zero-row answer.
+        return fetch_rows(
+            c,
+            "SELECT ar.id, ar.design_id, d.name AS design_name, d.il_level, "
+            "d.adaptation_strategy, ar.artifact_type, ar.title, ar.format, ar.created_at "
+            "FROM aiml_artifacts ar "
+            "JOIN aiml_designs d ON d.id = ar.design_id",
+            "aimc.design_artifacts",
+        )
+    finally:
+        if owned:
+            c.close()
+
+
 def ai_decisions_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
     """Return AI decision records for AIMC from canvas_ai_decisions (main icdev.db)."""
     try:
@@ -129,5 +154,6 @@ register_collection("aimc.designs", designs_adapter)
 register_collection("aimc.nodes", nodes_adapter)
 register_collection("aimc.assessments", assessments_adapter)
 register_collection("aimc.artifacts", artifacts_adapter)
+register_collection("aimc.design_artifacts", design_artifacts_adapter)
 register_collection("aimc.ai_decisions", ai_decisions_adapter)
 register_collection("aimc.twin_snapshots", twin_snapshots_adapter)

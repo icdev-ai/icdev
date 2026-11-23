@@ -1,13 +1,16 @@
--- CUI // SP-CTI
--- IQE Query: FRH-004
--- Title: FedRAMP High — Identification & Authentication (IA) Family Gaps
--- Framework: FedRAMP High
--- Category: control-family
--- Severity: critical
--- Description: FedRAMP High adds PIV/CAC requirements (IA-2(12)), hardware
---   tokens, and stricter authenticator management. All IA gaps must be
---   resolved before IL4/IL5 authorization can proceed.
+# CUI // SP-CTI
+# IQE Query: FRH-004
+# Title: FedRAMP High — Identification & Authentication (IA) Family Gaps
+# Framework: FedRAMP High
+# Category: control-family
+# Severity: critical
+# Description: FedRAMP High adds PIV/CAC requirements (IA-2(12)), hardware
+#   tokens, and stricter authenticator management. All IA gaps must be
+#   resolved before IL4/IL5 authorization can proceed.
 
-foreach ctrl in framework('FedRAMP High').controls
-where ctrl.control_id starts_with 'IA' and ctrl.status != 'satisfied'
+# Written in the retired cATO regex engine's dialect (framework('X').controls,
+# starts_with, is null); bdt-iqe-1 moved that surface to compliance.twin_snapshots,
+# startswith and == null (tools/genesis/reflexes/cato_twin.py), so this is the same query.
+foreach ctrl in compliance.twin_snapshots('FedRAMP High')
+where ctrl.control_id startswith 'IA' and ctrl.status != 'satisfied'
 select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id

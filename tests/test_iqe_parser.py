@@ -118,3 +118,63 @@ def test_select_wildcard():
     assert q.select.wildcard is True
     assert q.select.fields == []
     assert q.where_clauses == []
+
+
+# ── `//` line comments (tools/iqe/grammar.lark: %ignore /\/\/.*/) ─────────────
+
+def test_double_slash_line_comment_is_ignored():
+    """A `//` comment line (grammar.lark ignores them) parses like a `#` one."""
+    q = parse(
+        "// IQE-DR-002: executive runs\n"
+        "foreach r in demo_runner.runs\n"
+        'where r.audience == "exec"  // trailing comment\n'
+        "select r.run_id\n"
+    )
+    assert q.var == "r"
+    assert q.where_clauses[0].predicate == BinOp("==", AttrRef(["r", "audience"]), Literal("exec"))
+    assert [str(f) for f in q.select.fields] == ["r.run_id"]
+
+
+def test_double_slash_inside_a_string_is_not_a_comment():
+    q = parse('foreach s in ext.sites where s.url startswith "https://x" select s.url')
+    assert q.where_clauses[0].predicate.right == Literal("https://x")
+
+
+def test_single_slash_outside_an_expression_is_still_an_error():
+    with pytest.raises(IQESyntaxError):
+        parse("/ foreach d in network.devices select d.name")
+
+
+# ── `*` and `/` in comparison operands (grammar.lark: mul_expr) ──────────────
+
+def test_division_in_comparison_left_operand():
+    q = parse(
+        "foreach s in dsoc.scrubbing_centers\n"
+        "where s.current_load_gbps / s.capacity_gbps > 0.7\n"
+        "select s.name"
+    )
+    pred = q.where_clauses[0].predicate
+    assert pred == BinOp(
+        ">",
+        BinOp("/", AttrRef(["s", "current_load_gbps"]), AttrRef(["s", "capacity_gbps"])),
+        Literal(0.7),
+    )
+
+
+def test_multiplication_on_the_right_is_left_associative():
+    q = parse("foreach s in t.x where s.load > s.cap * 0.7 / 2 select s.name")
+    pred = q.where_clauses[0].predicate
+    assert pred.op == ">"
+    assert pred.right == BinOp(
+        "/", BinOp("*", AttrRef(["s", "cap"]), Literal(0.7)), Literal(2)
+    )
+
+
+def test_select_star_still_parses_as_wildcard_with_arithmetic_available():
+    q = parse("foreach s in t.x where s.a * 2 > 1 select *")
+    assert q.select.wildcard is True
+
+
+def test_dangling_arithmetic_operator_is_an_error():
+    with pytest.raises(IQESyntaxError):
+        parse("foreach s in t.x where s.a / > 1 select s.a")

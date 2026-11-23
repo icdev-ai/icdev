@@ -8,12 +8,20 @@ Importing this module registers three collections on the module-level Executor:
                      design_id, score, omb_compliant, safety_impacting.
   aadc.artifacts   — Generated ATO/compliance artifacts (aadc_artifacts);
                      filter by artifact_type, design_id.
+  aadc.lifecycle_states — Lifecycle transitions (aadc_lifecycle_states) joined
+                     to their design: design_name, design_domain.
+  aadc.ato_readiness — Each design with its latest ATO report and latest
+                     scorecard snapshot (aadc_ato_reports, aadc_scorecard_snapshots).
+
+The two joined views exist because IQE's ``join()`` built-in joins on one
+key name shared by both sides, and these joins pair ``design_id`` with the
+design's ``id`` (and ato_readiness is three-way).
 """
 from __future__ import annotations
 
 from typing import Any
 
-from tools.iqe.executor import register_collection
+from tools.iqe.executor import fetch_rows, register_collection
 from tools.logging.icdev_logger import get_logger
 
 _log = get_logger(__name__)
@@ -116,8 +124,61 @@ def twin_snapshots_adapter(conn: Any) -> list[dict]:
             c.close()
 
 
+def _fetch_rows(conn: Any, sql: str, name: str) -> list[dict]:
+    """The joined views' fetch: a read failure RAISES (tools.iqe.executor.fetch_rows).
+
+    Unlike the adapters above, which answer an unreadable table with [] -- an
+    empty answer that /iqe/run would report as a successful zero-row result.
+    """
+    c, owned = _aadc_conn(conn)
+    try:
+        return fetch_rows(c, sql, name)
+    finally:
+        if owned:
+            c.close()
+
+
+def lifecycle_states_adapter(conn: Any) -> list[dict]:
+    """Return lifecycle transitions with the design they belong to (inner join)."""
+    return _fetch_rows(
+        conn,
+        "SELECT l.id, l.design_id, d.name AS design_name, d.domain AS design_domain, "
+        "l.from_state, l.to_state, l.actor, l.reason, l.created_at "
+        "FROM aadc_lifecycle_states l "
+        "JOIN aadc_designs d ON d.id = l.design_id",
+        "aadc.lifecycle_states",
+    )
+
+
+def ato_readiness_adapter(conn: Any) -> list[dict]:
+    """Each design with its LATEST ATO report and LATEST scorecard snapshot (inner joins).
+
+    One row per design that has both. "Latest" is by created_at, ties broken by
+    id, so the pick is deterministic; joining every report to every snapshot
+    would give reports x snapshots rows per design.
+    """
+    return _fetch_rows(
+        conn,
+        "WITH a AS (SELECT r.*, ROW_NUMBER() OVER ("
+        "PARTITION BY r.design_id ORDER BY r.created_at DESC, r.id DESC) AS rn "
+        "FROM aadc_ato_reports r), "
+        "s AS (SELECT n.*, ROW_NUMBER() OVER ("
+        "PARTITION BY n.design_id ORDER BY n.created_at DESC, n.id DESC) AS rn "
+        "FROM aadc_scorecard_snapshots n) "
+        "SELECT d.id AS design_id, d.name AS design_name, d.domain AS design_domain, "
+        "a.ato_ready, a.score_pct, a.passed, a.failed, a.critical_failed, "
+        "s.overall_score, s.health "
+        "FROM aadc_designs d "
+        "JOIN a ON a.design_id = d.id AND a.rn = 1 "
+        "JOIN s ON s.design_id = d.id AND s.rn = 1",
+        "aadc.ato_readiness",
+    )
+
+
 register_collection("aadc.designs", designs_adapter)
 register_collection("aadc.assessments", assessments_adapter)
 register_collection("aadc.artifacts", artifacts_adapter)
 register_collection("aadc.ai_decisions", ai_decisions_adapter)
 register_collection("aadc.twin_snapshots", twin_snapshots_adapter)
+register_collection("aadc.lifecycle_states", lifecycle_states_adapter)
+register_collection("aadc.ato_readiness", ato_readiness_adapter)

@@ -34,6 +34,10 @@ _TOKEN_SPEC = [
     ("COMMA",    r","),
     ("DOT",      r"\."),
     ("STAR",     r"\*"),
+    # `//` line comments, as tools/iqe/grammar.lark declares (%ignore /\/\/.*/).
+    # Listed before SLASH so a comment is never read as two divisions.
+    ("COMMENT",  r"//[^\n]*"),
+    ("SLASH",    r"/"),
     ("LPAREN",   r"\("),
     ("RPAREN",   r"\)"),
     ("IDENT",    r"[A-Za-z_]\w*"),
@@ -90,7 +94,7 @@ def _tokenize(src: str) -> list[_Tok]:
             line += 1
             line_start = m.end()
             continue
-        if kind == "SKIP":
+        if kind in ("SKIP", "COMMENT"):
             continue
         if kind == "MISMATCH":
             raise IQESyntaxError(f"Unexpected character: {val!r}", line, col)
@@ -208,13 +212,13 @@ class _Parser:
         return self._parse_comparison()
 
     def _parse_comparison(self) -> Any:
-        left = self._parse_attr_ref()
+        left = self._parse_product(self._parse_attr_ref())
         tok = self._peek()
         if tok is None:
             raise IQESyntaxError("Expected comparison operator", 0, 0)
         if tok.type == "OP":
             op_tok = self._advance()
-            right = self._parse_value()
+            right = self._parse_product(self._parse_value())
             return BinOp(op=op_tok.val, left=left, right=right)
         if tok.type == "KEYWORD" and tok.val in ("contains", "startswith"):
             op_tok = self._advance()
@@ -223,6 +227,20 @@ class _Parser:
         raise IQESyntaxError(
             f"Expected comparison operator, got {tok.val!r}", tok.line, tok.col
         )
+
+    def _parse_product(self, first: Any) -> Any:
+        """``first (("*" | "/") value)*``, left-associative.
+
+        The multiplicative level of tools/iqe/grammar.lark's ``mul_expr``, used
+        only as a comparison operand (``s.load / s.capacity > 0.7``). ``+`` and
+        ``-`` are not supported: ``-`` already belongs to NUMBER literals.
+        """
+        node = first
+        while self._peek() and self._peek().type in ("STAR", "SLASH"):
+            op_tok = self._advance()
+            right = self._parse_value()
+            node = BinOp(op="*" if op_tok.type == "STAR" else "/", left=node, right=right)
+        return node
 
     def _parse_attr_ref(self) -> AttrRef:
         tok = self._expect_type("IDENT")

@@ -1,0 +1,5 @@
+# Network Configuration Review seed query (split from config_review.iqe).
+# Prompt: show config review findings with severity CAT1
+foreach f in network.config_review_findings
+where f.severity == "CAT1"
+select f.id, f.review_id, f.review_title, f.vendor, f.category, f.severity, f.title, f.remediation

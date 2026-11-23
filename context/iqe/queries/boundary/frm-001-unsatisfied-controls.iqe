@@ -1,13 +1,16 @@
--- CUI // SP-CTI
--- IQE Query: FRM-001
--- Title: FedRAMP Moderate — All Unsatisfied Controls
--- Framework: FedRAMP Moderate
--- Category: gap-analysis
--- Severity: high
--- Description: Surface every control in the FedRAMP Moderate baseline that is
---   not yet satisfied in the latest compliance twin snapshot. Use this to
---   prioritise remediation work and drive the continuous ATO dashboard.
+# CUI // SP-CTI
+# IQE Query: FRM-001
+# Title: FedRAMP Moderate — All Unsatisfied Controls
+# Framework: FedRAMP Moderate
+# Category: gap-analysis
+# Severity: high
+# Description: Surface every control in the FedRAMP Moderate baseline that is
+#   not yet satisfied in the latest compliance twin snapshot. Use this to
+#   prioritise remediation work and drive the continuous ATO dashboard.
 
-foreach ctrl in framework('FedRAMP Moderate').controls
+# Written in the retired cATO regex engine's dialect (framework('X').controls,
+# starts_with, is null); bdt-iqe-1 moved that surface to compliance.twin_snapshots,
+# startswith and == null (tools/genesis/reflexes/cato_twin.py), so this is the same query.
+foreach ctrl in compliance.twin_snapshots('FedRAMP Moderate')
 where ctrl.status != 'satisfied'
 select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score
