@@ -107,8 +107,47 @@ def test_model_card_seed_joins_artifacts_to_design(conn):
     }]
 
 
-def test_join_views_fail_soft_to_no_rows_on_a_missing_table(conn):
-    """Like every other adapter here, a canvas DB without the tables answers no rows."""
-    assert _run("aadc/08_approved_lifecycle.iqe", conn) == []
-    assert _run("aadc/09_full_ato_readiness.iqe", conn) == []
-    assert _run("aimc/10_cost_by_design.iqe", conn) == []
+def test_join_views_raise_on_a_missing_table_rather_than_answer_no_rows(conn):
+    """An unreadable view is an error the route reports, never an empty success."""
+    for seed in ("aadc/08_approved_lifecycle.iqe", "aadc/09_full_ato_readiness.iqe",
+                 "aimc/10_cost_by_design.iqe"):
+        with pytest.raises(sqlite3.OperationalError):
+            _run(seed, conn)
+
+
+def test_ato_readiness_is_the_latest_report_and_snapshot_per_design_not_every_pair(conn):
+    """Several reports and snapshots per design give ONE row: the latest of each.
+
+    Latest is by created_at, ties broken by id, so the answer is deterministic.
+    A cross join would give reports x snapshots rows per design (here 3 x 2 = 6).
+    """
+    _aadc(conn)
+    conn.executescript(
+        """
+        INSERT INTO aadc_ato_reports VALUES
+            ('a0', 'd1', 10.0, 0, 1, 30, 9, '{}', '2026-01-15'),
+            ('a9', 'd1', 95.0, 1, 41, 1, 0, '{}', '2026-03-01');
+        INSERT INTO aadc_scorecard_snapshots VALUES
+            ('s0', 'd1', 0.10, 'RED', '{}', '2026-01-10'),
+            ('s9', 'd1', 0.99, 'GREEN', '{}', '2026-02-20');
+        INSERT INTO aadc_scorecard_snapshots VALUES ('s2', 'd2', 0.40, 'AMBER', '{}', '2026-03-05');
+        """
+    )
+    rows = _run("aadc/09_full_ato_readiness.iqe", conn)
+    by_design = {r["design_name"]: r for r in rows}
+    assert len(rows) == 2 and set(by_design) == {"Triage agent", "Router agent"}
+    # d1 reports: a0 (01-15) and a1, a9 (both 03-01) -> the tie goes to the higher id, a9.
+    assert by_design["Triage agent"]["score_pct"] == 95.0
+    # d1 snapshots: s0 (01-10), s9 (02-20), s1 (03-03) -> s1 is the latest.
+    assert by_design["Triage agent"]["overall_score"] == 0.92
+    assert by_design["Router agent"]["score_pct"] == 50.0
+    assert by_design["Router agent"]["health"] == "AMBER"
+
+
+def test_lifecycle_and_design_artifact_views_have_one_row_per_child(conn):
+    """No N x M: each lifecycle transition and each artifact joins exactly one design."""
+    _aadc(conn)
+    conn.execute("INSERT INTO aadc_lifecycle_states VALUES "
+                 "('l4', 'd1', 'APPROVED', 'APPROVED', 'ao-test', 're-approved', '2026-02-09')")
+    rows = _run("aadc/08_approved_lifecycle.iqe", conn)
+    assert sorted(r["created_at"] for r in rows) == ["2026-02-01", "2026-02-09"]

@@ -6,4 +6,4 @@
 foreach x in ccc.cross_connects
 where x.status == "pending_loa" or x.status == "installing"
 select x.xc_number, x.facility, x.port_a, x.port_z, x.speed_gbps, x.status
-# Presentation (IQE has no `order by`; the reader applies it): sort by x.created_at desc.
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by x.created_at desc.

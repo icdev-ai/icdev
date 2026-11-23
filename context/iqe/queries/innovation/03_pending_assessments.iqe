@@ -2,4 +2,4 @@
 foreach a in innovation.assessments
 where a.human_approved == 0
 select a.id, a.idea_id, a.assessed_by, a.business_value_score, a.strategic_alignment_score, a.technical_feasibility_score, a.created_at
-# Presentation (IQE has no `order by` or `limit`; the reader applies it): sort by a.created_at desc, keep the first 50 rows.
+# Not applied: IQE has no `order by` or `limit`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by a.created_at desc, keep the first 50 rows.

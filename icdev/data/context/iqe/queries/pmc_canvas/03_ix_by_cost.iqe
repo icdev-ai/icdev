@@ -11,4 +11,4 @@
 # is what the pmc adapter answers it with (tools/iqe/adapters/pmc.py).
 foreach i in pmc.ix_memberships
 select i.id, i.ix_name, i.city, i.country, i.our_speed_gbps, i.monthly_cost_usd, i.status
-# Presentation (IQE has no `order by`; the reader applies it): sort by i.monthly_cost_usd desc.
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by i.monthly_cost_usd desc.

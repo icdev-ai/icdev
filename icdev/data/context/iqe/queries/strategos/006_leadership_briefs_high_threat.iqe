@@ -4,4 +4,4 @@
 foreach b in strategos.leadership_briefs
   where b.threat_tier == "HIGH" or b.threat_tier == "CRITICAL"
   select b.id, b.theater, b.sio_composite_score, b.threat_tier, b.p_war_posterior, b.dti_score, b.generated_at
-# Presentation (IQE has no `order by` or `limit`; the reader applies it): sort by b.generated_at desc, keep the first 10 rows.
+# Not applied: IQE has no `order by` or `limit`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by b.generated_at desc, keep the first 10 rows.

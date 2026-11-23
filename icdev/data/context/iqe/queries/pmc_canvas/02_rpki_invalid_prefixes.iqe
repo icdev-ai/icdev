@@ -12,4 +12,4 @@
 foreach x in pmc.prefixes
 where x.rpki_status == "invalid"
 select x.prefix, x.origin_asn, x.rpki_status, x.asn, x.org_name
-# Presentation (IQE has no `order by`; the reader applies it): sort by x.asn.
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by x.asn.

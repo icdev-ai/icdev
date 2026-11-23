@@ -186,3 +186,117 @@ def test_arithmetic_overflow_is_null() -> None:
     ex.register_collection("t.x", lambda _c: [{"name": "big", "a": 1e308}])
     ast = parse("foreach s in t.x where s.a * 10 > 1 select s.name")
     assert ex.run(ast, conn=None) == []
+
+
+# ── Honest fallback: an unreadable collection is an error, never [] ──────────
+
+def test_unregistered_collection_without_a_connection_is_an_error() -> None:
+    import pytest
+
+    from tools.iqe.executor import CollectionUnavailableError
+    from tools.iqe.parser import parse
+
+    with pytest.raises(CollectionUnavailableError) as exc:
+        Executor().run(parse("foreach i in network.interfaces select i.name"), conn=None)
+    assert exc.value.collection == "network.interfaces"
+    assert "no adapter" in str(exc.value)
+
+
+def test_unregistered_collection_with_no_table_is_an_error_not_a_db_error() -> None:
+    import sqlite3
+
+    import pytest
+
+    from tools.iqe.executor import CollectionUnavailableError
+    from tools.iqe.parser import parse
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        with pytest.raises(CollectionUnavailableError) as exc:
+            Executor().run(parse("foreach i in network.interfaces select i.name"), conn=conn)
+    finally:
+        conn.close()
+    assert exc.value.collection == "network.interfaces"
+    # Our own words, not the driver's: no raw database error text leaks out.
+    assert "no such table" not in str(exc.value)
+
+
+def test_unregistered_collection_with_a_table_still_falls_back() -> None:
+    import sqlite3
+
+    from tools.iqe.parser import parse
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE TABLE interfaces (name TEXT)")
+        conn.execute("INSERT INTO interfaces VALUES ('eth0')")
+        rows = Executor().run(parse("foreach i in network.interfaces select i.name"), conn=conn)
+    finally:
+        conn.close()
+    assert rows == [{"name": "eth0"}]
+
+
+# ── NULL arithmetic follows SQL three-valued logic ───────────────────────────
+
+_NULLS = [
+    {"name": "zero", "a": 5, "b": 0},
+    {"name": "none", "a": None, "b": 2},
+    {"name": "text", "a": "5", "b": 2},
+    {"name": "ten", "a": 20, "b": 2},
+]
+
+
+def _names(query: str) -> set[str]:
+    from tools.iqe.parser import parse
+
+    ex = Executor()
+    ex.register_collection("t.x", lambda _c: list(_NULLS))
+    return {r["name"] for r in ex.run(parse(query), conn=None)}
+
+
+def test_null_arithmetic_fails_not_equal_too() -> None:
+    # 5/0, None/2 and "5"/2 are NULL; NULL != 1 is unknown, so only 20/2 matches.
+    assert _names("foreach s in t.x where s.a / s.b != 1 select s.name") == {"ten"}
+
+
+def test_null_arithmetic_does_not_equal_null() -> None:
+    assert _names("foreach s in t.x where s.a / s.b == null select s.name") == set()
+
+
+def test_not_of_a_null_arithmetic_comparison_is_still_unknown() -> None:
+    assert _names("foreach s in t.x where not s.a / s.b > 100 select s.name") == {"ten"}
+
+
+def test_null_arithmetic_in_or_and_and_is_three_valued() -> None:
+    # unknown OR true is true; unknown AND true is unknown.
+    assert _names(
+        'foreach s in t.x where s.a / s.b > 1 or s.name == "zero" select s.name'
+    ) == {"ten", "zero"}
+    assert _names(
+        'foreach s in t.x where s.a / s.b > 1 and s.name != "x" select s.name'
+    ) == {"ten"}
+
+
+def test_missing_attribute_semantics_are_unchanged() -> None:
+    """A missing attribute is still None, and None != x still holds (pre-existing)."""
+    assert _names("foreach s in t.x where s.missing != 1 select s.name") == {
+        "zero", "none", "text", "ten"}
+    assert _names("foreach s in t.x where s.missing == null select s.name") == {
+        "zero", "none", "text", "ten"}
+
+
+def test_decimal_operands_are_numbers() -> None:
+    """psycopg returns NUMERIC as Decimal; it multiplies and divides like a number."""
+    from decimal import Decimal
+
+    from tools.iqe.parser import parse
+
+    ex = Executor()
+    ex.register_collection("t.x", lambda _c: [
+        {"name": "dec", "load": Decimal("80.5"), "cap": Decimal(100)},
+        {"name": "mixed", "load": Decimal(80), "cap": 100.0},
+        {"name": "low", "load": Decimal(1), "cap": 100},
+        {"name": "dzero", "load": Decimal(1), "cap": Decimal(0)},
+    ])
+    rows = ex.run(parse("foreach s in t.x where s.load / s.cap > 0.7 select s.name"), conn=None)
+    assert [r["name"] for r in rows] == ["dec", "mixed"]

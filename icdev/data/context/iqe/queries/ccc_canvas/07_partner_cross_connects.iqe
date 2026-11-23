@@ -6,4 +6,4 @@
 foreach o in ccc.xc_orders
 where o.order_status != "not_ordered"
 select o.id, o.xc_number, o.facility, o.order_status, o.partner_id, o.estimated_delivery
-# Presentation (IQE has no `order by` or grouping; the reader applies it): group by o.partner_id, then o.facility; sort by o.estimated_delivery asc.
+# Not applied: IQE has no `order by` or grouping, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: group by o.partner_id, then o.facility; sort by o.estimated_delivery asc.

@@ -5,4 +5,4 @@
 # Prompt: show config reviews created today
 foreach r in network.config_reviews
 select r.id, r.title, r.vendor, r.role_key, r.status, r.created_at
-# Window (IQE has no relative dates; the reader applies it): r.created_at today.
+# Window NOT applied: IQE has no relative dates, so this query returns every config review, not only those created today.

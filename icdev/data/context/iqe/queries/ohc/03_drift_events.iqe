@@ -1,1 +1,5 @@
-foreach d in ohc.drift_events where d.drift_detected == 1 select d.dataset_name, d.drift_score, d.created_at
+# Data drift events where drift was detected (ohc.drift_events = ohc_data_drift_events).
+# Was `where d.drift_detected == 1 ... d.created_at`: neither is a column. The Evidently
+# adapter stores passed = not drift_detected (tools/ops_hub/adapters/evidently_adapter.py),
+# and the event time is detected_at.
+foreach d in ohc.drift_events where d.passed == 0 select d.dataset_name, d.drift_score, d.detected_at

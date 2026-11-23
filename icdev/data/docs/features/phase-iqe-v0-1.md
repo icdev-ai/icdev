@@ -111,12 +111,14 @@ are also supported for compound predicates in a single `where` clause.
 
 Comparison operands may multiply or divide (`where s.current_load_gbps / s.capacity_gbps > 0.7`),
 the multiplicative level of `tools/iqe/grammar.lark`'s `mul_expr`. Only real numbers take part: a
-NULL, string or boolean operand, a zero divisor or a non-finite result is NULL, which matches no
-comparison. `+` and `-` are not supported (`-` belongs to number literals).
+NULL, string or boolean operand, a zero divisor or a non-finite result is NULL, and any comparison
+with it is SQL's unknown: it fails `!=` and `== null` as well as `==` and `>`, `not` keeps it
+unknown, and the row does not match. Decimal operands (PostgreSQL NUMERIC) count as numbers. A
+missing attribute keeps its existing semantics (it is `None`, so `!= x` and `== null` hold). `+` and `-` are not supported (`-` belongs to number literals).
 
 IQE has no `order by`, `limit`, `join ... on`, `in (...)` lists or parenthesised predicates. A seed
-query that wants an order or a row cap says so in a `# Presentation ...` comment, and the reader
-applies it; joins use the `join()` built-in or a joined-view collection; a list is an `or` chain; a
+query that wants an order or a row cap says so in a `# Not applied: ...` comment: the executor does
+not apply it and returns every matching row, unsorted and uncapped; joins use the `join()` built-in or a joined-view collection; a list is an `or` chain; a
 parenthesised predicate is split across `where` clauses (which AND). One file holds one query.
 
 ---

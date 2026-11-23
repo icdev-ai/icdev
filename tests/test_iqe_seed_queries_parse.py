@@ -80,3 +80,18 @@ def test_infra_preapply_gate_skips_no_seed_query():
     parsed, skipped = preapply_gate._load_iqe_queries()
     assert parsed, "the pre-apply gate loaded no infra seed queries"
     assert skipped == [], f"pre-apply gate skipped seed queries: {skipped}"
+
+
+# A comment may record what a query cannot express, never claim that something
+# applies it: nothing reads these comments, and the executor returns every row.
+_CLAIMS_APPLIED = ("applies it", "the reader sorts", "the reader truncates", "the caller applies")
+
+
+@pytest.mark.parametrize("path", CHECKED, ids=_rel)
+def test_seed_comment_never_claims_an_unsupported_clause_is_applied(path: Path):
+    text = path.read_text(encoding="utf-8").lower()
+    for claim in _CLAIMS_APPLIED:
+        assert claim not in text, f"{_rel(path)} says {claim!r}; say it is NOT applied"
+    for line in text.splitlines():
+        if line.startswith("# window") or line.startswith("# presentation"):
+            assert "not applied" in line, f"{_rel(path)}: {line!r} must say it is not applied"

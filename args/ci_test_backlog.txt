@@ -998,7 +998,6 @@ tests/test_iqe_adapter_govcon_requirements.py
 tests/test_iqe_adapter_proposals.py
 tests/test_iqe_bi_dashboard_adapter.py
 tests/test_iqe_cli.py
-tests/test_iqe_executor_fanout.py
 tests/test_iqe_ext_databridge.py
 tests/test_iqe_ext_governance.py
 tests/test_iqe_ext_lineage.py
@@ -1011,10 +1010,8 @@ tests/test_iqe_observability_adapter.py
 tests/test_iqe_observability_seeds.py
 tests/test_iqe_pipeline_adapter.py
 tests/test_iqe_pipeline_seeds.py
-tests/test_iqe_route.py
 tests/test_iqe_security_adapter.py
 tests/test_iqe_security_seeds.py
-tests/test_iqe_seed_queries.py
 tests/test_ironbank_generator.py
 tests/test_jise_api.py
 tests/test_jise_portal.py

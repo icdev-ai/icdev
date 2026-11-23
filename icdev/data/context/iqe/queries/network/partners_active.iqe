@@ -8,4 +8,4 @@
 foreach p in network.partners
 where p.status == "active"
 select p.id, p.name, p.partner_type, p.asn, p.status, p.contract_manager, p.noc_email
-# Presentation (IQE has no `order by`; the reader applies it): sort by p.name.
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by p.name.

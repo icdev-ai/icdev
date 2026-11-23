@@ -6,4 +6,4 @@
 foreach a in strategos.sio_assessments
   select a.id, a.lens_source, a.score, a.confidence, a.nato_reliability,
          a.narrative, a.created_at
-# Presentation (IQE has no `order by` or `limit`; the reader applies it): sort by a.created_at desc, keep the first 8 rows.
+# Not applied: IQE has no `order by` or `limit`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by a.created_at desc, keep the first 8 rows.

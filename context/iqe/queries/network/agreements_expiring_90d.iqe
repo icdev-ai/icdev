@@ -6,4 +6,4 @@
 # (tools/iqe/adapters/ndc.py), so the query needs no where clause.
 foreach a in network.agreements_expiring
 select a.id, a.peer_name, a.peer_asn, a.status, a.contract_end, a.days_remaining, a.monthly_cost_usd
-# Presentation (IQE has no `order by`; the reader applies it): sort by a.contract_end asc.
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by a.contract_end asc.

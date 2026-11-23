@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.iqe.executor import register_collection
+from tools.iqe.executor import fetch_rows, register_collection
 
 
 def _aimc_conn(conn: Any) -> tuple[Any, bool]:
@@ -107,12 +107,15 @@ def design_artifacts_adapter(conn: Any) -> list[dict]:
     """
     c, owned = _aimc_conn(conn)
     try:
-        return _safe_fetch(
+        # Raises on a read failure (fetch_rows) rather than _safe_fetch's [], which
+        # /iqe/run would report as a successful zero-row answer.
+        return fetch_rows(
             c,
             "SELECT ar.id, ar.design_id, d.name AS design_name, d.il_level, "
             "d.adaptation_strategy, ar.artifact_type, ar.title, ar.format, ar.created_at "
             "FROM aiml_artifacts ar "
             "JOIN aiml_designs d ON d.id = ar.design_id",
+            "aimc.design_artifacts",
         )
     finally:
         if owned:

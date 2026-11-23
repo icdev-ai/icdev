@@ -1,1 +1,5 @@
-foreach m in ohc.models where m.stage == "production" select m.model_name, m.version, m.framework, m.metrics, m.promoted_at
+# Production models in the registry (ohc.models = ohc_model_registry).
+# Was `select m.model_name, ..., m.metrics, m.promoted_at`: the columns are name and
+# metrics_json, and there is no promotion timestamp -- updated_at is the entry's last
+# change, which is not necessarily its promotion to production.
+foreach m in ohc.models where m.stage == "production" select m.name, m.version, m.framework, m.metrics_json, m.updated_at

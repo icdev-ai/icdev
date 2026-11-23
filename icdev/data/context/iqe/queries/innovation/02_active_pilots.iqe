@@ -2,4 +2,4 @@
 foreach p in innovation.pilots
 where p.status == "active"
 select p.id, p.idea_id, p.pilot_name, p.hypothesis, p.success_criteria, p.start_date, p.end_date
-# Presentation (IQE has no `order by` or `limit`; the reader applies it): sort by p.start_date desc, keep the first 50 rows.
+# Not applied: IQE has no `order by` or `limit`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by p.start_date desc, keep the first 50 rows.

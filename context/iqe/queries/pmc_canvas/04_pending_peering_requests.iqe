@@ -12,4 +12,4 @@
 foreach r in pmc.peering_requests
 where r.status == "pending"
 select r.id, r.request_type, r.status, r.contact_method, r.created_at, r.asn, r.org_name
-# Presentation (IQE has no `order by`; the reader applies it): sort by r.created_at desc.
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by r.created_at desc.

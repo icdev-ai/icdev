@@ -6,4 +6,4 @@ foreach e in strategos.conflict_events
   where e.goldstein_scale < 0
   select e.id, e.event_type, e.actor1, e.actor2, e.aoi, e.goldstein_scale,
          e.avg_tone, e.source_url, e.event_ts
-# Presentation (IQE has no `order by` or `limit`; the reader applies it): sort by e.goldstein_scale asc, keep the first 25 rows.
+# Not applied: IQE has no `order by` or `limit`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by e.goldstein_scale asc, keep the first 25 rows.

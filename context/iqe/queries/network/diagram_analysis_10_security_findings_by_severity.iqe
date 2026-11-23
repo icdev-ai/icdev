@@ -4,4 +4,4 @@
 foreach f in network.diagram_findings
 where f.tab == "security"
 select f.id, f.analysis_id, f.tab, f.severity, f.title, f.remediation, f.industry, f.topology_mode
-# Presentation (IQE has no `order by`; the reader applies it): sort by f.severity.
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by f.severity.

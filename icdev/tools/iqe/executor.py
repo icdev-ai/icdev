@@ -22,6 +22,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
 from concurrent.futures import as_completed as _as_completed
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Callable, Iterable, Optional
 
 from tools.iqe.ast_nodes import AttrRef, BinOp, CollectionCall, ForeachNode, Literal, SelectNode, WhereNode
@@ -33,6 +34,41 @@ _logger = _log.getLogger("iqe.executor")
 #: to issue ``SELECT * FROM {table}`` with no LIMIT at all — an unbounded scan
 #: into Python memory whose result was then also filtered in Python.
 FALLBACK_ROW_CAP = 10000
+
+
+class CollectionUnavailableError(RuntimeError):
+    """A collection the executor cannot read: no adapter, and nothing to fall back to.
+
+    Raised instead of the driver's own error (``no such table`` and the like),
+    so a caller can report *which* collection could not be read, in our words,
+    and never mistake it for a collection that is merely empty.
+    """
+
+    def __init__(self, collection: str, reason: str) -> None:
+        super().__init__(f"collection {collection!r} is unavailable: {reason}")
+        self.collection = collection
+        self.reason = reason
+
+
+class _Sentinel:
+    __slots__ = ("_name",)
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    def __repr__(self) -> str:
+        return self._name
+
+
+#: The value of ``a * b`` or ``a / b`` that is not a finite number (a NULL,
+#: string or boolean operand, a zero divisor, an overflow). Not ``None``: a
+#: missing attribute is ``None`` and keeps its existing comparison semantics,
+#: while an unusable arithmetic result follows SQL and matches nothing.
+_NULL_ARITH = _Sentinel("NULL_ARITH")
+#: SQL's third truth value: the result of comparing against ``_NULL_ARITH``.
+#: ``not`` keeps it unknown, ``and``/``or`` combine it three-valued, and a
+#: WHERE clause keeps only rows that are definitely ``True``.
+_UNKNOWN = _Sentinel("UNKNOWN")
 
 
 class RowSet(list):
@@ -60,6 +96,29 @@ def capped_rows(rows: Iterable[dict], collection: str, limit: int) -> RowSet:
     maximally confident.
     """
     return RowSet(rows, [{"collection": collection, "reason": "row_cap", "limit": int(limit)}])
+
+
+def fetch_rows(conn: Any, sql: str, collection: str, params: tuple = (),
+               limit: int = FALLBACK_ROW_CAP) -> list[dict]:
+    """Run *sql* (no LIMIT of its own) for an adapter; rows, honestly capped.
+
+    The honest half of the Cortex adapters' fetch (ctx-trust-04), for adapters
+    that read a whole table: a failure is logged and RAISED, never returned as
+    ``[]`` -- an empty list must mean "no rows", not "could not read" -- and a
+    cap that bit comes back as :func:`capped_rows`. ``?`` placeholders work on
+    raw sqlite3 and on StorageConnection, which translates them for PostgreSQL.
+    """
+    try:
+        cur = conn.execute(sql + " LIMIT ?", (*params, int(limit) + 1))
+        cols = [d[0] for d in cur.description]
+        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        _logger.warning("iqe adapter %s failed", collection, exc_info=True)
+        raise
+    if len(rows) > limit:
+        _logger.warning("iqe adapter %s hit its %d-row cap", collection, limit)
+        return capped_rows(rows[:limit], collection, limit)
+    return rows
 
 
 def incompleteness_of(rows: Any) -> list[dict]:
@@ -147,7 +206,18 @@ class Executor:
         # the query's where clauses are applied after it either way, so an
         # unregistered collection could quietly answer from a partial table.
         cap = FALLBACK_ROW_CAP
-        cursor = conn.execute(f"SELECT * FROM {table} LIMIT {cap + 1}")  # noqa: S608  # nosec B608
+        if conn is None:
+            raise CollectionUnavailableError(
+                name, "no adapter is registered for it and no connection was given to fall back to"
+            )
+        try:
+            cursor = conn.execute(f"SELECT * FROM {table} LIMIT {cap + 1}")  # noqa: S608  # nosec B608
+        except Exception as exc:  # any driver error means "cannot read it", reported as such
+            _logger.warning("collection %s: no adapter, and the fallback read of %s failed: %s",
+                            name, table, exc)
+            raise CollectionUnavailableError(
+                name, f"no adapter is registered for it and table {table!r} could not be read"
+            ) from exc
         cols = [d[0] for d in cursor.description]
         fetched = [dict(zip(cols, row)) for row in cursor.fetchall()]
         if len(fetched) > cap:
@@ -225,7 +295,8 @@ class Executor:
     def _filter(self, rows: list[dict], var: str, clauses: list[WhereNode]) -> list[dict]:
         if not clauses:
             return rows
-        return [r for r in rows if all(self._eval(r, var, c.predicate) for c in clauses)]
+        # `is True`: a row whose predicate is _UNKNOWN (SQL NULL) does not match.
+        return [r for r in rows if all(self._eval(r, var, c.predicate) is True for c in clauses)]
 
     def _project(self, rows: list[dict], var: str, sel: Optional[SelectNode]) -> list[dict]:
         if sel is None or sel.wildcard:
@@ -253,16 +324,33 @@ class Executor:
                 obj = getattr(obj, p, None)
         return obj
 
-    def _eval(self, row: dict, var: str, pred: Any) -> bool:
+    def _eval(self, row: dict, var: str, pred: Any) -> Any:
+        """True, False, or _UNKNOWN (only ever from a NULL arithmetic result)."""
         if isinstance(pred, BinOp):
             op = pred.op
             if op == "and":
-                return self._eval(row, var, pred.left) and self._eval(row, var, pred.right)
+                left = self._eval(row, var, pred.left)
+                if left is False:
+                    return False
+                right = self._eval(row, var, pred.right)
+                if right is False:
+                    return False
+                return True if (left is True and right is True) else _UNKNOWN
             if op == "or":
-                return self._eval(row, var, pred.left) or self._eval(row, var, pred.right)
+                left = self._eval(row, var, pred.left)
+                if left is True:
+                    return True
+                right = self._eval(row, var, pred.right)
+                if right is True:
+                    return True
+                return False if (left is False and right is False) else _UNKNOWN
             if op == "not":
-                return not self._eval(row, var, pred.right)
-            return self._compare(op, self._val(row, var, pred.left), self._val(row, var, pred.right))
+                inner = self._eval(row, var, pred.right)
+                return _UNKNOWN if inner is _UNKNOWN else not inner
+            lv, rv = self._val(row, var, pred.left), self._val(row, var, pred.right)
+            if lv is _NULL_ARITH or rv is _NULL_ARITH:
+                return _UNKNOWN
+            return bool(self._compare(op, lv, rv))
         if isinstance(pred, AttrRef):
             return bool(self._resolve(row, self._strip_var(pred.parts, var)))
         if isinstance(pred, Literal):
@@ -307,24 +395,33 @@ class Executor:
 
 
 def _arith(op: str, lv: Any, rv: Any) -> Any:
-    """``lv * rv`` or ``lv / rv``, or None when it is not a finite number.
+    """``lv * rv`` or ``lv / rv``, or ``_NULL_ARITH`` when it is not a finite number.
 
-    Only real numbers take part: a NULL, a string, a boolean, a zero divisor or
-    a non-finite result is NULL, and a NULL operand matches no comparison (see
-    ``_compare``), so a row with an unusable value never passes a filter.
+    Only real numbers take part -- int, float and Decimal (psycopg returns
+    NUMERIC as Decimal). A NULL, a string, a boolean, a zero divisor or a
+    non-finite result is ``_NULL_ARITH``, and any comparison with it is SQL's
+    unknown: it fails ``!=`` as well as ``==`` and ``>``, ``not`` keeps it
+    unknown, and the row does not match.
     """
-    numeric = (int, float)
+    if lv is _NULL_ARITH or rv is _NULL_ARITH:
+        return _NULL_ARITH
+    numeric = (int, float, Decimal)
     if isinstance(lv, bool) or isinstance(rv, bool):
-        return None
+        return _NULL_ARITH
     if not isinstance(lv, numeric) or not isinstance(rv, numeric):
-        return None
-    if op == "/" and rv == 0:
-        return None
+        return _NULL_ARITH
+    if isinstance(lv, Decimal) != isinstance(rv, Decimal) and (
+        isinstance(lv, float) or isinstance(rv, float)
+    ):
+        lv, rv = float(lv), float(rv)
+    if rv == 0 and op == "/":
+        return _NULL_ARITH
     try:
         out = lv * rv if op == "*" else lv / rv
-        return out if math.isfinite(out) else None
-    except (OverflowError, ValueError):
-        return None
+        finite = out.is_finite() if isinstance(out, Decimal) else math.isfinite(out)
+    except (ArithmeticError, ValueError, TypeError):
+        return _NULL_ARITH
+    return out if finite else _NULL_ARITH
 
 
 # ---------------------------------------------------------------------------
@@ -360,11 +457,11 @@ def _duckdb_join(left: list[dict], right: list[dict], key: str) -> list[dict]:
     falls back to ``_python_join``).  Any other exception also propagates to
     the caller's except clause.
     """
-    import json           # noqa: PLC0415
-    import tempfile       # noqa: PLC0415
+    import json  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     from pathlib import Path  # noqa: PLC0415
 
-    import duckdb         # noqa: PLC0415  — raises ImportError if not installed
+    import duckdb  # noqa: PLC0415  — raises ImportError if not installed
 
     tmp = Path(tempfile.gettempdir())
     lp = tmp / "_iqe_join_left.json"

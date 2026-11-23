@@ -11,4 +11,4 @@
 foreach p in pmc.peers
 where p.status == "active"
 select p.id, p.asn, p.org_name, p.peer_type, p.policy, p.status, p.traffic_ratio, p.ipv4_prefix_count, p.ipv6_prefix_count, p.rir
-# Presentation (IQE has no `order by`; the reader applies it): sort by p.org_name.
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by p.org_name.

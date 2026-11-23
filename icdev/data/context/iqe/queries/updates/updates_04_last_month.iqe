@@ -2,4 +2,4 @@
 # Prompt: show releases added in the last month
 foreach r in updates.releases
 select r.version, r.date, r.sections, r.item_count
-# Window (IQE has no relative dates; the reader applies it): r.date within the last month.
+# Window NOT applied: IQE has no relative dates, so this query returns every release, not only those of the last month.

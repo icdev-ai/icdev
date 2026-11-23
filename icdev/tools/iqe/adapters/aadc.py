@@ -10,8 +10,8 @@ Importing this module registers three collections on the module-level Executor:
                      filter by artifact_type, design_id.
   aadc.lifecycle_states — Lifecycle transitions (aadc_lifecycle_states) joined
                      to their design: design_name, design_domain.
-  aadc.ato_readiness — Each design joined to its ATO reports and scorecard
-                     snapshots (aadc_ato_reports, aadc_scorecard_snapshots).
+  aadc.ato_readiness — Each design with its latest ATO report and latest
+                     scorecard snapshot (aadc_ato_reports, aadc_scorecard_snapshots).
 
 The two joined views exist because IQE's ``join()`` built-in joins on one
 key name shared by both sides, and these joins pair ``design_id`` with the
@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.iqe.executor import register_collection
+from tools.iqe.executor import fetch_rows, register_collection
 from tools.logging.icdev_logger import get_logger
 
 _log = get_logger(__name__)
@@ -125,14 +125,14 @@ def twin_snapshots_adapter(conn: Any) -> list[dict]:
 
 
 def _fetch_rows(conn: Any, sql: str, name: str) -> list[dict]:
+    """The joined views' fetch: a read failure RAISES (tools.iqe.executor.fetch_rows).
+
+    Unlike the adapters above, which answer an unreadable table with [] -- an
+    empty answer that /iqe/run would report as a successful zero-row result.
+    """
     c, owned = _aadc_conn(conn)
     try:
-        cur = c.execute(sql)
-        cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
-    except Exception as exc:  # noqa: BLE001 -- a canvas DB without the table (sqlite or PG error) answers no rows, like the adapters above
-        _log.warning("iqe %s adapter failed: %s", name, exc)
-        return []
+        return fetch_rows(c, sql, name)
     finally:
         if owned:
             c.close()
@@ -151,15 +151,26 @@ def lifecycle_states_adapter(conn: Any) -> list[dict]:
 
 
 def ato_readiness_adapter(conn: Any) -> list[dict]:
-    """Return each design joined to its ATO reports and scorecard snapshots (inner joins)."""
+    """Each design with its LATEST ATO report and LATEST scorecard snapshot (inner joins).
+
+    One row per design that has both. "Latest" is by created_at, ties broken by
+    id, so the pick is deterministic; joining every report to every snapshot
+    would give reports x snapshots rows per design.
+    """
     return _fetch_rows(
         conn,
+        "WITH a AS (SELECT r.*, ROW_NUMBER() OVER ("
+        "PARTITION BY r.design_id ORDER BY r.created_at DESC, r.id DESC) AS rn "
+        "FROM aadc_ato_reports r), "
+        "s AS (SELECT n.*, ROW_NUMBER() OVER ("
+        "PARTITION BY n.design_id ORDER BY n.created_at DESC, n.id DESC) AS rn "
+        "FROM aadc_scorecard_snapshots n) "
         "SELECT d.id AS design_id, d.name AS design_name, d.domain AS design_domain, "
         "a.ato_ready, a.score_pct, a.passed, a.failed, a.critical_failed, "
         "s.overall_score, s.health "
         "FROM aadc_designs d "
-        "JOIN aadc_ato_reports a ON a.design_id = d.id "
-        "JOIN aadc_scorecard_snapshots s ON s.design_id = d.id",
+        "JOIN a ON a.design_id = d.id AND a.rn = 1 "
+        "JOIN s ON s.design_id = d.id AND s.rn = 1",
         "aadc.ato_readiness",
     )
 
