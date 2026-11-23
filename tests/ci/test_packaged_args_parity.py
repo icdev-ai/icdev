@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # CUI // SP-CTI
 """The packaged CI allowlist cannot drift from its source unnoticed.
 
@@ -191,3 +190,227 @@ def test_commit_outside_the_tree_stays_out_of_scope() -> None:
 
 def _staged_from(name_status: list[tuple[str, str]]) -> list[str]:
     return pre_commit_check._mirror_scope(name_status)
+
+
+# --------------------------------------------------------------------------- #
+# Review of #2603, finding 1: the gate promoter writes the fragment AND its twin
+# --------------------------------------------------------------------------- #
+def test_the_promoters_fragment_has_a_packaged_twin_in_parity(repo: Path, monkeypatch) -> None:
+    from tools.ci import gate_promoter as gp
+
+    monkeypatch.setattr(gp, "REPO_ROOT", repo)
+    monkeypatch.setattr(gp, "FRAGMENT_DIR", repo / SRC / "core.d")
+    rel = gp._write_fragment(["tests/test_a.py", "tests/test_b.py"])
+    assert rel.startswith(f"{SRC}/core.d/auto-promote-")
+    twin = repo / mirror_parity.twin_of(rel)
+    assert twin.is_file()
+    assert twin.read_bytes() == (repo / rel).read_bytes()
+    assert all(r["clean"] for r in mirror_parity.audit_data_mirrors(root=repo))
+
+
+def test_the_promoter_workflow_stages_the_packaged_twin() -> None:
+    text = (REPO_ROOT / ".github" / "workflows" / "gate-promoter.yml").read_text(encoding="utf-8")
+    add = text[text.index("git add args/ci_test_files/core.d"):]
+    add = add[: add.index("git commit")]
+    assert f"{DST}/core.d" in add, add
+
+
+def test_the_written_rules_name_the_packaged_twin() -> None:
+    """Every place that tells an author to write a fragment names its twin too."""
+    claude = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    rule = claude[claude.index("Write ONE fragment named for your task"):][:1500]
+    assert f"{DST}/core.d/" in rule and "mirror_parity.py --files" in rule
+    policy = (REPO_ROOT / "docs" / "ci" / "test-gating-policy.md").read_text(encoding="utf-8")
+    assert f"{DST}" in policy and "mirror_parity.py --files" in policy
+
+
+# --------------------------------------------------------------------------- #
+# Finding 2: the hook compares the STAGED index for a data-mirror pair
+# --------------------------------------------------------------------------- #
+def test_hook_blocks_when_the_twin_is_edited_but_not_staged(repo: Path) -> None:
+    for side in (SRC, DST):
+        _write(repo / side / "core.txt", "tests/test_a.py\ntests/test_new.py\n")
+    _git(repo, "add", f"{SRC}/core.txt")
+    files = _staged(repo)
+    assert files == [f"{SRC}/core.txt"]
+    assert pre_commit_check._run_mirror_parity(files, root=repo) is False
+
+
+def test_hook_blocks_after_rm_cached_of_the_source(repo: Path) -> None:
+    _git(repo, "rm", "-q", "--cached", f"{SRC}/core.d/old-card.txt")
+    assert (repo / SRC / "core.d" / "old-card.txt").is_file(), "precondition: still on disk"
+    files = _staged(repo)
+    assert files == [f"{SRC}/core.d/old-card.txt"]
+    assert pre_commit_check._run_mirror_parity(files, root=repo) is False
+
+
+def test_hook_blocks_when_the_twin_is_deleted_but_not_staged(repo: Path) -> None:
+    _git(repo, "rm", "-q", f"{SRC}/core.d/old-card.txt")
+    (repo / DST / "core.d" / "old-card.txt").unlink()  # working tree only
+    files = _staged(repo)
+    assert pre_commit_check._run_mirror_parity(files, root=repo) is False
+
+
+def test_hook_ignores_an_unstaged_wip_edit_once_the_index_is_in_parity(repo: Path) -> None:
+    for side in (SRC, DST):
+        _write(repo / side / "core.txt", "tests/test_a.py\ntests/test_new.py\n")
+    _git(repo, "add", "-A")
+    _write(repo / SRC / "core.txt", "tests/test_a.py\ntests/test_new.py\ntests/wip.py\n")
+    files = _staged(repo)
+    assert pre_commit_check._run_mirror_parity(files, root=repo) is True
+
+
+def test_staged_audit_reads_blobs_not_the_working_tree(repo: Path) -> None:
+    _write(repo / SRC / "core.txt", "tests/test_a.py\ntests/wip.py\n")  # unstaged
+    report = mirror_parity.audit_files([f"{SRC}/core.txt"], root=repo, staged=True)
+    assert report["in_parity"] == [f"{SRC}/core.txt"], report
+    _git(repo, "add", f"{SRC}/core.txt")
+    report = mirror_parity.audit_files([f"{SRC}/core.txt"], root=repo, staged=True)
+    assert report["content_drift"] == [f"{SRC}/core.txt"], report
+
+
+def test_the_hook_comment_does_not_claim_tools_pairs_compare_the_index() -> None:
+    src = (REPO_ROOT / "tools" / "testing" / "pre_commit_check.py").read_text(encoding="utf-8")
+    assert "Compares the STAGED files to their twins, nothing else." not in src
+
+
+# --------------------------------------------------------------------------- #
+# Finding 3: renames keep their SOURCE in scope; typechanges are handled
+# --------------------------------------------------------------------------- #
+def _hook_scope(root: Path) -> list[str]:
+    return pre_commit_check._mirror_scope(
+        pre_commit_check._get_staged_name_status(root),
+        rename_sources=pre_commit_check._get_staged_rename_sources(root),
+    )
+
+
+def test_rename_inside_the_tree_with_a_stale_twin_of_the_old_name_blocks(repo: Path) -> None:
+    _git(repo, "mv", f"{SRC}/core.d/old-card.txt", f"{SRC}/core.d/renamed.txt")
+    _write(repo / DST / "core.d" / "renamed.txt", "tests/test_b.py\n")
+    _git(repo, "add", f"{DST}/core.d/renamed.txt")
+    files = _hook_scope(repo)
+    assert f"{SRC}/core.d/old-card.txt" in files
+    assert pre_commit_check._run_mirror_parity(files, root=repo) is False
+
+
+def test_a_move_out_of_the_tree_orphans_the_twin_and_blocks(repo: Path) -> None:
+    _git(repo, "mv", f"{SRC}/core.d/old-card.txt", "docs/old-card.txt")
+    files = _hook_scope(repo)
+    assert files == [f"{SRC}/core.d/old-card.txt"]
+    assert pre_commit_check._run_mirror_parity(files, root=repo) is False
+
+
+def test_a_move_of_both_copies_together_passes(repo: Path) -> None:
+    _git(repo, "mv", f"{SRC}/core.d/old-card.txt", f"{SRC}/core.d/renamed.txt")
+    _git(repo, "mv", f"{DST}/core.d/old-card.txt", f"{DST}/core.d/renamed.txt")
+    files = _hook_scope(repo)
+    assert pre_commit_check._run_mirror_parity(files, root=repo) is True
+
+
+def test_scope_takes_typechange_and_rename_sources() -> None:
+    staged = [("T", f"{SRC}/core.txt"), ("R100", "docs/moved.txt")]
+    assert _staged_from_with(staged, [f"{SRC}/core.d/x.txt"]) == [
+        f"{SRC}/core.txt", f"{SRC}/core.d/x.txt",
+    ]
+
+
+def test_a_typechange_to_a_symlink_blocks(repo: Path, capsys) -> None:
+    target = repo / SRC / "core.d" / "old-card.txt"
+    target.unlink()
+    target.symlink_to("../core.txt")
+    _git(repo, "add", "-A")
+    assert ("T", f"{SRC}/core.d/old-card.txt") in pre_commit_check._get_staged_name_status(repo)
+    files = _hook_scope(repo)
+    assert pre_commit_check._run_mirror_parity(files, root=repo) is False
+    assert "BLOCKED" in capsys.readouterr().out
+
+
+def _staged_from_with(name_status, rename_sources) -> list[str]:
+    return pre_commit_check._mirror_scope(name_status, rename_sources=rename_sources)
+
+
+# --------------------------------------------------------------------------- #
+# Finding 4: --fix never leaves the declared trees
+# --------------------------------------------------------------------------- #
+def test_a_dotdot_path_is_refused_not_ignored(repo: Path) -> None:
+    for raw in (f"{SRC}/../../outside.txt", f"{DST}/core.d/../../../x.txt", "tools/widget/../../x.py"):
+        report = mirror_parity.audit_files([raw], fix=True, root=repo)
+        assert report["refused"], (raw, report)
+        assert report["copied"] == [] and not report["clean"]
+
+
+def test_fix_refuses_a_symlinked_source(repo: Path, tmp_path: Path) -> None:
+    secret = tmp_path / "secret.txt"
+    secret.write_text("not for the package\n", encoding="utf-8")
+    (repo / SRC / "core.d" / "link.txt").symlink_to(secret)
+    report = mirror_parity.audit_files([f"{SRC}/core.d/link.txt"], fix=True, root=repo)
+    assert report["refused"] and report["copied"] == []
+    assert not (repo / DST / "core.d" / "link.txt").exists()
+    reports = mirror_parity.audit_data_mirrors(fix=True, root=repo)
+    assert reports[0]["refused"] and "core.d/link.txt" not in reports[0]["copied"]
+    assert not (repo / DST / "core.d" / "link.txt").exists()
+
+
+def test_fix_refuses_a_symlinked_destination(repo: Path, tmp_path: Path) -> None:
+    victim = tmp_path / "victim.txt"
+    victim.write_text("untouched\n", encoding="utf-8")
+    dst = repo / DST / "core.d" / "old-card.txt"
+    dst.unlink()
+    dst.symlink_to(victim)
+    _write(repo / SRC / "core.d" / "old-card.txt", "tests/changed.py\n")
+    report = mirror_parity.audit_files([f"{SRC}/core.d/old-card.txt"], fix=True, root=repo)
+    assert report["refused"] and report["copied"] == []
+    assert victim.read_text(encoding="utf-8") == "untouched\n"
+
+
+def test_fix_refuses_a_symlinked_parent_directory(repo: Path, tmp_path: Path) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    real = repo / DST / "core.d"
+    for f in real.iterdir():
+        f.unlink()
+    real.rmdir()
+    real.symlink_to(elsewhere, target_is_directory=True)
+    report = mirror_parity.audit_files([f"{SRC}/core.d/old-card.txt"], fix=True, root=repo)
+    assert report["refused"] and report["copied"] == []
+    assert list(elsewhere.iterdir()) == []
+
+
+# --------------------------------------------------------------------------- #
+# Finding 5: directories, the banner, the summary and the coherence label
+# --------------------------------------------------------------------------- #
+def test_files_refuses_a_directory_rather_than_reporting_clean(repo: Path) -> None:
+    proc = subprocess.run(
+        [sys.executable, str(TOOL), "--files", f"{SRC}/core.d", "--gate", "--root", str(repo)],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    assert proc.returncode != 0, proc.stdout
+    assert "directory" in proc.stdout + proc.stderr
+    assert "CLEAN" not in proc.stdout
+
+
+def test_hook_banner_does_not_say_tools_for_a_data_path(repo: Path, capsys) -> None:
+    _write(repo / SRC / "core.txt", "tests/test_a.py\ntests/test_new.py\n")
+    _git(repo, "add", "-A")
+    pre_commit_check._run_mirror_parity(_staged(repo), root=repo)
+    banner = [ln for ln in capsys.readouterr().out.splitlines() if "Mirror parity (" in ln]
+    assert banner and "under tools/)" not in banner[0], banner
+
+
+def test_the_summary_counts_data_trees_apart_from_packages(repo: Path) -> None:
+    summary = mirror_parity.audit_all(root=repo)
+    assert summary["packages_audited"] == 0
+    assert summary["data_trees_audited"] == len(mirror_parity.DATA_MIRRORS)
+
+
+def test_coherence_labels_a_data_tree_path_by_its_own_root(monkeypatch) -> None:
+    from tools.workflow import coherence_checker
+
+    fake = {"reports": [
+        {"path": SRC, "live_dir": SRC, "content_drift": ["core.d/x.py"]},
+        {"path": "db", "live_dir": "tools/db", "content_drift": ["y.py"]},
+    ]}
+    monkeypatch.setattr(mirror_parity, "audit_all", lambda fix=False, root=None: fake)
+    assert coherence_checker._mirror_drifted_files([".py"]) == [
+        f"{SRC}/core.d/x.py", "tools/db/y.py",
+    ]

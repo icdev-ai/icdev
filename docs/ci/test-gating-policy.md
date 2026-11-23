@@ -44,6 +44,19 @@ This is the policy the TSG fixes were already assuming, and it is now the writte
 A file is added to `args/ci_test_files/core.txt` in the same commit that makes it green.
 That is the *only* sanctioned way to widen the allowlist.
 
+The allowlist ships: `icdev/data/args/ci_test_files/` is its packaged twin, read by an
+installed wheel's `gated_test_list` and copied into every `icdev init` project, and it
+is held byte-identical to `args/ci_test_files/` on every commit. Whatever you add or
+change there (a `core.d/<task-id>.txt` fragment, a line in `core.txt`), write the twin
+too, with one command:
+
+```bash
+python tools/dx/mirror_parity.py --files args/ci_test_files/core.d/<task-id>.txt --fix
+```
+
+The pre-commit hook compares the *staged* pair and refuses a difference;
+`tests/ci/test_packaged_args_parity.py` is the CI backstop.
+
 **2. Do not bulk-widen. Ever.**
 
 Adding the 1,826 wholesale turns `main` red — an unknown number of them fail — and a
@@ -85,7 +98,8 @@ python tools/ci/gated_test_list.py --check-coverage --json
 
 # You fixed a test file. Two edits, one PR:
 #   1. append the path to args/ci_test_files/core.txt (at the END — the file is
-#      merge=union, so do not reflow neighbouring lines)
+#      merge=union, so do not reflow neighbouring lines), then mirror it:
+#      python tools/dx/mirror_parity.py --files args/ci_test_files/core.txt --fix
 #   2. delete its line from args/ci_test_backlog.txt
 #   3. lower `backlog_max` in args/test_gating_gate.yaml by the number you gated
 # Forgot step 2? Not fatal — it is reported as a stale entry. Sweep them:

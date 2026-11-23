@@ -353,7 +353,7 @@ def _run_domain_leak_gate(root: Path = BASE_DIR) -> bool:
 # red on `db` twenty minutes after the push and a human mirrored 199 files by
 # hand. The predicate is args/mirror_parity_gate.yaml's rule 2 -- "a file YOU
 # changed must never be drifted, whatever the budget says" -- applied to the
-# STAGED files, which is the only scope a hook may block on: `--paths db` hashes
+# STAGED PATHS, which is the only scope a hook may block on: `--paths db` hashes
 # 864 pairs (512ms median; --files is 79ms, so 6.4x) and, more importantly,
 # reports a package's PRE-EXISTING backlog, which the author neither caused nor
 # can fix without stepping on the PR that owns it.
@@ -371,28 +371,59 @@ def _run_domain_leak_gate(root: Path = BASE_DIR) -> bool:
 # routine work. Extensions the gate declares excluded (.md manifest shards are
 # merge=union and diverge transiently by design) are filtered out here by reading
 # that declaration, never a second copy of it.
+#
+# WHAT IS COMPARED. The staged PATHS pick the pairs. A tools/ pair is then
+# compared in the WORKING TREE (unchanged since mfx-ci-01, so an unstaged edit
+# can still make it pass or block). A DATA_MIRRORS pair (args/ci_test_files) is
+# compared in the INDEX -- `mirror_parity.py --files ... --staged` reads blob ids,
+# a staged delete counts as absent, a staged symlink is refused -- and every
+# difference blocks, because there the index is the whole story: an unstaged
+# twin edit, `git rm --cached`, or an unstaged twin delete must not pass, and an
+# unstaged WIP edit of the source must not block.
 MIRROR_PARITY_TOOL = Path("tools") / "dx" / "mirror_parity.py"
 MIRROR_GATE_FILE = Path("args") / "mirror_parity_gate.yaml"
 
 
-def _mirror_scope(name_status: list[tuple[str, str]]) -> list[str]:
+def _get_staged_rename_sources(root: Path = BASE_DIR) -> list[str]:
+    """The OLD path of every staged rename.
+
+    `_get_staged_name_status` keeps only a rename's destination, which is what
+    the test-gating census needs. Mirror parity needs the source as well: a
+    file renamed or moved out of a DATA_MIRRORS tree leaves its packaged twin
+    behind under the old name.
+    """
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--name-status"],
+        capture_output=True, text=True, cwd=str(root),
+        encoding="utf-8", errors="replace", check=False,
+    )
+    out: list[str] = []
+    for line in result.stdout.splitlines():
+        parts = [p for p in line.split("\t") if p.strip()]
+        if len(parts) >= 3 and parts[0].strip().startswith("R"):
+            out.append(parts[1].strip().replace("\\", "/"))
+    return out
+
+
+def _mirror_scope(name_status: list[tuple[str, str]], rename_sources=()) -> list[str]:
     """Staged ADD/MODIFY/RENAME paths under tools/<pkg>/ or icdev/tools/<pkg>/.
 
     A deletion has no bytes to compare, and a top-level tools/*.py has no package
     twin. Returns [] for the common commit, which then pays nothing.
 
     A path in a ``mirror_parity.DATA_MIRRORS`` tree is in scope for a DELETION
-    too: its twin must go with it, or the packaged copy keeps a file the source
-    no longer has.
+    and a TYPECHANGE too, and so is the SOURCE of a rename (``rename_sources``):
+    its twin must go with it, or the packaged copy keeps a file the source no
+    longer has.
     """
-    from tools.dx.mirror_parity import data_mirror_pair  # noqa: PLC0415
+    from tools.dx.mirror_parity import data_mirror_pair
 
     out: list[str] = []
     for status, path in name_status:
         if not status:
             continue
         if data_mirror_pair(path) is not None:
-            if status[0] in ("A", "M", "R", "D"):
+            if status[0] in ("A", "M", "R", "D", "T"):
                 out.append(path)
             continue
         if status[0] not in ("A", "M", "R"):
@@ -405,6 +436,9 @@ def _mirror_scope(name_status: list[tuple[str, str]]) -> list[str]:
         else:
             continue
         if len(parts) >= 2 and "__pycache__" not in parts:
+            out.append(path)
+    for path in rename_sources:
+        if data_mirror_pair(path) is not None and path not in out:
             out.append(path)
     return out
 
@@ -433,10 +467,11 @@ def _run_mirror_parity(files: list[str], root: Path = BASE_DIR) -> bool:
     tool = BASE_DIR / MIRROR_PARITY_TOOL
     if not tool.is_file() or not files:
         return True
-    print(f"[pre-commit] Mirror parity ({len(files)} staged file(s) under tools/)...")
+    print(f"[pre-commit] Mirror parity ({len(files)} staged path(s) under tools/ or a packaged data tree)...")
     try:
         result = subprocess.run(
-            [sys.executable, str(tool), "--files", ",".join(files), "--json", "--root", str(root)],
+            [sys.executable, str(tool), "--files", ",".join(files), "--staged", "--json",
+             "--root", str(root)],
             capture_output=True, text=True, cwd=str(root), timeout=120,
             encoding="utf-8", errors="replace",
         )
@@ -452,7 +487,7 @@ def _run_mirror_parity(files: list[str], root: Path = BASE_DIR) -> bool:
             print(result.stderr.strip())
         return True
 
-    from tools.dx.mirror_parity import data_mirror_pair, source_of, twin_of  # noqa: PLC0415
+    from tools.dx.mirror_parity import data_mirror_pair, source_of, twin_of
 
     # A DATA_MIRRORS tree has no grandfathered backlog and no extension policy:
     # every difference blocks, missing and mirror-only included. That is the
@@ -462,6 +497,12 @@ def _run_mirror_parity(files: list[str], root: Path = BASE_DIR) -> bool:
         f for bucket in ("content_drift", "missing_from_mirror", "mirror_only")
         for f in report.get(bucket) or [] if data_mirror_pair(f) is not None
     ]
+    refused = report.get("refused") or []
+    if refused:
+        print("[pre-commit] BLOCKED: mirror parity refused a staged path:")
+        for item in refused:
+            print(f"  {item.get('file')}: {item.get('reason')}")
+        return False
     excluded = _mirror_excluded_extensions()
     drift = [f for f in report.get("content_drift") or []
              if Path(f).suffix not in excluded and data_mirror_pair(f) is None]
@@ -1112,9 +1153,11 @@ def main() -> int:
     if not _run_domain_leak_gate():
         failed = True
 
-    # Mirror parity -- only when this commit stages a file under tools/<pkg>/ or
-    # icdev/tools/<pkg>/. Compares the STAGED files to their twins, nothing else.
-    mirror_files = _mirror_scope(name_status)
+    # Mirror parity -- only when this commit stages a path under tools/<pkg>/,
+    # icdev/tools/<pkg>/ or a DATA_MIRRORS tree. The staged paths choose the
+    # pairs; see _run_mirror_parity's block comment for what each kind compares.
+    renames = _get_staged_rename_sources() if any(s.startswith("R") for s, _ in name_status) else []
+    mirror_files = _mirror_scope(name_status, rename_sources=renames)
     if mirror_files and not _run_mirror_parity(mirror_files):
         failed = True
 

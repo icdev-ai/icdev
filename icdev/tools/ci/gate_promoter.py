@@ -242,6 +242,7 @@ def _write_fragment(modules: Sequence[str]) -> str:
         f"# Run: {stamp}\n"
     )
     path.write_text(header + "\n".join(modules) + "\n", encoding="utf-8", newline="\n")
+    _mirror_fragment(path)
     try:
         return str(path.relative_to(REPO_ROOT))
     except ValueError:
@@ -249,6 +250,27 @@ def _write_fragment(modules: Sequence[str]) -> str:
         # is not an error worth raising from a function whose only job is to
         # write a file it has already written.
         return str(path)
+
+
+def _mirror_fragment(path: Path) -> None:
+    """Write the fragment's packaged twin under icdev/data/args/ci_test_files/core.d.
+
+    The packaged allowlist is held byte-identical to its source on every commit
+    (`tools/dx/mirror_parity.DATA_MIRRORS`, tests/ci/test_packaged_args_parity.py),
+    so a promotion PR carrying the fragment alone would fail its own CI. The
+    pairing and the copy are mirror_parity's -- one rule, including its refusal
+    of symlinks and paths outside the declared trees. A FRAGMENT_DIR relocated
+    outside the mirrored tree (a test) has no twin, and nothing is written.
+    """
+    from tools.dx import mirror_parity
+
+    if mirror_parity.data_mirror_pair(path, root=REPO_ROOT) is None:
+        return
+    report = mirror_parity.audit_files([str(path)], fix=True, root=REPO_ROOT)
+    if report["refused"] or report["mirror_only"] or (
+        set(report["content_drift"]) | set(report["missing_from_mirror"])
+    ) - set(report["copied"]):
+        raise RuntimeError(f"could not write the packaged twin of {path}: {report}")
 
 
 def _drop_from_backlog(modules: Sequence[str]) -> int:
