@@ -5510,7 +5510,7 @@ python tools/research/research_engine.py --daemon --json
 
 ## Marketplace — Federated FORGE Asset Registry (Phase 22)
 ```bash
-# RETIRED (icx-ent-04): publish_pipeline.py and review_queue.py refuse (code superseded). A person prepares a
+# RETIRED (icx-ent-04), deleted (icx-ent-13): publish_pipeline.py and review_queue.py are gone. A person prepares a
 # signed ICDEV[OS] store package on /store-publisher/, another person publishes it, and ICDEV[OS] imports,
 # reviews and certifies it (docs/features/icx-ent-04-store-publisher.md):
 python -m tools.store_publisher.cli packages --json

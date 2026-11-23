@@ -28,7 +28,8 @@ The lessons:
 
 ## 2. Retiring the deprecated duplicates
 
-Commit 7b8223a4d marked the top-level generators DEPRECATED. The rule is that a duplicate is **retired** (deleted) only
+Commits 7b8223a4d and ee3d21629 (both 2026-05-09) marked the top-level generators DEPRECATED. The register covers the
+ten the card names, each with the commit that marked it; it is not a list of every deprecated tool. The rule is that a duplicate is **retired** (deleted) only
 once its replacement exists and passes, proven by a test that exercises the replacement. Deleting a tool with **no**
 replacement is the owner's decision. `args/retired_tools.yaml` records each one:
 
@@ -42,7 +43,8 @@ replacement is the owner's decision. `args/retired_tools.yaml` records each one:
 | `cve_triager` | kept | partial (vulnresearch, factory builds). SLA, triage records and blast radius have no replacement, and `cve_passive_watcher` imports it |
 | `simulation_engine` | kept | no replacement. ICDEV[OS]'s compliance sandbox is a different job, and studio and the simulation MCP server import it |
 
-The two marketplace MCP tools still refuse with `superseded` and point to the store publisher. Their refusal lives in
+Every skill, doc, goal and manifest entry, and their packaged copies, names the two only to say they are deleted (a
+test scans them). The two marketplace MCP tools still refuse with `superseded` and point to the store publisher. Their refusal lives in
 `tools/marketplace/superseded.py`.
 
 ## Rules held

@@ -229,7 +229,7 @@ pytest tests/test_finetune_*.py -v --tb=short
 ## Marketplace Integration
 
 - `lora_adapter` added to `VALID_ASSET_TYPES` in `catalog_manager.py`
-- `adapter_config.json` added to `ASSET_TYPE_FILES` in `publish_pipeline.py`
+- `adapter_config.json` added to `ASSET_TYPE_FILES` in `publish_pipeline.py` (since deleted, icx-ent-13: the store publisher packages now)
 - Gate 10 (`training_data_provenance`) added to `asset_scanner.py` as blocking gate
 - Package: adapter_config.json, adapter_model.safetensors, training_metadata.json, model_card.md, SBOM.json
 

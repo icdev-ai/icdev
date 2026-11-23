@@ -88,7 +88,7 @@ and shows each gate, the card's skills and binding, the ceilings, the red-team s
 
 ## 5. The retired tools
 
-`tools/marketplace/publish_pipeline.py` and `review_queue.py` (deprecated 2026-05-09) are thin shims that refuse
+`tools/marketplace/publish_pipeline.py` and `review_queue.py` (deprecated 2026-05-09) were thin shims (deleted at icx-ent-13) that refused
 (`superseded`, `tools/marketplace/superseded.py`) and point here; the MCP marketplace server's `publish_asset`,
 `review_asset`, `list_pending` and `openclaw_promote` refuse the same way, and so do the paths that had the same effect
 with no person: `catalog_manager.py --update-status --status published` and `--promote`, and

@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """What the retired marketplace publish and review tools say now (icx-ent-04).
 
-``tools/marketplace/publish_pipeline.py`` and ``review_queue.py`` were deprecated on 2026-05-09 (no audit-trail use).
+``tools/marketplace/publish_pipeline.py`` and ``review_queue.py`` were deprecated on 2026-05-09 and are deleted (icx-ent-13).
 They published an asset (tenant-local assets with no review at all) and let a reviewer approve it, with one platform
 key. Their replacement is the store publisher (``tools/store_publisher``, /store-publisher/): a person prepares a
 SIGNED ``icos-store-package/v1`` for ICDEV[OS]'s agent store, a DIFFERENT person publishes it (the declared step

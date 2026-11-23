@@ -287,7 +287,7 @@ Apply AI-specific security scanning to marketplace assets before publication or 
 - Findings generate warnings, not blocks (advisory)
 - Applied to: tool scripts, args configurations
 
-**Integration:** These gates run in the store publisher (`tools/store_publisher`, which replaced the retired `publish_pipeline.py`) and again in ICDEV[OS]'s store review.
+**Integration:** These gates run in the store publisher (`tools/store_publisher`, which replaced `publish_pipeline.py`, deleted at icx-ent-13) and again in ICDEV[OS]'s store review.
 
 **Error handling:**
 - Scanner timeout -> fail open with warning, flag for manual review

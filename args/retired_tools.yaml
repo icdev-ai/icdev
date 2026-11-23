@@ -1,69 +1,80 @@
 # CUI // SP-CTI
-# The deprecated duplicates and what became of each (icx-ent-13 / osx-ent-13, the enterprise turnkey programme).
+# What became of the deprecated duplicates the enterprise turnkey card (osx-ent-13 / icx-ent-13) names -- ten top-level
+# generators that ICDEV[OS]'s backbone, assessment, packages, vulnerability twin, risk sandbox and store now cover. It is
+# NOT a list of every deprecated tool: commits 7b8223a4d and ee3d21629 (both 2026-05-09) marked more (19 and 8 files),
+# and the others are outside this card. Each entry records the commit that marked it (`deprecated_in`).
 #
-# Commit 7b8223a4d (2026-05-09) marked these top-level generators DEPRECATED, with a removal date that has passed. The
-# programme's rule: a duplicate is RETIRED (deleted) only once its replacement exists and passes, proven by a test that
-# exercises the replacement; deleting a tool that has NO replacement is the owner's decision, never a card's. So each
-# entry is either
+# The programme's rule: a duplicate is RETIRED (deleted) only once its replacement exists and passes, proven by a test
+# that exercises the replacement; deleting a tool that has NO replacement is the owner's decision, never a card's. So
+# each entry is either
 #   retired   the file is gone; `replacement` names what does the job now and `test` the test that exercises it
 #             (tests/test_icx_ent_13_turnkey.py holds the file absent, nothing importing it, the test CI-listed, and
 #             runs the replacement itself)
 #   kept      still here, still marked DEPRECATED; `why` says what still calls it and why nothing in ICDEV replaces
-#             it yet. The judgement moved to ICDEV[OS] (its control backbone, CMMC assessment, authorization package,
-#             vulnerability twin and risk sandbox), but ICDEV's own callers -- MCP tools, the REST API, reflexes --
+#             it yet. The judgement moved to ICDEV[OS], but ICDEV's own callers -- MCP tools, the REST API, reflexes --
 #             still run these, and ICDEV[OS] is not something ICDEV's tests can exercise.
 # A change here is reviewed like any config.
 schema: icdev-retired-tools/v1
-deprecated_in: 7b8223a4d
+scope: the ten generators the osx-ent-13 card names
 tools:
   - id: publish_pipeline
+    deprecated_in: 7b8223a4d
     path: tools/marketplace/publish_pipeline.py
     status: retired
     retired_by: icx-ent-13
     replacement: tools/store_publisher (icx-ent-04) -- a person prepares a signed icos-store-package/v1, another publishes it, ICDEV[OS] reviews and certifies it
     test: tests/test_icx_ent_04_store_publisher.py::test_a_package_meets_icos_contract_and_its_card_binds_its_content_and_tools
   - id: review_queue
+    deprecated_in: 7b8223a4d
     path: tools/marketplace/review_queue.py
     status: retired
     retired_by: icx-ent-13
     replacement: ICDEV[OS]'s store-review workflow (osx-ent-11), fed by tools/store_publisher's published packages
     test: tests/test_icx_ent_04_store_publisher.py::test_a_person_prepares_another_of_the_org_publishes_and_only_then_it_leaves
   - id: cmmc_assessor
+    deprecated_in: 7b8223a4d
     path: tools/compliance/cmmc_assessor.py
     status: kept
     replacement: partial -- tools/evidence_collectors (icx-ent-02) exports objective evidence; ICDEV[OS] (osx-ent-03) scores CMMC
     why: the cmmc_assess MCP tool (tools/mcp/compliance_server.py) and the SaaS REST API call it; nothing in ICDEV scores CMMC instead
   - id: fedramp_assessor
+    deprecated_in: ee3d21629
     path: tools/compliance/fedramp_assessor.py
     status: kept
     replacement: partial -- tools/evidence_collectors exports objective evidence; ICDEV[OS] (osx-ent-04) derives KSI evidence
     why: the fedramp_assess MCP tool calls it; nothing in ICDEV assesses a FedRAMP baseline instead
   - id: ssp_generator
+    deprecated_in: 7b8223a4d
     path: tools/compliance/ssp_generator.py
     status: kept
     replacement: none in ICDEV -- ICDEV[OS] generates the OSCAL SSP per system (osx-ent-04)
     why: the ssp_generate MCP tool, the SaaS REST and MCP lists, icdev_comply and the RMF stage clock (rmf_stage_recorder) call it
   - id: poam_generator
+    deprecated_in: 7b8223a4d
     path: tools/compliance/poam_generator.py
     status: kept
     replacement: none in ICDEV -- ICDEV[OS] keeps the POA&M in the RMF and checks it against 32 CFR 170.21 (osx-ent-03, -04)
     why: the poam_generate MCP tool, icdev_comply, the ATO evidence cycle and the cATO monitor reflexes call it
   - id: stig_checker
+    deprecated_in: 7b8223a4d
     path: tools/compliance/stig_checker.py
     status: kept
     replacement: none -- tools/govlift/stig_checker and tools/sdc/stig_checker are different scopes
     why: the stig_check MCP tool, the ATO evidence cycle, the canvas configs and the CI pipeline generator call it
   - id: emass_sync
+    deprecated_in: ee3d21629
     path: tools/compliance/emass/emass_sync.py
     status: kept
     replacement: none in ICDEV -- ICDEV[OS] exports for eMASS (osx-ent-04), and a live run is the owner's
     why: the emass_sync MCP tool calls it
   - id: cve_triager
+    deprecated_in: ee3d21629
     path: tools/supply_chain/cve_triager.py
     status: kept
     replacement: partial -- tools/vulnresearch (icx-ent-01) and tools/factory_builds (icx-ent-03) carry KEV and OpenVEX; neither does SLA, triage records or blast radius
     why: the triage_cve MCP tool, the analyzer dispatch and tools/supply_chain/cve_passive_watcher.py (imported at top level) call it
   - id: simulation_engine
+    deprecated_in: ee3d21629
     path: tools/simulation/simulation_engine.py
     status: kept
     replacement: none -- ICDEV[OS]'s compliance sandbox (osx-ent-10) forks a system's control and risk state, a different job

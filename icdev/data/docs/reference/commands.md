@@ -579,6 +579,44 @@ python -m tools.analyzers.re_engines --template                # a license decla
 # YOU maintain your own Hopper/IDA license: declare edition/use in ~/.config/icdev/re_licenses.yaml
 # (or $ICDEV_RE_LICENSES). ICDEV reads no keys and never downloads or installs a commercial engine.
 # IDA Free + use=commercial, and Hopper / non-OEM IDA on ICDEV_SAAS_MODE / ICDEV_MULTI_TENANT, are refused.
+
+# REA analyzers on the contract (rea-wire-02) -- binary | dotnet_assembly | js_bundle | har run;
+# wasm | apk | website report `unavailable` with the measured reason
+python -m tools.analyzers.rea_adapter --families                                   # which families run
+python -m tools.analyzers.rea_adapter <pe> --family binary --authorization-basis owned --json
+python -m tools.analyzers.rea_adapter <pe> --family binary --procedure FUN_140001060 --authorization-basis owned
+python -m tools.analyzers.rea_adapter <dist/> --family js_bundle --authorization-basis owned
+python -m tools.analyzers.rea_adapter <har> --family har --sensitive-value <token> --authorization-basis owned
+# REA evidence feeds (rea-sec-01): a saved rea_adapter --json report into supply chain + attack surface
+python tools/network/attack_surface_mapper.py --artifact-report rea_report.json --json   # IPC / routes / HAR / APK
+python tools/supply_chain/scrm_assessor.py --project-id <id> --rea-report rea_report.json --json
+python tools/compliance/sbom_generator.py --project-id <id> --rea-report rea_report.json
+python tools/compliance/evidence_collector.py --project-id <id> --rea-report rea_report.json --json
+python tools/analyzers/dispatch.py --type dotnet_assembly --value <dll>            # sandboxed fan-out
+# Statuses ok | partial | unavailable | error, lifted by the dispatcher (`status_key`), so a
+# missing engine is never `ok`. limitations / residual_unknowns are None -- never [] -- unless
+# REA reported them (*_basis says which). Pseudocode is basis `decompiled`, confidence low.
+# The native provider comes from the re_engines gate (`--engine`, default ghidra), never REA's `auto`.
+
+# Compiled artifacts -> source_extractor IR, basis decompiled (rea-xlate-01). depth=xlate gathers
+# get_call_graph + batch_decompile (native, needs --procedure) / inspect_managed_members (.NET).
+python -m tools.analyzers.rea_adapter <pe> --family binary --procedure 0x140001060 --depth xlate --authorization-basis owned --json
+python -m tools.translation.decompiled_extractor --report rea_report.json --output-ir ir.json --json
+python -m tools.translation.decompiled_extractor --target <Fixture.dll> --family dotnet_assembly --authorization-basis owned --output-ir ir.json
+python tools/translation/code_translator.py --ir-file ir.json --source-language csharp --target-language python --output-dir out/
+# Every unit / translated entry / legacy component keeps basis + confidence + evidence_id.
+# legacy_analyzer.register_binary_application(project_id, name, ir) is a library call (no CLI).
+# AI-ify from observed behaviour (rea-aiify-01): input_type har | electron_app | website | apk.
+# The dashboard route passes no basis, so set ICDEV_RE_AUTHORIZATION_BASIS before starting it.
+curl -X POST localhost:5050/ai-ify/api/scan -H 'Content-Type: application/json' \
+  -d '{"input_type": "har", "input_ref": "/path/capture.har"}'          # opportunities carry basis: observed
+# Process-Ify from an observed scenario (rea-pif-01): allow_execute must be the literal true, per run.
+curl -X POST localhost:5050/workflow-canvas/api/workflows/observed-draft -H 'Content-Type: application/json' \
+  -d '{"kind": "process", "scenario": {"executable": "/path/app.exe"}, "allow_execute": true, "authorization_basis": "owned"}'
+curl -X POST localhost:5050/workflow-canvas/api/workflows/<workflow_id>/observed-review \
+  -H 'Content-Type: application/json' -d '{"decision": "approve", "reviewer": "<name>", "note": "..."}'
+# The draft is status draft / review pending_hitl and cannot join a process chain until approved.
+# Feature doc (verdicts, license table, NOT-adopted list): docs/features/phase-rea-reverse-engineering.md
 ```
 
 ### The two consumers of that triage (xrv-bin-03)
@@ -4285,10 +4323,16 @@ python tools/agents/capability_matrix.py --capability sandboxed --json   # per-a
 icdev omarchy setup --dry-run        # print the step plan; change nothing
 icdev omarchy setup --yes --start    # run it: --yes allows the sudo PostgreSQL steps, --start enables the genesis timer
 icdev omarchy status [--json]        # per-step state: ok / missing / n/a
+                                     # step billing: failed if a harness auth store holds a metered (api_key) Anthropic credential (omx-guard-07-d5)
 icdev omarchy uninstall [--dry-run]  # reverse MCP, skill, guards, systemd units (never the database or .env)
 # omx-panel-01 — the ICDEV record for Omarchy's agents panel (setup's `panel` step installs it + a 5-min timer)
 python -m tools.cli.omarchy_panel             # print the record: kanban in-progress/backlog, today's spend, adapter + guard
 python -m tools.cli.omarchy_panel --write     # also write ~/.local/state/omarchy/agents/usage/icdev.json; DB down -> stale: true
+# omx-adapt-04 — the Claude bridge: harnesses without a claude.ai login reach Claude on the SUBSCRIPTION via `claude -p`
+icdev claude-bridge serve [--port 8765]      # loopback-only OpenAI /v1/chat/completions; bearer token in ~/.config/icdev/claude-bridge.token
+icdev claude-bridge status [--json]          # token, claude binary, /health (last_quota_error = credit/limit exhausted)
+icdev claude-bridge unit                     # print the systemd --user unit (Linux; `icdev omarchy setup` installs it: the `bridge` step)
+python tools/agents/capability_matrix.py --capability claude_route --gate   # per-adapter route, probe-measured; an overclaim exits 1
 
 # MCP servers (stdio transport)
 python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
@@ -4448,6 +4492,16 @@ python tools/compliance/cssp_report_generator.py --project-id "proj-123"
 python tools/compliance/incident_response_plan.py --project-id "proj-123"
 python tools/compliance/siem_config_generator.py --project-dir "/path/to/project" --targets splunk elk
 python tools/compliance/cssp_evidence_collector.py --project-id "proj-123" --project-dir "/path"
+
+# Open WebUI as a governed sidecar client (card owui, D-OWUI-1)
+# Credentials from env, never printed: OPENWEBUI_ADMIN_TOKEN (Open WebUI admin key), OPENWEBUI_ICDEV_API_KEY (icdev_ key)
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --check --json     # exit 1 on any bypass, 2 if unreadable
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --plan             # read-only: what --apply would change
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --apply --with-tools  # ICDEV /v1 + /mcp/v1 (chat_readonly) only
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --env              # container env block that starts governed
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --apply --with-tools --identity oidc  # forward each user's IdP token (system_oauth), no shared key
+python tools/openwebui/configure.py --icdev-url http://127.0.0.1:8443 --env --identity oidc  # env for Open WebUI login through the shared IdP
+python tools/saas/mcp_authz_survey.py --caller openwebui --days 14 --json             # would-deny rate before arming MCP authz enforce (exit 2 = unmeasurable)
 
 # Xacta 360 Integration
 python tools/compliance/xacta/xacta_sync.py --project-id "proj-123" --mode hybrid
@@ -4700,14 +4754,33 @@ python tools/maintenance/remediation_engine.py --project-id "proj-123" --auto   
 
 # Application Modernization (7Rs Migration)
 python tools/modernization/legacy_analyzer.py --project-id "proj-123" --app-id "app-1" --source-path /path/to/legacy   # Analyze legacy app
+python tools/modernization/static_features.py --app-id "app-1" --out features.json                                     # Features reported statically from entry points (never observed)
+python tools/modernization/bundle_features.py --app-id "app-1" [--observed inv.json] --out extract.json             # icx-mdz-03: features (file:line evidence, capability hints) and processes (step signatures) without a model
+python -m tools.workflow_canvas.processify --from-source "app-1" --json                                               # icx-mdz-03: an application's static processes, no model
+python tools/modernization/apptwin_export.py --app-id "app-1" --extract extract.json --sections-out sections.json --out app.json  # Bundle with features/processes; every part present or missing with why
+python tools/modernization/sample_pipeline.py --source DIR --name app --scratch-db /tmp/x/icdev.db --out /tmp/x/app --no-model  # A real app through the tooling on scratch (features and processes without a model)
 python tools/modernization/architecture_extractor.py --app-id "app-1" --json                                           # Extract architecture
 python tools/modernization/doc_generator.py --app-id "app-1" --output-dir /path/to/docs                               # Generate docs
 python tools/modernization/seven_r_assessor.py --project-id "proj-123" --app-id "app-1" --json                         # 7R assessment
+python tools/modernization/seven_r_assessor.py --project-id "proj-123" --app-id "app-1" --icos-decisions decisions.json --icos-jwks icos_jwks.json --json  # icx-mdz-04: retire reads ICDEV[OS]'s signed, measured redundancy
+python tools/modernization/icos_decisions.py --export decisions.json --jwks icos_jwks.json redundancy --app "app-1"  # icx-mdz-04: an app's measured redundancy in the signed export (exit 1 unmeasured)
+python tools/modernization/apptwin_export.py --app-id "app-1" --extract extract.json --environments args/modernisation_environments.yaml --out app.json  # icx-mdz-04: contract 1.189.0 inline; environment only as declared
 python tools/modernization/version_migrator.py --source /path --output /path --language python --from 2.7 --to 3.11    # Version migration
 python tools/modernization/framework_migrator.py --source /path --output /path --from struts --to spring-boot          # Framework migration
 python tools/modernization/monolith_decomposer.py --app-id "app-1" --target microservices --json                       # Decompose monolith
 python tools/modernization/db_migration_planner.py --app-id "app-1" --target postgresql --json                         # DB migration DDL
 python tools/modernization/strangler_fig_manager.py --plan-id "plan-1" --status --json                                 # Strangler fig status
+python tools/modernization/app_wave_planner.py --app-id "app-1" --out waves.json                                     # An application's own waves (strangler order, backouts)
+python tools/modernization/app_wave_planner.py --app-id "app-1" --capacity args/modernisation_capacity.yaml --out waves.json  # icx-mdz-05: each wave's estimate; dates only from a reviewed team capacity, else why not
+python tools/modernization/survivor_ivv.py --app-id "app-1" [--target-dir out/]                                 # icx-mdz-06: ICDEV's IV&V over a survivor's modernisation outputs, per area pass/fail/unverified, recorded
+python tools/modernization/survivor_ivv.py --app-id "app-1" --show                                                   # icx-mdz-06: the latest result, its independent sign-off, and what the bundle carries
+python tools/modernization/refactor_jobs.py --app-id "app-1" --strategy rehost --out refactor.json                     # The migrators as CAM refactor jobs
+python tools/modernization/refactor_jobs.py --app-id "app-1" --icos-decisions decisions.json --icos-jwks icos_jwks.json  # icx-mdz-02: runs only on ICDEV[OS]'s signed may-plan (else exit 3, nothing written)
+python tools/modernization/monolith_decomposer.py --app-id "app-1" --create-plan --project-id "proj-123" --strategy rehost --icos-decisions decisions.json --icos-jwks icos_jwks.json --json  # Plan only on may-plan
+python tools/modernization/sample_pipeline.py --resume --scratch-db /tmp/x/icdev.db --out /tmp/x/app --icos-decisions decisions.json --icos-jwks icos_jwks.json  # Plan a sample once ICDEV[OS] decided
+python tools/modernization/sample_pipeline.py --resume --scratch-db /tmp/x/icdev.db --out /tmp/x/app --icos-decisions decisions.json --icos-jwks icos_jwks.json --capacity capacity.yaml  # osx-mdz-09: the waves dated only from a reviewed entry of that capacity file (kept in the run for later resumes)
+python tools/modernization/sample_pipeline.py --source DIR --name app --scratch-db /tmp/x/icdev.db --out /tmp/x/app --no-model --legacy-id lapp-0123456789ab  # osx-mdz-09: rerun a sample under the legacy id ICDEV[OS] already knows it by (legacy_analyzer --register --app-id)
+python tools/modernization/cloud_native_jobs.py --app-id "app-1" --target-cloud containerised --out cloud_native.json  # The cloud-native target as CAM jobs (generated, unreviewed)
 python tools/modernization/compliance_bridge.py --plan-id "plan-1" --validate --json                                   # ATO compliance bridge
 python tools/modernization/migration_code_generator.py --plan-id "plan-1" --generate-all --output /path                # Generate migration code
 python tools/modernization/migration_report_generator.py --app-id "app-1" --type assessment                            # Migration report
@@ -5169,6 +5242,10 @@ python tools/saas/tenant_manager.py --add-user --tenant-id "tenant-uuid" --email
 python tools/saas/api_gateway.py --port 8443 --debug                             # Start API gateway (dev mode)
 gunicorn -w 4 -b 0.0.0.0:8443 tools.saas.api_gateway:app                       # Start API gateway (production)
 python tools/saas/openapi_spec.py [--output spec.json]                           # Generate OpenAPI spec to file
+# Governed OpenAI-compatible endpoint (owui-api-01, D-OWUI-1) -- served by the gateway above
+curl -H "Authorization: Bearer $ICDEV_KEY" http://localhost:8443/v1/models       # ICDEV capabilities (args/openai_compat.yaml)
+curl -H "Authorization: Bearer $ICDEV_KEY" -H "X-ICDEV-Classification: CUI" -H "Content-Type: application/json" \
+  -d '{"model":"icdev/local-only","messages":[{"role":"user","content":"hi"}]}' http://localhost:8443/v1/chat/completions
 python tools/saas/licensing/license_generator.py --generate --customer "ACME" --tier enterprise --expires-in-days 365 --private-key /path/key.pem
 python tools/saas/licensing/license_validator.py --validate --json               # Validate on-prem license
 python tools/saas/infra/namespace_provisioner.py --create --slug acme --il IL4 --tier professional  # Create tenant K8s NS
@@ -5433,7 +5510,7 @@ python tools/research/research_engine.py --daemon --json
 
 ## Marketplace — Federated FORGE Asset Registry (Phase 22)
 ```bash
-# RETIRED (icx-ent-04): publish_pipeline.py and review_queue.py refuse (code superseded). A person prepares a
+# RETIRED (icx-ent-04), deleted (icx-ent-13): publish_pipeline.py and review_queue.py are gone. A person prepares a
 # signed ICDEV[OS] store package on /store-publisher/, another person publishes it, and ICDEV[OS] imports,
 # reviews and certifies it (docs/features/icx-ent-04-store-publisher.md):
 python -m tools.store_publisher.cli packages --json
@@ -7627,6 +7704,178 @@ python tools/idp/scorecard.py --scorecard component-readiness --component ndc
 python tools/idp/scorecard.py --dir /path/to/scorecards --json
 ```
 
+### Engineering Standards Register (icx-coe-01)
+
+One entry per engineering standard, with a lifecycle (propose -> review -> adopt ->
+deprecate) through declared steps; the author is never the signer, and a standard
+without a check is a wish (adoption refuses it). Console: `/idp/standards`.
+Run against a scratch database only.
+
+```bash
+# Validate args/engineering_standards.yaml (no database)
+python tools/idp/standards.py --validate --json
+
+# Record the declared seeds not yet in the ledger (labelled bootstrap identity, idempotent)
+python tools/idp/standards.py --seed --json
+
+# The register, and one standard with its full hash-chained history
+python tools/idp/standards.py --list
+python tools/idp/standards.py --show ENG-RED-FIRST --json
+
+# The register's governance twin (canvas idp): observe, then replay
+python -m tools.twin_core.governance --observe --canvas idp --json
+```
+
+### ADR records (icx-coe-02)
+
+Each architecture decision is a record under `docs/reference/adrs/` (one file per
+ADR, plus `_layout.md`); `docs/reference/adrs.md` is generated from them and CI
+fails on drift. Add an ADR by writing its record and its `{{adr <ID>}}` line in
+`_layout.md`, or by proposing it on `/idp/adrs` (accepted by a person who is not
+its author) and exporting it. Never edit `adrs.md` by hand.
+
+```bash
+# Regenerate the flat doc, or check it matches the records (CI)
+python tools/idp/adrs.py --write
+python tools/idp/adrs.py --check
+
+# Validate every record (links to real requirements and standards)
+python tools/idp/adrs.py --validate --json
+
+# Seed the records into the ledger (labelled bootstrap identity, idempotent), list, show one
+python tools/idp/adrs.py --seed --json
+python tools/idp/adrs.py --list
+python tools/idp/adrs.py --show D-COE-2 --json
+
+# Write a decision taken on /idp/adrs back to its record (then --write and commit)
+python tools/idp/adrs.py --export D-COE-2
+```
+
+### Standards scorecards and conformance bundles (icx-coe-03)
+
+Each repo declared in `args/coe_conformance.yaml` (ICDEV[IT] `it`, ICDEV[OS] `os`,
+ICDEV[FT] `ft`) is scored against the engineering standards in force that apply to
+it, with its delivery evidence (DORA four keys plus AI-assisted rework, from the git
+history of main, a CI-run snapshot and a board export), and exported as one
+`icos-conformance/v1` bundle for ICDEV[OS] (its contract schema, vendored and pinned,
+`context/icos/conformance.schema.json`). A bundle is prepared on `/idp/conformance`
+(or by an agent through MCP) and published only by a person who did not prepare it.
+
+```bash
+# A repo's bundle, deterministic given its inputs (a draft unless a person published this content)
+python tools/idp/conformance_export.py --repo it --out .tmp/coe --as-of 2026-11-17 --at 2026-11-17T00:00:00Z
+python tools/idp/conformance_export.py --repo os --out .tmp/coe --ci os.ci.json
+python tools/idp/conformance_export.py --repo it --out .tmp/coe --ci it.ci.json --board it.board.json
+
+# The newest PUBLISHED bundle, as ICDEV[OS] imports it
+python tools/idp/conformance_export.py --repo it --published --out .tmp/coe
+
+# Write the git history read live to the sources dir (args/coe_conformance.yaml sources_dir)
+python tools/idp/conformance_export.py --repo ft --snapshot
+
+# Delivery evidence alone, from one checkout
+python tools/idp/dora.py --repo-path . --ref origin/main --at 2026-11-17 --json
+```
+
+### AI-assisted vulnerability discovery, proven or dropped (icx-ent-01)
+
+Defensive research on AUTHORISED targets only (`args/vuln_research.yaml`). A target is a local tree under
+`scope.allowed_roots`, registered at its digest and authorised on `/vulnresearch/` by a person who did not
+register it. Discovery reads and runs it only through the scope lock and the isolated sandbox
+(`SandboxExecutor.run_isolated`, no network). A candidate becomes a finding only with a proof of vulnerability
+replayed through `reproduction_validator`; patches are proposals a person reviews; one `icos-findings/v1`
+bundle per target goes to ICDEV[OS], prepared by one person and published by another, its publication beside it
+(`context/icos/findings.schema.json`, `findings-publication.schema.json`, vendored from ICDEV[OS] contract 1.201.0, pinned). The CLI acts as an
+agent and takes no person's step.
+
+```bash
+python tools/vulnresearch/cli.py status
+python tools/vulnresearch/cli.py register --name bench --root context/vulnresearch/benchmark --src-root src \
+    --test-dir tests --fuzz vb_parser:parse_record --reason "synthetic benchmark"
+python tools/vulnresearch/cli.py run --target vrt-0123456789 --no-model      # after a person authorised it
+python tools/vulnresearch/cli.py measure --target vrt-0123456789             # FP/FN against the planted labels
+python tools/vulnresearch/cli.py prepare --target vrt-0123456789             # a draft; a person publishes it
+python tools/vulnresearch/cli.py export --target vrt-0123456789 --published --out .tmp/vr
+python tools/vulnresearch/cli.py verify .tmp/vr --ledger
+# Inside the isolated sandbox only (run by pov.py / harness.py, never on the host):
+#   python tools/vulnresearch/sandbox_runtime/pov_runner.py /harness/spec.json
+#   python tools/vulnresearch/sandbox_runtime/fuzz_runner.py /harness/spec.json
+# The fuzz image with atheris 3.1.0 (optional; else the built-in coverage-guided fuzzer runs):
+docker build -t icdev-vuln-sandbox:atheris-3.1.0 deploy/vuln-sandbox
+```
+
+### Signed factory builds (icx-ent-03)
+
+One signed `icos-artefact/v1` (ICDEV[OS]'s contract, vendored and pinned, `context/icos/artefact.schema.json`) per
+built artefact of a target in `args/factory_builds.yaml`: a CycloneDX 1.7 SBOM (an AI-BOM for a model, linked to its
+fine-tuning registry promotion), SLSA v1.2 provenance, OpenVEX, Sigstore bundles signed by the factory's key (KMS or
+the OS keyring; keyless only with a configured OIDC issuer), OpenSSF model-signing for model weights, and OCI
+referrers. A person prepares a build on `/factory-builds/`; another person of the target's org publishes it
+(`decl-wft-fb-build-publish`); only then is it exported for ICDEV[OS]'s release register.
+
+```bash
+# Check the configuration (signing mode and whether a key is set, the transparency log, the targets)
+python -m tools.factory_builds.cli check-config --json
+
+# The synthetic targets an agent may see, and the labelled synthetic inputs for the demo and the e2e
+python -m tools.factory_builds.cli targets --json
+python -m tools.factory_builds.cli seed-synthetic --json
+
+# The newest PUBLISHED synthetic build, as ICDEV[OS] imports it ({bundle, publication}; POST /api/v1/artefacts)
+python -m tools.factory_builds.cli export --target syn-ent03-portal --out .tmp/factory-builds/portal.json
+```
+
+### Evidence collectors for customer environments (icx-ent-02)
+
+Four read-only collectors (cloud configuration via AWS Config, the identity provider via OIDC
+Discovery and SCIM 2.0, endpoints via Intune through Microsoft Graph, the SIEM via Splunk's REST
+API) read each customer system declared in `args/evidence_collectors.yaml`, with credentials by
+reference only (`keyring:` or `vault:`). A reviewed mapping turns fresh observations into
+SP 800-171 Rev. 2 and SP 800-53 Rev. 5 objective results, and each system's
+`icos-objective-evidence/v1` report (ICDEV[OS]'s contract, vendored and pinned,
+`context/icos/objective-evidence.schema.json`) is prepared on `/evidence-collectors/` (or by an
+agent) and published only by another person of the system's organisation.
+
+```bash
+# Check the configuration (refuses a literal credential, an unknown field, a non-loopback http base)
+python -m tools.evidence_collectors.cli check-config --json
+
+# The systems an agent may see at the MCP marking, and one system's observations (records nothing)
+python -m tools.evidence_collectors.cli systems --json
+python -m tools.evidence_collectors.cli collect --system syn-dib-01 --json
+
+# Prepare a draft as an agent (a person publishes it on /evidence-collectors/)
+python -m tools.evidence_collectors.cli prepare --system syn-dib-01 --agent drafter
+
+# The newest PUBLISHED report, as ICDEV[OS] imports it (POST /api/v1/controls/evidence)
+python -m tools.evidence_collectors.cli export --system syn-dib-01 --out .tmp/evidence
+```
+
+### Golden paths (icx-coe-04)
+
+A new service starts conformant by construction on a golden path (`args/golden_paths.yaml`):
+`icdev scaffold service` renders it, and the path declares the engineering standards it
+satisfies, by id and version. The standards that apply are derived from the register and
+`args/coe_conformance.yaml`. A version is proposed and drift-checked on `/idp/golden-paths`
+(or by an agent through MCP) and published or retired only by a person who did not author it.
+
+```bash
+# A new service on a golden path, in place (registry, feature_conformance and MCP spliced as text)
+icdev scaffold service ledger_review --display-name "Ledger Review"
+icdev scaffold service ledger_review --display-name "Ledger Review" --path model-service --out .tmp/svc --no-register
+
+# CI: every path declares every standard in force that applies (exit 1: behind)
+python tools/idp/golden_paths.py --check
+python tools/idp/golden_paths.py --check --source ledger --json
+
+# CI: scaffold each path into a temp tree, run the IDP scorecard and feature_audit on it (exit 1: drift)
+python tools/idp/golden_paths.py --drift
+python tools/idp/golden_paths.py --drift --path model-service --keep .tmp/golden --json
+
+# Record the declared paths in the ledger (labelled bootstrap identity, idempotent)
+python tools/idp/golden_paths.py --seed
+```
+
 ### Component Scorer (idp-score-01)
 
 The complement to the scorecard above: where `tools/idp/scorecard.py` grades a
@@ -7794,32 +8043,31 @@ is the Genesis reflex `idp_score_recorder` (3h, GREEN tier — see
 `args/genesis_config.yaml`); the window in `args/scorecards/<key>.yaml` decides
 whether each cycle actually records, so changing granularity is a YAML edit.
 
-### Rule exemptions — approval and audit (idp-score-04)
+### Rule exemptions — approval and audit (idp-score-04, icx-coe-02)
 
-An exemption takes ONE component out of ONE rule. It is **not** a pass: the rule
+An exemption takes a component out of a rule, for a scope (`rule`, `service`,
+`standard` or `repo`, `args/coe_records.yaml`). It is **not** a pass: the rule
 stops applying, so it leaves the score's denominator rather than paying out its
-weight, and it does not hold the component back on the ladder. Every exemption
-must name **who approved it** and **why** — one that does not is reported as
-`INERT` and waives nothing.
+weight, and it does not hold the component back on the ladder. It links to the
+engineering standards it waives.
 
-`autoApprove` ships **off** (`args/scorecards/<key>.yaml`, `exemptions:`), so a
-request waives nothing until somebody approves it. Every state change appends a
-row to `idp_rule_exemptions` (append-only); revoking is an event, not a delete.
+**Every exemption expires** (icx-coe-02): a request with no expiry is refused.
+One past its expiry no longer exempts and **fails** the scorecard and the check
+below until a person renews or revokes it. Granting and renewing are a signed-in
+person's declared steps on `/idp/exemptions` (`decl-wft-coe-exemption-grant`,
+`-renew`), never the requester's; they are not CLI actions. `autoApprove` and
+grants written into `args/scorecards/*.yaml` are refused. Every state change
+appends a row to `idp_rule_exemptions` (append-only, hash-chained); revoking is
+an event, not a delete. Run against a scratch database only.
 
 ```bash
-# File a request — lands at `pending`, waives nothing yet
+# File a request — lands at `pending`, waives nothing yet; the expiry is required
 python tools/idp/exemptions.py --request e2e-spec:my-canvas \
     --scorecard component-readiness \
     --reason "Headless component; renders no page for Playwright to drive." \
     --requested-by alice --expires 2026-12-31
 
-# Approve it — this is the event that makes it apply
-python tools/idp/exemptions.py --approve e2e-spec:my-canvas \
-    --by platform-lead --decision-reason "Confirmed headless with the owner."
-
-# Deny, or withdraw a live one (the rule starts applying again)
-python tools/idp/exemptions.py --deny e2e-spec:my-canvas --by platform-lead \
-    --decision-reason "A smoke spec is feasible here."
+# Withdraw a request or a live exemption (a stop: the rule starts applying again)
 python tools/idp/exemptions.py --revoke e2e-spec:my-canvas --by platform-lead \
     --decision-reason "Owner assigned; spec landed."
 
@@ -7827,12 +8075,13 @@ python tools/idp/exemptions.py --revoke e2e-spec:my-canvas --by platform-lead \
 python tools/idp/exemptions.py --list
 python tools/idp/exemptions.py --history --json
 python tools/idp/exemptions.py --history e2e-spec:my-canvas
-```
 
-Grants may also be declared in the scorecard YAML under `exemptions.grants[]`
-with a required `approvedBy` and `reason`. When both stores name the same
-(rule, component), **the approval log wins** — otherwise revoking a waiver
-would require a code change to take effect.
+# The check CI runs: expired, expiry-less, YAML-declared or auto-approved exemptions fail it
+python tools/idp/exemptions.py --check --gate
+
+# Give approved exemptions with no expiry one (labelled bootstrap identity; migration 20261118010237 runs it)
+python tools/idp/exemptions.py --migrate-legacy --json
+```
 
 ### Gap seeder — a failing rule becomes a kanban task (idp-gap-01)
 
@@ -8016,6 +8265,19 @@ Interactive use is unaffected.
 ```bash
 python -m tools.agents.guard_parity --survey
 python -m tools.agents.guard_parity --survey --json
+```
+
+### Anthropic billing policy (omx-guard-07-d1)
+
+`args/guard_anthropic.yaml` declares how Claude may be paid for:
+`anthropic_billing: subscription_only` (default -- claude.ai subscription only,
+natively or via the `claude` CLI bridge; never a metered API key) or
+`allow_metered`. Any invalid or missing value resolves to `subscription_only`.
+
+```bash
+icdev config get anthropic_billing          # subscription_only
+icdev config get anthropic_billing --json   # value, source file, warnings
+icdev config list
 ```
 
 Each cell reports `declared` (the hand-written claim in
@@ -8676,6 +8938,9 @@ python -m tools.ci.merge_stall --survey --survey-limit 300 --json
 python -m tools.ci.merge_stall --stall-after 30              # one-run override
 python -m tools.ci.merge_stall --no-record                   # every age -> ci_estimate
 python -m tools.ci.merge_stall --from-json prs.json --default-branch main
+# A red PR whose worker exited: which ones got a repair session? (kpr-watch-27)
+python -m tools.kanban.repair_dispatch                      # repairs per task, cooldown
+python -m tools.kanban.repair_dispatch --json
 # Did that resume REACH anything, or was a line just written? (kpr-watch-13)
 python -m tools.ci.resume_delivery --survey
 python -m tools.ci.resume_delivery --survey --json
@@ -9782,6 +10047,182 @@ additive to every retry already on the board.
 
 ---
 
+## Feature conformance — the five rules, per feature (icx-cnf-01)
+
+Judges each feature listed in `args/feature_conformance.yaml` (Cortex, ACE,
+Co-Workers to start) against the five rules: console GUI, a declared workflow for
+every decision, twin observation, an architecture trace and an AI-native tool.
+Every cell lists its evidence. Doc: `docs/audits/conformance-cortex-coworker.md`.
+
+```bash
+python tools/conformance/feature_audit.py                      # JSON report (probes the url_map, ~25s)
+python tools/conformance/feature_audit.py --markdown --census  # rewrite the doc tables, snapshot, census
+python tools/conformance/feature_audit.py --check              # exit 1: stale doc, snapshot, reason or census
+python tools/workflow/coherence_checker.py --check feature_conformance --json
+```
+
+Console: `/twin-observatory/conformance`. MCP: `feature_conformance` (read-only).
+
+### Route ids (icx-cnf-08)
+
+A page of an audited feature calls a route by its Flask endpoint id, never by a path
+it writes itself: `icdevFetch('ace_api.api_launch', {}, {method: 'POST', ...})` or
+`icdevRoute('ace.instance_detail', {instance_id})` in JS (from
+`tools/dashboard/static/js/routes.gen.js`, loaded by base.html), `url_for('...')` in
+Jinja. The helpers refuse a missing, empty or extra parameter, an unknown endpoint and
+a method the rule does not serve. The audit credits only those ids; a hand-written
+`/api/` path in an audited file, a stale `routes.gen.js` or an unknown id fails
+`--check` (and the `feature_conformance` coherence check).
+
+```bash
+python tools/dashboard/routes_gen.py              # regenerate routes.gen.js from the live url_map
+python tools/dashboard/routes_gen.py --check      # exit 1 when it is stale
+python tools/conformance/feature_audit.py --e2e-gate .tmp/test_runs/observed-calls*.json
+                                                  # exit 1: a credited write no page sent in e2e
+```
+
+The e2e fixture `tests/e2e/fixtures/observed_calls.ts` records every request a page
+makes (a test's own `page.evaluate` fetch is recorded as `test`, not `page`); CI's
+`E2E (Playwright)` job runs the gate over all four shards. The committed record is
+`tests/e2e/observed-calls.json`. The e2e server sets `ICDEV_ACE_E2E_ROLES_DIR` to
+`tests/e2e/fixtures/ace_roles` (one test-only auto-eligible role; honoured only under
+`tests/`) and enables Cortex, DIC and the Twin Observatory.
+
+### Modernisation in the audit (icx-mdz-01)
+
+Six modernisation features are judged: 7R (`/migration`), AI-Ify (`/ai-ify`), Process-Ify
+(`/workflow-canvas/processify`), an application's waves and CAM jobs, cloud-native targets
+and the ICDEV[OS] exporter (all three on `/migration-canvas/modernisation`). A person's
+decisions run through `decl-wft-mdz-7r-strategy` (a proposal to ICDEV[OS], never
+binding), `decl-wft-mdz-aiify-promote`, `decl-wft-mdz-aiify-scan-delete`,
+`decl-wft-mdz-processify-observed-approve` and `decl-wft-mdz-cam-refactor-approve`. The
+decisions check verifies a signed ICDEV[OS] export only against the JWKS named by
+`ICDEV_ICOS_JWKS`. MCP (read-only): `modernisation_seven_r`, `aiify_promotions`,
+`processify_observed_drafts`, `modernisation_waves_jobs`, `modernisation_cloud_native`,
+`modernisation_bundle`.
+
+icx-mdz-05: a wave is dated only from a team capacity declared in
+`args/modernisation_capacity.yaml` and approved at its digest through
+`decl-wft-mdz-capacity-review` (Modernisation page). MCP (read-only):
+`modernisation_wave_schedule`. The e2e server sets `ICDEV_MODERNISATION_CAPACITY_E2E` to a
+capacity file the e2e seed writes (honoured only under `tests/`).
+
+icx-mdz-06: a consolidation survivor's IV&V is ICDEV's own (`ivv_assessor.evaluate`) over its
+modernisation outputs (`survivor_ivv.py`); an area is pass only when every requirement there
+passed an automated check, otherwise fail or unverified. A person separate from whoever built or
+approved the plan signs it off at its digest through `decl-wft-mdz-survivor-ivv-signoff`
+(Modernisation page); the bundle carries the `ivv` section only while it is signed at the current
+digest. MCP (read-only): `modernisation_survivor_ivv`.
+
+```bash
+python -m tools.twin_core.governance --observe --canvas mdc --json     # the modernisation twin
+python -m tools.twin_core.governance --thread mdz_assessment:<id>      # a finding's record
+npx playwright test tests/e2e/modernisation_writes.spec.ts             # every credited write, pressed
+```
+
+## Cortex, ACE and Co-Workers console pages and reads (icx-cnf-05)
+
+Pages (each linked from `/cortex`): `/cortex/verbs` (resolve, complete, reason,
+classify, extract), `/cortex/pmo` (slides, win themes, staffing, cost volume,
+dashboard, BOM reconcile; never award, never a BOM designation), `/cortex/intake`,
+`/cortex/govern` (TRUST chain, dry run, agent launches), `/cortex/service-keys`
+(admin, ISSO), `/cortex/airgap`; ACE: `/coworker/chat`. Read-only JSON beside them:
+
+```bash
+curl -s localhost:5050/cortex/api/pmo/status?opportunity_id=OPP-1
+curl -s localhost:5050/cortex/api/trust-chain?hours=24
+curl -s localhost:5050/cortex/api/agent-launches
+curl -s localhost:5050/cortex/api/intake/sessions
+curl -s localhost:5050/cortex/api/service-keys      # admin, isso
+curl -s localhost:5050/cortex/api/airgap
+```
+
+MCP (all read-only, tier `read`): `cortex_pmo_status`, `cortex_intake_sessions`,
+`cortex_trust_chain` (the read of `cortex_govern`, which stays mutating),
+`cortex_findings_list`, `cortex_metrics`, `cortex_agent_launches`,
+`cortex_service_keys`, `cortex_airgap_posture`, `ace_checkpoints`, `coworkers_roster`.
+## Platform model — ICDEV's own architecture, traced (icx-cnf-04)
+
+`args/platform_model/*.yaml` declares the elements, interfaces and requirements of
+Cortex, ACE, Co-Workers and the conformance audit. Each requirement traces to
+elements, their code and the EXISTING tests that verify it; a requirement with no
+test is a gap, never a pass. Seed it into the MBSE digital thread as project
+`icdev-platform` (use a scratch `ICDEV_DB_PATH`).
+
+```bash
+python tools/mbse/platform_model.py --check                     # every test (file+function) and code path resolves
+python tools/mbse/platform_model.py --seed --json               # write the digital thread (project icdev-platform)
+python tools/mbse/platform_model.py --trace --feature cortex.pmo --json   # per-feature chain, orphans and gaps
+python tools/workflow/coherence_checker.py --check platform_model_trace --json
+```
+
+Console: `/lineage` (ICDEV platform model button). MCP: `platform_model_trace`
+(read-only), and `trace_forward` / `trace_backward` with `project_id: icdev-platform`
+and a requirement id such as `PM-CTX-01`.
+## Declared decisions — every decision a person takes runs a template (icx-cnf-02)
+
+Each decision route in Cortex and ACE names a template under
+`args/workflow_hitl_templates/` (`decides:` plus one manual stage held by a role).
+The route takes the person's step before its effect. Machine callers and people
+without the role only propose; a holder decides at `/decisions`.
+
+```bash
+python -m tools.workflow_hitl.declared --json              # templates and shape errors
+python -m tools.workflow_hitl.declared --seed --json       # seed them into wf_templates
+python -m tools.workflow_hitl.declared --list --status pending --json
+python tools/workflow/coherence_checker.py --check hitl_workflow --json
+```
+
+Console: `/decisions`. MCP: `workflow_decision_steps` (read-only).
+## ACE event log and dispatch — recommend by default, auto only under a grant (icx-ace-01)
+
+`tools/ace/event_log.py` records ACE events (topics derived from the role YAMLs).
+The event dispatcher, started by the dashboard server when
+`args/ace/auto_dispatch.yaml` says `dispatcher_enabled`, turns each event into a
+recommendation: a pending `decl-wft-ace-run-launch` step a person decides at
+`/decisions`. A role/topic launches on auto only under a live grant
+(`decl-wft-ace-auto-dispatch`): declared eligible in its role YAML, trust trusted
+or above, a reason, an expiry and a daily limit. Revoke and stop-all are
+immediate. Libraries, no CLI:
+
+```bash
+python -m pytest tests/ace -q                                  # log, dispatch, grants, twin, import guard
+python tools/conformance/feature_audit.py --check              # ace.trust_sessions owns the routes and tools
+```
+
+`from tools.ace.event_log import emit, get_recent_results, dispatch_topics`;
+`from tools.ace.auto_dispatch import grants, eligible, live_grant`.
+Console: `/coworker` (Event feed and Auto-dispatch panels), `/decisions`.
+MCP: `ace_events`, `ace_auto_dispatch_grants` (read-only).
+## Governance twins — Cortex, ACE, Co-Workers, the conformance audit (icx-cnf-03)
+
+Observe a governed subsystem, record the evidence, replay it. Every finding names
+its thread. An unreadable source is unverified, never a pass. Doc:
+`docs/features/twx-cov-02-twin-coverage-audit.md` section 5.
+
+```bash
+python -m tools.twin_core.governance --observe --json               # observe and record every governance twin
+python -m tools.twin_core.governance --observe --canvas cortex --no-record --json
+python -m tools.twin_core.governance --list --canvas ace --json      # recorded observations, newest first
+python -m tools.twin_core.governance --replay <observation_id>      # exit 1 when it no longer matches
+python -m tools.twin_core.governance --thread cortex_audit:<id>     # a finding's record and provenance
+```
+
+Console: `/twin-observatory/governance`. MCP: `twin_governance` (read-only).
+
+## cortex_audit hash chain and Cortex provenance (icx-cnf-06)
+
+`cortex_audit` rows carry `chain_seq`, `prev_hash` and `row_hash`; UPDATE and
+DELETE are refused by triggers (SQLite and PostgreSQL). Rows written before the
+chain are never rewritten: one `cortex_audit_chain_genesis` row records their
+count and digest. Migration `20261114175314_cortex_audit_hash_chain`. The cortex
+governance twin runs `verify` on every observation.
+
+```bash
+python -m tools.cortex.db.audit_chain --verify --json   # walk the chain; exit 1 when broken
+python -m tools.cortex.db.audit_chain --ensure --json   # columns, genesis, triggers (idempotent)
+```
+
 ## Cards — the per-card incident records (xrv-docs-02)
 
 These 82 essays used to sit inline in CLAUDE.md's `### Essential Commands` block —
@@ -9879,6 +10320,7 @@ commands, its measurements and its refusals.
 | `flx-twin-01` | A twin over the EMULATOR, read through the broker, marked `emulated` | `from tools.twin_core.registry import TwinRegistry` | [flx-twin-01.md](cards/flx-twin-01.md) |
 | `xrv` | Nine external repos reviewed; eight gaps were OUR OWN unconsumed capabilities | `python -m tools.cost.session_cost --survey --by-verdict --json` | [xrv.md](cards/xrv.md) |
 | `mfx-own-09` | A WARM worktree, pre-created while the host is quiet, claimed in ~1.3s | `python -m tools.kanban.worktree_pool --status [--json]` | [mfx-own-09.md](cards/mfx-own-09.md) |
+| `mfx-own-10` | The warm pool is WARM when a loaded host needs it -- refills under load, measure reads rotated logs | `python -m tools.kanban.worktree_pool --measure --window-hours 24 [--json]` | [mfx-own-10.md](cards/mfx-own-10.md) |
 | `kpr-watch-19` | The resume queue has a consumer on the executor that RUNS, and is ONE directory from every checkout | `python -m tools.ci.resume_delivery --survey` | [kpr-watch-19.md](cards/kpr-watch-19.md) |
 | `xrv-cost-05` | Every `tools/call` Claude Code makes leaves ONE audit row, counted apart from Studio's | `python -m tools.awareness.capability_consumption --class mcp_dispatch_tool --json` | [xrv-cost-05.md](cards/xrv-cost-05.md) |
 | `kpr-watch-21` | A refusal that names no remedy: the done-gate says what is wrong, not what clears it | `python tools/kanban/cli.py --reverify <task-id>` | [kpr-watch-21.md](cards/kpr-watch-21.md) |

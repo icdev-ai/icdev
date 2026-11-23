@@ -34,6 +34,10 @@ TRACKS = {
 #: The top-level generators commit 7b8223a4d marked DEPRECATED that the card names.
 CARD_NAMES = {"cmmc_assessor", "fedramp_assessor", "ssp_generator", "poam_generator", "stig_checker", "emass_sync",
               "cve_triager", "publish_pipeline", "review_queue", "simulation_engine"}
+DEPRECATED_IN = {"publish_pipeline": "7b8223a4d", "review_queue": "7b8223a4d", "cmmc_assessor": "7b8223a4d",
+                 "ssp_generator": "7b8223a4d", "poam_generator": "7b8223a4d", "stig_checker": "7b8223a4d",
+                 "fedramp_assessor": "ee3d21629", "emass_sync": "ee3d21629", "cve_triager": "ee3d21629",
+                 "simulation_engine": "ee3d21629"}
 REGISTER = yaml.safe_load((ROOT / "args" / "retired_tools.yaml").read_text(encoding="utf-8"))
 
 
@@ -93,7 +97,9 @@ def test_the_lessons_date_their_facts_name_no_aws_training_and_claim_nothing():
 
 def test_every_deprecated_generator_the_card_names_is_accounted_for():
     tools = {t["id"]: t for t in REGISTER["tools"]}
-    assert set(tools) == CARD_NAMES and REGISTER["deprecated_in"] == "7b8223a4d"
+    assert set(tools) == CARD_NAMES
+    # the commit that marked each one (git log -S'DEPRECATED' on its file): 7b8223a4d marked 19 files, ee3d21629 8 more
+    assert {k: t["deprecated_in"] for k, t in tools.items()} == DEPRECATED_IN
     for t in tools.values():
         assert t["status"] in ("retired", "kept"), t["id"]
         assert t.get("replacement"), f"{t['id']}: says what replaces it, or that nothing in ICDEV does"
@@ -177,3 +183,34 @@ def test_the_openclaw_bridge_no_longer_looks_for_the_retired_review_queue():
     assert openclaw_bridge._HAS_REVIEW is False
     assert "review_queue\")" not in inspect.getsource(openclaw_bridge), "no find_spec for a retired module"
     assert openclaw_bridge.health_check()["checks"]["review_queue_available"] is False
+
+
+#: Where a person or an agent is told how to use a tool: skills, docs, goals, the tool manifest, the marketplace code's
+#: own comments -- and their packaged copies.
+GUIDANCE = (".claude/skills", "docs", "goals", "tools/manifest", "tools/marketplace", "icdev/data/claude_bootstrap",
+            "icdev/data/docs", "icdev/data/goals", "icdev/docs", "icdev/tools/manifest")
+SHIM = re.compile(r"\b(publish_pipeline|review_queue)(\.py)?\b")
+
+
+def test_nothing_still_tells_anyone_to_use_a_retired_tool():
+    """osx-ent-13 review: a retired tool is named only to say it is deleted -- never as a command to run or a tool that
+    refuses (it no longer exists to refuse)."""
+    bad = []
+    for d in GUIDANCE:
+        for f in sorted((ROOT / d).rglob("*")):
+            if not f.is_file() or f.suffix not in (".md", ".py", ".yaml", ".yml", ".txt") or "audits" in f.parts:
+                continue
+            for n, line in enumerate(f.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+                if SHIM.search(line) and "deleted" not in line.lower() and f.name != "superseded.py":
+                    bad.append(f"{f.relative_to(ROOT)}:{n}")
+    assert bad == [], bad
+
+
+def test_the_asset_scanner_says_signing_happens_in_the_store_publisher():
+    """Its signature gate's docstring pointed at the deleted pipeline; it names the store publisher, which signs now."""
+    import inspect
+
+    from tools.marketplace import asset_scanner
+
+    src = inspect.getsource(asset_scanner)
+    assert "Actual signing happens in the store publisher" in src and "happens in publish_pipeline" not in src
