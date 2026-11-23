@@ -1,0 +1,7 @@
+# icx-coe-03: scorecards per repo against adopted standards (machine pass, needs evidence, an expired exemption
+# fails, not adopted = not scored, unverified when nothing is measured); DORA four keys plus AI rework from declared
+# sources (planted history, a real throwaway git repo, no data = unverified); the icos-conformance/v1 bundle against
+# its pinned draft schema, deterministic export; publishing a person's declared step, never the preparer's; the
+# append-only hash-chained ledger; page, routes, twin threads and replay, MCP read and draft; and the ambient PG run.
+tests/test_icx_coe_03_conformance.py
+tests/test_icx_coe_03_ambient.py

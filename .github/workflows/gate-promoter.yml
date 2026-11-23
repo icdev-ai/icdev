@@ -100,7 +100,10 @@ jobs:
           git checkout -b "$BRANCH"
           python tools/ci/gate_promoter_report.py --from promotion.json \
             --commit-message commit_msg.txt --pr-body pr_body.md
-          git add args/ci_test_files/core.d args/ci_test_backlog.txt \
+          # The fragment AND its packaged twin: the two are held byte-identical
+          # (tests/ci/test_packaged_args_parity.py), and the promoter writes both.
+          git add args/ci_test_files/core.d icdev/data/args/ci_test_files/core.d \
+                  args/ci_test_backlog.txt \
                   args/test_gating_gate.yaml docs/testing/ungated_test_census.json
           git commit -F commit_msg.txt
           git push -u origin "$BRANCH"

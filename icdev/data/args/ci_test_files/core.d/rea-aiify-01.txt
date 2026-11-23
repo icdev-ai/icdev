@@ -1,0 +1,4 @@
+# rea-aiify-01: AI-ify observed-behaviour input mode (har / electron_app / website / apk).
+# Pins the rails refusing before a scan row, unmeasured inventory as None (never []),
+# basis: observed through scorer + roadmap, and REA reached via the sandboxed dispatcher.
+tests/test_aiify_observed_input.py
