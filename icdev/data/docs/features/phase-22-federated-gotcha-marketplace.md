@@ -152,10 +152,10 @@ The system SHALL maintain a complete provenance chain for every asset version in
 |------|---------|
 | `tools/marketplace/catalog_manager.py` | CRUD for assets and versions |
 | `tools/marketplace/asset_scanner.py` | 7-gate security scanning pipeline |
-| `tools/marketplace/publish_pipeline.py` | RETIRED (icx-ent-04): refuses; replaced by `tools/store_publisher` |
+| `tools/marketplace/publish_pipeline.py` | RETIRED (icx-ent-04), deleted (icx-ent-13); replaced by `tools/store_publisher` |
 | `tools/marketplace/install_manager.py` | Install/update/uninstall with dependency resolution |
 | `tools/marketplace/search_engine.py` | Hybrid BM25 + semantic search (Ollama air-gapped) |
-| `tools/marketplace/review_queue.py` | RETIRED (icx-ent-04): refuses; ICDEV[OS] reviews and certifies store packages |
+| `tools/marketplace/review_queue.py` | RETIRED (icx-ent-04), deleted (icx-ent-13); ICDEV[OS] reviews and certifies store packages |
 | `tools/marketplace/provenance_tracker.py` | Supply chain provenance tracking |
 | `tools/marketplace/compatibility_checker.py` | IL + version + dependency compatibility |
 | `tools/marketplace/federation_sync.py` | Tenant-local to central registry sync |
@@ -202,41 +202,4 @@ The system SHALL maintain a complete provenance chain for every asset version in
 
 ## 9. Commands
 
-```bash
-# Publish a skill to tenant-local catalog
-python tools/marketplace/publish_pipeline.py --asset-path /path --asset-type skill \
-  --tenant-id "tenant-abc" --publisher-user "user@mil" --json
-
-# Search the marketplace
-python tools/marketplace/search_engine.py --search "STIG checker" --json
-
-# Check IL compatibility
-python tools/marketplace/compatibility_checker.py --asset-id "asset-abc" \
-  --consumer-il IL5 --json
-
-# Install an asset
-python tools/marketplace/install_manager.py --install --asset-id "asset-abc" \
-  --tenant-id "tenant-abc" --json
-
-# Review queue (ISSO/security officer)
-python tools/marketplace/review_queue.py --pending --json
-python tools/marketplace/review_queue.py --review --review-id "rev-abc" \
-  --reviewer-id "isso@mil" --decision approved --rationale "Passed review" --json
-
-# Federation sync
-python tools/marketplace/federation_sync.py --status --json
-python tools/marketplace/federation_sync.py --promote --tenant-id "tenant-abc" --json
-python tools/marketplace/federation_sync.py --pull --tenant-id "tenant-abc" \
-  --consumer-il IL5 --json
-
-# Security scanning
-python tools/marketplace/asset_scanner.py --asset-id "asset-abc" \
-  --version-id "ver-abc" --asset-path /path --json
-
-# Catalog management
-python tools/marketplace/catalog_manager.py --list --asset-type skill --json
-python tools/marketplace/catalog_manager.py --get --slug "tenant-abc/my-skill" --json
-
-# Provenance report
-python tools/marketplace/provenance_tracker.py --report --asset-id "asset-abc" --json
-```
+_Deleted at icx-ent-13: `tools/marketplace/publish_pipeline.py` no longer exists; a person prepares a signed store package with the store publisher (`/store-publisher/`, `python -m tools.store_publisher.cli`) and another person publishes it._

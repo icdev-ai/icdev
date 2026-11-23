@@ -1,0 +1,16 @@
+{
+  "slug": "m-assessor-01-objective-evidence",
+  "title": "Assessor: Objective-Level Evidence and the Evidence Binder",
+  "tagline": "Assess objective by objective: met, not met, inherited, not applicable -- or unverified, which is never a pass.",
+  "tier": 2,
+  "topic": "compliance",
+  "role_filter": "assessor",
+  "mission_type": "guided",
+  "xp_reward": 350,
+  "order_idx": 1,
+  "difficulty": "intermediate",
+  "estimated_minutes": 45,
+  "prereqs": [
+    "m10-tier1-capstone"
+  ]
+}

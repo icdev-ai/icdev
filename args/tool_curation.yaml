@@ -140,7 +140,7 @@ goals:
           - asset_scanner
           - compatibility_checker
           - provenance_tracker
-      # icx-ent-04: publish_pipeline and review_queue are retired. An agent never reviews or publishes: a person
+      # icx-ent-04: publish_pipeline and review_queue are retired (deleted at icx-ent-13). An agent never reviews or publishes: a person
       # prepares a signed store package on /store-publisher/ and another person publishes it; an agent only reads.
       review:
         description: "Read the prepared store package and its gates (a person decides on /store-publisher/)"

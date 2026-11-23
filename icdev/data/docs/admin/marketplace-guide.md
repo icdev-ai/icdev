@@ -45,34 +45,19 @@ Every asset passes through the following gates before publication:
 | 8 | Prompt injection scan | Yes -- 0 high-confidence injection patterns |
 | 9 | Behavioral sandbox | Warning -- 0 critical dangerous code patterns (eval, exec, os.system) |
 
-> **Retired (icx-ent-04).** `publish_pipeline.py` and `review_queue.py` refuse (code `superseded`). An agent, crew,
+> **Retired (icx-ent-04), deleted (icx-ent-13).** `publish_pipeline.py` and `review_queue.py` are gone; their MCP tools refuse (code `superseded`). An agent, crew,
 > skill, MCP server or plugin is now a signed ICDEV[OS] store package: a person prepares it on `/store-publisher/`
 > (`tools/store_publisher`, ICDEV's seven scanner gates run on it and the publisher's key signs its Agent Card),
 > another person publishes it (the declared step `icos-store-publish`), and ICDEV[OS] imports it, re-runs its gates
-> and a reviewer who is none of them certifies it. See `docs/features/icx-ent-04-store-publisher.md`. The commands
-> below are kept for the record and refuse.
+> and a reviewer who is none of them certifies it. See `docs/features/icx-ent-04-store-publisher.md`.
 
 ### Publish a Skill
 
-```bash
-python tools/marketplace/publish_pipeline.py \
-  --asset-path /path/to/skill \
-  --asset-type skill \
-  --tenant-id "tenant-abc" \
-  --publisher-user "user@mil" \
-  --json
-```
+_Deleted at icx-ent-13: `tools/marketplace/publish_pipeline.py` no longer exists; a person prepares a signed store package with the store publisher (`/store-publisher/`, `python -m tools.store_publisher.cli`) and another person publishes it._
 
 ### Publish a Compliance Extension
 
-```bash
-python tools/marketplace/publish_pipeline.py \
-  --asset-path /path/to/compliance-ext \
-  --asset-type compliance \
-  --tenant-id "tenant-abc" \
-  --publisher-user "isso@mil" \
-  --json
-```
+_Deleted at icx-ent-13: `tools/marketplace/publish_pipeline.py` no longer exists; a person prepares a signed store package with the store publisher (`/store-publisher/`, `python -m tools.store_publisher.cli`) and another person publishes it._
 
 ### Publish Gate Results
 
@@ -189,38 +174,20 @@ python tools/marketplace/compatibility_checker.py \
 
 ## Review Queue
 
-Cross-tenant asset sharing requires mandatory human review by an ISSO or security officer. **Retired (icx-ent-04):** the review
-queue refuses; a store package is reviewed and certified in ICDEV[OS] (its `store-review` workflow).
+Cross-tenant asset sharing requires mandatory human review by an ISSO or security officer. **Retired (icx-ent-04), deleted (icx-ent-13):** the review
+queue is gone; a store package is reviewed and certified in ICDEV[OS] (its `store-review` workflow).
 
 ### List Pending Reviews
 
-```bash
-python tools/marketplace/review_queue.py --pending --json
-```
+_Deleted at icx-ent-13: `tools/marketplace/review_queue.py` no longer exists; a store package is reviewed and certified in ICDEV[OS] (its `store-review` workflow), never here._
 
 ### Approve an Asset
 
-```bash
-python tools/marketplace/review_queue.py \
-  --review \
-  --review-id "rev-abc" \
-  --reviewer-id "isso@mil" \
-  --decision approved \
-  --rationale "Passed security review. No CUI leakage. SAST clean." \
-  --json
-```
+_Deleted at icx-ent-13: `tools/marketplace/review_queue.py` no longer exists; a store package is reviewed and certified in ICDEV[OS] (its `store-review` workflow), never here._
 
 ### Reject an Asset
 
-```bash
-python tools/marketplace/review_queue.py \
-  --review \
-  --review-id "rev-abc" \
-  --reviewer-id "isso@mil" \
-  --decision rejected \
-  --rationale "Hardcoded credentials detected in context file line 42." \
-  --json
-```
+_Deleted at icx-ent-13: `tools/marketplace/review_queue.py` no longer exists; a store package is reviewed and certified in ICDEV[OS] (its `store-review` workflow), never here._
 
 ### Cross-Tenant Gate Requirements
 
@@ -381,10 +348,10 @@ The report includes:
 
 ### Handling Rejected Assets
 
-1. Publisher receives rejection rationale via review queue output.
-2. Publisher fixes the identified issues.
-3. Publisher re-submits via `publish_pipeline.py` (new version created).
-4. New version enters the review queue.
+1. The publisher reads the rejection on ICDEV[OS]'s store-review item.
+2. The publisher fixes the identified issues.
+3. A person prepares a new version with the store publisher (`publish_pipeline.py` is deleted, icx-ent-13), and another person publishes it.
+4. The new version enters ICDEV[OS]'s store review.
 
 ### Emergency Asset Revocation
 

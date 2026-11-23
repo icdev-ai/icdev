@@ -1,0 +1,173 @@
+# CUI // SP-CTI
+#
+# Item bank for m-issm-07-turnkey-review (osx-ent-13, turnkey packaging: the Academy tracks for ISSO, ISSM,
+# assessor and agent-store reviewer). Every item is answerable from the lesson it assesses.
+
+mission: m-issm-07-turnkey-review
+steps:
+- step: 1
+  items:
+  - key: i7-three
+    prompt: How many different people take the drafting, review and signing of a tenant onboarding?
+    options:
+    - Any number, even one
+    - One
+    - Two
+    - Three
+    correct: 3
+    explanation: A platform admin drafts, an ISSM of the platform reviews, another admin signs.
+    difficulty: core
+  - key: i7-org
+    prompt: An ISSM of a tenant's organisation tries to review an onboarding. What happens?
+    options:
+    - Allowed with a warning
+    - Allowed if they hold MFA
+    - Allowed
+    - 'Refused: every step is bound to the platform''s own organisation'
+    correct: 3
+    explanation: 'org_field: platform_org binds every step.'
+    difficulty: core
+  - key: i7-one-idp
+    prompt: A tenant wants a different identity provider from the site's. What is the answer?
+    options:
+    - Give it its own release, in its own namespace
+    - Use a shared password
+    - Turn MFA off
+    - Add it to this install
+    correct: 0
+    explanation: ICDEV[OS] is a relying party of one identity provider.
+    difficulty: core
+  - key: i7-pki-acr
+    prompt: The record says pki, but the acr it names stands for a password and a one-time code. What happens?
+    options:
+    - Accepted
+    - 'Blocked: that acr is not a card'
+    - Accepted as oidc
+    - The site's IdP is changed
+    correct: 1
+    explanation: The identity gate checks what the acr stands for.
+    difficulty: core
+  - key: i7-local-exclusive
+    prompt: The site lets people sign in only through its identity provider. Can a local tenant be onboarded?
+    options:
+    - Only as synthetic
+    - 'Yes'
+    - 'No: its people could not sign in'
+    - Yes, with a waiver
+    correct: 2
+    explanation: local needs a site that still allows ICDEV[OS]'s own sign-in.
+    difficulty: core
+  - key: i7-grants
+    prompt: What does signing an onboarding grant?
+    options:
+    - The ISSO duty to the drafter
+    - Read access to every tenant
+    - Admin to the tenant
+    - Nothing to anybody
+    correct: 3
+    explanation: People still need an admin's signed access change.
+    difficulty: core
+- step: 2
+  items:
+  - key: i7-as-reviewed
+    prompt: The record changes after your review. What happens when the owner signs?
+    options:
+    - 'Blocked: the record signed must be the one reviewed'
+    - The change is discarded
+    - You are notified only
+    - It is signed
+    correct: 0
+    explanation: reviewed_as_is compares the digests.
+    difficulty: core
+  - key: i7-oos
+    prompt: What must an out-of-scope component carry?
+    options:
+    - Nothing
+    - A justification
+    - A provider
+    - A CUI flow
+    correct: 1
+    explanation: '170.19: prepare to justify it cannot handle CUI.'
+    difficulty: core
+  - key: i7-inherited
+    prompt: A provider lists a control as inherited, but the CRM gives it to nobody. What happens?
+    options:
+    - It becomes the customer's
+    - Accepted
+    - The record is refused
+    - The control is dropped
+    correct: 2
+    explanation: Every inherited control must be in the matrix, given to that provider.
+    difficulty: core
+  - key: i7-hidden
+    prompt: You ask for a system of another organisation. What does ICDEV[OS] answer?
+    options:
+    - A 403 naming its org
+    - Its owner's name
+    - Its name and marking
+    - Exactly what it answers for a system that does not exist
+    correct: 3
+    explanation: 'No existence oracle: the two refusals are identical.'
+    difficulty: core
+  - key: i7-sod-sca
+    prompt: Which pair may never be one person?
+    options:
+    - Security control assessor and system owner
+    - ISSM and system owner
+    - ISSO and system owner
+    - ISSO and ISSM
+    correct: 0
+    explanation: 'sod-sca-owner: an assessor is independent of the system owner.'
+    difficulty: core
+- step: 3
+  items:
+  - key: i7-excluded
+    prompt: An ISSO adds a POA&M item for a requirement the rule excludes. What happens?
+    options:
+    - Added
+    - Refused, with the rule
+    - Added as a waiver
+    - Added if the score is above 88
+    correct: 1
+    explanation: 32 CFR 170.21 excludes some requirements from a POA&M.
+    difficulty: core
+  - key: i7-lapse
+    prompt: A Conditional status's POA&M is still open after 180 days. What then?
+    options:
+    - The score is reset
+    - Nothing
+    - The conditional status lapses
+    - It extends automatically
+    correct: 2
+    explanation: The closeout is 180 days.
+    difficulty: core
+  - key: i7-store
+    prompt: Where does ICDEV[OS] keep POA&M items?
+    options:
+    - In the ISSO's notes
+    - In SPRS
+    - In a CMMC-only list
+    - In the RMF's one POA&M store
+    correct: 3
+    explanation: One POA&M store, not a second list.
+    difficulty: core
+  - key: i7-recompute
+    prompt: What must hold when you review an affirmation?
+    options:
+    - The frozen assessment is the one the item names, and recomputing it now gives the same result
+    - The score is positive
+    - The AO signed first
+    - Nothing
+    correct: 0
+    explanation: cmmc.assessment_valid and cmmc.assessment_current.
+    difficulty: core
+  - key: i7-words
+    prompt: How is an evidence gap described?
+    options:
+    - Failed
+    - Passed
+    - Unverified
+    - Accepted
+    correct: 2
+    explanation: Unverified, never failed or passed.
+    difficulty: core

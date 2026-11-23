@@ -1,0 +1,193 @@
+# CUI // SP-CTI
+#
+# Item bank for m-isso-07-turnkey-first-sprs (osx-ent-13, turnkey packaging: the Academy tracks for ISSO, ISSM,
+# assessor and agent-store reviewer). Every item is answerable from the lesson it assesses.
+
+mission: m-isso-07-turnkey-first-sprs
+steps:
+- step: 1
+  items:
+  - key: t7-register-signer
+    prompt: Who registers a customer system in ICDEV[OS]?
+    options:
+    - The ISSM who reviews it
+    - The system owner, by a passkey-signed step over the item's digest
+    - Any admin
+    - The ISSO who drafts the record
+    correct: 1
+    explanation: Only the system owner's signed step makes the record registered.
+    difficulty: core
+  - key: t7-oos-cui
+    prompt: A data flow carrying CUI is drawn to a component categorised as out of scope. What happens?
+    options:
+    - It is accepted with a warning
+    - 'The record is refused: an out-of-scope asset cannot process, store or transmit CUI'
+    - The component is recategorised automatically
+    - The flow is dropped silently
+    correct: 1
+    explanation: '32 CFR 170.19: an out-of-scope asset cannot handle CUI, so the record does not validate.'
+    difficulty: core
+  - key: t7-unreported
+    prompt: A component the record declares is never reported by a collector. How does the twin treat it?
+    options:
+    - It is removed from the boundary
+    - As passed
+    - As failed
+    - As unverified
+    correct: 3
+    explanation: 'Nothing observed is a pass by default: unreported is unverified.'
+    difficulty: core
+  - key: t7-ceiling
+    prompt: What does the tenant's onboarding ceiling limit?
+    options:
+    - The SPRS score
+    - The number of systems
+    - The number of people
+    - The highest marking any of the tenant's systems may carry
+    correct: 3
+    explanation: The twin flags a system of the tenant registered above its ceiling.
+    difficulty: core
+  - key: t7-sod
+    prompt: The record names the same person as AO and ISSO. What happens?
+    options:
+    - 'Refused: a static separation of duties'
+    - Accepted if the ISSM agrees
+    - The AO is cleared
+    - Accepted
+    correct: 0
+    explanation: AO and ISSO is a static separation pair; the record refuses it.
+    difficulty: core
+  - key: t7-onboarding-grants
+    prompt: What does onboarding your organisation as a tenant grant you?
+    options:
+    - The ISSO duty
+    - Admin rights
+    - 'Nothing: each person is still given their org and duties by an admin''s signed access change'
+    - Read access to every system
+    correct: 2
+    explanation: Onboarding grants nobody anything.
+    difficulty: core
+- step: 2
+  items:
+  - key: t7-esp
+    prompt: To a tenant's system, what is ICDEV[OS]?
+    options:
+    - The system owner
+    - Out of scope
+    - 'An external service provider: it processes and stores the tenant''s CUI and security protection data'
+    - A Specialized Asset
+    correct: 2
+    explanation: It handles CUI and SPD, so it is an ESP under 170.19.
+    difficulty: core
+  - key: t7-shared
+    prompt: The platform states a control as implemented. How does the CRM template give it to your system?
+    options:
+    - As yours
+    - It is left out
+    - As the provider's alone
+    - As shared with icos-platform, citing the platform's evidence
+    correct: 3
+    explanation: Implemented or partial is shared; never the provider's alone.
+    difficulty: core
+  - key: t7-claim
+    prompt: Your record's CRM row says a control is shared with icos-platform. What does that do to your objectives?
+    options:
+    - Marks them inherited
+    - 'Nothing by itself: objectives resolve only from your own imported evidence'
+    - Raises the SPRS score by its weight
+    - Marks them met
+    correct: 1
+    explanation: A CRM row is a claim; it meets no objective.
+    difficulty: core
+  - key: t7-publish
+    prompt: Who publishes a collected evidence report?
+    options:
+    - The person who prepared it
+    - Another person of the system's organisation
+    - An agent
+    - The platform admin
+    correct: 1
+    explanation: A self-published or unpublished report is refused at import.
+    difficulty: core
+  - key: t7-stale
+    prompt: An imported report is past its freshness budget. What does it count for?
+    options:
+    - Credit until the next report
+    - Full credit
+    - Half credit
+    - Nothing
+    correct: 3
+    explanation: Stale evidence counts for nothing.
+    difficulty: core
+  - key: t7-creds
+    prompt: Where do the collectors' credentials live?
+    options:
+    - In the customer's vault, named by reference
+    - In the environment
+    - In the report
+    - In ICDEV[OS]'s database
+    correct: 0
+    explanation: Credentials stay in the customer's vault.
+    difficulty: core
+- step: 3
+  items:
+  - key: t7-range
+    prompt: What range does the SPRS score run over in ICDEV[OS]?
+    options:
+    - 110 down to -203
+    - 100 down to 0
+    - 320 down to 0
+    - 0 to 110
+    correct: 0
+    explanation: The values sum to 313, so 110 - 313 = -203.
+    difficulty: core
+  - key: t7-unverified-score
+    prompt: How does an unverified objective affect the score?
+    options:
+    - It is ignored
+    - Its requirement counts as not met and is deducted
+    - It earns partial credit
+    - It counts as met
+    correct: 1
+    explanation: A requirement is met only when every objective is met, inherited or N/A.
+    difficulty: core
+  - key: t7-88
+    prompt: What score does a Conditional status need?
+    options:
+    - At least 55
+    - At least 110
+    - At least 88 of 110
+    - Any positive score
+    correct: 2
+    explanation: 0.8 of the maximum, 88 of 110 (32 CFR 170.21).
+    difficulty: core
+  - key: t7-180
+    prompt: Within how long must a POA&M close?
+    options:
+    - One year
+    - Three years
+    - 90 days
+    - 180 days
+    correct: 3
+    explanation: '32 CFR 170.21: closeout within 180 days.'
+    difficulty: core
+  - key: t7-affirm
+    prompt: Who signs the affirmation?
+    options:
+    - The ISSM
+    - The senior affirming official
+    - ICDEV[OS] automatically
+    - The ISSO
+    correct: 1
+    explanation: The senior affirming official signs it; the ISSM reviews it.
+    difficulty: core
+  - key: t7-sprs-entry
+    prompt: Who enters the score in the DoD's SPRS?
+    options:
+    - ICDEV[OS]
+    - The organisation itself, outside ICDEV[OS]
+    - The C3PAO
+    - Nobody
+    correct: 1
+    explanation: Entering it in SPRS is the organisation's own act.
+    difficulty: core

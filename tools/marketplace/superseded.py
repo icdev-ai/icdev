@@ -1,15 +1,16 @@
 # CUI // SP-CTI
 """What the retired marketplace publish and review tools say now (icx-ent-04).
 
-``tools/marketplace/publish_pipeline.py`` and ``review_queue.py`` were deprecated on 2026-05-09 (no audit-trail use).
+``tools/marketplace/publish_pipeline.py`` and ``review_queue.py`` were deprecated on 2026-05-09 and are deleted (icx-ent-13).
 They published an asset (tenant-local assets with no review at all) and let a reviewer approve it, with one platform
 key. Their replacement is the store publisher (``tools/store_publisher``, /store-publisher/): a person prepares a
 SIGNED ``icos-store-package/v1`` for ICDEV[OS]'s agent store, a DIFFERENT person publishes it (the declared step
 ``icos-store-publish``), and ICDEV[OS] imports it, re-runs its gates and has a reviewer who is none of them certify it.
 There is no auto-publish path, and no agent publishes.
 
-The two modules are kept as thin shims (their names are imported by ``tools/mcp/marketplace_server.py``) that refuse
-and point here; they are removed with the other deprecated duplicates once nothing names them (osx-ent-13).
+The two modules were thin shims at icx-ent-04 and are deleted at icx-ent-13 (``args/retired_tools.yaml``). What is
+left here is the refusal the MCP marketplace server's publish and review tools, the catalog manager and the federation
+sync still give.
 """
 from __future__ import annotations
 

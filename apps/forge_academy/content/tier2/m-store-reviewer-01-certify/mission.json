@@ -1,0 +1,16 @@
+{
+  "slug": "m-store-reviewer-01-certify",
+  "title": "Store Reviewer: Certifying an Agent-Store Package",
+  "tagline": "Review a signed agent, skill or MCP server package: the publisher is never the reviewer, and a gate that cannot run never passes.",
+  "tier": 2,
+  "topic": "compliance",
+  "role_filter": "store_reviewer",
+  "mission_type": "guided",
+  "xp_reward": 350,
+  "order_idx": 1,
+  "difficulty": "intermediate",
+  "estimated_minutes": 40,
+  "prereqs": [
+    "m10-tier1-capstone"
+  ]
+}

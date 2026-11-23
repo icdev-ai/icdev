@@ -1,0 +1,163 @@
+# CUI // SP-CTI
+#
+# Item bank for m-store-reviewer-01-certify (osx-ent-13, turnkey packaging: the Academy tracks for ISSO, ISSM,
+# assessor and agent-store reviewer). Every item is answerable from the lesson it assesses.
+
+mission: m-store-reviewer-01-certify
+steps:
+- step: 1
+  items:
+  - key: s1-card
+    prompt: What does the Agent Card's signature cover?
+    options:
+    - The publisher's website
+    - Only the card's name
+    - The package's content digest, and so the whole package
+    - Nothing
+    correct: 2
+    explanation: The card binds the content digest.
+    difficulty: core
+  - key: s1-publish
+    prompt: Who publishes a prepared package?
+    options:
+    - An agent
+    - The reviewer
+    - The preparer
+    - A different person of the publisher's organisation
+    correct: 3
+    explanation: Prepared by one, published by another.
+    difficulty: core
+  - key: s1-agent
+    prompt: An agent signs a package's publication. What does ICDEV[OS] do?
+    options:
+    - Refuses it
+    - Accepts it as synthetic
+    - Asks the reviewer
+    - Accepts it
+    correct: 0
+    explanation: No agent publishes.
+    difficulty: core
+  - key: s1-pinned
+    prompt: Against which key is the card verified?
+    options:
+    - Any key in the card
+    - The publisher's pinned key
+    - The reviewer's key
+    - No key
+    correct: 1
+    explanation: Pinned in the store's config.
+    difficulty: core
+  - key: s1-claims
+    prompt: How are the publisher's own scanner results treated?
+    options:
+    - Used to certify
+    - Trusted
+    - Shown, as claims
+    - Hidden
+    correct: 2
+    explanation: The gates run again here.
+    difficulty: core
+- step: 2
+  items:
+  - key: s2-seven
+    prompt: Where do ICDEV[IT]'s seven scanner gates run for a review?
+    options:
+    - Nowhere
+    - In the browser
+    - Only at the publisher
+    - Again in ICDEV[OS], on the package itself
+    correct: 3
+    explanation: The publisher's results are only shown.
+    difficulty: core
+  - key: s2-cannot
+    prompt: A gate cannot be evaluated. What happens?
+    options:
+    - It blocks
+    - It is skipped
+    - It warns
+    - It passes
+    correct: 0
+    explanation: Fail closed.
+    difficulty: core
+  - key: s2-kev
+    prompt: The dependency audit has no KEV file to check against. What is it?
+    options:
+    - Passed
+    - Unverified
+    - Failed and hidden
+    - Skipped
+    correct: 1
+    explanation: No input, no pass.
+    difficulty: core
+  - key: s2-redteam
+    prompt: What is the red-team gate checking?
+    options:
+    - The SBOM
+    - It re-runs the red team
+    - 'That the publisher''s report answers every OWASP id and none is in the future: an attestation'
+    - Nothing
+    correct: 2
+    explanation: An attestation, not a re-run.
+    difficulty: core
+  - key: s2-swap
+    prompt: The package is swapped after import. What happens to the gates?
+    options:
+    - Only one blocks
+    - Nothing
+    - They pass
+    - Every gate blocks
+    correct: 3
+    explanation: Every gate reads the package the item holds.
+    difficulty: core
+- step: 3
+  items:
+  - key: s3-who
+    prompt: Who may certify a package?
+    options:
+    - One of the publisher's people with the reviewer's duty
+    - A reviewer who is neither, of the catalogue's organisation, with a passkey
+    - An agent
+    - Its importer
+    correct: 1
+    explanation: The publisher is never the reviewer.
+    difficulty: core
+  - key: s3-install
+    prompt: How is a certified package installed for a tenant?
+    options:
+    - Automatically
+    - By a config-change of the tenant's installs file, approved by its own system owner
+    - By the reviewer
+    - By the publisher
+    correct: 1
+    explanation: Certifying is not installing.
+    difficulty: core
+  - key: s3-revoke
+    prompt: What does revoking a package need?
+    options:
+    - A merge request
+    - Two signatures
+    - 'No signature: it is immediate'
+    - The publisher's consent
+    correct: 2
+    explanation: Lowering trust never waits.
+    difficulty: core
+  - key: s3-after
+    prompt: A package is revoked. What happens to an installed copy?
+    options:
+    - It runs until midnight
+    - It is deleted from disk
+    - It keeps running
+    - It is refused at its next call
+    correct: 3
+    explanation: Refused at its next call.
+    difficulty: core
+  - key: s3-judge
+    prompt: May a model judge whether a package is safe?
+    options:
+    - 'No: no model judges; a person certifies'
+    - Yes, if it is local
+    - Only for skills
+    - 'Yes'
+    correct: 0
+    explanation: No model judge.
+    difficulty: core

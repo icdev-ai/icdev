@@ -683,7 +683,7 @@ def scan_provenance(asset_path, asset_id, version_id, db_path=None):
 def scan_signature(asset_path, asset_id, version_id, db_path=None):
     """Gate 7: Digital signature readiness.
 
-    Checks that the asset can be signed. Actual signing happens in publish_pipeline.
+    Checks that the asset can be signed. Actual signing happens in the store publisher (tools/store_publisher; publish_pipeline is deleted).
     """
     asset_path = Path(asset_path)
 

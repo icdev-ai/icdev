@@ -159,7 +159,7 @@ Visual marketplace UI replacing CLI-only `tools/marketplace/install_manager.py`.
 - `tools/dashboard/static/js/marketplace.js` — Search, filter, preview, install UX
 - `tools/dashboard/api/marketplace_ui.py` — Storefront API (wraps existing marketplace tools)
 
-**Builds On:** catalog_manager.py, search_engine.py, install_manager.py, compatibility_checker.py, review_queue.py, publish_pipeline.py, federation_sync.py, openclaw_bridge.py
+**Builds On:** catalog_manager.py, search_engine.py, install_manager.py, compatibility_checker.py, review_queue.py and publish_pipeline.py (both deleted at icx-ent-13), federation_sync.py, openclaw_bridge.py
 
 ---
 
