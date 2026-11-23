@@ -1,0 +1,10 @@
+# icx-ent-04: the store publisher. A signed ICDEV[OS] store package (agent, crew, skill, MCP server, plugin) against
+# ICDEV[OS]'s pinned store-package and store-publication contracts; the Agent Card JWS (ES384 over JCS) by the publisher's
+# keyring key (a fake keyring, throwaway keys) binding the package's content and its declared tools; ICDEV's seven
+# scanner gates run on it (a gate that cannot run is unverified; the scanner's SAST no longer passes when bandit cannot
+# run); confined inputs; prepare by a person, publish by another of the package's org (icos-store-publish), export only
+# with its step; the ledger; page, routes, twin and MCP; the retired marketplace publish and review shims; and the
+# ambient PG run.
+tests/test_icx_ent_04_store_publisher.py
+tests/test_icx_ent_04_ambient.py
+tests/test_marketplace_publish.py

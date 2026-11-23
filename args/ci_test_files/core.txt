@@ -2434,5 +2434,8 @@ tests/cortex/test_document_intelligence_lens.py
 tests/test_coherence_template_variable_parity.py
 # ICDEV[OS] Phase 254: the modernisation tooling over real-app-shaped trees (scratch sqlite, no model; ~7s).
 tests/test_icx_modsamples_pipeline.py
+# The packaged allowlist (icdev/data/args/ci_test_files) is byte-identical to args/ci_test_files on
+# every commit: mirror_parity DATA_MIRRORS, the pre-commit hook and this backstop. ~1s, no DB/network.
+tests/ci/test_packaged_args_parity.py
 # Every shipped .iqe seed query is free of merge-conflict markers (source and packaged copy; <2s).
 tests/test_iqe_seed_queries_no_conflict_markers.py
