@@ -1,0 +1,8 @@
+# icx-mdz-04: the bundle carries what ICDEV[OS] contract 1.189.0 accepts, inline -- provenance
+# both and capability hints, process source/signature/review and step verb/object, the sections
+# map, 7R confidence/unmeasured/assessable, derived waves, each planned wave's estimate, the
+# declared environment; every bundle held to the pinned schema and the importer's agreement
+# rules; 7R retire on ICDEV[OS]'s signed measured redundancy; the page, twin and MCP fields; the
+# three regenerated real bundles; and the wave estimate and preview on PG.
+tests/test_icx_mdz_04_bundle_fields.py
+tests/test_icx_mdz_04_ambient.py

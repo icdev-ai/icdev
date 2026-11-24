@@ -1,0 +1,12 @@
+# OpenVEX specification v0.2.0, the JSON schema -- VENDORED VERBATIM (osx-ent-07). Never edit it: re-download, re-pin and
+# re-run tests/test_ent07_vulns.py. icdev_os/vulns/vex.py refuses to load a file whose SHA-256 is not the pin below.
+title: OpenVEX JSON schema, spec v0.2.0 (released 2023-08-22; the latest release)
+spec: https://github.com/openvex/spec/blob/main/OPENVEX-SPEC.md
+context: https://openvex.dev/ns/v0.2.0
+retrieved: 2026-11-18
+files:
+  openvex_json_schema.json:
+    upstream: https://github.com/openvex/spec/blob/main/openvex_json_schema.json
+    sha256: 9373597734ed1d3ea5161a8b46d3866c4a8cfe76fd632fdd16aef01fb34b3238
+    $id: https://github.com/openvex/spec/openvex_json_schema_0.2.0.json   # JSON Schema 2020-12
+licence: CC0-1.0 (https://github.com/openvex/spec/blob/main/LICENSE). The file is unmodified.

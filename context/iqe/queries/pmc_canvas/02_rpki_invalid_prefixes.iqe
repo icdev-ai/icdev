@@ -2,8 +2,14 @@
 # Canvas: pmc | Collection: pmc.prefixes
 # Description: Surface RPKI-invalid route announcements from peers
 
-show rpki invalid prefixes
-list rpki invalid routes
-which peers have invalid rpki
-show prefixes with invalid roa
-find rpki violations
+# Prompt: show rpki invalid prefixes
+# Prompt: list rpki invalid routes
+# Prompt: which peers have invalid rpki
+# Prompt: show prefixes with invalid roa
+# Prompt: find rpki violations
+# The lines above are paraphrases of ONE question for the NL widget. The IQE below
+# is what the pmc adapter answers it with (tools/iqe/adapters/pmc.py).
+foreach x in pmc.prefixes
+where x.rpki_status == "invalid"
+select x.prefix, x.origin_asn, x.rpki_status, x.asn, x.org_name
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by x.asn.

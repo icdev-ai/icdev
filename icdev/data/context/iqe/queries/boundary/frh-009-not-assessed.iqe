@@ -1,13 +1,16 @@
--- CUI // SP-CTI
--- IQE Query: FRH-009
--- Title: FedRAMP High — Unassessed Controls
--- Framework: FedRAMP High
--- Category: coverage
--- Severity: high
--- Description: Continuous ATO (cATO) requires demonstrated, up-to-date
---   assessment evidence for all controls. Unassessed controls at FedRAMP High
---   constitute an immediately exploitable compliance gap. Schedule these now.
+# CUI // SP-CTI
+# IQE Query: FRH-009
+# Title: FedRAMP High — Unassessed Controls
+# Framework: FedRAMP High
+# Category: coverage
+# Severity: high
+# Description: Continuous ATO (cATO) requires demonstrated, up-to-date
+#   assessment evidence for all controls. Unassessed controls at FedRAMP High
+#   constitute an immediately exploitable compliance gap. Schedule these now.
 
-foreach ctrl in framework('FedRAMP High').controls
+# Written in the retired cATO regex engine's dialect (framework('X').controls,
+# starts_with, is null); bdt-iqe-1 moved that surface to compliance.twin_snapshots,
+# startswith and == null (tools/genesis/reflexes/cato_twin.py), so this is the same query.
+foreach ctrl in compliance.twin_snapshots('FedRAMP High')
 where ctrl.status == 'not_assessed'
 select ctrl.control_id, ctrl.project_id

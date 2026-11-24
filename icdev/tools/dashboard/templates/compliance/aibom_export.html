@@ -33,7 +33,7 @@
 </style>
 
 <div class="aib-wrap">
-  <nav aria-label="Breadcrumb" class="aib-help"><a href="/compliance">Compliance</a> / AI-BOM export</nav>
+  <nav aria-label="Breadcrumb" class="aib-help"><a href="/boundary/compliance-hub">Compliance</a> / AI-BOM export</nav>
   <h1>AI-BOM export to ICDEV[OS]</h1>
   <p class="aib-help" id="aib-help">
     ICDEV[IT]'s own AI components -- the router configurations, the models they route to and the models registered
@@ -162,7 +162,8 @@
         esc(pub.content_digest) + '</code>, published by ' + esc(pub.actor) + ' (prepared by ' + esc(pub.prepared_by) + '). <a id="aib-bundle-link" href="' +
         esc(icdevRoute('aibom.aibom_api_bundle')) + '?download=1" download>Download the bundle as ICDEV[OS] imports it</a> &middot; <a id="aib-spdx-link" href="' +
         esc(icdevRoute('aibom.aibom_api_document', {kind: 'spdx'})) + '?download=1" download>SPDX 3.0.1 document</a> &middot; <a id="aib-cdx-link" href="' +
-        esc(icdevRoute('aibom.aibom_api_document', {kind: 'cyclonedx'})) + '?download=1" download>CycloneDX 1.7 ML-BOM</a>.</p>';
+        esc(icdevRoute('aibom.aibom_api_document', {kind: 'cyclonedx'})) + '?download=1" download>CycloneDX 1.7 ML-BOM</a>. Its twin thread: <button type="button" class="aib-link" id="aib-pub-thread" data-thread="aibom:' +
+        esc(pub.event_id) + '">aibom:' + esc(pub.event_id) + '</button></p><div id="aib-thread"></div>';
     } else {
       document.getElementById('aib-published').innerHTML = '';
     }
@@ -217,7 +218,7 @@
         '<ul>' + vs.map(function (f) {
           return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
             ' &middot; thread <button type="button" class="aib-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
-        }).join('') + '</ul><div id="aib-thread"></div>';
+        }).join('') + '</ul>';
     });
   });
   document.addEventListener('click', function (ev) {
@@ -226,7 +227,8 @@
     if (!th) return;
     getJson(icdevFetch('aibom.aibom_api_twin', {}, {}, {thread: th})).then(function (res) {
       var rec = res.j.record || {};
-      document.getElementById('aib-thread').innerHTML = res.j.resolved
+      var out = document.getElementById('aib-thread') || document.getElementById('aib-twin-body');
+      out.innerHTML = res.j.resolved
         ? '<p id="aib-thread-resolved">Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.event || '') +
           ' by ' + esc(rec.actor || '') + ' ' + esc(rec.created_at || '') + ', digest <code>' + esc(short(rec.content_digest)) + '</code></p>'
         : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';

@@ -35,6 +35,7 @@ def circuits_adapter(query: str, conn=None, **_) -> list[dict]:
     _conn, owned = _ccc_conn(conn)
     try:
         q = query.lower()
+        params: tuple = ()
         if "active" in q:
             sql = "SELECT circuit_id,carrier,circuit_type,bandwidth_gbps,status,utilization_pct,mrr_usd FROM ccc_circuits WHERE status='active' ORDER BY carrier"
         elif "high utilization" in q or "near capacity" in q or "overloaded" in q:
@@ -51,10 +52,11 @@ def circuits_adapter(query: str, conn=None, **_) -> list[dict]:
             sql = "SELECT circuit_id,carrier,bandwidth_gbps,endpoint_a,endpoint_z,status FROM ccc_circuits WHERE circuit_type='wavelength'"
         elif "100g" in q or "400g" in q:
             t = "400g" if "400g" in q else "100g"
-            sql = f"SELECT circuit_id,carrier,bandwidth_gbps,endpoint_a,endpoint_z,status FROM ccc_circuits WHERE circuit_type='{t}'"
+            sql = "SELECT circuit_id,carrier,bandwidth_gbps,endpoint_a,endpoint_z,status FROM ccc_circuits WHERE circuit_type=?"
+            params = (t,)
         else:
             sql = "SELECT circuit_id,carrier,circuit_type,bandwidth_gbps,status,utilization_pct FROM ccc_circuits ORDER BY carrier LIMIT 50"
-        return _safe_fetch(_conn, sql)
+        return _safe_fetch(_conn, sql, params)
     finally:
         if owned:
             try: _conn.close()
@@ -219,3 +221,49 @@ def register(registry: dict) -> None:
         return
     for name, fn in _COLLECTION_MAP.items():
         registry[name] = fn
+
+
+# ── Executor collections ──────────────────────────────────────────────────────
+#
+# The adapters above are the canvas widget's natural-language router: they take
+# the question text and pick a canned query (handle_query). Nothing registered
+# these collections on the IQE executor, so /iqe/run and the seed queries under
+# context/iqe/queries/ccc_canvas/ could never read them. args/component_registry.yaml
+# declares them as this module's IQE collections; these are the executor view of
+# the same tables -- whole rows, the seed's where/select doing the filtering --
+# through the module's own connection helper, failing loudly, honestly capped.
+
+from tools.iqe.executor import fetch_rows as _fetch_rows
+from tools.iqe.executor import register_collection as _register_collection
+
+_EXECUTOR_VIEWS = {
+    "ccc.circuits": "SELECT * FROM ccc_circuits",
+    "ccc.cross_connects": "SELECT * FROM ccc_cross_connects",
+    "ccc.loa": "SELECT * FROM ccc_loa_requests",
+    "ccc.capacity_plans": (
+        "SELECT cp.circuit_id AS plan_circuit_id, cp.plan_date, cp.current_utilization_pct, "
+        "cp.months_to_saturation, cp.recommended_action, c.circuit_id, c.carrier "
+        "FROM ccc_capacity_plans cp JOIN ccc_circuits c ON c.id = cp.circuit_id"
+    ),
+    "ccc.dwdm_spans": "SELECT * FROM ccc_dwdm_spans",
+    # An order is a cross-connect with an order_status, as every xc_orders_adapter
+    # branch above treats it.
+    "ccc.xc_orders": "SELECT * FROM ccc_cross_connects WHERE order_status != 'not_ordered'",
+}
+
+
+def _executor_adapter(collection: str, sql: str):
+    def fetch(conn=None) -> list[dict]:
+        c, owned = _ccc_conn(conn)
+        try:
+            return _fetch_rows(c, sql, collection)
+        finally:
+            if owned:
+                c.close()
+
+    fetch.__name__ = "executor_" + collection.replace(".", "_")
+    return fetch
+
+
+for _name, _sql in _EXECUTOR_VIEWS.items():
+    _register_collection(_name, _executor_adapter(_name, _sql))

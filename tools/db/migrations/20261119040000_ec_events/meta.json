@@ -1,0 +1,7 @@
+{
+  "description": "objective-evidence ledger: a system's report prepared, then a person publishes or refuses; append-only and hash-chained per system (icx-ent-02)",
+  "date": "2026-11-19",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

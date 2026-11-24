@@ -2957,6 +2957,272 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "evidence_collectors_prepare mutating, approval tier 'unknown' (default_tier) halts",
+            "evidence_collectors_status read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-EC-01 -> ec.collectors -> tests/test_icx_ent_02_evidence_collectors.py::test_every_collector_reads_its_source_and_every_observation_says_when_who_and_how_fresh, tests/test_icx_ent_02_evidence_collectors.py::test_a_source_that_says_no_is_false_and_one_that_cannot_say_is_unverified, tests/test_icx_ent_02_evidence_collectors.py::test_the_transport_only_reads_and_stays_on_its_host, tests/test_icx_ent_02_evidence_collectors.py::test_sigv4_matches_aws_published_get_vanilla_vector",
+            "PM-EC-02 -> ec.credentials -> tests/test_icx_ent_02_evidence_collectors.py::test_credentials_are_references_only_and_never_quoted, tests/test_icx_ent_02_evidence_collectors.py::test_the_ledger_is_append_only_hash_chained_on_the_shared_helper_and_holds_no_secret",
+            "PM-EC-03 -> ec.judge -> tests/test_icx_ent_02_evidence_collectors.py::test_freshness_parses_instants_and_never_passes_stale_future_or_timeless_evidence, tests/test_icx_ent_02_evidence_collectors.py::test_satisfied_needs_every_fact_and_a_fresh_false_is_a_finding_even_beside_an_unverified_one, tests/test_icx_ent_02_evidence_collectors.py::test_a_device_that_has_not_reported_leaves_its_fleet_unverified, tests/test_icx_ent_02_evidence_collectors.py::test_an_unreachable_source_or_an_unreadable_credential_is_unverified_with_why, tests/test_icx_ent_02_evidence_collectors.py::test_the_shipped_configuration_loads_and_every_mapping_row_is_bounded",
+            "PM-EC-04 -> ec.bundle -> tests/test_icx_ent_02_evidence_collectors.py::test_the_contract_is_icos_verbatim_and_pinned, tests/test_icx_ent_02_evidence_collectors.py::test_the_report_meets_icos_contract_and_icos_digest_rule, tests/test_icx_ent_02_evidence_collectors.py::test_one_person_prepares_and_another_of_the_org_publishes_the_embedded_report, tests/test_icx_ent_02_evidence_collectors.py::test_an_agent_only_prepares_and_a_changed_configuration_needs_a_new_report, tests/test_icx_ent_02_ambient.py::test_a_report_prepared_and_published_on_the_platform_database",
+            "PM-EC-05 -> ec.visibility -> tests/test_icx_ent_02_evidence_collectors.py::test_what_a_reader_may_not_see_is_counted_never_described, tests/test_icx_ent_02_evidence_collectors.py::test_the_reader_s_org_and_clearance_are_read_fresh_from_their_own_row, tests/test_icx_ent_02_evidence_collectors.py::test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request",
+            "PM-EC-06 -> if.ec.console, ec.twin, if.ec.mcp -> tests/test_icx_ent_02_evidence_collectors.py::test_the_routes_and_the_page, tests/test_icx_ent_02_evidence_collectors.py::test_the_twin_observes_with_threads_and_replays, tests/test_icx_ent_02_evidence_collectors.py::test_the_mcp_tools_read_and_only_prepare"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "evidence_collectors.ec_api_prepare called from tools/dashboard/templates/evidence_collectors/index.html",
+            "evidence_collectors.ec_api_publish called from tools/dashboard/templates/evidence_collectors/index.html",
+            "nav links /evidence-collectors",
+            "page /evidence-collectors/ renders evidence_collectors/index.html",
+            "registry entry 'evidence_collectors'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/evidence-collectors/",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "evidence_collectors.ec_api_systems",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/evidence-collectors/api/systems",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "evidence_collectors.ec_api_system",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/evidence-collectors/api/systems/<sid>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_api_bundle",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/evidence-collectors/api/systems/<sid>/bundle",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_api_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/evidence-collectors/api/systems/<sid>/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_api_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/evidence-collectors/api/systems/<sid>/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/evidence_collectors/index.html"
+              ],
+              "endpoint": "evidence_collectors.ec_api_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/evidence-collectors/api/twin",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/evidence_collectors.py::EvidenceCollectorsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "evidence_collectors.ec_api_publish (declared (tools/evidence_collectors/blueprint.py: \"A person, never the preparer, publishes a system's prepared objective-evidence report to ICDEV[OS], or refuses it.\")) -> template decl-wft-ec-evidence-publish (args/workflow_hitl_templates/ec-evidence-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "evidence_collectors",
+      "key": "evidence_collectors.objective_evidence",
+      "label": "Evidence collectors: read-only customer sources, objective evidence for ICDEV[OS]"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "factory_builds_status read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-FB-01 -> fb.key -> tests/test_icx_ent_03_factory_builds.py::test_no_key_is_refused_never_a_mac_and_a_test_key_lives_only_in_tmp, tests/test_icx_ent_03_factory_builds.py::test_a_keyring_key_and_a_kms_key_sign_and_every_signature_is_verified_first, tests/test_icx_ent_03_factory_builds.py::test_keyless_needs_a_configured_issuer_and_a_certificate_for_the_key_that_asked, tests/test_icx_ent_03_factory_builds.py::test_a_configured_rekor_log_receives_each_bundle_and_its_answer_is_recorded_not_trusted, tests/test_icx_ent_03_factory_builds.py::test_outbound_calls_are_https_or_loopback_only, tests/test_icx_ent_03_factory_builds.py::test_the_shipped_configuration_loads_with_no_key_and_the_log_off, tests/test_icx_ent_03_factory_builds.py::test_l1_a_test_key_is_pinned_to_the_real_temp_root_not_tmpdir, tests/test_icx_ent_03_factory_builds.py::test_the_e2e_key_is_honoured_only_under_tests_e2e_fixtures_and_only_with_no_configured_key, tests/test_icx_ent_03_factory_builds.py::test_l8_one_deadline_covers_every_rekor_submission_of_a_build",
+            "PM-FB-02 -> fb.build -> tests/test_icx_ent_03_factory_builds.py::test_icos_contracts_are_vendored_verbatim_and_pinned, tests/test_icx_ent_03_factory_builds.py::test_an_image_build_is_icos_shaped_signed_and_deterministic, tests/test_icx_ent_03_factory_builds.py::test_a_tampered_file_or_another_key_fails_the_self_check, tests/test_icx_ent_03_factory_builds.py::test_nothing_to_state_is_refused_never_an_invented_vex_and_a_scan_must_match_the_sbom, tests/test_icx_ent_03_factory_builds.py::test_inputs_are_read_only_under_the_root_never_through_a_symlink_or_a_hard_link, tests/test_icx_ent_03_factory_builds.py::test_m1_the_sbom_is_resolved_from_a_confined_copy_of_the_manifests, tests/test_icx_ent_03_factory_builds.py::test_l2_l3_a_fifo_or_a_symlinked_directory_on_the_way_is_refused_promptly",
+            "PM-FB-03 -> fb.aibom -> tests/test_icx_ent_03_factory_builds.py::test_a_model_build_carries_an_aibom_linked_to_its_registry_promotion_and_signed_weights, tests/test_icx_ent_03_factory_builds.py::test_only_a_promoted_version_is_built_and_an_override_is_said_to_be_one, tests/test_icx_ent_03_factory_builds.py::test_a_model_of_another_tenant_or_marked_above_the_target_is_refused, tests/test_icx_ent_03_factory_builds.py::test_a_symlinked_weights_file_is_never_followed, tests/test_icx_ent_03_factory_builds.py::test_a_model_demoted_since_it_was_built_is_never_published, tests/test_icx_ent_03_factory_builds.py::test_m2_a_registry_row_with_no_tenant_binds_only_to_a_platform_scoped_target, tests/test_icx_ent_03_factory_builds.py::test_l7_a_missing_dataset_is_refused_and_an_archived_version_no_longer_stands",
+            "PM-FB-04 -> fb.publish -> tests/test_icx_ent_03_factory_builds.py::test_a_person_prepares_another_of_the_org_publishes_and_only_then_it_leaves, tests/test_icx_ent_03_factory_builds.py::test_an_agent_never_makes_the_factory_key_sign, tests/test_icx_ent_03_factory_builds.py::test_a_publication_counts_only_with_its_declared_step, tests/test_icx_ent_03_factory_builds.py::test_what_a_reader_may_not_see_is_no_such_target_byte_for_byte, tests/test_icx_ent_03_factory_builds.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_icx_ent_03_factory_builds.py::test_m4_only_a_builder_role_makes_the_factory_key_sign, tests/test_icx_ent_03_factory_builds.py::test_l5_a_build_is_published_only_under_the_factory_s_current_key, tests/test_icx_ent_03_factory_builds.py::test_l6_a_ledger_write_lost_after_the_step_publishes_nothing_and_says_so, tests/test_icx_ent_03_factory_builds.py::test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request, tests/test_icx_ent_03_ambient.py::test_builds_prepared_and_published_on_the_platform_database",
+            "PM-FB-05 -> if.fb.console, fb.twin, if.fb.mcp -> tests/test_icx_ent_03_factory_builds.py::test_the_routes_and_the_page, tests/test_icx_ent_03_factory_builds.py::test_the_twin_observes_with_threads_and_replays, tests/test_icx_ent_03_factory_builds.py::test_the_mcp_tool_only_reads, tests/test_icx_ent_03_factory_builds.py::test_l4_the_page_s_self_check_is_re_run_on_read, tests/test_icx_ent_03_factory_builds.py::test_l9_the_iqe_route_answers_over_its_own_collection_only"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "factory_builds.fb_api_prepare called from tools/dashboard/templates/factory_builds/index.html",
+            "factory_builds.fb_api_publish called from tools/dashboard/templates/factory_builds/index.html",
+            "nav links /factory-builds",
+            "page /factory-builds/ renders factory_builds/index.html",
+            "registry entry 'factory_builds'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/factory-builds/",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "factory_builds.fb_api_targets",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/factory-builds/api/targets",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "factory_builds.fb_api_target",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/factory-builds/api/targets/<tid>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_api_export",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/factory-builds/api/targets/<tid>/export",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_api_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/factory-builds/api/targets/<tid>/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_api_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/factory-builds/api/targets/<tid>/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/factory_builds/index.html"
+              ],
+              "endpoint": "factory_builds.fb_api_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/factory-builds/api/twin",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/factory_builds.py::FactoryBuildsTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "factory_builds.fb_api_publish (declared (tools/factory_builds/blueprint.py: \"A person, never the preparer, publishes a target's signed build to ICDEV[OS], or refuses it.\")) -> template decl-wft-fb-build-publish (args/workflow_hitl_templates/fb-build-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "factory_builds",
+      "key": "factory_builds.signed_builds",
+      "label": "Signed factory builds: signed artefacts with SBOM/AI-BOM, provenance and VEX for ICDEV[OS]"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
             "aiify_promotions read-only, tool_authorization tier 'read'"
           ],
           "gaps": [],
@@ -3751,6 +4017,366 @@
       "component": "mdc",
       "key": "mdz.waves_cam",
       "label": "Modernisation: an application's waves and CAM refactor jobs"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "store_publisher_status read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-SP-01 -> sp.card -> tests/test_icx_ent_04_store_publisher.py::test_no_key_is_refused_and_only_a_keyring_p384_key_signs, tests/test_icx_ent_04_store_publisher.py::test_the_card_is_jws_es384_over_jcs_and_verifies_only_under_a_pinned_key, tests/test_icx_ent_04_store_publisher.py::test_a_package_is_published_only_under_the_publisher_s_current_key, tests/test_icx_ent_04_store_publisher.py::test_publishing_checks_the_key_by_public_identity_and_says_when_it_cannot, tests/test_icx_ent_04_store_publisher.py::test_no_environment_variable_or_key_file_gives_the_product_a_key, tests/test_icx_ent_04_store_publisher.py::test_m4_one_rfc_8785_copy_serves_the_card_and_the_portfolio_decisions",
+            "PM-SP-02 -> sp.package -> tests/test_icx_ent_04_store_publisher.py::test_icos_store_contracts_are_vendored_verbatim_and_pinned, tests/test_icx_ent_04_store_publisher.py::test_a_package_meets_icos_contract_and_its_card_binds_its_content_and_tools, tests/test_icx_ent_04_store_publisher.py::test_every_kind_builds_a_package_that_meets_the_contract, tests/test_icx_ent_04_store_publisher.py::test_inputs_are_read_only_under_the_root_never_through_a_symlink_or_a_hard_link, tests/test_icx_ent_04_store_publisher.py::test_the_shipped_configuration_loads_with_no_key_and_fails_closed, tests/test_icx_ent_04_store_publisher.py::test_the_red_team_report_answers_every_id_and_no_time_is_in_the_future, tests/test_icx_ent_04_store_publisher.py::test_l1_the_red_team_report_is_read_once, tests/test_icx_ent_04_store_publisher.py::test_l8_a_symlinked_root_or_directory_is_never_written_or_read_through",
+            "PM-SP-03 -> sp.gates -> tests/test_icx_ent_04_store_publisher.py::test_the_seven_gates_run_on_the_package_and_a_gate_that_cannot_run_is_unverified, tests/test_icx_ent_04_store_publisher.py::test_the_scanner_sast_gate_never_passes_when_bandit_cannot_run, tests/test_icx_ent_04_store_publisher.py::test_m1_the_analysed_code_cannot_switch_the_sast_gate_off, tests/test_icx_ent_04_store_publisher.py::test_m1_a_python_file_bandit_did_not_analyse_is_unverified_and_named, tests/test_icx_ent_04_store_publisher.py::test_m2_a_source_that_is_not_python_is_never_analysed_so_never_passes",
+            "PM-SP-04 -> sp.publish, sp.retired -> tests/test_icx_ent_04_store_publisher.py::test_a_person_prepares_another_of_the_org_publishes_and_only_then_it_leaves, tests/test_icx_ent_04_store_publisher.py::test_an_agent_never_prepares_or_publishes, tests/test_icx_ent_04_store_publisher.py::test_only_a_packager_role_makes_the_publisher_key_sign, tests/test_icx_ent_04_store_publisher.py::test_a_publication_counts_only_with_its_declared_step, tests/test_icx_ent_04_store_publisher.py::test_what_a_reader_may_not_see_is_no_such_package_byte_for_byte, tests/test_icx_ent_04_store_publisher.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_icx_ent_04_store_publisher.py::test_the_declared_publish_template_is_icos_s_step_and_separates_the_preparer, tests/test_icx_ent_04_ambient.py::test_packages_prepared_and_published_on_the_platform_database, tests/test_marketplace_publish.py::test_the_retired_marketplace_publish_and_review_refuse_and_point_to_the_packager, tests/test_icx_ent_04_store_publisher.py::test_m3_the_retired_pipeline_s_effect_is_not_reachable_another_way, tests/test_icx_ent_04_store_publisher.py::test_l4_only_a_person_who_packages_or_publishes_takes_the_bundle_out, tests/test_icx_ent_04_store_publisher.py::test_l5_the_signed_step_names_the_package_s_org, tests/test_icx_ent_04_store_publisher.py::test_l6_a_lost_ledger_write_voids_the_decided_step, tests/test_icx_ent_04_store_publisher.py::test_l7_no_fresh_person_row_is_no_reader",
+            "PM-SP-05 -> if.sp.console, sp.twin, if.sp.mcp -> tests/test_icx_ent_04_store_publisher.py::test_the_routes_and_the_page, tests/test_icx_ent_04_store_publisher.py::test_the_twin_observes_with_threads_and_replays, tests/test_icx_ent_04_store_publisher.py::test_the_mcp_tool_only_reads, tests/test_icx_ent_04_store_publisher.py::test_a_tenant_person_s_canvas_grant_is_read_inside_their_own_request"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "nav links /store-publisher",
+            "page /store-publisher/ renders store_publisher/index.html",
+            "registry entry 'store_publisher'",
+            "store_publisher.sp_api_prepare called from tools/dashboard/templates/store_publisher/index.html",
+            "store_publisher.sp_api_publish called from tools/dashboard/templates/store_publisher/index.html"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [
+                "tools/dashboard/templates/store_publisher/index.html"
+              ],
+              "endpoint": "store_publisher.sp_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/store-publisher/",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "store_publisher.sp_api_packages",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/store-publisher/api/packages",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "store_publisher.sp_api_package",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/store-publisher/api/packages/<pid>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/store_publisher/index.html"
+              ],
+              "endpoint": "store_publisher.sp_api_export",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/store-publisher/api/packages/<pid>/export",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/store_publisher/index.html"
+              ],
+              "endpoint": "store_publisher.sp_api_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/store-publisher/api/packages/<pid>/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/store_publisher/index.html"
+              ],
+              "endpoint": "store_publisher.sp_api_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/store-publisher/api/packages/<pid>/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/store_publisher/index.html"
+              ],
+              "endpoint": "store_publisher.sp_api_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/store-publisher/api/twin",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/store_publisher.py::StorePublisherTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "store_publisher.sp_api_publish (declared (tools/store_publisher/blueprint.py: \"A person, never the preparer, publishes a prepared store package for ICDEV[OS], or refuses it.\")) -> template icos-store-publish (args/workflow_hitl_templates/store-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "store_publisher",
+      "key": "store_publisher.signed_packages",
+      "label": "Store publisher: signed agent-store packages for ICDEV[OS], prepared by one person and published by another"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
+            "vulnresearch_prepare mutating, approval tier 'unknown' (default_tier) halts",
+            "vulnresearch_status read-only, tool_authorization tier 'read'"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-VR-01 -> vr.scope -> tests/test_icx_ent_01_vulnresearch.py::test_a_target_is_scanned_only_when_registered_and_authorised_by_another_person, tests/test_icx_ent_01_vulnresearch.py::test_a_root_outside_the_allowlist_is_refused, tests/test_icx_ent_01_vulnresearch.py::test_a_changed_revoked_or_expired_target_is_refused",
+            "PM-VR-02 -> vr.sandbox -> tests/test_icx_ent_01_vulnresearch.py::test_the_isolated_run_has_no_network_and_writes_only_under_out, tests/test_icx_ent_01_vulnresearch.py::test_the_real_sandbox_end_to_end",
+            "PM-VR-03 -> vr.discovery -> tests/test_icx_ent_01_vulnresearch.py::test_a_candidate_becomes_a_finding_only_with_a_discriminating_pov, tests/test_icx_ent_01_vulnresearch.py::test_a_pov_that_also_fires_on_its_control_or_cannot_run_is_dropped, tests/test_icx_ent_01_vulnresearch.py::test_the_recipes_are_canary_only_and_mapped_from_sast, tests/test_icx_ent_01_vulnresearch.py::test_the_agentic_review_only_proposes_and_an_invented_function_is_dropped, tests/test_icx_ent_01_vulnresearch.py::test_reproduction_validator_replays_a_sandbox_pov_only_through_a_registered_engine",
+            "PM-VR-04 -> vr.patches -> tests/test_icx_ent_01_vulnresearch.py::test_a_patch_is_proposed_only_when_its_pov_fails_and_the_tests_pass, tests/test_icx_ent_01_vulnresearch.py::test_a_patch_is_reviewed_by_a_person_never_its_proposer_and_never_applied",
+            "PM-VR-05 -> vr.measurement -> tests/test_icx_ent_01_vulnresearch.py::test_the_rates_are_measured_against_planted_labels_with_no_model_judging",
+            "PM-VR-06 -> vr.bundle -> tests/test_icx_ent_01_vulnresearch.py::test_the_schemas_are_pinned_and_the_publication_has_the_academy_shape, tests/test_icx_ent_01_vulnresearch.py::test_publishing_is_a_persons_step_never_the_preparers_and_it_verifies, tests/test_icx_ent_01_vulnresearch.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_icx_ent_01_ambient.py::test_discovery_and_a_bundle_on_the_platform_database",
+            "PM-VR-07 -> if.vr.console, vr.twin, if.vr.mcp -> tests/test_icx_ent_01_vulnresearch.py::test_the_routes_and_the_page, tests/test_icx_ent_01_vulnresearch.py::test_the_twin_observes_with_threads_and_replays, tests/test_icx_ent_01_vulnresearch.py::test_the_mcp_tools_read_without_sealed_povs_and_only_prepare"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "nav links /vulnresearch",
+            "page /vulnresearch/ renders vulnresearch/index.html",
+            "registry entry 'vulnresearch'",
+            "vulnresearch.vr_api_bundle_prepare called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_bundle_publish called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_measure called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_patch_propose called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_patch_review called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_run called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_target_authorise called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_target_register called from tools/dashboard/templates/vulnresearch/index.html",
+            "vulnresearch.vr_api_target_revoke called from tools/dashboard/templates/vulnresearch/index.html"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "vulnresearch.vr_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_patch_propose",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/findings/<fid>/patches",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_patch_review",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/findings/<fid>/review",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_target_register",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets",
+              "write": true
+            },
+            {
+              "by_id": [],
+              "endpoint": "vulnresearch.vr_api_targets",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/vulnresearch/api/targets",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_target",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_target_authorise",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/authorise",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_bundle",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/vulnresearch/api/targets/<tid>/bundle",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_bundle_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/bundle/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_bundle_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/bundle/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_measure",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/measure",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_target_revoke",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/revoke",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_run",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/targets/<tid>/runs",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/vulnresearch/index.html"
+              ],
+              "endpoint": "vulnresearch.vr_api_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/vulnresearch/api/twin",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/vulnresearch.py::VulnResearchTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "vulnresearch.vr_api_bundle_publish (declared (tools/vulnresearch/blueprint.py: \"A person, never the preparer, publishes a target's prepared findings bundle to ICDEV[OS], or refuses it.\")) -> template decl-wft-vr-findings-publish (args/workflow_hitl_templates/vr-findings-publish.yaml)",
+            "vulnresearch.vr_api_patch_review (declared (tools/vulnresearch/blueprint.py: \"A person, never the proposer, accepts or rejects a proposed patch. Nothing is applied.\")) -> template decl-wft-vr-patch-review (args/workflow_hitl_templates/vr-patch-review.yaml)",
+            "vulnresearch.vr_api_target_authorise (declared (tools/vulnresearch/blueprint.py: \"A person, never the registrant, authorises a registered target for testing, or refuses it.\")) -> template decl-wft-vr-target-authorise (args/workflow_hitl_templates/vr-target-authorise.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "vulnresearch",
+      "key": "vulnresearch.discovery",
+      "label": "Vulnerability discovery: authorised targets, PoV-proven findings, reviewed patches, findings bundles"
     }
   ],
   "route_ids": {
@@ -3783,6 +4409,8 @@
       "tools/dashboard/templates/coworker/trust.html",
       "tools/dashboard/templates/coworkers/index.html",
       "tools/dashboard/templates/document_intelligence/explorer.html",
+      "tools/dashboard/templates/evidence_collectors/index.html",
+      "tools/dashboard/templates/factory_builds/index.html",
       "tools/dashboard/templates/idp/adrs.html",
       "tools/dashboard/templates/idp/conformance.html",
       "tools/dashboard/templates/idp/exemptions.html",
@@ -3793,8 +4421,10 @@
       "tools/dashboard/templates/includes/iqe_query_widget.html",
       "tools/dashboard/templates/migration.html",
       "tools/dashboard/templates/migration_canvas/modernisation.html",
+      "tools/dashboard/templates/store_publisher/index.html",
       "tools/dashboard/templates/twin_observatory/conformance.html",
       "tools/dashboard/templates/twin_observatory/index.html",
+      "tools/dashboard/templates/vulnresearch/index.html",
       "tools/dashboard/templates/workflow_canvas/processify.html"
     ],
     "hand_written": [],
@@ -3813,8 +4443,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 29,
-    "features_conforming": 29,
+    "features": 33,
+    "features_conforming": 33,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -3977,6 +4607,20 @@
         "twin": 0,
         "workflow": 0
       },
+      "evidence_collectors.objective_evidence": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "factory_builds.signed_builds": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
       "mdz.aiify": {
         "ai_native": 0,
         "architecture": 0,
@@ -4018,6 +4662,20 @@
         "gui": 0,
         "twin": 0,
         "workflow": 0
+      },
+      "store_publisher.signed_packages": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "vulnresearch.discovery": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
       }
     },
     "gaps_by_rule": {
@@ -4028,11 +4686,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 182,
-    "routes_by_id": 155,
-    "routes_observed": 136,
-    "writes_by_id": 75,
-    "writes_observed": 75
+    "routes": 217,
+    "routes_by_id": 182,
+    "routes_observed": 160,
+    "writes_by_id": 90,
+    "writes_observed": 90
   },
   "tool": "feature_audit",
   "version": 1

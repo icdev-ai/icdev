@@ -1,0 +1,1005 @@
+{
+  "$defs": {
+    "Advisory": {
+      "additionalProperties": false,
+      "description": "A dependency advisory. No PoV, so UNPROVEN: ICOS weighs it by KEV, EPSS and reachability. ``kev`` is the\nproducer's claim (null: not read); ICOS reads its own imported KEV catalog instead.",
+      "properties": {
+        "cves": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cves",
+          "type": "array"
+        },
+        "fix_versions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fix Versions",
+          "type": "array"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Id"
+        },
+        "kev": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Kev"
+        },
+        "package": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Package"
+        },
+        "status": {
+          "const": "unproven",
+          "title": "Status",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Version"
+        }
+      },
+      "required": [
+        "cves",
+        "fix_versions",
+        "id",
+        "kev",
+        "package",
+        "status",
+        "version"
+      ],
+      "title": "Advisory",
+      "type": "object"
+    },
+    "Authorisation": {
+      "additionalProperties": false,
+      "description": "The person's declared step (decl-wft-vr-target-authorise) that authorised testing this tree; never the\nregistrant.",
+      "properties": {
+        "decided_by": {
+          "minLength": 1,
+          "title": "Decided By",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "expires_on": {
+          "format": "date",
+          "title": "Expires On",
+          "type": "string"
+        },
+        "registered_by": {
+          "minLength": 1,
+          "title": "Registered By",
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decided_by",
+        "event_id",
+        "expires_on",
+        "registered_by",
+        "step_id"
+      ],
+      "title": "Authorisation",
+      "type": "object"
+    },
+    "ConfigPin": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "title": "ConfigPin",
+      "type": "object"
+    },
+    "Dropped": {
+      "additionalProperties": false,
+      "description": "Candidates that did not become findings, counted. A dropped candidate is never a finding and never blocks.",
+      "properties": {
+        "by_reason": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "By Reason",
+          "type": "object"
+        },
+        "by_source": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "By Source",
+          "type": "object"
+        },
+        "total": {
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "by_reason",
+        "by_source",
+        "total"
+      ],
+      "title": "Dropped",
+      "type": "object"
+    },
+    "Finding": {
+      "additionalProperties": false,
+      "description": "A confirmed finding: its PoV fired in the sandbox and its benign control did not.",
+      "properties": {
+        "cwe": {
+          "pattern": "^CWE-[0-9]+$",
+          "title": "Cwe",
+          "type": "string"
+        },
+        "file": {
+          "minLength": 1,
+          "title": "File",
+          "type": "string"
+        },
+        "finding_id": {
+          "pattern": "^vrf-[0-9a-f]{12}$",
+          "title": "Finding Id",
+          "type": "string"
+        },
+        "function": {
+          "minLength": 1,
+          "title": "Function",
+          "type": "string"
+        },
+        "line": {
+          "minimum": 0,
+          "title": "Line",
+          "type": "integer"
+        },
+        "module": {
+          "minLength": 1,
+          "title": "Module",
+          "type": "string"
+        },
+        "patch": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Patch"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pov": {
+          "$ref": "#/$defs/Pov"
+        },
+        "severity": {
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "enum": [
+              "sast",
+              "sca",
+              "agent",
+              "fuzz"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        },
+        "status": {
+          "const": "confirmed",
+          "title": "Status",
+          "type": "string"
+        },
+        "weakness": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Weakness"
+        }
+      },
+      "required": [
+        "cwe",
+        "file",
+        "finding_id",
+        "function",
+        "line",
+        "module",
+        "patch",
+        "pov",
+        "severity",
+        "sources",
+        "status",
+        "weakness"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "FuzzRun": {
+      "additionalProperties": false,
+      "properties": {
+        "crashed": {
+          "title": "Crashed",
+          "type": "boolean"
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Engine"
+        },
+        "function": {
+          "title": "Function",
+          "type": "string"
+        },
+        "iterations": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Iterations"
+        },
+        "module": {
+          "title": "Module",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "crashed",
+        "engine",
+        "function",
+        "iterations",
+        "module",
+        "status"
+      ],
+      "title": "FuzzRun",
+      "type": "object"
+    },
+    "Isolation": {
+      "additionalProperties": false,
+      "description": "How target code ran. A container is not a microVM, and says so.",
+      "properties": {
+        "engine": {
+          "title": "Engine",
+          "type": "string"
+        },
+        "isolation": {
+          "enum": [
+            "container",
+            "gvisor",
+            "microvm"
+          ],
+          "title": "Isolation",
+          "type": "string"
+        },
+        "microvm": {
+          "title": "Microvm",
+          "type": "boolean"
+        },
+        "network": {
+          "const": "none",
+          "title": "Network",
+          "type": "string"
+        },
+        "oci_runtime": {
+          "title": "Oci Runtime",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engine",
+        "isolation",
+        "microvm",
+        "network",
+        "oci_runtime"
+      ],
+      "title": "Isolation",
+      "type": "object"
+    },
+    "Labels": {
+      "additionalProperties": false,
+      "properties": {
+        "labelled_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Labelled By"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "reviewed_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reviewed By"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "synthetic": {
+          "title": "Synthetic",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "labelled_by",
+        "path",
+        "reviewed_by",
+        "sha256",
+        "synthetic"
+      ],
+      "title": "Labels",
+      "type": "object"
+    },
+    "Measurement": {
+      "additionalProperties": false,
+      "description": "The pipeline's newest measurement on the labelled benchmark. No model judges.",
+      "properties": {
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "labels": {
+          "$ref": "#/$defs/Labels"
+        },
+        "model_used": {
+          "title": "Model Used",
+          "type": "boolean"
+        },
+        "run_id": {
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "scores": {
+          "$ref": "#/$defs/Scores"
+        }
+      },
+      "required": [
+        "event_id",
+        "labels",
+        "model_used",
+        "run_id",
+        "scores"
+      ],
+      "title": "Measurement",
+      "type": "object"
+    },
+    "Patch": {
+      "additionalProperties": false,
+      "description": "A patch PROPOSAL whose PoV now fails and whose tests pass, and a person's review. Never applied by ICDEV[IT].",
+      "properties": {
+        "applied": {
+          "const": false,
+          "title": "Applied",
+          "type": "boolean"
+        },
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "diff_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Diff Digest",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "proposed_by": {
+          "minLength": 1,
+          "title": "Proposed By",
+          "type": "string"
+        },
+        "provenance": {
+          "enum": [
+            "person",
+            "modelled"
+          ],
+          "title": "Provenance",
+          "type": "string"
+        },
+        "review": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PatchReview"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "validation": {
+          "$ref": "#/$defs/Validation"
+        }
+      },
+      "required": [
+        "applied",
+        "content_digest",
+        "diff_digest",
+        "event_id",
+        "proposed_by",
+        "provenance",
+        "review",
+        "validation"
+      ],
+      "title": "Patch",
+      "type": "object"
+    },
+    "PatchReview": {
+      "additionalProperties": false,
+      "properties": {
+        "decided_at": {
+          "minLength": 1,
+          "title": "Decided At",
+          "type": "string"
+        },
+        "decided_by": {
+          "minLength": 1,
+          "title": "Decided By",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "accept",
+            "reject"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "title": "Step Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decided_at",
+        "decided_by",
+        "decision",
+        "step_id"
+      ],
+      "title": "PatchReview",
+      "type": "object"
+    },
+    "Pov": {
+      "additionalProperties": false,
+      "description": "The proof of vulnerability, SEALED: its digest, oracle and replay outcomes. The inputs never leave ICDEV[IT].",
+      "properties": {
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "kind": {
+          "const": "sandbox_pov",
+          "title": "Kind",
+          "type": "string"
+        },
+        "oracle": {
+          "enum": [
+            "file_created",
+            "opened",
+            "returned",
+            "exception"
+          ],
+          "title": "Oracle",
+          "type": "string"
+        },
+        "recipe": {
+          "title": "Recipe",
+          "type": "string"
+        },
+        "replays": {
+          "$ref": "#/$defs/Replays"
+        },
+        "sealed": {
+          "const": true,
+          "title": "Sealed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "digest",
+        "kind",
+        "oracle",
+        "recipe",
+        "replays",
+        "sealed"
+      ],
+      "title": "Pov",
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "System",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "system",
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    },
+    "Replays": {
+      "additionalProperties": false,
+      "properties": {
+        "control": {
+          "const": "not_reproduced",
+          "title": "Control",
+          "type": "string"
+        },
+        "pov": {
+          "const": "reproduced",
+          "title": "Pov",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "control",
+        "pov",
+        "reason"
+      ],
+      "title": "Replays",
+      "type": "object"
+    },
+    "Review": {
+      "additionalProperties": false,
+      "description": "The agentic source review (ICDEV[IT]'s governed router). It only proposes; its output is modelled.",
+      "properties": {
+        "provenance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Provenance"
+        },
+        "ran": {
+          "title": "Ran",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "provenance",
+        "ran"
+      ],
+      "title": "Review",
+      "type": "object"
+    },
+    "Run": {
+      "additionalProperties": false,
+      "properties": {
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "event_id": {
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "fuzz": {
+          "items": {
+            "$ref": "#/$defs/FuzzRun"
+          },
+          "title": "Fuzz",
+          "type": "array"
+        },
+        "isolation": {
+          "$ref": "#/$defs/Isolation"
+        },
+        "recorded_at": {
+          "minLength": 1,
+          "title": "Recorded At",
+          "type": "string"
+        },
+        "review": {
+          "$ref": "#/$defs/Review"
+        },
+        "run_id": {
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "sast": {
+          "$ref": "#/$defs/Tool"
+        },
+        "sca": {
+          "$ref": "#/$defs/Tool"
+        }
+      },
+      "required": [
+        "content_digest",
+        "event_id",
+        "fuzz",
+        "isolation",
+        "recorded_at",
+        "review",
+        "run_id",
+        "sast",
+        "sca"
+      ],
+      "title": "Run",
+      "type": "object"
+    },
+    "Scores": {
+      "additionalProperties": false,
+      "properties": {
+        "false_negative_rate": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "False Negative Rate"
+        },
+        "false_positive_rate": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "False Positive Rate"
+        },
+        "fn": {
+          "minimum": 0,
+          "title": "Fn",
+          "type": "integer"
+        },
+        "fp": {
+          "minimum": 0,
+          "title": "Fp",
+          "type": "integer"
+        },
+        "judged_by": {
+          "title": "Judged By",
+          "type": "string"
+        },
+        "tn": {
+          "minimum": 0,
+          "title": "Tn",
+          "type": "integer"
+        },
+        "tp": {
+          "minimum": 0,
+          "title": "Tp",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "false_negative_rate",
+        "false_positive_rate",
+        "fn",
+        "fp",
+        "judged_by",
+        "tn",
+        "tp"
+      ],
+      "title": "Scores",
+      "type": "object"
+    },
+    "Target": {
+      "additionalProperties": false,
+      "properties": {
+        "authorisation": {
+          "$ref": "#/$defs/Authorisation"
+        },
+        "commit": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Commit"
+        },
+        "files": {
+          "minimum": 0,
+          "title": "Files",
+          "type": "integer"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "system_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9-]{1,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the ICOS registered system this target belongs to (optional; when present it must be registered, or the import is refused: unregistered_system)",
+          "title": "System Id"
+        },
+        "target_id": {
+          "pattern": "^vrt-[0-9a-f]{10}$",
+          "title": "Target Id",
+          "type": "string"
+        },
+        "tree_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Tree Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "authorisation",
+        "commit",
+        "files",
+        "name",
+        "target_id",
+        "tree_digest"
+      ],
+      "title": "Target",
+      "type": "object"
+    },
+    "Tool": {
+      "additionalProperties": false,
+      "properties": {
+        "ran": {
+          "title": "Ran",
+          "type": "boolean"
+        },
+        "tool": {
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ran",
+        "tool"
+      ],
+      "title": "Tool",
+      "type": "object"
+    },
+    "Validation": {
+      "additionalProperties": false,
+      "properties": {
+        "pov_fails_after": {
+          "const": true,
+          "title": "Pov Fails After",
+          "type": "boolean"
+        },
+        "tests_pass": {
+          "const": true,
+          "title": "Tests Pass",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "pov_fails_after",
+        "tests_pass"
+      ],
+      "title": "Validation",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:findings:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "One target's AI-assisted vulnerability discovery from ICDEV[IT] (icos-findings/v1), as ICOS imports it. Owned by\nICDEV[OS] (osx-ent-07), drafted by ICDEV[IT] (icx-ent-01). Its publication (icos-findings-publication/v1) travels\nBESIDE it. ICOS marks it by the registered system's marking, never by the classification it claims.",
+  "properties": {
+    "advisories": {
+      "items": {
+        "$ref": "#/$defs/Advisory"
+      },
+      "title": "Advisories",
+      "type": "array"
+    },
+    "classification": {
+      "description": "what the producer claims; carried as a claim only",
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Classification",
+      "type": "string"
+    },
+    "config": {
+      "$ref": "#/$defs/ConfigPin"
+    },
+    "content_digest": {
+      "description": "SHA-256 over the canonical JSON (keys sorted, separators ',' and ':') of the bundle without content_digest and produced_at",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "dropped": {
+      "$ref": "#/$defs/Dropped"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/Finding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "measurement": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Measurement"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "produced_at": {
+      "format": "date-time",
+      "title": "Produced At",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "run": {
+      "$ref": "#/$defs/Run"
+    },
+    "schema": {
+      "const": "icos-findings/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/$defs/Target"
+    }
+  },
+  "required": [
+    "schema",
+    "producer",
+    "produced_at",
+    "classification",
+    "target",
+    "run",
+    "findings",
+    "dropped",
+    "advisories",
+    "measurement",
+    "config",
+    "content_digest"
+  ],
+  "title": "FindingsBundle",
+  "type": "object",
+  "x-icos-contract": "1.201.0",
+  "x-license": "Apache-2.0"
+}

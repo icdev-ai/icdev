@@ -1,0 +1,5 @@
+# Network Diagram Analysis seed query (split from diagram_analysis.iqe).
+# Prompt: show diagram uploads with format pdf
+foreach u in network.diagram_uploads
+where u.format == "pdf"
+select u.id, u.filename, u.format, u.page_count, u.topology_id, u.uploaded_at

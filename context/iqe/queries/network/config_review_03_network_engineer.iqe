@@ -1,0 +1,5 @@
+# Network Configuration Review seed query (split from config_review.iqe).
+# Prompt: show config reviews by network_engineer role
+foreach r in network.config_reviews
+where r.role_key == "network_engineer"
+select r.id, r.title, r.vendor, r.role_key, r.status, r.created_at

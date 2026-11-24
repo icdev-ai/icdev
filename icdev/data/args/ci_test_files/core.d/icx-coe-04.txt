@@ -1,0 +1,8 @@
+# icx-coe-04: golden paths. The paths declare every standard in force derived from the register (behind fails
+# CI); `icdev scaffold service` renders every piece and splices its registrations as text; the drift check scores
+# the scaffold with the IDP scorecard and feature_audit (machine pass, manual needs evidence, unmeasured is
+# drift) and proves its tests red-first; a person who did not author a version publishes or retires it, only
+# when its gate holds; the append-only hash-chained ledger; page, routes, twin threads and replay, MCP read and
+# draft; and the ambient PG run.
+tests/test_icx_coe_04_golden_paths.py
+tests/test_icx_coe_04_ambient.py

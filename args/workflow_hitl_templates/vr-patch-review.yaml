@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+id: decl-wft-vr-patch-review
+name: "Vulnerability discovery patches: a person reviews a proposed patch and accepts or rejects it (propose -> review)"
+description: >-
+  A patch for a confirmed finding is only ever a PROPOSAL. Anyone, or an agent (a model draft through Cortex
+  governance), proposes a unified diff on /vulnresearch/. ICDEV applies it to a throwaway copy of the target,
+  replays the finding's proof of vulnerability there in the sandbox (it must now FAIL) and runs the target's tests
+  there (they must PASS); a patch that does not do both is refused, not proposed. A person who did not propose it
+  reads the diff and the validation and accepts it or rejects it, with a reason, bound to the proposal's digest.
+  Accepting records the decision: nothing is applied to the target, ever, by this feature.
+decides: [vulnresearch.vr_api_patch_review]
+effect: >-
+  The decided step in wf_decision_steps is the review (subject: "vr_patch:<finding id>"; payload: the finding, the
+  proposal's content digest and the diff digest). vr_events appends a patch_accepted or patch_rejected event on the
+  finding's patch stream. An accepted patch is carried in the findings bundle as reviewed; the target is not
+  changed (whoever owns it applies it through their own change process).
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: propose
+    step_type: automated
+    description: Someone (a person, or an agent's draft) proposed a patch that the sandbox validated.
+  - name: review
+    step_type: manual
+    role: vr_patch_reviewer
+    holders: [admin, isso, reviewer, developer]
+    # The person who proposed the patch never reviews it.
+    separate_from: builders
+    decisions: {accept: affirm, reject: deny}
+    reason_required: [accept, reject]

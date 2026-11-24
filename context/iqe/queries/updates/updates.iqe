@@ -1,4 +1,7 @@
-show all platform releases
-show the latest release version
-show releases with security fixes
-show releases added in the last month
+# Platform Updates seed queries. Collection: updates.releases (tools/iqe/adapters/updates.py:
+# one row per CHANGELOG.md release with version, date, section names and item count).
+# The parser reads exactly ONE query per file and /iqe/run runs one, so this file
+# holds the first and updates_02..04_*.iqe hold the others.
+# Prompt: show all platform releases
+foreach r in updates.releases
+select r.version, r.date, r.sections, r.item_count
