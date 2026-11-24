@@ -250,6 +250,9 @@ interfaces:
       - tools/cli/scaffold.py::scaffold_service
       - tools/idp/golden_paths.py::generate_artifacts
       - tools/idp/golden_paths.py::register
+      - data/templates/services/golden/c4.md.j2
+      - data/templates/services/golden/arc42.md.j2
+      - tools/idp/golden_paths.py::architecture_record_problems
 
   - id: coe.golden_drift
     type: sysml_element
@@ -733,3 +736,24 @@ requirements:
       - tests/test_icx_coe_04_golden_paths.py::test_the_twin_observes_paths_with_threads_and_replays
       - tests/test_icx_coe_04_golden_paths.py::test_the_twin_says_unverified_when_the_ledger_cannot_be_read
       - tests/test_icx_coe_04_golden_paths.py::test_the_mcp_tools_read_and_only_propose
+
+  - id: PM-COP04-1
+    title: A service on a golden path carries C4 views and an arc42 description that link its ADR record, never copy it
+    text: >-
+      icdev scaffold service renders docs/architecture/<key>/c4.md (system context, containers, components; deployment
+      and dynamic views, each element naming its evidence) and docs/architecture/<key>/arc42.md (arc42's twelve sections,
+      in order; template 9.1, CC BY-SA 4.0, names only) beside the one PROPOSED ADR record tools/idp/adrs.py writes.
+      Section 9 links that record; neither document holds ADR front matter or copies a record's decision, context or
+      consequences, and a second record is refused: ADR records are not duplicated. The drift check judges it as the
+      piece architecture_records (osx-cop-04, the Application CoP).
+    type: functional
+    priority: medium
+    features: [coe.golden_paths]
+    elements: [coe.golden_paths, coe.golden_drift]
+    controls: [SA-8, SA-17, CM-2]
+    tests:
+      - tests/test_osx_cop_04_architecture_records.py::test_scaffold_service_emits_c4_and_arc42_beside_the_adr_record
+      - tests/test_osx_cop_04_architecture_records.py::test_adr_records_are_not_duplicated
+      - tests/test_osx_cop_04_architecture_records.py::test_the_drift_check_judges_the_architecture_records
+      - tests/test_osx_cop_04_architecture_records.py::test_the_templates_credit_their_sources_and_copy_no_arc42_text
+      - tests/test_icx_coe_04_golden_paths.py::test_the_drift_check_passes_the_scaffold_machine_pass_manual_needs_evidence
