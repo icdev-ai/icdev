@@ -1,0 +1,182 @@
+<!-- CUI // SP-CTI — Store publisher (icx-ent-04) -->
+{% extends "base.html" %}
+{% block title %}Store publisher — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .sp-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .sp-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .sp-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .sp-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .sp-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .sp-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .sp-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .sp-card th, .sp-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .sp-card th { color: var(--text-secondary); font-weight: 600; }
+  .sp-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .sp-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .sp-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .sp-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .sp-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .sp-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .sp-btn.deny { border-color: var(--status-red); }
+  .sp-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .sp-wrap input { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .sp-wrap code { color: var(--text-primary); word-break: break-all; }
+  .sp-wrap { --sp-link: #8cc4ff; }
+  html[data-theme="light"] .sp-wrap { --sp-link: #0d4f9e; }
+  .sp-wrap a, .sp-wrap .sp-link { color: var(--sp-link); text-decoration: underline; }
+  .sp-link { background: none; border: none; padding: 0; cursor: pointer; font: inherit; }
+</style>
+
+<div class="sp-wrap">
+  <nav aria-label="Breadcrumb" class="sp-help"><a href="/evidence">Evidence</a> / Store publisher</nav>
+  <h1>Store publisher</h1>
+  <p class="sp-help" id="sp-help">
+    Prepares <b>signed <code>{{ schema }}</code></b> packages (ICDEV[OS] contract {{ contract }}) &mdash; an agent, a crew,
+    a skill, an MCP server or a plugin &mdash; for ICDEV[OS]'s private, curated <b>agent store</b>. Each carries its
+    publisher identity (<code>{{ view.publisher.id or 'unknown' }}</code>), an <b>A2A Agent Card signed with JWS</b> (ES384)
+    that binds the package's content digest, its SBOM and a dependency report over exactly that SBOM, its declared
+    tools, marking and egress ceilings and budget, the publisher's red-team report, and ICDEV's <b>seven marketplace
+    scanner gates</b> run on it: the publisher's own report, which ICDEV[OS] re-runs and only shows. A gate that could not
+    run says <b>unverified</b>, never passed. The card is signed by the publisher's key from the OS keyring
+    &mdash; never a person's, and never at an agent's request. Key:
+    <b id="sp-signing">{% if view.signing.configured %}configured{% else %}none configured: a package is refused until the site sets one{% endif %}</b>.
+    A person prepares a package; <b>another person</b> of its organisation publishes it (<code>{{ template }}</code>); a third
+    person imports it into ICDEV[OS], where a reviewer who is none of them certifies it. Nothing here publishes by itself.
+  </p>
+  {% if error %}<p class="sp-msg">{{ error }}</p>{% endif %}
+
+  <section class="sp-card" aria-labelledby="sp-packages-h">
+    <h2 id="sp-packages-h">Packages</h2>
+    {% if view.held_back %}<p class="sp-help" id="sp-held">{{ view.held_back }} package(s) not shown: outside your organisation or above your clearance.</p>{% endif %}
+    <table id="sp-packages">
+      <thead><tr><th scope="col">Package</th><th scope="col">Kind</th><th scope="col">Marking</th><th scope="col">Newest prepared</th><th scope="col">Newest published</th></tr></thead>
+      <tbody>
+      {% for p in view.packages %}
+        <tr data-package="{{ p.id }}">
+          <td><a href="{{ url_for('store_publisher.sp_page', package=p.id) }}">{{ p.id }}</a>{% if p.synthetic %} <span class="sp-tag">synthetic</span>{% endif %}</td>
+          <td>{{ p.kind | replace('_', ' ') }}</td><td>{{ p.marking }}</td>
+          <td>{% if p.prepared %}{{ p.prepared.version }} <code>{{ p.prepared.content_digest[:12] }}</code> {% if p.prepared.decided %}<span class="sp-tag">{{ p.prepared.decided }}</span>{% else %}<span class="sp-tag wait">waiting for a person</span>{% endif %}{% else %}none{% endif %}</td>
+          <td>{% if p.published %}{{ p.published.version }} <code>{{ p.published.content_digest[:12] }}</code> by {{ p.published.actor }}{% else %}<span class="sp-tag wait">unverified</span>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5">No package you may see is declared.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  {% if detail %}
+  <section class="sp-card" aria-labelledby="sp-package-h" id="sp-package" data-package="{{ detail.id }}">
+    <h2 id="sp-package-h">{{ detail.title }}{% if detail.synthetic %} (synthetic){% endif %}: {{ detail.kind | replace('_', ' ') }} <code>{{ detail.id }}</code></h2>
+    <h3>Prepare and sign</h3>
+    <p class="sp-help">Builds the package now, runs the seven scanner gates on it and the publisher's key signs its Agent Card; recorded at its content digest. It decides nothing.</p>
+    <label for="sp-version">Version</label><input id="sp-version" autocomplete="off" placeholder="1.0.0">
+    <label for="sp-note">Note (optional)</label><input id="sp-note" autocomplete="off">
+    <p><button type="button" class="sp-btn" id="sp-prepare">Prepare and sign</button></p>
+    <p class="sp-msg" id="sp-prepare-msg" role="status"></p>
+
+    {% set p = detail.prepared %}
+    <h3>Newest prepared version</h3>
+    {% if p and detail.build %}
+      {% set b = detail.build %}
+      <p class="sp-help" id="sp-prepared">Version {{ b.version }}, content digest <code id="sp-digest" data-digest="{{ p.content_digest }}">{{ p.content_digest }}</code>,
+        prepared by {{ p.actor }} at {{ p.created_at }}; card signed by key <code id="sp-kid">{{ b.kid }}</code> (ES384).
+        {% if p.decided %}<span class="sp-tag {{ 'ok' if p.decided == 'published' else 'no' }}" id="sp-decided">{{ p.decided }}</span>
+        {% else %}<span class="sp-tag wait">waiting for a person</span>{% endif %}</p>
+      <table id="sp-build">
+        <tbody>
+          <tr><th scope="row">Agent Card</th><td id="sp-card">{{ b.card.name }} {{ b.card.version }}; skills: {{ b.card.skills | join(', ') or 'none' }}; binds content <code>{{ (b.card.binding or '')[:16] }}</code></td></tr>
+          <tr><th scope="row">Self-check</th><td><span class="sp-tag {{ 'ok' if b.self_check == 'verified now' else 'no' }}" id="sp-self-check">{{ b.self_check }}</span> the digest, the card's signature under the publisher's key and its binding re-checked on this read; ICDEV[OS] verifies again against the key it pins</td></tr>
+          <tr><th scope="row">Ceilings</th><td id="sp-ceilings">marked {{ b.ceilings.marking }}; given at most {{ b.ceilings.marking_ceiling }}; egress at most {{ b.ceilings.egress_ceiling }}{% if b.budget %}; budget {{ b.budget.turns }} turns, {{ b.budget.calls }} calls, {{ b.budget.tokens }} tokens, {{ b.budget.seconds }} s{% endif %}</td></tr>
+          <tr><th scope="row">SBOM</th><td id="sp-sbom">CycloneDX {{ b.sbom.spec }}, {{ b.sbom.components }} component(s)</td></tr>
+          <tr><th scope="row">Red team</th><td id="sp-redteam">{{ b.redteam.tool }} (the publisher's attestation: ICDEV[OS] never re-runs it){% if b.redteam.failed %}; failed: {{ b.redteam.failed | join(', ') }}{% endif %}{% if b.redteam.unverified %}; unverified: {{ b.redteam.unverified | join(', ') }}{% endif %}</td></tr>
+        </tbody>
+      </table>
+      <h3>Scanner gates (the publisher's own report)</h3>
+      <table id="sp-gates">
+        <thead><tr><th scope="col">Gate</th><th scope="col">Result</th><th scope="col">Why</th></tr></thead>
+        <tbody>
+        {% for g in gate_names %}{% set r = b.gates.get(g, {}) %}
+          <tr data-gate="{{ g }}"><td><code>{{ g }}</code></td>
+            <td><span class="sp-tag {{ 'ok' if r.status == 'pass' else ('no' if r.status == 'fail' else 'wait') }}">{{ (r.status or 'unverified') | replace('_', ' ') }}</span></td>
+            <td>{{ r.reason or r.note or '' }}{% if r.engine %} (engine: {{ r.engine }}){% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if not p.decided %}
+        <h3>Your step: publish for ICDEV[OS]'s agent store</h3>
+        <p class="sp-help">May not publish it: <b id="sp-builders">{{ detail.builders.keys() | join(', ') }}</b>. A reason is required.
+          Bound to content digest <code>{{ p.content_digest[:16] }}</code>.</p>
+        <label for="sp-reason">Reason</label><input id="sp-reason" autocomplete="off">
+        <p><button type="button" class="sp-btn" data-publish="publish">Publish</button>
+          <button type="button" class="sp-btn deny" data-publish="refuse">Refuse</button></p>
+      {% endif %}
+      <p class="sp-msg" id="sp-publish-msg" role="status"></p>
+    {% else %}
+      <p class="sp-help">No version of this package has been prepared.</p>
+    {% endif %}
+
+    <h3>Published</h3>
+    {% if detail.published %}
+      <p class="sp-help" id="sp-published" data-event="{{ detail.published.event_id }}">Version {{ detail.published.version }} <code>{{ detail.published.content_digest[:16] }}</code>, prepared by {{ detail.published.prepared_by }},
+        published by {{ detail.published.actor }} (step <code>{{ detail.published.step_id }}</code>) at {{ detail.published.created_at }}.
+        <a id="sp-export-link" href="{{ url_for('store_publisher.sp_api_export', pid=detail.id) }}">The package and its publication as ICDEV[OS] imports them</a>
+        (a person imports it there, on its Store page).
+        Twin thread: <button type="button" class="sp-link" id="sp-thread" data-thread="store_publisher:{{ detail.published.event_id }}">store_publisher:{{ detail.published.event_id }}</button></p>
+      <p class="sp-msg" id="sp-thread-msg" role="status"></p>
+    {% else %}
+      <p class="sp-help" id="sp-unpublished">No version of this package has been published: nothing has left for ICDEV[OS].</p>
+    {% endif %}
+    <h3>Ledger</h3>
+    <p class="sp-help" id="sp-chain">Hash chain {{ 'intact' if detail.chain_intact else 'BROKEN' }}; {{ detail.history | length }} event(s).</p>
+  </section>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var box = document.getElementById('sp-package');
+  if (!box) return;
+  var pid = box.getAttribute('data-package');
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  function say(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  var prep = document.getElementById('sp-prepare');
+  if (prep) prep.addEventListener('click', function () {
+    say('sp-prepare-msg', 'Preparing and signing…');
+    getJson(icdevFetch('store_publisher.sp_api_prepare', {pid: pid}, postInit({
+      version: ((document.getElementById('sp-version') || {}).value || '').trim(),
+      note: (document.getElementById('sp-note') || {}).value || ''}))).then(function (res) {
+      if (!res.ok) { say('sp-prepare-msg', 'Not prepared (' + (res.j.code || 'error') + '): ' + (res.j.error || '')); return; }
+      window.location.reload();
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('[data-publish]'), function (b) {
+    b.addEventListener('click', function () {
+      var d = document.getElementById('sp-digest');
+      getJson(icdevFetch('store_publisher.sp_api_publish', {pid: pid}, postInit({
+        decision: b.getAttribute('data-publish'), reason: ((document.getElementById('sp-reason') || {}).value || '').trim(),
+        digest: d ? d.getAttribute('data-digest') : ''}))).then(function (res) {
+        if (!res.ok) { say('sp-publish-msg', 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || '')); return; }
+        window.location.reload();
+      });
+    });
+  });
+  var th = document.getElementById('sp-thread');
+  if (th) th.addEventListener('click', function () {
+    getJson(icdevFetch('store_publisher.sp_api_twin', {}, {}, {thread: th.getAttribute('data-thread')})).then(function (res) {
+      if (!res.ok || !res.j.resolved) { say('sp-thread-msg', 'Not resolved: ' + ((res.j && res.j.reason) || 'error')); return; }
+      var r = res.j.record || {};
+      say('sp-thread-msg', 'Resolved: ' + r.event + ' by ' + r.actor + ' at ' + r.created_at + ', step ' + r.step_id + ', digest ' + String(r.content_digest || '').slice(0, 16) + '.');
+    });
+  });
+})();
+</script>
+{% endblock %}

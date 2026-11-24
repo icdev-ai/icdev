@@ -5031,6 +5031,101 @@ CREATE INDEX IF NOT EXISTS idx_coe_conformance_events_repo ON coe_conformance_ev
 CREATE TRIGGER IF NOT EXISTS coe_conformance_events_no_update BEFORE UPDATE ON coe_conformance_events BEGIN SELECT RAISE(ABORT, 'coe_conformance_events is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS coe_conformance_events_no_delete BEFORE DELETE ON coe_conformance_events BEGIN SELECT RAISE(ABORT, 'coe_conformance_events is append-only'); END;
 
+-- icx-ent-01: the AI-assisted vulnerability discovery ledger (migration 20261118231119): targets, runs,
+-- measurements, patch proposals and findings bundles, one hash chain per stream. Same DDL; append-only.
+CREATE TABLE IF NOT EXISTS vr_events (
+    event_id        TEXT PRIMARY KEY,
+    stream          TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('registered', 'authorised', 'refused', 'revoked', 'run_recorded', 'measured', 'patch_proposed', 'patch_accepted', 'patch_rejected', 'prepared', 'published', 'bundle_refused')),
+    subject         TEXT NOT NULL,
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person', 'agent', 'bootstrap')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    content_digest  TEXT NOT NULL DEFAULT '',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(stream, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_vr_events_stream ON vr_events (stream, created_at);
+CREATE INDEX IF NOT EXISTS idx_vr_events_subject ON vr_events (subject, created_at);
+CREATE TRIGGER IF NOT EXISTS vr_events_no_update BEFORE UPDATE ON vr_events BEGIN SELECT RAISE(ABORT, 'vr_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS vr_events_no_delete BEFORE DELETE ON vr_events BEGIN SELECT RAISE(ABORT, 'vr_events is append-only'); END;
+
+-- icx-ent-02: the objective-evidence ledger (migration 20261119040000): a system's report prepared, then a
+-- person of its org publishes or refuses. Same DDL; append-only, hash-chained per system.
+CREATE TABLE IF NOT EXISTS ec_events (
+    event_id        TEXT PRIMARY KEY,
+    stream          TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused','step_lost')),
+    system_id       TEXT NOT NULL,
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent','bootstrap')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    content_digest  TEXT NOT NULL DEFAULT '',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(stream, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_ec_events_stream ON ec_events (stream, created_at);
+CREATE TRIGGER IF NOT EXISTS ec_events_no_update BEFORE UPDATE ON ec_events BEGIN SELECT RAISE(ABORT, 'ec_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS ec_events_no_delete BEFORE DELETE ON ec_events BEGIN SELECT RAISE(ABORT, 'ec_events is append-only'); END;
+
+-- icx-ent-03: the signed factory build ledger (migration 20261122003636): a target's build prepared (the factory's
+-- key signed it), then a person of its org publishes or refuses. Same DDL; append-only, hash-chained per target.
+CREATE TABLE IF NOT EXISTS fb_events (
+    event_id        TEXT PRIMARY KEY,
+    stream          TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused')),
+    target_id       TEXT NOT NULL,
+    system_id       TEXT NOT NULL,
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    content_digest  TEXT NOT NULL DEFAULT '',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(stream, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_fb_events_stream ON fb_events (stream, created_at);
+CREATE TRIGGER IF NOT EXISTS fb_events_no_update BEFORE UPDATE ON fb_events BEGIN SELECT RAISE(ABORT, 'fb_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS fb_events_no_delete BEFORE DELETE ON fb_events BEGIN SELECT RAISE(ABORT, 'fb_events is append-only'); END;
+
+-- icx-ent-04: the store publisher ledger (migration 20261122112221): a store package prepared (the publisher's key
+-- signed its card), then a person of its org publishes or refuses. Same DDL; append-only, hash-chained per package.
+CREATE TABLE IF NOT EXISTS sp_events (
+    event_id        TEXT PRIMARY KEY,
+    stream          TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused')),
+    package_id      TEXT NOT NULL,
+    org             TEXT NOT NULL,
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    content_digest  TEXT NOT NULL DEFAULT '',
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(stream, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_sp_events_stream ON sp_events (stream, created_at);
+CREATE TRIGGER IF NOT EXISTS sp_events_no_update BEFORE UPDATE ON sp_events BEGIN SELECT RAISE(ABORT, 'sp_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS sp_events_no_delete BEFORE DELETE ON sp_events BEGIN SELECT RAISE(ABORT, 'sp_events is append-only'); END;
+
 -- icx-coe-04: the golden path ledger (migration 20261118070149): seeded, proposed, drift-checked, then a
 -- person publishes, refuses or retires. Same DDL; append-only.
 CREATE TABLE IF NOT EXISTS coe_golden_path_events (

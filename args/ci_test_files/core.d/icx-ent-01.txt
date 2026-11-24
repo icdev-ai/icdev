@@ -1,0 +1,8 @@
+# icx-ent-01: AI-assisted vulnerability discovery, proven or dropped. The scope lock (registered, authorised by
+# another person, allowed root, tree digest, revoke, expiry); the isolated sandbox (no network, writable only under
+# /out); sandbox_pov replays through reproduction_validator; findings only with a discriminating PoV, every other
+# candidate dropped and counted; the agentic review only proposes; patches proposed only when the PoV fails and the
+# tests pass, reviewed by another person, never applied; FP/FN against planted labels; the icos-findings/v1 bundle
+# and its publication beside it; page, routes, twin threads and replay, MCP; and the ambient PG run.
+tests/test_icx_ent_01_vulnresearch.py
+tests/test_icx_ent_01_ambient.py

@@ -1,0 +1,378 @@
+{
+  "$defs": {
+    "Budget": {
+      "additionalProperties": false,
+      "description": "At most what a run of it may spend (``agents.runtime.Budget``'s fields): an install may only lower it.",
+      "properties": {
+        "calls": {
+          "maximum": 256,
+          "minimum": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "seconds": {
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Seconds",
+          "type": "integer"
+        },
+        "tokens": {
+          "maximum": 2000000,
+          "minimum": 1,
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "turns": {
+          "maximum": 64,
+          "minimum": 1,
+          "title": "Turns",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "turns",
+        "calls",
+        "tokens",
+        "seconds"
+      ],
+      "title": "Budget",
+      "type": "object"
+    },
+    "DepFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "package": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Package",
+          "type": "string"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        }
+      },
+      "required": [
+        "id",
+        "package"
+      ],
+      "title": "DepFinding",
+      "type": "object"
+    },
+    "DependencyReport": {
+      "additionalProperties": false,
+      "description": "An OSV-style report of the SBOM's components, produced over exactly that SBOM (``sbom_sha256``).",
+      "properties": {
+        "findings": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DepFinding"
+          },
+          "maxItems": 500,
+          "title": "Findings",
+          "type": "array"
+        },
+        "produced_at": {
+          "title": "Produced At",
+          "type": "string"
+        },
+        "sbom_sha256": {
+          "description": "canon.digest of the package's sbom",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sbom Sha256",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "produced_at",
+        "tool",
+        "sbom_sha256"
+      ],
+      "title": "DependencyReport",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Commit",
+          "type": "string"
+        },
+        "source": {
+          "maxLength": 300,
+          "pattern": "^https://[A-Za-z0-9.-]+(/[A-Za-z0-9._~/-]*)?$",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "commit"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "Publisher": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "a publisher args/store.yaml pins (its org and card keys are ICOS's, never the package's)",
+          "pattern": "^[a-z][a-z0-9-]{1,40}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "Publisher",
+      "type": "object"
+    },
+    "RedTeam": {
+      "additionalProperties": false,
+      "properties": {
+        "produced_at": {
+          "title": "Produced At",
+          "type": "string"
+        },
+        "report_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Report Sha256",
+          "type": "string"
+        },
+        "results": {
+          "additionalProperties": {
+            "enum": [
+              "passed",
+              "failed",
+              "unverified"
+            ],
+            "type": "string"
+          },
+          "description": "{ASI01..ASI10, LLM01..LLM10: passed|failed|unverified}",
+          "maxProperties": 64,
+          "title": "Results",
+          "type": "object"
+        },
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        }
+      },
+      "required": [
+        "produced_at",
+        "tool",
+        "results",
+        "report_sha256"
+      ],
+      "title": "RedTeam",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:store-package:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agent_card": {
+      "additionalProperties": true,
+      "description": "an A2A Agent Card with JWS signatures (A2A v1.0 §8.4)",
+      "title": "Agent Card",
+      "type": "object"
+    },
+    "aibom": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "CycloneDX with machine-learning-model components (AI-BOM)",
+      "title": "Aibom"
+    },
+    "budget": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Budget"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "content_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "dependencies": {
+      "$ref": "#/$defs/DependencyReport"
+    },
+    "description": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "egress_ceiling": {
+      "description": "the highest marking that may reach its model or leave it",
+      "title": "Egress Ceiling",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^[a-z][a-z0-9-]{1,40}$",
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "agent",
+        "crew",
+        "skill",
+        "mcp_server",
+        "plugin"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "marking": {
+      "description": "the package's own marking (the ladder)",
+      "title": "Marking",
+      "type": "string"
+    },
+    "marking_ceiling": {
+      "description": "the highest marking it may be given",
+      "title": "Marking Ceiling",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "produced_at": {
+      "title": "Produced At",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "publisher": {
+      "$ref": "#/$defs/Publisher"
+    },
+    "redteam": {
+      "$ref": "#/$defs/RedTeam"
+    },
+    "sbom": {
+      "additionalProperties": true,
+      "description": "CycloneDX 1.6 or 1.7",
+      "title": "Sbom",
+      "type": "object"
+    },
+    "scan": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "the publisher's own scanner gates: CLAIMED, shown, never trusted",
+      "title": "Scan"
+    },
+    "schema": {
+      "const": "icos-store-package/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "tools": {
+      "default": [],
+      "description": "the tools it declares (agents: ICOS MCP tools)",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Tools",
+      "type": "array"
+    },
+    "version": {
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "kind",
+    "title",
+    "description",
+    "publisher",
+    "marking",
+    "marking_ceiling",
+    "egress_ceiling",
+    "agent_card",
+    "sbom",
+    "dependencies",
+    "redteam",
+    "provenance",
+    "payload",
+    "produced_at",
+    "content_digest"
+  ],
+  "title": "StorePackage",
+  "type": "object",
+  "x-icos-contract": "1.207.0",
+  "x-license": "Apache-2.0"
+}

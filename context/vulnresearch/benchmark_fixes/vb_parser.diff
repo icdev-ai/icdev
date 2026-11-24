@@ -1,0 +1,11 @@
+--- a/src/vb_parser.py
++++ b/src/vb_parser.py
+@@ -11,4 +11,7 @@
+     fields = text[2:].split(",")
+     if not fields[0].isdigit():
+         raise ValueError("bad count")
+-    return fields[int(fields[0])]
++    index = int(fields[0])
++    if index >= len(fields):
++        raise ValueError("no such field")
++    return fields[index]

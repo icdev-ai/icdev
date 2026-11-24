@@ -2453,3 +2453,144 @@ cop_academy:
   note: >
     No cloud-vendor training or certification content (owner, 2026-11-17): every mission teaches
     this platform's own patterns and cites the files a learner reads.
+
+# AI-assisted vulnerability discovery, proven or dropped (icx-ent-01)
+#
+# Enforced by tools/vulnresearch/* (targets.assert_in_scope, pov.replay_pair, patches.validate, bundle.verify), the
+# isolated sandbox (tools/security/sandbox_executor.py::SandboxExecutor.run_isolated) and the declared templates
+# args/workflow_hitl_templates/vr-*.yaml; tested in tests/test_icx_ent_01_*.py (gated: core.d/icx-ent-01.txt).
+vuln_research:
+  blocking:
+    - target_not_authorised          # a target not authorised by a person (or refused, revoked, expired) is never scanned
+    - self_authorised                # the registrant never authorises their own target (separate_from: builders)
+    - root_not_allowlisted           # a tree outside scope.allowed_roots is refused at registration and every scan
+    - tree_changed                   # a tree whose digest moved since registration is a different target
+    - network_in_sandbox             # run_isolated has no network switch; --network none is fixed
+    - isolation_container            # a real target runs only under gVisor or a microVM; runc is refused
+                                     # (only the synthetic benchmark's named waiver, recorded in the run and the
+                                     # bundle; twin: vulnresearch.isolation_container critical when unwaived)
+    - finding_without_pov            # a candidate whose PoV did not discriminate is dropped, never a finding
+    - pov_exported                   # a sealed PoV input never appears in a view, an MCP result or a bundle
+    - patch_without_proof            # a patch is proposed only when its PoV fails on the copy and the tests pass
+    - patch_applied                  # nothing in this feature writes to the target
+    - self_reviewed_patch            # the proposer never reviews their own patch
+    - preparer_publishes             # the preparer never publishes the findings bundle
+    - bundle_off_schema              # a bundle that does not meet the pinned draft, or whose digest is not its content's
+    - schema_unpinned                # context/icos/findings*.schema.json changed without re-pinning
+    - chain_broken                   # a vr_events row that does not verify blocks new events on that stream
+  warning:
+    - finding_unpatched              # twin: vulnresearch.finding_unpatched
+    - bundle_unpublished             # twin: vulnresearch.bundle.<target> unverified (never passed)
+    - measurement_missing            # twin: vulnresearch.measurement unverified
+    - labels_unreviewed              # twin: vulnresearch.labels_unreviewed (planted by construction)
+    - isolation_waived               # twin: vulnresearch.isolation_waived (the benchmark ran under its waiver)
+    - authorisation_expired          # twin: vulnresearch.authorisation_expired
+  note: >
+    A dependency advisory has no PoV recipe: it is carried as UNPROVEN with its KEV flag (null when KEV was not
+    read), never a finding. The model (Cortex governance, llm_function vuln_source_review / vuln_patch_draft) only
+    proposes candidates and drafts; no model judges a finding or a measurement.
+
+# Evidence collectors for customer environments (icx-ent-02)
+#
+# Enforced by tools/evidence_collectors/* (config.validate, transport.request_json, bundle.evaluate,
+# bundle.validate, service.visible, service.publish) and the declared template
+# args/workflow_hitl_templates/ec-evidence-publish.yaml; tested in tests/test_icx_ent_02_*.py (gated:
+# core.d/icx-ent-02.txt).
+evidence_collectors:
+  blocking:
+    - credential_literal             # a credential that is not a keyring:/vault: reference is refused on load
+    - secret_outside_credentials     # a secret-looking key anywhere else in the configuration is refused
+    - collector_writes               # a collector sends GET or a named read POST, nothing else
+    - off_host_or_redirect           # a request off the configured host, or a redirect, is refused
+    - met_from_absence               # an objective is satisfied only when every mapped fact is fresh and true
+    - stale_or_future_evidence       # past its budget, after the report or without a zoned time: unverified
+    - preparer_publishes             # the preparer never publishes (separate_from: builders)
+    - agent_publishes                # an agent prepares a draft; it never publishes
+    - other_org_or_uncleared         # outside the system's org or below its marking: "no such system"
+    - publish_on_stale_digest        # the prepared report changed since the person read it
+    - config_changed_since_prepare   # the system's endpoints, references or the mapping changed: prepare again
+    - report_off_schema              # a report that does not meet the pinned contract or its digest rule
+    - schema_unpinned                # context/icos/objective-evidence.schema.json changed without re-pinning
+    - chain_broken                   # an ec_events row that does not verify blocks new events for that system
+  warning:
+    - system_unpublished             # twin: evidence_collectors.<system> unverified (never passed)
+    - objective_other_than_satisfied # twin: evidence_collectors.other_than_satisfied
+    - report_stale                   # twin: evidence_collectors.stale
+    - objectives_unverified          # twin: evidence_collectors.unverified_objectives
+    - awaiting_publish               # twin: evidence_collectors.awaiting_publish
+  note: >
+    Collector entries cite nothing ICDEV[OS] resolves, so there they stand as unverified until an assessor's
+    determination cites the report (report:<content digest>). This is evidence, never an assessment.
+
+# Signed factory builds (icx-ent-03)
+#
+# Enforced by tools/factory_builds/* (config.validate, config.read_confined, build.build, build.self_check,
+# aibom.promoted_version, aibom.check_binding, service.visible, service.prepare, service.publish, service.export),
+# tools/crypto/artefact_signer.py and the declared template args/workflow_hitl_templates/fb-build-publish.yaml; tested in
+# tests/test_icx_ent_03_*.py (gated: core.d/icx-ent-03.txt).
+factory_builds:
+  blocking:
+    - no_signing_key                # no key configured: refused, never a MAC or an unsigned build
+    - test_key_outside_tmp          # a file: key is a throwaway test key in the temporary directory only
+    - keyless_without_issuer        # keyless needs a configured OIDC issuer, Fulcio URL and token: no public default
+    - certificate_mismatch          # Fulcio's leaf must carry the ephemeral key and name the configured issuer
+    - signature_does_not_verify     # every signature is checked under the key's own public key before it is used
+    - agent_signs                   # an agent or a service key never makes the factory's key sign
+    - preparer_publishes            # the preparer never publishes (separate_from: builders)
+    - other_org_or_uncleared        # outside the target's org or below its marking: "no such target"
+    - publish_on_stale_digest       # the prepared build changed since the person read it
+    - build_off_contract            # a manifest, SBOM or VEX off ICDEV[OS]'s pinned contracts is refused
+    - schema_unpinned               # a vendored schema whose SHA-256 is not its pin is refused, never used
+    - model_not_promoted            # a model is built only from a promoted fine-tuning registry version
+    - promotion_withdrawn           # a model demoted since it was built is never published
+    - model_marking_above_target    # registry rows above the target's marking (or another tenant's) are refused
+    - path_outside_root_or_symlink  # inputs only under the reviewed roots, regular files with one link, no symlinks
+    - vex_unexpressible             # nothing to state: refused, never an invented OpenVEX statement
+    - export_without_step           # a publication counts only with its declared step recorded, by that person
+    - outbound_redirect             # Fulcio and Rekor calls are https, never follow a redirect, one deadline
+    - chain_broken                  # an fb_events row that does not verify blocks new events for that target
+  warning:
+    - target_unpublished            # twin: factory_builds.<target> unverified (never passed)
+    - awaiting_publish              # twin: factory_builds.awaiting_publish
+    - keyless_not_admitted          # twin: ICDEV[OS]'s register admits key-based builds only, for now
+  note: >
+    The transparency log is off by default and a build records that it is; with rekor configured, the log's
+    entries are recorded as receipts, NOT verified (no log key is pinned). A build is evidence for ICDEV[OS]'s
+    admission, never an approval: ICDEV[OS] admits, and its people approve the release.
+
+# Store publisher (icx-ent-04)
+#
+# Enforced by tools/store_publisher/* (config.validate, package.build, package.self_check, gates.run, service.visible,
+# service.prepare, service.publish, service.export), tools/store_publisher/card.py, tools/common/confined_read.py and the
+# declared template args/workflow_hitl_templates/store-publish.yaml; tested in tests/test_icx_ent_04_*.py (gated:
+# core.d/icx-ent-04.txt).
+store_publisher:
+  blocking:
+    - no_publisher_key              # no key configured: refused, never an unsigned card
+    - key_not_pinned                # signing.kid set and the key is another: refused (key_mismatch)
+    - signature_does_not_verify     # every card signature is checked under the key's own public key before it is used
+    - card_not_bound                # the card's icos.store/package_digest is not the package's digest, or its skills
+                                    # are not exactly the declared tools
+    - agent_signs                   # an agent or a service key never makes the publisher's key sign, never publishes
+    - preparer_publishes            # the preparer never publishes (separate_from: builders)
+    - other_org_or_uncleared        # outside the package's org or below its marking: "no such package"
+    - publish_on_stale_digest       # the prepared package changed since the person read it
+    - package_off_contract          # a package off ICDEV[OS]'s pinned store-package schema is refused
+    - schema_unpinned               # a vendored schema whose SHA-256 is not its pin is refused, never used
+    - ceiling_needs_accreditation   # a marking or egress ceiling of cui or above is the owner's, never a package's
+    - redteam_incomplete            # a red-team report that answers no result for an id its kind needs
+    - time_in_future                # any produced_at in the future, or a time with no zone
+    - path_outside_root_or_symlink  # inputs only under package_root, regular files with one link, no symlinks
+    - export_without_step           # a publication counts only with its declared step recorded, by that person
+    - chain_broken                  # an sp_events row that does not verify blocks new events for that package
+  warning:
+    - package_unpublished           # twin: store_publisher.<package> unverified (never passed)
+    - awaiting_publish              # twin: store_publisher.awaiting_publish
+    - gate_not_passed               # twin: published with a scanner gate that did not pass (ICDEV[OS] will block it)
+    - redteam_not_passed            # twin: published with a failed or unverified red-team id
+    - key_unverified                # twin: published with no signing.kid or key here to confirm the card's key
+  note: >
+    The seven scanner gates' results ship as the publisher's own report (scan); ICDEV[OS] re-runs its gates and shows
+    ours as claimed. A gate that cannot run is unverified, never pass. A package is offered to ICDEV[OS]'s store, never
+    certified here: ICDEV[OS] imports it, and a reviewer who is neither its importer nor one of the publisher's people
+    certifies it.

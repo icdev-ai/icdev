@@ -1519,6 +1519,12 @@ def handle_guard_result(args: dict) -> dict:
 def handle_finding_replay(args: dict) -> dict:
     """Replay one stored reproduction for a dynamic finding (oss-poc-01)."""
     try:
+        if str((args.get("reproduction") or {}).get("kind") or "") == "sandbox_pov":
+            # icx-ent-01: a sandbox proof of vulnerability is replayed only by tools/vulnresearch, from what it
+            # sealed, on a scope-locked target; never from a caller's reproduction.
+            return {"error": "a sandbox_pov reproduction is not replayed through this tool: tools/vulnresearch "
+                             "replays its own sealed PoVs on authorised targets only",
+                    "code": "sandbox_pov_refused", "refused": True}
         from tools.security.reproduction_validator import Reproduction, replay
 
         repro = Reproduction.from_dict(dict(args.get("reproduction") or {}))
@@ -1531,6 +1537,12 @@ def handle_finding_replay(args: dict) -> dict:
 def handle_finding_enforce_reproduction(args: dict) -> dict:
     """Apply the reproduce-or-drop rule to a batch of findings (oss-poc-01)."""
     try:
+        if any(str(((f or {}).get("reproduction") or {}).get("kind") or "") == "sandbox_pov"
+               for f in (args.get("findings") or []) if isinstance(f, dict)):
+            # icx-ent-01: as for finding_replay and finding_verify_discrimination.
+            return {"error": "a sandbox_pov reproduction is not judged through this tool: tools/vulnresearch "
+                             "replays its own sealed PoVs on authorised targets only",
+                    "code": "sandbox_pov_refused", "refused": True}
         from tools.security.reproduction_validator import enforce
 
         report = enforce(
@@ -1553,6 +1565,12 @@ def handle_finding_enforce_reproduction(args: dict) -> dict:
 def handle_finding_verify_discrimination(args: dict) -> dict:
     """Prove a reproduction distinguishes vulnerable from fixed (oss-poc-01)."""
     try:
+        if str((args.get("reproduction") or {}).get("kind") or "") == "sandbox_pov":
+            # icx-ent-01: a sandbox proof of vulnerability is replayed only by tools/vulnresearch, from what it
+            # sealed, on a scope-locked target; never from a caller's reproduction.
+            return {"error": "a sandbox_pov reproduction is not replayed through this tool: tools/vulnresearch "
+                             "replays its own sealed PoVs on authorised targets only",
+                    "code": "sandbox_pov_refused", "refused": True}
         from tools.security.reproduction_validator import (
             Reproduction,
             mark_discriminating,
@@ -5284,3 +5302,147 @@ def handle_cop_academy_xapi_prepare(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_cop_academy_xapi_prepare: %s", exc)
         return {"error": str(exc)}
+
+
+def handle_vulnresearch_status(args: dict) -> dict:
+    """MCP (icx-ent-01): read vulnerability discovery. Sealed PoVs are never returned. Changes nothing."""
+    try:
+        from tools.vulnresearch import benchmark, bundle, discovery, patches, targets
+
+        tid = str(args.get("target_id") or "").strip()
+        if not tid:
+            return {"classification": CORTEX_CLASSIFICATION, "targets": targets.targets_view(),
+                    "measurement": benchmark.latest()}
+        try:
+            return {"classification": CORTEX_CLASSIFICATION, "target": targets.state(tid),
+                    "runs": discovery.runs(tid)[:3], "patches": patches.patches_for(tid),
+                    "bundle": bundle.ledger_view(tid)}
+        except targets.TargetRefused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_vulnresearch_status: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_vulnresearch_prepare(args: dict) -> dict:
+    """MCP (icx-ent-01): an agent prepares a target's findings bundle as a DRAFT, recorded as ``agent:<id>``.
+
+    Preparing decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or
+    refuses it on /vulnresearch/ (decl-wft-vr-findings-publish).
+    """
+    try:
+        from tools.vulnresearch import bundle
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = bundle.prepare(str(args.get("target_id") or ""), {"id": f"agent:{agent}", "role": "service"},
+                                 note=str(args.get("note") or ""))
+        except bundle.BundleRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who did not prepare it publishes it or refuses it on /vulnresearch/"}
+    except Exception as exc:
+        logger.warning("handle_vulnresearch_prepare: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_evidence_collectors_status(args: dict) -> dict:
+    """MCP (icx-ent-02): the evidence collectors' systems, one system's newest report, or its published report.
+
+    Read-only, at the MCP results' marking, and SYNTHETIC systems only: an agent is in no org and
+    names itself, so no customer's system is ever shown; the rest are counted, never described,
+    and a system id that is not visible reads exactly as one that does not exist. Credentials are
+    references and never returned. Prepares and publishes nothing.
+    """
+    try:
+        from tools.evidence_collectors import service
+
+        reader = service.mcp_reader(str(args.get("agent_id") or "mcp").strip() or "mcp")
+        sid = str(args.get("system") or "").strip()
+        try:
+            if not sid:
+                return {"classification": CORTEX_CLASSIFICATION, "systems": service.systems_view(reader)}
+            if args.get("published"):
+                b = service.published_bundle(sid, reader)
+                if b is None:
+                    return {"error": "no report of this system has been published", "code": "unpublished"}
+                return {"classification": CORTEX_CLASSIFICATION, "bundle": b}
+            return {"classification": CORTEX_CLASSIFICATION, "system": service.system_view(sid, reader)}
+        except service.Refused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_evidence_collectors_status: %s", type(exc).__name__)
+        return {"error": f"the evidence collectors could not be read ({type(exc).__name__})"}
+
+
+def handle_evidence_collectors_prepare(args: dict) -> dict:
+    """MCP (icx-ent-02): an agent collects (read-only) and prepares a SYNTHETIC system's report as a DRAFT, as
+    ``agent:<id>``; never a customer's system, and at most once per system per the configured interval.
+
+    Preparing decides nothing and nothing leaves: a person of the system's org who did not
+    prepare it publishes it to ICDEV[OS] or refuses it on /evidence-collectors/
+    (decl-wft-ec-evidence-publish).
+    """
+    try:
+        from tools.evidence_collectors import service
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = service.prepare(str(args.get("system") or ""), {"id": f"agent:{agent}", "role": "service"},
+                                  service.mcp_reader(agent), note=str(args.get("note") or ""))
+        except service.Refused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person of the system's org who did not prepare it publishes it or refuses it on "
+                        "/evidence-collectors/"}
+    except Exception as exc:
+        logger.warning("handle_evidence_collectors_prepare: %s", type(exc).__name__)
+        return {"error": f"the report could not be prepared ({type(exc).__name__})"}
+
+
+def handle_factory_builds_status(args: dict) -> dict:
+    """MCP (icx-ent-03): the signed factory builds' targets, one target's newest build, or its published build.
+
+    Read-only, at the MCP results' marking, and SYNTHETIC targets only: an agent is in no org, so no
+    customer's target is ever shown; the rest are counted, never described, and a target id that is
+    not visible reads exactly as one that does not exist. It never builds, signs or publishes.
+    """
+    try:
+        from tools.factory_builds import service
+
+        reader = service.mcp_reader(str(args.get("agent_id") or "mcp").strip() or "mcp")
+        tid = str(args.get("target") or "").strip()
+        try:
+            if not tid:
+                return {"classification": CORTEX_CLASSIFICATION, "targets": service.targets_view(reader)}
+            if args.get("export"):
+                return {"classification": CORTEX_CLASSIFICATION, "export": service.export(tid, reader)}
+            return {"classification": CORTEX_CLASSIFICATION, "target": service.target_view(tid, reader)}
+        except service.Refused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_factory_builds_status: %s", type(exc).__name__)
+        return {"error": f"the factory builds could not be read ({type(exc).__name__})"}
+
+
+def handle_store_publisher_status(args: dict) -> dict:
+    """MCP (icx-ent-04): the store publisher's packages, one package's newest version, or its published version.
+
+    Read-only, at the MCP results' marking, and SYNTHETIC packages only: an agent is in no org, so no
+    customer's package is ever shown; the rest are counted, never described, and a package id that is
+    not visible reads exactly as one that does not exist. It never prepares, signs or publishes.
+    """
+    try:
+        from tools.store_publisher import service
+
+        reader = service.mcp_reader(str(args.get("agent_id") or "mcp").strip() or "mcp")
+        pid = str(args.get("package") or "").strip()
+        try:
+            if not pid:
+                return {"classification": CORTEX_CLASSIFICATION, "packages": service.packages_view(reader)}
+            return {"classification": CORTEX_CLASSIFICATION, "package": service.package_view(pid, reader)}
+        except service.Refused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_store_publisher_status: %s", type(exc).__name__)
+        return {"error": f"the store publisher could not be read ({type(exc).__name__})"}

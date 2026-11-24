@@ -1,0 +1,125 @@
+{
+  "$defs": {
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "System",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "system",
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:findings-publication:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The publication of one icos-findings/v1 bundle, exported by ICDEV[IT] BESIDE it: a person who did not prepare it\ntook the declared step decl-wft-vr-findings-publish, bound to its content_digest. ICOS refuses a bundle with none,\none at another digest, and one signed by its preparer or by an agent.",
+  "properties": {
+    "content_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "decided_at": {
+      "format": "date-time",
+      "title": "Decided At",
+      "type": "string"
+    },
+    "event_id": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Event Id",
+      "type": "string"
+    },
+    "prepared_by": {
+      "description": "a person's account id, or agent:<name>",
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Prepared By",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "role": {
+      "anyOf": [
+        {
+          "maxLength": 60,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Role"
+    },
+    "row_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Row Hash",
+      "type": "string"
+    },
+    "schema": {
+      "enum": [
+        "icos-findings-publication/v1",
+        "icdev-findings-publication/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "signed_by": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Signed By",
+      "type": "string"
+    },
+    "step_id": {
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Step Id",
+      "type": "string"
+    },
+    "template": {
+      "const": "decl-wft-vr-findings-publish",
+      "title": "Template",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "content_digest",
+    "signed_by",
+    "prepared_by",
+    "step_id",
+    "template",
+    "decided_at",
+    "event_id",
+    "row_hash",
+    "producer"
+  ],
+  "title": "Publication",
+  "type": "object",
+  "x-icos-contract": "1.201.0",
+  "x-license": "Apache-2.0"
+}

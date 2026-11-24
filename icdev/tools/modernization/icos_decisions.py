@@ -36,9 +36,7 @@ trusted.
 from __future__ import annotations
 
 import argparse
-import base64
 import json
-import math
 import sys
 from pathlib import Path
 
@@ -46,6 +44,8 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
+
+from tools.common import jcs as _jcs  # noqa: E402
 
 SCHEMA = "icos-portfolio-decisions/v1"
 TYP = "icos-portfolio-decisions+jws"
@@ -56,66 +56,21 @@ class Untrusted(ValueError):
     """The export cannot be relied on: not signed by a pinned key, changed, or from a broken chain."""
 
 
-# --- RFC 8785 (JSON Canonicalization Scheme) ------------------------------------------------------
+# --- RFC 8785 (JSON Canonicalization Scheme) and base64url: the one shared copy (tools/common/jcs.py) ---------------
 
 def _num(x) -> str:
-    if isinstance(x, bool):
-        raise TypeError("bool is not a number")
-    if isinstance(x, int):
-        if abs(x) > 2 ** 53:
-            raise Untrusted("integer outside the IEEE-754 safe range")
-        return str(x)
-    if not math.isfinite(x):
-        raise Untrusted("non-finite number")
-    if x == 0:
-        return "0"
-    sign = "-" if x < 0 else ""
-    mant, _, exp = repr(abs(x)).partition("e")
-    digits, _, frac = mant.partition(".")
-    e = int(exp or 0) + len(digits)
-    s = (digits + frac).lstrip("0")
-    e -= len(digits + frac) - len(s)
-    s = s.rstrip("0") or "0"
-    k, n = len(s), e
-    if k <= n <= 21:
-        out = s + "0" * (n - k)
-    elif 0 < n <= 21:
-        out = s[:n] + "." + s[n:]
-    elif -6 < n <= 0:
-        out = "0." + "0" * (-n) + s
-    else:
-        out = (s[0] + ("." + s[1:] if k > 1 else "")) + "e" + ("+" if n - 1 >= 0 else "-") + str(abs(n - 1))
-    return sign + out
+    return _jcs.num(x, Untrusted)
 
 
 def jcs(v) -> str:
     """The RFC 8785 canonical JSON of ``v`` (keys sorted by UTF-16 code units, ECMAScript number form)."""
-    if v is None:
-        return "null"
-    if v is True:
-        return "true"
-    if v is False:
-        return "false"
-    if isinstance(v, (int, float)):
-        return _num(v)
-    if isinstance(v, str):
-        return json.dumps(v, ensure_ascii=False)
-    if isinstance(v, list):
-        return "[" + ",".join(jcs(x) for x in v) + "]"
-    if isinstance(v, dict):
-        keys = sorted(v, key=lambda k: k.encode("utf-16-be"))
-        return "{" + ",".join(json.dumps(k, ensure_ascii=False) + ":" + jcs(v[k]) for k in keys) + "}"
-    raise Untrusted(f"not JSON: {type(v).__name__}")
+    return _jcs.jcs(v, Untrusted)
 
 
 # --- the signature ---------------------------------------------------------------------------------
 
-def _b64u(b: bytes) -> str:
-    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
-
-
-def _unb64u(s: str) -> bytes:
-    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+_b64u = _jcs.b64u
+_unb64u = _jcs.unb64u
 
 
 def pinned(jwks: dict) -> dict:

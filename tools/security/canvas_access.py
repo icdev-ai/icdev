@@ -67,8 +67,16 @@ def _now() -> str:
 
 
 def _conn():
-    from tools.db.storage import get_connection
-    return get_connection()
+    """The grant tables, without the request's row-security predicate.
+
+    canvas_access_grants has no classification column, so the label predicate a signed-in
+    person's security context injects (tools/db/storage.py ``_inject_rls``) made every grant
+    query raise, and ``check_access`` fail closed: a person of a tenant was refused every
+    granted canvas on the session path (found by icx-ent-02's e2e). Every query here names its
+    tenant explicitly, which is the scoping, as ``get_canvas_connection`` documents.
+    """
+    from tools.db.storage import get_canvas_connection
+    return get_canvas_connection()
 
 
 # ---------------------------------------------------------------------------

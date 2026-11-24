@@ -70,8 +70,8 @@ def roadmaps_adapter(conn: Any) -> list[dict]:
     canvas = _canvas_conn()
     try:
         cur = canvas.execute(
-            "SELECT scan_id, roadmap_id, title, total_effort_days, created_at "
-            "FROM aiify_roadmaps ORDER BY created_at DESC"
+            "SELECT scan_id, roadmap_id, title, total_effort_days, aimc_links, aadc_links, "
+            "created_at FROM aiify_roadmaps ORDER BY created_at DESC"
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]

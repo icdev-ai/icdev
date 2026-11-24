@@ -782,6 +782,17 @@ routing:
     chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
+  # AI-assisted vulnerability discovery (icx-ent-01, tools/vulnresearch). Both only PROPOSE:
+  # source review suggests candidate findings (a candidate becomes a finding only with a
+  # proof of vulnerability replayed in the sandbox), and the patch draft is a proposal a
+  # person reviews; nothing is applied. Every call goes through Cortex governance.
+  vuln_source_review:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: high
+  vuln_patch_draft:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, codestral-local]
+    effort: high
+
   # INTaaS / FathomDesk intelligence functions (Phase INT-COT)
   news_reasoning:
     chain: [qwen3-local, claude-sonnet, gpt-4o]

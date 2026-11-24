@@ -5510,8 +5510,10 @@ python tools/research/research_engine.py --daemon --json
 
 ## Marketplace — Federated FORGE Asset Registry (Phase 22)
 ```bash
-# Publish a skill to tenant-local catalog
-python tools/marketplace/publish_pipeline.py --asset-path /path --asset-type skill --tenant-id "tenant-abc" --publisher-user "user@mil" --json
+# RETIRED (icx-ent-04): publish_pipeline.py and review_queue.py refuse (code superseded). A person prepares a
+# signed ICDEV[OS] store package on /store-publisher/, another person publishes it, and ICDEV[OS] imports,
+# reviews and certifies it (docs/features/icx-ent-04-store-publisher.md):
+python -m tools.store_publisher.cli packages --json
 
 # Search the marketplace
 python tools/marketplace/search_engine.py --search "STIG checker" --json
@@ -5522,9 +5524,7 @@ python tools/marketplace/compatibility_checker.py --asset-id "asset-abc" --consu
 # Install an asset
 python tools/marketplace/install_manager.py --install --asset-id "asset-abc" --tenant-id "tenant-abc" --json
 
-# Review queue (ISSO/security officer)
-python tools/marketplace/review_queue.py --pending --json
-python tools/marketplace/review_queue.py --review --review-id "rev-abc" --reviewer-id "isso@mil" --decision approved --rationale "Passed review" --json
+# Review queue: RETIRED (icx-ent-04) -- a store package is reviewed and certified in ICDEV[OS]
 
 # Federation sync
 python tools/marketplace/federation_sync.py --status --json
@@ -7775,6 +7775,80 @@ python tools/idp/conformance_export.py --repo ft --snapshot
 
 # Delivery evidence alone, from one checkout
 python tools/idp/dora.py --repo-path . --ref origin/main --at 2026-11-17 --json
+```
+
+### AI-assisted vulnerability discovery, proven or dropped (icx-ent-01)
+
+Defensive research on AUTHORISED targets only (`args/vuln_research.yaml`). A target is a local tree under
+`scope.allowed_roots`, registered at its digest and authorised on `/vulnresearch/` by a person who did not
+register it. Discovery reads and runs it only through the scope lock and the isolated sandbox
+(`SandboxExecutor.run_isolated`, no network). A candidate becomes a finding only with a proof of vulnerability
+replayed through `reproduction_validator`; patches are proposals a person reviews; one `icos-findings/v1`
+bundle per target goes to ICDEV[OS], prepared by one person and published by another, its publication beside it
+(`context/icos/findings.schema.json`, `findings-publication.schema.json`, vendored from ICDEV[OS] contract 1.201.0, pinned). The CLI acts as an
+agent and takes no person's step.
+
+```bash
+python tools/vulnresearch/cli.py status
+python tools/vulnresearch/cli.py register --name bench --root context/vulnresearch/benchmark --src-root src \
+    --test-dir tests --fuzz vb_parser:parse_record --reason "synthetic benchmark"
+python tools/vulnresearch/cli.py run --target vrt-0123456789 --no-model      # after a person authorised it
+python tools/vulnresearch/cli.py measure --target vrt-0123456789             # FP/FN against the planted labels
+python tools/vulnresearch/cli.py prepare --target vrt-0123456789             # a draft; a person publishes it
+python tools/vulnresearch/cli.py export --target vrt-0123456789 --published --out .tmp/vr
+python tools/vulnresearch/cli.py verify .tmp/vr --ledger
+# Inside the isolated sandbox only (run by pov.py / harness.py, never on the host):
+#   python tools/vulnresearch/sandbox_runtime/pov_runner.py /harness/spec.json
+#   python tools/vulnresearch/sandbox_runtime/fuzz_runner.py /harness/spec.json
+# The fuzz image with atheris 3.1.0 (optional; else the built-in coverage-guided fuzzer runs):
+docker build -t icdev-vuln-sandbox:atheris-3.1.0 deploy/vuln-sandbox
+```
+
+### Signed factory builds (icx-ent-03)
+
+One signed `icos-artefact/v1` (ICDEV[OS]'s contract, vendored and pinned, `context/icos/artefact.schema.json`) per
+built artefact of a target in `args/factory_builds.yaml`: a CycloneDX 1.7 SBOM (an AI-BOM for a model, linked to its
+fine-tuning registry promotion), SLSA v1.2 provenance, OpenVEX, Sigstore bundles signed by the factory's key (KMS or
+the OS keyring; keyless only with a configured OIDC issuer), OpenSSF model-signing for model weights, and OCI
+referrers. A person prepares a build on `/factory-builds/`; another person of the target's org publishes it
+(`decl-wft-fb-build-publish`); only then is it exported for ICDEV[OS]'s release register.
+
+```bash
+# Check the configuration (signing mode and whether a key is set, the transparency log, the targets)
+python -m tools.factory_builds.cli check-config --json
+
+# The synthetic targets an agent may see, and the labelled synthetic inputs for the demo and the e2e
+python -m tools.factory_builds.cli targets --json
+python -m tools.factory_builds.cli seed-synthetic --json
+
+# The newest PUBLISHED synthetic build, as ICDEV[OS] imports it ({bundle, publication}; POST /api/v1/artefacts)
+python -m tools.factory_builds.cli export --target syn-ent03-portal --out .tmp/factory-builds/portal.json
+```
+
+### Evidence collectors for customer environments (icx-ent-02)
+
+Four read-only collectors (cloud configuration via AWS Config, the identity provider via OIDC
+Discovery and SCIM 2.0, endpoints via Intune through Microsoft Graph, the SIEM via Splunk's REST
+API) read each customer system declared in `args/evidence_collectors.yaml`, with credentials by
+reference only (`keyring:` or `vault:`). A reviewed mapping turns fresh observations into
+SP 800-171 Rev. 2 and SP 800-53 Rev. 5 objective results, and each system's
+`icos-objective-evidence/v1` report (ICDEV[OS]'s contract, vendored and pinned,
+`context/icos/objective-evidence.schema.json`) is prepared on `/evidence-collectors/` (or by an
+agent) and published only by another person of the system's organisation.
+
+```bash
+# Check the configuration (refuses a literal credential, an unknown field, a non-loopback http base)
+python -m tools.evidence_collectors.cli check-config --json
+
+# The systems an agent may see at the MCP marking, and one system's observations (records nothing)
+python -m tools.evidence_collectors.cli systems --json
+python -m tools.evidence_collectors.cli collect --system syn-dib-01 --json
+
+# Prepare a draft as an agent (a person publishes it on /evidence-collectors/)
+python -m tools.evidence_collectors.cli prepare --system syn-dib-01 --agent drafter
+
+# The newest PUBLISHED report, as ICDEV[OS] imports it (POST /api/v1/controls/evidence)
+python -m tools.evidence_collectors.cli export --system syn-dib-01 --out .tmp/evidence
 ```
 
 ### Golden paths (icx-coe-04)
@@ -10274,3 +10348,19 @@ commands, its measurements and its refusals.
 | `kpr-watch-21` | A refusal that names no remedy: the done-gate says what is wrong, not what clears it | `python tools/kanban/cli.py --reverify <task-id>` | [kpr-watch-21.md](cards/kpr-watch-21.md) |
 | `kpr-watch-22` | Nothing consumed `union_refused`: the rung had resolved 2 conflicts in its lifetime | `python -m tools.kanban.union_candidates` | [kpr-watch-22.md](cards/kpr-watch-22.md) |
 | `kpr-watch-20` | The artifact-pin pair is DECLARED, and the survey that armed it counts HUNKS | `python -m tools.kanban.artifact_pin_union_survey` | [kpr-watch-20.md](cards/kpr-watch-20.md) |
+
+### Store publisher (icx-ent-04)
+
+Signed ICDEV[OS] store packages (`icos-store-package/v1`, ICDEV[OS]'s contract vendored and pinned under
+`context/icos/`) for its agent store: an agent, crew, skill, MCP server or plugin declared in `args/store_publisher.yaml`,
+its A2A Agent Card JWS-signed (ES384) by the publisher's OS-keyring key and binding the package's content, and ICDEV's
+seven marketplace scanner gates run on it. A person prepares and another person publishes on `/store-publisher/`; the
+CLI never prepares, publishes or exports (the full bundle is taken out only by a person who packages or publishes, from
+the console).
+
+```bash
+python -m tools.store_publisher.cli check-config --json
+python -m tools.store_publisher.cli packages --json
+python -m tools.store_publisher.cli seed-synthetic --json
+```
+

@@ -33,7 +33,7 @@ class Literal:
 @dataclass
 class BinOp:
     """Binary comparison or logical operation (and/or/not)."""
-    op: str  # ==, !=, >, <, >=, <=, contains, startswith, and, or, not
+    op: str  # ==, !=, >, <, >=, <=, contains, startswith, and, or, not, *, /
     left: Any  # None for unary 'not'
     right: Any
 
