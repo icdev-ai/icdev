@@ -1,0 +1,7 @@
+# osx-cop-05: FOCUS cost bundles for ICDEV[OS]'s Cloud CoP. The pinned icos-focus-cost/v1 schema (file sha256 and
+# schema digest); the reviewed config refused when broken; a FOCUS 1.4 export read as CSV, JSON or JSON lines with one
+# failing row refusing it whole; totals and digest recomputed by ICDEV[OS]'s algorithm; a draft has no publication;
+# publishing a person's declared step, never the preparer's, bound to the digest; the append-only hash-chained ledger;
+# page, routes, twin threads and replay, MCP read and draft; no vendor training content; and the ambient PG run.
+tests/test_osx_cop_05_finops.py
+tests/test_osx_cop_05_ambient.py

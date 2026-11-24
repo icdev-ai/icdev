@@ -78,6 +78,14 @@ Golden paths (icx-coe-04, tools/idp/golden_paths.py):
   POST /idp/api/golden-paths/<path_id>/drift      Run and record a version's drift check (decides nothing)
   POST /idp/api/golden-paths/<path_id>/publish    A person publishes or refuses a version (declared step)
   POST /idp/api/golden-paths/<path_id>/retire     A person retires or keeps a version (declared step)
+
+FOCUS cost bundles for ICDEV[OS]'s Cloud CoP (osx-cop-05, tools/finops/focus_bundle.py):
+  GET  /idp/finops/focus                          Per workload: what a FOCUS export costs, the bundle, the ledger
+  GET  /idp/api/finops/focus                      JSON: every billing month's ledger state, the exports, the pin
+  GET  /idp/api/finops/focus/preview              JSON: the draft bundle an export would be prepared as (?export=)
+  POST /idp/api/finops/focus/prepare              Read an export, record its bundle at its digest (decides nothing)
+  POST /idp/api/finops/focus/<event_id>/publish   A person publishes or refuses it (declared step)
+  GET  /idp/api/finops/focus/<event_id>/bundle    A published bundle, with its publication (or ``latest``)
 """
 from __future__ import annotations
 
@@ -998,3 +1006,106 @@ def idp_api_golden_path_retire(path_id: str):
     except golden_paths.GoldenPathRefused as exc:
         return _golden_refused(exc)
     return jsonify(out)
+
+
+# ---------------------------------------------------------------------------
+# FOCUS cost bundles for ICDEV[OS]'s Cloud CoP (osx-cop-05)
+# ---------------------------------------------------------------------------
+#
+# Who decides: anyone (or an agent, as a draft) prepares a bundle from a FOCUS export,
+# which records it at its digest and decides nothing. Publishing it to ICDEV[OS] is a
+# person's declared step (decl-wft-finops-focus-publish), never the preparer's, bound to
+# that digest.
+
+
+def _focus_refused(exc):
+    return jsonify(exc.to_dict()), exc.status
+
+
+@bp.route("/finops/focus")
+def idp_finops_focus_page():
+    """What each declared workload costs, from a FOCUS export; the bundle; who prepared and published it."""
+    from tools.finops import focus_bundle
+
+    try:
+        view = focus_bundle.ledger_view()
+        error = ""
+    except Exception as exc:  # noqa: BLE001 — an unreadable ledger or config is said, not hidden
+        logger.warning("finops focus: ledger unreadable: %s", exc)
+        view = {"months": [], "exports": [], "chain": {}, "config": {}, "schema": {}}
+        error = str(getattr(exc, "message", exc))
+    return render_template("idp/finops_focus.html", view=view, error=error, template=focus_bundle.TEMPLATE)
+
+
+@bp.route("/api/finops/focus")
+def idp_api_finops_focus():
+    """JSON: every billing month's ledger state, the exports to prepare from, the config and the schema pin."""
+    from tools.finops import focus_bundle
+
+    try:
+        return jsonify(focus_bundle.ledger_view())
+    except focus_bundle.FocusRefused as exc:
+        return _focus_refused(exc)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"the FOCUS ledger could not be read: {exc}"}), 503
+
+
+@bp.route("/api/finops/focus/preview")
+def idp_api_finops_focus_preview():
+    """The DRAFT bundle an export (``?export=<file name>``) would be prepared as now. Records nothing."""
+    from tools.finops import focus_bundle
+
+    try:
+        return jsonify(focus_bundle.preview(flask_request.args.get("export") or ""))
+    except focus_bundle.FocusRefused as exc:
+        return _focus_refused(exc)
+
+
+@bp.route("/api/finops/focus/prepare", methods=["POST"])
+def idp_api_finops_focus_prepare():
+    """Prepare a bundle: read the export, build its bundle and record it at its digest. Anyone signed in; it decides
+    nothing. Body: ``{export, note}``. A service key is recorded as an agent."""
+    from tools.finops import focus_bundle
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = focus_bundle.prepare(str(data.get("export") or ""), current_actor(), note=str(data.get("note") or ""))
+    except focus_bundle.FocusRefused as exc:
+        return _focus_refused(exc)
+    return jsonify(out), 201
+
+
+@bp.route("/api/finops/focus/<event_id>/publish", methods=["POST"])
+def idp_api_finops_focus_publish(event_id: str):
+    """A person, never the preparer, publishes a prepared FOCUS bundle to ICDEV[OS], or refuses it.
+
+    Body: ``{decision: publish|refuse, reason, digest}``. The person's step of decl-wft-finops-focus-publish, bound to
+    the digest of the prepared bundle read.
+    """
+    from tools.finops import focus_bundle
+    from tools.workflow_hitl.declared import current_actor
+
+    data = _step_body()
+    try:
+        out = focus_bundle.publish(event_id, decision=str(data.get("decision") or ""),
+                                   reason=str(data.get("reason") or ""),
+                                   read_digest=str(data.get("digest") or ""), actor=current_actor())
+    except focus_bundle.FocusRefused as exc:
+        return _focus_refused(exc)
+    return jsonify(out)
+
+
+@bp.route("/api/finops/focus/<event_id>/bundle")
+def idp_api_finops_focus_bundle(event_id: str):
+    """A PUBLISHED bundle (icos-focus-cost/v1), with its publication, as ICDEV[OS] imports it (``latest``: the
+    newest)."""
+    from tools.finops import focus_bundle
+
+    try:
+        b = focus_bundle.published_bundle(event_id)
+    except focus_bundle.FocusRefused as exc:
+        return _focus_refused(exc)
+    if b is None:
+        return jsonify({"error": f"no published FOCUS bundle {event_id!r}", "code": "unpublished"}), 404
+    return jsonify(b)

@@ -1,0 +1,49 @@
+# CUI // SP-CTI
+# FinOps: FOCUS cost bundles for ICDEV[OS]'s Cloud CoP (osx-cop-05).
+#
+# A reviewed config. tools/finops/focus_bundle.py reads a provider's FOCUS Cost and Usage export,
+# validates every row against ICDEV[OS]'s pinned schema (context/icos/focus-cost.schema.json,
+# $defs/FocusRow) and builds one icos-focus-cost/v1 bundle: the rows as read, each declared
+# workload's total (from the rows whose Tags name it under `tag_key`), and what no declared
+# workload names. Anyone, or an agent, prepares a bundle; a person who did not prepare it
+# publishes it or refuses it (args/workflow_hitl_templates/finops-focus-publish.yaml).
+#
+# A config that breaks a rule below is refused at load, never repaired:
+#   focus_version  the FOCUS version the pinned schema's rows are ("1.4"; ICDEV[OS]'s
+#                  args/cloud.yaml finops.focus_version must say the same);
+#   tag_key        the Tags key that names a row's workload (2-64 characters; ICDEV[OS]'s
+#                  finops.service_tag);
+#   currency       ISO 4217, three capital letters; every row's BillingCurrency must equal it;
+#   workloads      at least one; each key unique and ^[a-z][a-z0-9-]{1,39}$ (ICDEV[OS]'s
+#                  pattern), with a name. ICDEV[OS] refuses a bundle that reports a workload it
+#                  has not declared, so a workload added here is added there first;
+#   exports.dir    a repo-relative directory the FOCUS exports are read from (never outside the
+#                  repo); ICDEV_FINOPS_FOCUS_DIR overrides it for a test run. Only files with
+#                  the listed suffixes in that directory, by name, are read.
+#
+# No provider is named here: an export is read for its FOCUS columns, whoever wrote it.
+
+focus_version: "1.4"
+tag_key: icdev-workload
+currency: USD
+# The classification the bundle CLAIMS (ICDEV[OS] marks it by its own config, never by this).
+classification: "CUI // SP-CTI"
+
+# Exactly ICDEV[OS]'s declared workloads (args/cloud.yaml workloads), in its order.
+workloads:
+  - {key: icos-api, name: "ICOS API and console"}
+  - {key: icos-mesh, name: "ICOS mesh nodes"}
+  - {key: icos-data-plane, name: "ICOS data plane"}
+  - {key: icos-twin, name: "ICOS enterprise twin"}
+
+exports:
+  dir: data/finops/focus
+  suffixes: [".csv", ".json", ".jsonl"]
+  max_bytes: 8388608      # ICDEV[OS]'s MAX_BYTES for a whole bundle
+  max_rows: 20000         # ICDEV[OS]'s MAX_ROWS
+
+# The twin (args/twin_governance.yaml finops_focus wins when given).
+publish:
+  waiting_warn_days: 7    # a prepared bundle waiting this long for a person is a finding
+  stale_days: 45          # ICDEV[OS]'s finops.max_age_d: a published bundle whose billing period
+                          # ended longer ago than this no longer counts there

@@ -32,6 +32,27 @@ it. ICDEV[OS] recomputes the digest on import and refuses a mismatch, a bundle n
 preparer. To take a newer contract: copy the new schema, update the digest in `conformance.SCHEMA_SHA256`,
 `conformance.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_coe_03_conformance.py`.
 
+## The FOCUS cost bundle (DRAFT, osx-cop-05)
+
+`focus-cost.schema.json` is ICDEV[OS]'s `icos-focus-cost/v1` bundle schema (`urn:icdev-os:contract:focus-cost:1`),
+copied verbatim from ICDEV[OS]'s published contract (`contracts/schemas/focus-cost.schema.json`, contract version
+1.195.0). It is a **DRAFT**: ICDEV[OS] has not merged that contract yet, and this copy is re-pinned when it does. It
+is licensed Apache-2.0 (`LICENSE`, `NOTICE` here), unlike the rest of this repository. Its rows are the FOCUS 1.4
+Cost and Usage columns (`$defs/FocusRow`); a bundle carries the rows, each declared workload's total and the
+unattributed rows, its pin, its `content_digest` and, once a person published it, its `publication`.
+
+It is pinned twice, and `tools/finops/focus_bundle.py` refuses to run if either does not match:
+
+* the file's SHA-256, `focus_bundle.SCHEMA_SHA256`:
+  `f79e7a232253856fbf6c504685dd19f3cfda4811ce80c376a68e2278c7b05af9`;
+* its **schema digest**, `focus_bundle.SCHEMA_DIGEST`, which every bundle carries as `pin.sha256` and ICDEV[OS]
+  compares with its own: SHA-256 of the canonical JSON (keys sorted, separators `,` `:`) of the schema without its
+  top-level `x-icos-contract` version stamp:
+  `09a2ea740fcbcd9107b79a0665a48728cc61370911fb5bb2647683421ae6ec58`.
+
+To take a newer contract: copy the new schema, update both digests in `focus_bundle.py` and this file, and run
+`tests/test_osx_cop_05_finops.py` (it recomputes both).
+
 ## The findings bundle (icx-ent-01; adopted by ICDEV[OS] in osx-ent-07)
 
 `findings.schema.json` is ICDEV[OS]'s `icos-findings/v1` bundle schema (`urn:icdev-os:contract:findings:1`), copied

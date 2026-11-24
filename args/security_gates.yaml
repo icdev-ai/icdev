@@ -2423,6 +2423,34 @@ coe_golden_paths:
     args/coe_conformance.yaml, never listed by hand.
 
 
+# FOCUS cost bundles for ICDEV[OS]'s Cloud CoP (osx-cop-05)
+#
+# Enforced by tools/finops/focus_bundle.py and the declared template
+# args/workflow_hitl_templates/finops-focus-publish.yaml; tested in
+# tests/test_osx_cop_05_*.py (gated: core.d/osx-cop-05.txt). Every row is validated against
+# the pinned ICDEV[OS] schema context/icos/focus-cost.schema.json before a bundle is built.
+finops_focus:
+  blocking:
+    - row_off_schema                 # one row failing $defs/FocusRow (or RFC 3339) refuses the WHOLE export
+    - export_spans_periods           # an export is one billing period, in the config's currency
+    - bundle_off_contract            # totals, digest, pin or workloads ICDEV[OS] would refuse
+    - schema_unpinned                # context/icos/focus-cost.schema.json changed without re-pinning
+    - config_breaks_a_rule           # args/finops_focus.yaml is refused, never repaired
+    - preparer_publishes             # the preparer never publishes (separate_from: builders)
+    - step_by_non_person             # a service key or agent prepares a draft; it never publishes
+    - publish_on_stale_digest        # the prepared bundle changed since the person read it
+    - chain_broken                   # a ledger row that does not verify blocks any new event that month
+  warning:
+    - nothing_published              # twin: finops.focus.published / finops.focus.<workload> unverified
+    - self_published                 # twin: finops.focus.self_published (counts for nothing)
+    - off_contract                   # twin: finops.focus.off_contract (counts for nothing)
+    - unattributed_rows              # twin: finops.focus.unattributed
+    - bundle_stale                   # twin: finops.focus.stale
+    - awaiting_publish               # twin: finops.focus.awaiting_publish
+  note: >
+    No provider is named and no cloud-vendor training or certification content ships: an export
+    is read for its FOCUS columns, whoever wrote it. Unreported cost is unverified, never zero.
+
 # AI-assisted vulnerability discovery, proven or dropped (icx-ent-01)
 #
 # Enforced by tools/vulnresearch/* (targets.assert_in_scope, pov.replay_pair, patches.validate, bundle.verify), the

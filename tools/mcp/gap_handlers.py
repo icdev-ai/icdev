@@ -5254,6 +5254,58 @@ def handle_coe_golden_path_propose(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_finops_focus(args: dict) -> dict:
+    """MCP (osx-cop-05): the FOCUS cost bundles FinOps hands ICDEV[OS]'s Cloud CoP (/idp/finops/focus).
+
+    Read-only: with nothing, every billing month's ledger state, the exports and the schema pin;
+    with ``export``, the DRAFT bundle that export would be prepared as (each declared workload's
+    total, the unattributed rows); with ``event`` (or ``latest``), a published bundle as
+    ICDEV[OS] imports it. Prepares and publishes nothing.
+    """
+    try:
+        from tools.finops import focus_bundle
+
+        try:
+            event = str(args.get("event") or "").strip()
+            export = str(args.get("export") or "").strip()
+            if event:
+                b = focus_bundle.published_bundle(event)
+                if b is None:
+                    return {"error": f"no published FOCUS bundle {event!r}", "code": "unpublished"}
+                return {"classification": CORTEX_CLASSIFICATION, "bundle": b}
+            if export:
+                return {"classification": CORTEX_CLASSIFICATION, "draft": focus_bundle.preview(export)}
+            return {"classification": CORTEX_CLASSIFICATION, "ledger": focus_bundle.ledger_view()}
+        except focus_bundle.FocusRefused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_finops_focus: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_finops_focus_prepare(args: dict) -> dict:
+    """MCP (osx-cop-05): an agent prepares a FOCUS cost bundle as a DRAFT, recorded as ``agent:<id>``.
+
+    Preparing decides nothing and nothing leaves: a person who did not prepare it
+    publishes it to ICDEV[OS] or refuses it on /idp/finops/focus
+    (decl-wft-finops-focus-publish).
+    """
+    try:
+        from tools.finops import focus_bundle
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = focus_bundle.prepare(str(args.get("export") or ""), {"id": f"agent:{agent}", "role": "service"},
+                                       note=str(args.get("note") or ""))
+        except focus_bundle.FocusRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who did not prepare it publishes it or refuses it on /idp/finops/focus"}
+    except Exception as exc:
+        logger.warning("handle_finops_focus_prepare: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_vulnresearch_status(args: dict) -> dict:
     """MCP (icx-ent-01): read vulnerability discovery. Sealed PoVs are never returned. Changes nothing."""
     try:

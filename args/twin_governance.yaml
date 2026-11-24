@@ -84,6 +84,12 @@ engineering_standards:
   golden_paths:
     waiting_warn_days: 14
     drift_stale_days: 30
+  # osx-cop-05: a prepared FOCUS cost bundle waiting this long for a person, or a newest published
+  # bundle whose billing period ended this long ago, is a finding (args/finops_focus.yaml publish
+  # sets the defaults; these win when given; 45 is ICDEV[OS]'s finops.max_age_d).
+  finops_focus:
+    waiting_warn_days: 7
+    stale_days: 45
 
 # icx-ent-01: AI-assisted vulnerability discovery (tools/vulnresearch/twin.py). A registered target, a patch or a
 # prepared findings bundle waiting this long for a person, or a target whose newest published bundle is this old,

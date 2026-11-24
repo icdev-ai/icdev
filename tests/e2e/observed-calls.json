@@ -513,6 +513,26 @@
     "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
    ]
   },
+  "GET idp.idp_api_finops_focus": {
+   "endpoint": "idp.idp_api_finops_focus",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "read the export, prepare, refuse the preparer, publish, see the bundle, open the twin thread"
+   ]
+  },
+  "GET idp.idp_api_finops_focus_preview": {
+   "endpoint": "idp.idp_api_finops_focus_preview",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "read the export, prepare, refuse the preparer, publish, see the bundle, open the twin thread",
+    "the FOCUS cost bundles page in the dark theme has no axe violations",
+    "the FOCUS cost bundles page in the light theme has no axe violations"
+   ]
+  },
   "GET idp.idp_api_golden_path": {
    "endpoint": "idp.idp_api_golden_path",
    "method": "GET",
@@ -550,7 +570,10 @@
    "page": true,
    "test": false,
    "tests": [
-    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate"
+    "propose, review, adopt, see it in force with its history, refuse a wish, deprecate",
+    "read the export, prepare, refuse the preparer, publish, see the bundle, open the twin thread",
+    "the FOCUS cost bundles page in the dark theme has no axe violations",
+    "the FOCUS cost bundles page in the light theme has no axe violations"
    ]
   },
   "GET idp.idp_conformance_page": {
@@ -1277,6 +1300,24 @@
    "test": false,
    "tests": [
     "request, refuse the requester, grant, expire, fail, renew; propose, accept, supersede an ADR"
+   ]
+  },
+  "POST idp.idp_api_finops_focus_prepare": {
+   "endpoint": "idp.idp_api_finops_focus_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "read the export, prepare, refuse the preparer, publish, see the bundle, open the twin thread"
+   ]
+  },
+  "POST idp.idp_api_finops_focus_publish": {
+   "endpoint": "idp.idp_api_finops_focus_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "read the export, prepare, refuse the preparer, publish, see the bundle, open the twin thread"
    ]
   },
   "POST idp.idp_api_golden_path_drift": {

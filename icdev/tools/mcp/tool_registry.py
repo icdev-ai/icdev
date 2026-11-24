@@ -9277,6 +9277,30 @@ RESOURCE_REGISTRY = {
             "required": ["path_id", "version"],
         },
     },
+    # -- FOCUS cost bundles for ICDEV[OS]'s Cloud CoP (osx-cop-05) -------------
+    "finops_focus": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_finops_focus",
+        "description": "Read the FOCUS cost bundles FinOps hands ICDEV[OS]'s Cloud CoP (/idp/finops/focus, args/finops_focus.yaml). With nothing: every billing month's ledger state (prepared, published and refused bundles, who prepared and who published each, at which digest), the FOCUS exports in the declared directory and the pinned icos-focus-cost/v1 schema digest. With export (a file name in the exports directory): the DRAFT bundle that export would be prepared as -- every row validated against the pinned FOCUS 1.4 schema (one failing row refuses the whole export, named), each declared workload's effective and billed cost and the unattributed rows. With event (a publication or prepared event id, or latest): that published bundle as ICDEV[OS] imports it. Read-only: prepares and publishes nothing.",
+        "input_schema": {"type": "object", "properties": {
+            "export": {"type": "string", "description": "A FOCUS export's file name in the exports directory"},
+            "event": {"type": "string", "description": "A published bundle's event id, or latest"}}},
+    },
+    "finops_focus_prepare": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_finops_focus_prepare",
+        "description": "Prepare a FOCUS cost bundle (icos-focus-cost/v1) from an export as a DRAFT, recorded as the agent's (agent:<name>): the export is read and validated against the pinned schema and the bundle recorded at its digest. It decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or refuses it on /idp/finops/focus, a declared step an agent cannot take. Give export (a file name in the exports directory).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The preparing agent's name (recorded as agent:<name>)"},
+                "export": {"type": "string"}, "note": {"type": "string"},
+            },
+            "required": ["export"],
+        },
+    },
     # -- AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) ---
     "vulnresearch_status": {
         "category": "security",
@@ -10039,6 +10063,10 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "store_publisher_status":                   True,
     "coe_golden_paths":                         True,
     "coe_golden_path_propose":                  False,
+    # osx-cop-05: FOCUS cost bundles. The read reads; prepare records a draft bundle (one ledger
+    # row) and decides nothing, so it is not read-only and halts at the gate.
+    "finops_focus":                             True,
+    "finops_focus_prepare":                     False,
 })
 
 

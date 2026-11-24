@@ -2790,6 +2790,30 @@ This is the **widest** instance of the Gap 3 / Gap 25 class in the tree, and the
 - **Residual:** responses come from `invoke()`, not `invoke_streaming` -- the streaming path does not de-anonymize or write telemetry yet (owui-api-02). A router response-cache hit writes no `ai_telemetry` row, and that row records the router's default classification rather than the request's. The per-exchange audit row of owui-flow-02 closes both.
 - **Revisit if:** the endpoint starts accepting native tool calls, fetching URLs or files named in a message, or streaming through `invoke_streaming`.
 
+### Gap 79 — FOCUS cost exports (`tools/finops/focus_bundle.py`)
+
+**Module:** `tools/finops/focus_bundle.py` (osx-cop-05, the ICDEV[IT] half of ICDEV[OS]'s Cloud CoP).
+
+**Ingress path:** a provider's FOCUS 1.4 Cost and Usage export (CSV, a JSON array or JSON lines), read from the
+declared exports directory (`args/finops_focus.yaml` `exports.dir`, or `ICDEV_FINOPS_FOCUS_DIR`) by FILE NAME only on
+the page, the API and MCP; an operator's shell may also pass a path to `--export` / `--verify`.
+
+- **Decision:** **bypass-documented.** The export is data: it is parsed with `csv.DictReader` and `json.loads`
+  (NaN and Infinity refused), every row validated against the pinned schema's `$defs/FocusRow` with jsonschema, and
+  nothing in it is executed, imported, rendered unescaped or used as a path.
+- **Guardrails (code, pinned by `tests/test_osx_cop_05_finops.py`):**
+  - **Names, not paths.** A page, route or MCP call names an export by its file name in the exports directory
+    (`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`, a declared suffix, resolved inside that directory); `../x.csv` and absolute
+    paths are refused.
+  - **Bounded.** At most `exports.max_bytes` (8 MiB) and `exports.max_rows` (20000), ICDEV[OS]'s own limits.
+  - **All or nothing.** One row off the schema, an unknown column, a second billing period or another currency
+    refuses the whole export, each failing row named; nothing is half read.
+  - **Escaped on the page.** The page renders every value through `esc()`; routes are named by endpoint id.
+- **Residual:** jsonschema runs in-process on attacker-shaped JSON; the schema is fixed and bounded, the input is
+  size-limited, but it is not a sandbox.
+- **Revisit if:** the tool starts fetching exports from a provider's API or a URL, or reading anything outside the
+  exports directory on a person's request.
+
 ## icx-ent-01: AI-assisted vulnerability discovery (`tools/vulnresearch`)
 
 | Ingress | Module | Decision | Why |

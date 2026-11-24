@@ -5031,6 +5031,29 @@ CREATE INDEX IF NOT EXISTS idx_coe_conformance_events_repo ON coe_conformance_ev
 CREATE TRIGGER IF NOT EXISTS coe_conformance_events_no_update BEFORE UPDATE ON coe_conformance_events BEGIN SELECT RAISE(ABORT, 'coe_conformance_events is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS coe_conformance_events_no_delete BEFORE DELETE ON coe_conformance_events BEGIN SELECT RAISE(ABORT, 'coe_conformance_events is append-only'); END;
 
+-- osx-cop-05: the FOCUS cost bundle ledger (migration 20261118143737): prepared, then a person
+-- publishes or refuses, hash-chained per billing month. Same DDL; append-only.
+CREATE TABLE IF NOT EXISTS finops_focus_events (
+    event_id        TEXT PRIMARY KEY,
+    period          TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('prepared','published','refused')),
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent','bootstrap')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    content_digest  TEXT NOT NULL,
+    bundle_json     TEXT NOT NULL DEFAULT '',
+    detail_json     TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(period, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_finops_focus_events_period ON finops_focus_events (period, created_at);
+CREATE TRIGGER IF NOT EXISTS finops_focus_events_no_update BEFORE UPDATE ON finops_focus_events BEGIN SELECT RAISE(ABORT, 'finops_focus_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS finops_focus_events_no_delete BEFORE DELETE ON finops_focus_events BEGIN SELECT RAISE(ABORT, 'finops_focus_events is append-only'); END;
+
 -- icx-ent-01: the AI-assisted vulnerability discovery ledger (migration 20261118231119): targets, runs,
 -- measurements, patch proposals and findings bundles, one hash chain per stream. Same DDL; append-only.
 CREATE TABLE IF NOT EXISTS vr_events (

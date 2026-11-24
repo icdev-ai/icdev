@@ -666,6 +666,30 @@ features:
           file: tools/idp/blueprint.py
           text: "A person, never the version's author, retires a published golden path version, or keeps it."
 
+  # ── FinOps: FOCUS cost bundles for ICDEV[OS]'s Cloud CoP (osx-cop-05) ─────
+  # A provider's FOCUS 1.4 export, every row validated against ICDEV[OS]'s pinned schema
+  # (one failing row refuses it), becomes one icos-focus-cost/v1 bundle per billing month:
+  # each declared workload's total and the unattributed rows. Preparing decides nothing;
+  # publishing it to ICDEV[OS] is a person's declared step (decl-wft-finops-focus-publish),
+  # never the preparer's.
+  - key: finops.focus
+    component: idp
+    label: "FinOps: FOCUS cost bundles per workload for ICDEV[OS]'s Cloud CoP"
+    endpoints:
+      - idp.idp_finops_focus_page
+      - idp.idp_api_finops_focus
+      - idp.idp_api_finops_focus_preview
+      - idp.idp_api_finops_focus_prepare
+      - idp.idp_api_finops_focus_publish
+      - idp.idp_api_finops_focus_bundle
+    mcp_tools: [finops_focus, finops_focus_prepare]
+    declared_decisions:
+      - id: finops.focus.publish
+        endpoint: idp.idp_api_finops_focus_publish
+        evidence:
+          file: tools/idp/blueprint.py
+          text: "A person, never the preparer, publishes a prepared FOCUS bundle to ICDEV[OS], or refuses it."
+
   # ── AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) ──
   # Targets registered and authorised by a person (scope-locked), discovery from SAST,
   # SCA, an agentic review (proposes only) and fuzz harnesses, a finding only with a

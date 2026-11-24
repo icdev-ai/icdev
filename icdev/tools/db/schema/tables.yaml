@@ -603,6 +603,7 @@ tables:
   finetune_eval_results: it
   finetune_jobs: it
   finetune_metrics: it
+  finops_focus_events: it
   fips199_categorizations: it
   fips200_assessments: it
   firmware_sbom_records: it
