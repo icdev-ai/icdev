@@ -9277,6 +9277,28 @@ RESOURCE_REGISTRY = {
             "required": ["path_id", "version"],
         },
     },
+    # -- FORGE Academy tracks per Community of Practice, xAPI to ICDEV[OS] (icx-cop-01) -
+    "cop_academy": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cop_academy",
+        "description": "Read the FORGE Academy tracks per Community of Practice (/idp/cop-tracks, args/academy_cop_tracks.yaml): the four learning paths (engineering/AIDLC, AI and data, application, cloud), each mission's pattern, summary, reading and questions -- never an answer -- the xAPI statements the ledger supports now (per pseudonymous learner and path: completed, or progressed with completion false), and the xAPI batch ledger (the newest prepared icos-cop-academy/v1 batch, who prepared it, who published it). published=true returns the newest published batch, its publication and whether both verify. Read-only: attempts, prepares and publishes nothing.",
+        "input_schema": {"type": "object", "properties": {
+            "published": {"type": "boolean", "description": "Return the newest published batch, its publication and verification"}}},
+    },
+    "cop_academy_xapi_prepare": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cop_academy_xapi_prepare",
+        "description": "Prepare the FORGE Academy xAPI batch (icos-cop-academy/v1) as a DRAFT, recorded as the agent's (agent:<name>): it is built from the Academy ledger alone and recorded at its digest. It decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or refuses it on /idp/cop-tracks (decl-wft-cop-academy-xapi-publish), a declared step an agent cannot take. An agent never attempts a mission.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The preparing agent's name (recorded as agent:<name>)"},
+                "note": {"type": "string"},
+            },
+        },
+    },
     # -- AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) ---
     "vulnresearch_status": {
         "category": "security",
@@ -10039,6 +10061,10 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "store_publisher_status":                   True,
     "coe_golden_paths":                         True,
     "coe_golden_path_propose":                  False,
+    # icx-cop-01: the Academy CoP tracks. The read reads (never an answer); prepare records a draft
+    # xAPI batch (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
+    "cop_academy":                              True,
+    "cop_academy_xapi_prepare":                 False,
 })
 
 

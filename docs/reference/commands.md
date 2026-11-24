@@ -7876,6 +7876,28 @@ python tools/idp/golden_paths.py --drift --path model-service --keep .tmp/golden
 python tools/idp/golden_paths.py --seed
 ```
 
+### FORGE Academy tracks per Community of Practice, xAPI to ICDEV[OS] (icx-cop-01)
+
+One track per CoP (engineering/AIDLC, AI and data, application, cloud) in
+`args/academy_cop_tracks.yaml`, each mission on this platform's own patterns. A learner
+takes them on `/idp/cop-tracks`; answers are graded on the server and every attempt is
+kept on the learner's own append-only chain (`cop_academy_events`). The xAPI statements
+(pseudonymous account, ADL verbs, the path's activity id) go to ICDEV[OS] as one
+`icos-cop-academy/v1` batch (its schema, vendored and pinned,
+`context/icos/cop-academy-statements.schema.json`), prepared by anyone and published only
+by a person who did not prepare it; the publication travels beside it.
+
+```bash
+# The newest PUBLISHED batch and its publication, as ICDEV[OS] imports them (exit 1: nothing published)
+python tools/idp/cop_xapi_export.py --published --out .tmp/cop
+
+# Verify an export: both schemas, the digest, the separation (and, with --ledger, this platform's ledger)
+python tools/idp/cop_xapi_export.py --verify .tmp/cop --ledger
+
+# The batch the ledger supports now (unpublished), deterministic given --at
+python tools/idp/cop_xapi_export.py --preview --at 2026-11-18T12:00:00Z --out .tmp/cop
+```
+
 ### Component Scorer (idp-score-01)
 
 The complement to the scorecard above: where `tools/idp/scorecard.py` grades a

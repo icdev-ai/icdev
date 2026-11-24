@@ -2087,6 +2087,8 @@ components:
       href: /idp/conformance
     - label: Golden Paths
       href: /idp/golden-paths
+    - label: CoP Learning Paths
+      href: /idp/cop-tracks
   iqe:
     adapter_module: tools.iqe.adapters.idp
     collections:

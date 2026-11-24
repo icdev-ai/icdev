@@ -5149,6 +5149,39 @@ CREATE TABLE IF NOT EXISTS coe_golden_path_events (
 CREATE INDEX IF NOT EXISTS idx_coe_golden_path_events_path ON coe_golden_path_events (path_id, created_at);
 CREATE TRIGGER IF NOT EXISTS coe_golden_path_events_no_update BEFORE UPDATE ON coe_golden_path_events BEGIN SELECT RAISE(ABORT, 'coe_golden_path_events is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS coe_golden_path_events_no_delete BEFORE DELETE ON coe_golden_path_events BEGIN SELECT RAISE(ABORT, 'coe_golden_path_events is append-only'); END;
+
+-- icx-cop-01: the FORGE Academy CoP tracks (migration 20261118104743): the learners' pseudonyms and the
+-- ledger of mission attempts and xAPI batches (prepared, then a person publishes or refuses). Same DDL; append-only.
+CREATE TABLE IF NOT EXISTS cop_academy_learners (
+    user_id         TEXT PRIMARY KEY,
+    pseudonym       TEXT NOT NULL UNIQUE,
+    created_at      TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS cop_academy_learners_no_update BEFORE UPDATE ON cop_academy_learners BEGIN SELECT RAISE(ABORT, 'cop_academy_learners is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS cop_academy_learners_no_delete BEFORE DELETE ON cop_academy_learners BEGIN SELECT RAISE(ABORT, 'cop_academy_learners is append-only'); END;
+CREATE TABLE IF NOT EXISTS cop_academy_events (
+    event_id        TEXT PRIMARY KEY,
+    scope           TEXT NOT NULL,
+    event           TEXT NOT NULL CHECK(event IN ('attempted','completed','prepared','published','refused')),
+    actor           TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL CHECK(actor_kind IN ('person','agent')),
+    actor_role      TEXT NOT NULL DEFAULT '',
+    learner         TEXT NOT NULL DEFAULT '',
+    path_id         TEXT NOT NULL DEFAULT '',
+    mission_id      TEXT NOT NULL DEFAULT '',
+    step_id         TEXT NOT NULL DEFAULT '',
+    reason          TEXT NOT NULL DEFAULT '',
+    content_digest  TEXT NOT NULL,
+    bundle_json     TEXT NOT NULL DEFAULT '',
+    detail_json     TEXT NOT NULL DEFAULT '{}',
+    prev_hash       TEXT NOT NULL,
+    row_hash        TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    UNIQUE(scope, prev_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_cop_academy_events_scope ON cop_academy_events (scope, created_at);
+CREATE TRIGGER IF NOT EXISTS cop_academy_events_no_update BEFORE UPDATE ON cop_academy_events BEGIN SELECT RAISE(ABORT, 'cop_academy_events is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS cop_academy_events_no_delete BEFORE DELETE ON cop_academy_events BEGIN SELECT RAISE(ABORT, 'cop_academy_events is append-only'); END;
 """
 
 

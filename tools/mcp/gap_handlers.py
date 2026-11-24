@@ -5254,6 +5254,56 @@ def handle_coe_golden_path_propose(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_cop_academy(args: dict) -> dict:
+    """MCP (icx-cop-01): the FORGE Academy CoP tracks, the xAPI statements and the batch ledger.
+
+    Read-only: the tracks with their questions and never an answer, the statements
+    the ledger supports now, and the newest prepared and published batch (or, with
+    published=true, the published batch, its publication and its verification).
+    Attempts, prepares and publishes nothing.
+    """
+    try:
+        from tools.idp import cop_tracks
+
+        try:
+            if args.get("published"):
+                pub = cop_tracks.published()
+                if pub is None:
+                    return {"error": "no xAPI batch has been published", "code": "unpublished"}
+                return {"classification": CORTEX_CLASSIFICATION, **pub, "verify": cop_tracks.verify_published()}
+            v = cop_tracks.view(None)
+            return {"classification": CORTEX_CLASSIFICATION, "tracks": v["tracks"], "statements": v["statements"],
+                    "ledger": {k: v["ledger"].get(k) for k in ("prepared", "published", "chain", "next", "template")},
+                    "schema": v["schema"], "config": v["config"]}
+        except cop_tracks.CopRefused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_cop_academy: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_cop_academy_xapi_prepare(args: dict) -> dict:
+    """MCP (icx-cop-01): an agent prepares the Academy's xAPI batch as a DRAFT, recorded as ``agent:<id>``.
+
+    Preparing decides nothing and nothing leaves: a person who did not prepare it
+    publishes it to ICDEV[OS] or refuses it on /idp/cop-tracks
+    (decl-wft-cop-academy-xapi-publish).
+    """
+    try:
+        from tools.idp import cop_tracks
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = cop_tracks.prepare({"id": f"agent:{agent}", "role": "service"}, note=str(args.get("note") or ""))
+        except cop_tracks.CopRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who did not prepare it publishes it or refuses it on /idp/cop-tracks"}
+    except Exception as exc:
+        logger.warning("handle_cop_academy_xapi_prepare: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_vulnresearch_status(args: dict) -> dict:
     """MCP (icx-ent-01): read vulnerability discovery. Sealed PoVs are never returned. Changes nothing."""
     try:

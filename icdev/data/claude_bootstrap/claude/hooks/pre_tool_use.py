@@ -712,6 +712,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # icx-coe-04, migration 20261118070149: the golden path ledger (seeded, proposed,
         # drift-checked, then a person publishes, refuses or retires), hash-chained per path.
         "coe_golden_path_events",
+        # icx-cop-01, migration 20261118104743: the FORGE Academy CoP ledger (mission attempts on each
+        # learner's chain; xAPI batches prepared, then a person publishes or refuses) and the
+        # learners' pseudonyms, kept once.
+        "cop_academy_events",
+        "cop_academy_learners",
         # icx-ent-04, migration 20261122112221: the store publisher ledger (a store package prepared
         # and its card signed by the publisher's key, then a person of its org publishes or refuses).
         "sp_events",

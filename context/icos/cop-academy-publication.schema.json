@@ -1,0 +1,128 @@
+{
+  "$defs": {
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "System",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "system",
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:cop-academy-publication:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Owned by ICDEV[OS] (osx-cop-07); exported by ICDEV[IT] (icx-cop-01, tools/idp/cop_xapi_export.py --published) beside the icos-cop-academy/v1 batch it publishes, because the batch schema admits no extra field. A person who did not prepare the batch took ICDEV[IT]'s declared step decl-wft-cop-academy-xapi-publish, bound to the batch's content_digest. ICDEV[OS] refuses a batch with no publication, a publication at another digest, and one signed by the batch's preparer.",
+  "properties": {
+    "content_digest": {
+      "description": "the content_digest of the batch it publishes; it must equal the batch's (recomputed)",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "decided_at": {
+      "format": "date-time",
+      "title": "Decided At",
+      "type": "string"
+    },
+    "event_id": {
+      "description": "the published event in ICDEV[IT]'s cop_academy_events",
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Event Id",
+      "type": "string"
+    },
+    "prepared_by": {
+      "description": "who prepared the batch (a person's account id, or agent:<name>)",
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Prepared By",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "role": {
+      "anyOf": [
+        {
+          "maxLength": 60,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "that person's role when they took it",
+      "title": "Role"
+    },
+    "row_hash": {
+      "description": "that event's hash on ICDEV[IT]'s hash chain (carried; ICOS cannot read that ledger)",
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Row Hash",
+      "type": "string"
+    },
+    "schema": {
+      "const": "icos-cop-academy-publication/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "signed_by": {
+      "description": "the person who took the publish step (an ICDEV[IT] account id), never the batch's preparer",
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Signed By",
+      "type": "string"
+    },
+    "step_id": {
+      "description": "the declared step in ICDEV[IT]'s wf_decision_steps",
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "Step Id",
+      "type": "string"
+    },
+    "template": {
+      "const": "decl-wft-cop-academy-xapi-publish",
+      "title": "Template",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "content_digest",
+    "signed_by",
+    "prepared_by",
+    "step_id",
+    "template",
+    "decided_at",
+    "event_id",
+    "row_hash",
+    "producer"
+  ],
+  "title": "Publication",
+  "type": "object",
+  "x-icos-contract": "1.195.0",
+  "x-license": "Apache-2.0"
+}

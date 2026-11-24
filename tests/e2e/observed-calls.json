@@ -493,6 +493,24 @@
     "the standards scorecards page in the light theme has no axe violations"
    ]
   },
+  "GET idp.idp_api_cop_tracks": {
+   "endpoint": "idp.idp_api_cop_tracks",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "complete missions, see the statements, prepare, publish by another person, verify the export"
+   ]
+  },
+  "GET idp.idp_api_cop_xapi_published": {
+   "endpoint": "idp.idp_api_cop_xapi_published",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "complete missions, see the statements, prepare, publish by another person, verify the export"
+   ]
+  },
   "GET idp.idp_api_exemption": {
    "endpoint": "idp.idp_api_exemption",
    "method": "GET",
@@ -1232,6 +1250,33 @@
    "test": false,
    "tests": [
     "score, see evidence and unverified, prepare, refuse the preparer, publish, see the bundle, open the twin thread"
+   ]
+  },
+  "POST idp.idp_api_cop_mission_attempt": {
+   "endpoint": "idp.idp_api_cop_mission_attempt",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "complete missions, see the statements, prepare, publish by another person, verify the export"
+   ]
+  },
+  "POST idp.idp_api_cop_xapi_prepare": {
+   "endpoint": "idp.idp_api_cop_xapi_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "complete missions, see the statements, prepare, publish by another person, verify the export"
+   ]
+  },
+  "POST idp.idp_api_cop_xapi_publish": {
+   "endpoint": "idp.idp_api_cop_xapi_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "complete missions, see the statements, prepare, publish by another person, verify the export"
    ]
   },
   "POST idp.idp_api_exemption_decide": {
