@@ -1,0 +1,6 @@
+# Network Diagram Analysis seed query (split from diagram_analysis.iqe).
+# Prompt: show multi-cloud diagram analyses
+# a.topology_mode is one of DIAGRAM_TOPOLOGY_MODES (tools/network/constants.py).
+foreach a in network.diagram_analyses
+where a.topology_mode == "multi_cloud"
+select a.id, a.upload_id, a.industry, a.topology_mode, a.status, a.created_at

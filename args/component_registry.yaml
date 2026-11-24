@@ -1349,6 +1349,43 @@ components:
     links:
     - label: Decisions
       href: /decisions/
+# icx-ent-01: AI-assisted vulnerability discovery, proven or dropped. Its own blueprint
+# (tools/vulnresearch/blueprint.py, mounted at /vulnresearch/); a finding exists only with a
+# proof of vulnerability replayed in the sandbox, and every decision is a declared step.
+- key: vulnresearch
+  kind: canvas
+  cli_name: vulnresearch
+  display_name: Vulnerability Discovery
+  description: AI-assisted vulnerability discovery on authorised targets. SAST, dependency audit, an agentic source
+    review (it only proposes) and coverage-guided fuzz harnesses produce candidates; a candidate becomes a finding only
+    with a proof of vulnerability replayed in the sandbox. Patches are proposals a person reviews; findings go to
+    ICDEV[OS] as a bundle one person prepares and another publishes.
+  env_flag: ICDEV_VULNRESEARCH_ENABLED
+  default_enabled: true
+  module: tools.vulnresearch.blueprint
+  blueprint_attr: vr_bp
+  url_prefix: /vulnresearch
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Vulnerability Discovery
+    links:
+    - label: Vulnerability Discovery
+      href: /vulnresearch/
+  iqe:
+    adapter_module: tools.iqe.adapters.vulnresearch
+    collections:
+    - vulnresearch.findings
+    - vulnresearch.targets
+  completeness:
+    template: tools/dashboard/templates/vulnresearch/index.html
+    blueprint: true
+    constants: tools/vulnresearch/constants.py
+    db_migration: tools/db/migrations/20261118231119_vr_events
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/vulnresearch/
 - key: forecast
   kind: core_extension
   display_name: TimesFM Forecasting
@@ -2316,6 +2353,105 @@ components:
   url_prefix: ''
   min_il: IL4
   default_roles: []
+# icx-ent-02: read-only evidence collectors for customer environments. Its own blueprint
+# (tools/evidence_collectors/blueprint.py, mounted at /evidence-collectors/); a customer system's
+# icos-objective-evidence/v1 report is prepared by anyone and published by another person.
+- key: evidence_collectors
+  kind: canvas
+  cli_name: evidence-collectors
+  display_name: Evidence Collectors
+  description: Read-only collectors for customer systems (cloud configuration, identity provider, endpoints, SIEM)
+    with credentials by reference only; a reviewed mapping turns fresh observations into SP 800-171 Rev. 2 and
+    SP 800-53 Rev. 5 objective results, and each system's report goes to ICDEV[OS] when another person publishes it.
+  env_flag: ICDEV_EVIDENCE_COLLECTORS_ENABLED
+  default_enabled: true
+  module: tools.evidence_collectors.blueprint
+  blueprint_attr: ec_bp
+  url_prefix: /evidence-collectors
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Evidence Collectors
+    links:
+    - label: Evidence Collectors
+      href: /evidence-collectors/
+  iqe:
+    adapter_module: tools.iqe.adapters.evidence_collectors
+    collections:
+    - evidence_collectors.objectives
+  completeness:
+    template: tools/dashboard/templates/evidence_collectors/index.html
+    blueprint: true
+    constants: tools/evidence_collectors/constants.py
+    db_migration: tools/db/migrations/20261119040000_ec_events
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/evidence_collectors/
+# icx-ent-03: signed factory builds. Its own blueprint (tools/factory_builds/blueprint.py, mounted at
+# /factory-builds/); a person prepares a target's signed icos-artefact/v1 and another person publishes it.
+- key: factory_builds
+  kind: canvas
+  cli_name: factory-builds
+  display_name: Signed Factory Builds
+  description: One signed icos-artefact/v1 per built artefact (image, model, agent, IaC) -- CycloneDX 1.7 SBOM or
+    AI-BOM (a model's linked to its fine-tuning registry promotion), SLSA v1.2 provenance, OpenVEX, Sigstore bundles
+    signed by the factory's KMS, keyring or keyless key, OpenSSF model-signing, OCI referrers -- prepared by one
+    person and published to ICDEV[OS]'s release register by another.
+  env_flag: ICDEV_FACTORY_BUILDS_ENABLED
+  default_enabled: true
+  module: tools.factory_builds.blueprint
+  blueprint_attr: fb_bp
+  url_prefix: /factory-builds
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Signed Factory Builds
+    links:
+    - label: Signed Factory Builds
+      href: /factory-builds/
+  iqe:
+    adapter_module: tools.iqe.adapters.factory_builds
+    collections:
+    - factory_builds.builds
+  completeness:
+    template: tools/dashboard/templates/factory_builds/index.html
+    blueprint: true
+    constants: tools/factory_builds/constants.py
+    db_migration: tools/db/migrations/20261122003636_fb_events
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/factory_builds/
+# icx-ent-04: the store publisher. Its own blueprint (tools/store_publisher/blueprint.py, mounted at /store-publisher/);
+# a person prepares a signed icos-store-package/v1 and another person publishes it for ICDEV[OS]'s agent store.
+- key: store_publisher
+  kind: canvas
+  cli_name: store-publisher
+  display_name: Store Publisher
+  description: Signed ICDEV[OS] store packages (agent, crew, skill, MCP server, plugin) -- a JWS-signed A2A Agent
+    Card binding the package's content, SBOM and dependency report, declared tools and ceilings, the publisher's
+    red-team report and ICDEV's seven scanner gates -- prepared by one person and published by another, replacing the
+    deprecated marketplace publish and review tools.
+  env_flag: ICDEV_STORE_PUBLISHER_ENABLED
+  default_enabled: true
+  module: tools.store_publisher.blueprint
+  blueprint_attr: sp_bp
+  url_prefix: /store-publisher
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Store Publisher
+    links:
+    - label: Store Publisher
+      href: /store-publisher/
+  completeness:
+    template: tools/dashboard/templates/store_publisher/index.html
+    blueprint: true
+    constants: tools/store_publisher/constants.py
+    db_migration: tools/db/migrations/20261122112221_sp_events
+    nav_link: true
 
 # ═══════════════════════════════════════════════════════════════════════════
 # IQE / AI-brief path → canvas map (cvx-nav-01)
@@ -2410,4 +2546,12 @@ iqe_path_canvas:
 - {path: /rfi, canvas: rfi_canvas}
 - {path: /capture, canvas: rfi_canvas}
 - {path: /workflow-canvas, canvas: wfc}
+# icx-ent-01: AI-assisted vulnerability discovery
+- {path: /vulnresearch, canvas: vulnresearch}
 - {path: /health/canvases, canvas: canvas_health}
+# icx-ent-02: evidence collectors for customer environments
+- {path: /evidence-collectors, canvas: evidence_collectors}
+# icx-ent-03: signed factory builds
+- {path: /factory-builds, canvas: factory_builds}
+# icx-ent-04: the store publisher
+- {path: /store-publisher, canvas: store_publisher}

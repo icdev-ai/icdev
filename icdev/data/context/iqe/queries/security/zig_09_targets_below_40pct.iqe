@@ -1,0 +1,3 @@
+# NSA ZIG IQE seed query (split from zig_queries.iqe). Collection: zig.*
+# Query 9: External targets needing attention (score below 40%)
+foreach t in zig.targets where t.aggregate_score < 0.4 select t.name, t.owner_team, t.aggregate_score, t.maturity_level

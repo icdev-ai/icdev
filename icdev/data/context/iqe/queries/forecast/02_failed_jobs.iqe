@@ -4,5 +4,4 @@
 foreach j in forecast.jobs
 where j.status == "failed"
 select j.id, j.context, j.model_id, j.error_message, j.created_at
-order by j.created_at desc
-limit 50
+# Not applied: IQE has no `order by` or `limit`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by j.created_at desc, keep the first 50 rows.

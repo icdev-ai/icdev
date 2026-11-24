@@ -152,3 +152,18 @@ tests/test_icx_coe_04_ambient.py
 # osx-cop-05: a FOCUS cost bundle prepared and published on the ambient PG: finops_focus_events (PL/pgSQL
 # append-only triggers, UNIQUE(period, prev_hash)) and the decl-wft-finops-focus-publish step in wf_decision_steps.
 tests/test_osx_cop_05_ambient.py
+# icx-ent-01: a target registered and authorised, discovery run, and a findings bundle prepared and published on the
+# ambient PG: vr_events (PL/pgSQL append-only triggers, UNIQUE(stream, prev_hash)) and the decl-wft-vr-* steps in
+# wf_decision_steps.
+tests/test_icx_ent_01_ambient.py
+# icx-ent-02: an objective-evidence report prepared and published on the ambient PG: ec_events (PL/pgSQL
+# append-only triggers, UNIQUE(stream, prev_hash)) and the decl-wft-ec-evidence-publish step in wf_decision_steps.
+tests/test_icx_ent_02_ambient.py
+# icx-ent-03: two signed factory builds (an image and a model) prepared and published on the ambient PG: fb_events
+# (PL/pgSQL append-only triggers, UNIQUE(stream, prev_hash)), the fine-tuning registry reads, and the
+# decl-wft-fb-build-publish step in wf_decision_steps.
+tests/test_icx_ent_03_ambient.py
+# icx-ent-04: two synthetic store packages (an agent and an MCP server) prepared and published on the ambient PG:
+# sp_events (PL/pgSQL append-only triggers, UNIQUE(stream, prev_hash)) and the icos-store-publish step in
+# wf_decision_steps.
+tests/test_icx_ent_04_ambient.py

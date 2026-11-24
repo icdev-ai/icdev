@@ -175,16 +175,13 @@ def iqe_query():
     if not target.exists() or target.suffix != ".iqe":
         return jsonify({"ok": False, "error": f"query not found: {query_path}"}), 404
 
-    try:
-        from tools.iqe import parse
-        from tools.iqe.executor import execute_query
+    # One path with /iqe/run (tools/iqe/catalog.py): every adapter loaded, conn=None
+    # so each adapter opens its own database, an unreadable collection is 422 with
+    # the reason, and a failure is never ok/true with zero rows or raw driver text.
+    from tools.iqe import catalog
 
-        ast = parse(target.read_text(encoding="utf-8"))
-        with get_connection() as conn:
-            rows = execute_query(ast, conn)
-        return jsonify({"ok": True, "query": query_path, "rows": rows, "count": len(rows)})
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({"ok": False, "error": str(exc)}), 400
+    result, status = catalog.run_seed(target, query_path)
+    return jsonify(result), status
 
 
 @v1_api.route("/audit/events", methods=["GET"])

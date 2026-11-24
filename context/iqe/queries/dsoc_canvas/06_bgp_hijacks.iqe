@@ -1,4 +1,10 @@
 # show open bgp hijack events
 # canvas: dsoc
 # collection: dsoc.bgp_hijacks
-show open bgp hijack events ordered by confidence
+# Prompt: show open bgp hijack events ordered by confidence
+# The IQE below is what the dsoc adapter answers that prompt with
+# (tools/iqe/adapters/dsoc.py): "open" covers open and under_review.
+foreach h in dsoc.bgp_hijacks
+where h.status == "open" or h.status == "under_review"
+select h.hijack_number, h.hijack_type, h.detected_prefix, h.expected_prefix, h.expected_origin_asn, h.observed_origin_asn, h.confidence_pct, h.status, h.detected_at
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by h.confidence_pct desc, then h.detected_at desc.

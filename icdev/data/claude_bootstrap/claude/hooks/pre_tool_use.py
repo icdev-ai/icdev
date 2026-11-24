@@ -703,9 +703,21 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # osx-cop-05, migration 20261118143737: the FOCUS cost bundle ledger (prepared, then a
         # person publishes or refuses), hash-chained per billing month. Only a published bundle leaves.
         "finops_focus_events",
+        # icx-ent-01, migration 20261118231119: the AI-assisted vulnerability discovery ledger
+        # (targets, runs, measurements, patch proposals, findings bundles), hash-chained per stream.
+        "vr_events",
+        # icx-ent-02, migration 20261119040000: the objective-evidence ledger (a system's report
+        # prepared, then a person of its org publishes or refuses), hash-chained per system.
+        "ec_events",
+        # icx-ent-03, migration 20261122003636: the signed factory build ledger (a target's build
+        # prepared and signed by the factory's key, then a person of its org publishes or refuses).
+        "fb_events",
         # icx-coe-04, migration 20261118070149: the golden path ledger (seeded, proposed,
         # drift-checked, then a person publishes, refuses or retires), hash-chained per path.
         "coe_golden_path_events",
+        # icx-ent-04, migration 20261122112221: the store publisher ledger (a store package prepared
+        # and its card signed by the publisher's key, then a person of its org publishes or refuses).
+        "sp_events",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
         # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)

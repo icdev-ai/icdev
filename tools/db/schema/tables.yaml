@@ -544,6 +544,7 @@ tables:
   dsoc_scrubbing_centers: it
   dsoc_threats: it
   dynamic_findings: it
+  ec_events: it
   emass_sync_log: it
   emass_systems: it
   enclave_scans: it
@@ -588,6 +589,7 @@ tables:
   fabric_audit: it
   fabric_shares: it
   fairness_assessments: it
+  fb_events: it
   federal_ip_space_definitions: it
   federal_peering_requests: it
   fedramp_assessments: it
@@ -1420,6 +1422,7 @@ tables:
   soar_playbook_audit: it
   soar_playbook_runs: it
   soc2_assessments: it
+  sp_events: it
   spec_registry: it
   sre_incident_events: it
   sre_incidents: it
@@ -1494,6 +1497,7 @@ tables:
   verify_loop_runs: it
   voc_documents: it
   voc_job_statements: it
+  vr_events: it
   vulnerability_records: it
   web_fetch_provenance: it
   webhook_deliveries: it

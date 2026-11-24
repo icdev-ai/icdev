@@ -134,6 +134,18 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e . 2>/dev/null || true
+      # icx-ent-01: the vulnerability-discovery tests run target code only in the isolated sandbox, a
+      # container of the pinned python image; pull it up front, with retries, so a registry hiccup is a
+      # retry here and not a red test (the test stays unskippable). Digest = args/vuln_research.yaml sandbox.image.
+      - name: Pre-pull the vulnerability-discovery sandbox image
+        run: |
+          img="$(python -c "import yaml; print(yaml.safe_load(open('args/vuln_research.yaml'))['sandbox']['image'])")"
+          for attempt in 1 2 3 4 5; do
+            if docker pull "$img"; then echo "pulled $img (attempt $attempt)"; exit 0; fi
+            echo "::warning::docker pull $img failed (attempt $attempt/5); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::could not pull $img after 5 attempts"; exit 1
       # Runs AFTER lint (this job `needs: lint`) and BEFORE the pytest step, so a
       # swallowed write fails in ~1 min instead of at the end of the suite. It
       # lives in this job rather than in `lint` because the detector is reached
@@ -548,6 +560,18 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e . 2>/dev/null || true
+      # icx-ent-01: the vulnerability-discovery tests run target code only in the isolated sandbox, a
+      # container of the pinned python image; pull it up front, with retries, so a registry hiccup is a
+      # retry here and not a red test (the test stays unskippable). Digest = args/vuln_research.yaml sandbox.image.
+      - name: Pre-pull the vulnerability-discovery sandbox image
+        run: |
+          img="$(python -c "import yaml; print(yaml.safe_load(open('args/vuln_research.yaml'))['sandbox']['image'])")"
+          for attempt in 1 2 3 4 5; do
+            if docker pull "$img"; then echo "pulled $img (attempt $attempt)"; exit 0; fi
+            echo "::warning::docker pull $img failed (attempt $attempt/5); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::could not pull $img after 5 attempts"; exit 1
       - name: Resolve gated test list (shard)
         working-directory: ${{ github.workspace }}
         # Belt-and-braces: `--check` validates the FULL list (floor, duplicates,
@@ -1048,6 +1072,10 @@ jobs:
       # icx-coe-03: the conformance page reads its delivery sources (git, CI, board snapshots) from
       # here; tests/e2e/fixtures/coe03_seed.py writes synthetic ones, dated from today. No live git
       # read: a CI checkout is shallow, and ICDEV[OS] and ICDEV[FT] are not on the runner.
+      # icx-ent-03: the signed-factory-builds seed writes a THROWAWAY P-256 key here and the dashboard signs with it,
+      # since the shipped args/factory_builds.yaml names no factory key. Honoured only for a file under
+      # tests/e2e/fixtures/ and only while the config names no key (tools/factory_builds/service.py E2E_KEY_ENV).
+      ICDEV_FACTORY_BUILDS_E2E_KEY: ${{ github.workspace }}/tests/e2e/fixtures/.ent03_factory_key.pem
       ICDEV_COE_SOURCES_DIR: ${{ github.workspace }}/tests/e2e/fixtures/.coe03_sources
       ICDEV_COE_LIVE_GIT: "0"
       # osx-cop-05: the FOCUS cost bundles page reads its exports from here; tests/e2e/fixtures/cop05_seed.py
@@ -1134,6 +1162,18 @@ jobs:
           node-version: "20"
       - name: Install Python dependencies
         run: pip install -r requirements.txt
+      # icx-ent-01: the vulnerability-discovery tests run target code only in the isolated sandbox, a
+      # container of the pinned python image; pull it up front, with retries, so a registry hiccup is a
+      # retry here and not a red test (the test stays unskippable). Digest = args/vuln_research.yaml sandbox.image.
+      - name: Pre-pull the vulnerability-discovery sandbox image
+        run: |
+          img="$(python -c "import yaml; print(yaml.safe_load(open('args/vuln_research.yaml'))['sandbox']['image'])")"
+          for attempt in 1 2 3 4 5; do
+            if docker pull "$img"; then echo "pulled $img (attempt $attempt)"; exit 0; fi
+            echo "::warning::docker pull $img failed (attempt $attempt/5); retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::could not pull $img after 5 attempts"; exit 1
       - name: Install Node dependencies
         run: npm ci
       - name: Install Playwright browsers

@@ -6,10 +6,12 @@ Registers collections:
   strategos.conflict_events — conflict events (type, actor, aoi, goldstein)
   strategos.leadership_briefs — generated leadership briefings (tier, score, theater)
   strategos.sio_assessments   — SIO Oracle lens assessments
+  geospatial.raw_signals      — raw OSINT signals (sg_raw_signals)
 """
 from __future__ import annotations
 
 from tools.db.storage import get_connection
+from tools.iqe.executor import fetch_rows, register_collection
 
 
 def _signals_adapter(conn=None) -> list[dict]:
@@ -96,11 +98,31 @@ def _sio_assessments_adapter(conn=None) -> list[dict]:
     return [dict(zip(cols, r)) for r in rows]
 
 
-try:
-    from tools.iqe.registry import register_collection
-    register_collection("strategos.signals",          _signals_adapter)
-    register_collection("strategos.conflict_events",  _conflict_events_adapter)
-    register_collection("strategos.leadership_briefs", _leadership_briefs_adapter)
-    register_collection("strategos.sio_assessments",  _sio_assessments_adapter)
-except ImportError:
-    pass
+def _geospatial_raw_signals_adapter(conn=None) -> list[dict]:
+    """Raw OSINT signals (sg_raw_signals), the store strategos.signals joins.
+
+    Read by the context/iqe/queries/mcip_geospatial/ seeds. A read failure is
+    raised, not returned as [] (see tools.iqe.executor.fetch_rows).
+    """
+    c = conn or get_connection()
+    _local = conn is None
+    try:
+        return fetch_rows(
+            c,
+            "SELECT id, title, body, source, signal_date, geo_hint, tier_used, created_at "
+            "FROM sg_raw_signals",
+            "geospatial.raw_signals",
+        )
+    finally:
+        if _local:
+            c.close()
+
+
+# This used to import register_collection from tools.iqe.registry, a module that
+# does not exist, inside `except ImportError: pass` -- so none of these collections
+# was ever registered and every strategos seed fell through to the table fallback.
+register_collection("strategos.signals",          _signals_adapter)
+register_collection("strategos.conflict_events",  _conflict_events_adapter)
+register_collection("strategos.leadership_briefs", _leadership_briefs_adapter)
+register_collection("strategos.sio_assessments",  _sio_assessments_adapter)
+register_collection("geospatial.raw_signals",     _geospatial_raw_signals_adapter)

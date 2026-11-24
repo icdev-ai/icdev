@@ -668,7 +668,19 @@ _THREAD_TABLES = {
     "coe_adr": ("core", "coe_adr_events", "event_id",
                 ("event_id", "adr_id", "version", "event", "actor", "actor_kind", "step_id",
                  "reason", "entry_digest", "row_hash", "created_at")),
+    # icx-ent-03: one event of a target's signed factory builds (prepared, published, refused). The artefact stays
+    # in payload_json, never in a thread, and this generic resolver (any observer, MCP twin_governance) names no
+    # target, person, reason or step: the console's /factory-builds/api/twin?thread= resolves the row for a reader
+    # who may see its target.
+    "factory_builds": ("core", "fb_events", "event_id",
+                       ("event_id", "event", "actor_kind", "content_digest", "row_hash", "created_at")),
     # icx-coe-03: one event in a repo's conformance bundles (prepared, published, refused).
+    # icx-ent-02: one event of a customer system's objective-evidence reports (prepared, published,
+    # refused), on the system's hash chain. The observations stay in payload_json, never in a thread, and this
+    # generic resolver (any observer, MCP twin_governance) names no system, person, reason or step: the console's
+    # /evidence-collectors/api/twin?thread= resolves the whole row for a reader who may see its system.
+    "evidence_collectors": ("core", "ec_events", "event_id",
+                            ("event_id", "event", "actor_kind", "content_digest", "row_hash", "created_at")),
     "coe_conformance": ("core", "coe_conformance_events", "event_id",
                         ("event_id", "repo", "event", "actor", "actor_kind", "actor_role", "step_id",
                          "reason", "content_digest", "row_hash", "created_at")),
@@ -677,6 +689,11 @@ _THREAD_TABLES = {
     "coe_golden_path": ("core", "coe_golden_path_events", "event_id",
                         ("event_id", "path_id", "version", "event", "actor", "actor_kind", "actor_role",
                          "step_id", "reason", "entry_digest", "row_hash", "created_at")),
+    # icx-ent-01: one event of AI-assisted vulnerability discovery (a target, a run, a measurement, a patch,
+    # a findings bundle), on its stream's hash chain.
+    "vulnresearch": ("core", "vr_events", "event_id",
+                     ("event_id", "stream", "event", "subject", "actor", "actor_kind", "actor_role", "step_id",
+                      "reason", "content_digest", "row_hash", "created_at")),
     # icx-coe-04: one declared decision step (its rows in wf_decision_steps), the thread a service
     # scaffolded on a golden path gives its findings.
     "wf_step": ("rls", "wf_decision_steps", "step_id",

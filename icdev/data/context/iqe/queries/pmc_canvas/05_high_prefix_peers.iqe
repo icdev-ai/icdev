@@ -2,8 +2,15 @@
 # Canvas: pmc | Collection: pmc.peers
 # Description: Peers advertising large numbers of prefixes (transit or route-server exposure)
 
-show peers with most prefixes
-list high prefix peers
-which peers advertise the most routes
-show transit peers
-peers with large routing tables
+# Prompt: show peers with most prefixes
+# Prompt: list high prefix peers
+# Prompt: which peers advertise the most routes
+# Prompt: show transit peers
+# Prompt: peers with large routing tables
+# The lines above are paraphrases of ONE question for the NL widget. The pmc adapter
+# (tools/iqe/adapters/pmc.py) has no prefix-count branch, and no threshold for "high"
+# is defined anywhere, so the query returns every peer's prefix counts, unranked;
+# no threshold is invented here.
+foreach p in pmc.peers
+select p.asn, p.org_name, p.peer_type, p.ipv4_prefix_count, p.ipv6_prefix_count
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by p.ipv4_prefix_count desc, then p.ipv6_prefix_count desc.

@@ -1,4 +1,7 @@
-foreach d in aadc.designs
-  join l in aadc.lifecycle_states on l.design_id == d.id
+# Designs that reached APPROVED, with who moved them and when.
+# Was `foreach d in aadc.designs join l in aadc.lifecycle_states on l.design_id == d.id`;
+# IQE has no `join ... on` clause and its join() built-in needs one key name on both
+# sides, so aadc.lifecycle_states is the lifecycle-to-design inner join itself.
+foreach l in aadc.lifecycle_states
   where l.to_state == "APPROVED"
-  select d.name, d.domain, l.actor, l.created_at
+  select l.design_name, l.design_domain, l.actor, l.created_at

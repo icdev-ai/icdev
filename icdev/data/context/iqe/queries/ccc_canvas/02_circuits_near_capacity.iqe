@@ -1,4 +1,9 @@
-collection: ccc.circuits
-query: high utilization circuits near capacity
-description: Circuits at ≥70% utilization that need capacity planning attention
-tags: [capacity, utilization, planning]
+# collection: ccc.circuits
+# query: high utilization circuits near capacity
+# description: Circuits at ≥70% utilization that need capacity planning attention
+# tags: [capacity, utilization, planning]
+# The IQE below is what the ccc adapter answers this prompt with (tools/iqe/adapters/ccc.py).
+foreach c in ccc.circuits
+where c.utilization_pct >= 70
+select c.circuit_id, c.carrier, c.bandwidth_gbps, c.utilization_pct, c.status
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by c.utilization_pct desc.

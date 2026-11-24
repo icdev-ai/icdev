@@ -374,3 +374,43 @@ def register(registry: dict) -> None:
         return
     for name, fn in _COLLECTION_MAP.items():
         registry[name] = fn
+
+
+# ── Executor collections ──────────────────────────────────────────────────────
+#
+# The adapters above are the canvas widget's natural-language router: they take
+# the question text and pick a canned query (handle_query). Nothing registered
+# these collections on the IQE executor, so /iqe/run and the seed queries under
+# context/iqe/queries/dsoc_canvas/ could never read them. args/component_registry.yaml
+# declares them as this module's IQE collections; these are the executor view of
+# the same tables -- whole rows, the seed's where/select doing the filtering --
+# through the module's own connection helper, failing loudly, honestly capped.
+
+from tools.iqe.executor import fetch_rows as _fetch_rows
+from tools.iqe.executor import register_collection as _register_collection
+
+_EXECUTOR_VIEWS = {
+    "dsoc.flowspec_rules": "SELECT * FROM dsoc_flowspec_rules",
+    "dsoc.rtbh_entries": "SELECT * FROM dsoc_rtbh_entries",
+    "dsoc.scrubbing_centers": "SELECT * FROM dsoc_scrubbing_centers",
+    "dsoc.threats": "SELECT * FROM dsoc_threats",
+    "dsoc.mitigations": "SELECT * FROM dsoc_mitigations",
+    "dsoc.bgp_hijacks": "SELECT * FROM dsoc_bgp_hijacks",
+}
+
+
+def _executor_adapter(collection: str, sql: str):
+    def fetch(conn=None) -> list[dict]:
+        c, owned = _dsoc_conn(conn)
+        try:
+            return _fetch_rows(c, sql, collection)
+        finally:
+            if owned:
+                c.close()
+
+    fetch.__name__ = "executor_" + collection.replace(".", "_")
+    return fetch
+
+
+for _name, _sql in _EXECUTOR_VIEWS.items():
+    _register_collection(_name, _executor_adapter(_name, _sql))

@@ -1,0 +1,3 @@
+# NSA ZIG IQE seed query (split from zig_queries.iqe). Collection: zig.*
+# Query 3: Phase 1 incomplete activities
+foreach a in zig.activities where a.phase == "phase1" and a.completion_status != "complete" select a.title, a.pillar_slug, a.nist_control_ref, a.completion_status

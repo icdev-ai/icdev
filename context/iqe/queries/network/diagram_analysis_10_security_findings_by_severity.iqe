@@ -1,0 +1,7 @@
+# Network Diagram Analysis seed query (split from diagram_analysis.iqe).
+# Prompt: show diagram findings tab security ordered by severity
+# f.tab is one of DIAGRAM_ANALYSIS_FINDING_CATEGORIES (tools/network/constants.py).
+foreach f in network.diagram_findings
+where f.tab == "security"
+select f.id, f.analysis_id, f.tab, f.severity, f.title, f.remediation, f.industry, f.topology_mode
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by f.severity.

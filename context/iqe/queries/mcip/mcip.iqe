@@ -1,5 +1,7 @@
-show all diplomatic activity events
-show dti history for the last 48 hours
-show events with high tension signal
-show diplomatic events from cable traffic source
-show recent dti scores ordered by computed_at
+# MCIP DAT seed queries. Collections: dat.events, dat.dti_history (tools/iqe/adapters/mcip.py).
+# The same prompts are listed for the NL widget in mcip/seed.yaml.
+# The parser reads exactly ONE query per file and /iqe/run runs one, so this file
+# holds the first and mcip_02..05_*.iqe hold the others.
+# Prompt: show all diplomatic activity events
+foreach e in dat.events
+select e.id, e.source_type, e.sender, e.recipient, e.classification, e.tension_signal, e.ingested_at

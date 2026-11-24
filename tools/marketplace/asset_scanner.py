@@ -194,15 +194,125 @@ def _audit(event_type, actor, action, details=None):
 # ---------------------------------------------------------------------------
 
 
+def _ast_sast_issues(asset_path: Path, py_files) -> dict:
+    """The AST fallback: calls of ``eval``/``exec`` (critical) and ``system``/``popen`` (high). Read, never run."""
+    import ast
+
+    findings = {"critical": 0, "high": 0, "medium": 0, "low": 0, "issues": [], "unparsed": []}
+    for py_file in py_files:
+        try:
+            source = py_file.read_text(encoding="utf-8", errors="ignore")
+            tree = ast.parse(source, filename=str(py_file))
+        except (SyntaxError, UnicodeDecodeError, ValueError, RecursionError):
+            findings["unparsed"].append(str(py_file.relative_to(asset_path)))
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func_name = ""
+            if isinstance(node.func, ast.Name):
+                func_name = node.func.id
+            elif isinstance(node.func, ast.Attribute):
+                func_name = node.func.attr
+            if func_name in ("eval", "exec"):
+                findings["critical"] += 1
+                findings["issues"].append({"file": str(py_file.relative_to(asset_path)), "line": node.lineno,
+                                           "severity": "critical",
+                                           "text": f"Use of {func_name}() — potential code injection"})
+            elif func_name in ("system", "popen"):
+                findings["high"] += 1
+                findings["issues"].append({"file": str(py_file.relative_to(asset_path)), "line": node.lineno,
+                                           "severity": "high",
+                                           "text": f"Use of os.{func_name}() — potential command injection"})
+    return findings
+
+
+def _bandit(asset_path: Path) -> tuple[dict | None, set[str]]:
+    """bandit's findings over ``asset_path`` and the files it analysed, run so the analysed code cannot switch it off
+    (icx-ent-04 review M1): ``--ignore-nosec`` (a ``# nosec`` comment is the author's), ``--ini`` an empty
+    ``[bandit]`` file of OUR making (so no ``.bandit`` the sources carry is read), and ``-x`` a path that matches nothing
+    (so bandit's default excludes -- ``.tox``, ``.git``, ``*.egg`` -- hide no file). None when it gave no report."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="icdev-bandit-") as cfg:
+        ini = Path(cfg) / "bandit.ini"
+        ini.write_text("[bandit]\n", encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, "-m", "bandit", "-r", str(asset_path), "-f", "json", "--severity-level", "low", "-q",
+             "--ignore-nosec", "--ini", str(ini), "-x", str(Path(cfg) / "exclude-nothing")],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            stdin=subprocess.DEVNULL,
+            cwd=cfg,
+        )
+    out = json.loads(result.stdout) if result.stdout.strip() else None
+    if not (isinstance(out, dict) and isinstance(out.get("results"), list) and isinstance(out.get("metrics"), dict)):
+        return None, set()
+    analysed = {str(Path(k).resolve()) for k in out["metrics"] if k != "_totals"}
+    if out.get("errors"):
+        analysed -= {str(Path(e.get("filename", "")).resolve()) for e in out["errors"] if isinstance(e, dict)}
+    return out, analysed
+
+
+def sast_findings(asset_path) -> dict:
+    """Gate 1's analysis of ``asset_path``, recorded nowhere (icx-ent-04: the store publisher runs it on a package).
+
+    ``{"engine": "bandit+ast"|"ast"|None, "files": n, "status": pass|fail|skipped|unverified, "findings": {...}}``.
+    bandit runs under THIS interpreter, hardened so the analysed code cannot switch it off (``_bandit``), and the AST
+    checks ALWAYS run as well: the worse result stands. A Python file bandit did not analyse (its report lists every
+    file it read) or that neither engine can parse is ``unverified``, named in ``unanalysed``/``unparsed``: it was not
+    analysed, so it never passes.
+    """
+    asset_path = Path(asset_path)
+    py_files = sorted(asset_path.rglob("*.py"))
+    if not py_files:
+        return {"engine": None, "files": 0, "status": "skipped", "reason": "No Python files",
+                "findings": {"critical": 0, "high": 0, "medium": 0, "low": 0, "issues": []}}
+    findings = _ast_sast_issues(asset_path, py_files)
+    findings["unanalysed"] = []
+    engine = "ast"
+    try:
+        bandit_output, analysed = _bandit(asset_path)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError, json.JSONDecodeError):
+        bandit_output, analysed = None, set()
+    if bandit_output is not None:
+        engine = "bandit+ast"
+        findings["unanalysed"] = sorted(str(f.relative_to(asset_path)) for f in py_files
+                                        if str(f.resolve()) not in analysed)
+        for issue in bandit_output.get("results", []):
+            sev = str(issue.get("issue_severity", "LOW")).lower()
+            if sev == "high":
+                findings["critical"] += 1
+            elif sev == "medium":
+                findings["high"] += 1
+            else:
+                findings["low"] += 1
+            findings["issues"].append(
+                {
+                    "file": issue.get("filename", ""),
+                    "line": issue.get("line_number", 0),
+                    "severity": sev,
+                    "text": issue.get("issue_text", ""),
+                    "test_id": issue.get("test_id", ""),
+                }
+            )
+    if findings["critical"] or findings["high"]:
+        status = "fail"
+    elif findings.get("unparsed") or findings["unanalysed"]:
+        status = "unverified"
+    else:
+        status = "pass"
+    return {"engine": engine, "files": len(py_files), "status": status, "findings": findings}
+
+
 def scan_sast(asset_path, asset_id, version_id, db_path=None):
     """Gate 1: Static Application Security Testing.
 
-    Uses bandit for Python files. Returns scan result dict.
+    Uses bandit for Python files (the AST checks when bandit cannot run). Returns scan result dict.
     """
-    asset_path = Path(asset_path)
-    py_files = list(asset_path.rglob("*.py"))
-
-    if not py_files:
+    out = sast_findings(asset_path)
+    if out["status"] == "skipped":
         return _record_scan(
             asset_id,
             version_id,
@@ -211,78 +321,10 @@ def scan_sast(asset_path, asset_id, version_id, db_path=None):
             details={"reason": "No Python files found"},
             db_path=db_path,
         ), {"status": "skipped", "reason": "No Python files"}
-
-    findings = {"critical": 0, "high": 0, "medium": 0, "low": 0, "issues": []}
-
-    # Try bandit first
-    try:
-        result = subprocess.run(
-            ["python", "-m", "bandit", "-r", str(asset_path), "-f", "json", "--severity-level", "low", "-q"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            stdin=subprocess.DEVNULL,
-        )
-        if result.stdout:
-            bandit_output = json.loads(result.stdout)
-            for issue in bandit_output.get("results", []):
-                sev = issue.get("issue_severity", "LOW").lower()
-                if sev == "high":
-                    findings["critical"] += 1
-                elif sev == "medium":
-                    findings["high"] += 1
-                else:
-                    findings["low"] += 1
-                findings["issues"].append(
-                    {
-                        "file": issue.get("filename", ""),
-                        "line": issue.get("line_number", 0),
-                        "severity": sev,
-                        "text": issue.get("issue_text", ""),
-                        "test_id": issue.get("test_id", ""),
-                    }
-                )
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
-        # Bandit not available — use basic AST-based checks
-        import ast
-
-        for py_file in py_files:
-            try:
-                source = py_file.read_text(encoding="utf-8", errors="ignore")
-                tree = ast.parse(source, filename=str(py_file))
-                for node in ast.walk(tree):
-                    # Check for eval/exec
-                    if isinstance(node, ast.Call):
-                        func_name = ""
-                        if isinstance(node.func, ast.Name):
-                            func_name = node.func.id
-                        elif isinstance(node.func, ast.Attribute):
-                            func_name = node.func.attr
-                        if func_name in ("eval", "exec"):
-                            findings["critical"] += 1
-                            findings["issues"].append(
-                                {
-                                    "file": str(py_file.relative_to(asset_path)),
-                                    "line": node.lineno,
-                                    "severity": "critical",
-                                    "text": f"Use of {func_name}() — potential code injection",
-                                }
-                            )
-                        elif func_name in ("system", "popen"):
-                            findings["high"] += 1
-                            findings["issues"].append(
-                                {
-                                    "file": str(py_file.relative_to(asset_path)),
-                                    "line": node.lineno,
-                                    "severity": "high",
-                                    "text": f"Use of os.{func_name}() — potential command injection",
-                                }
-                            )
-            except (SyntaxError, UnicodeDecodeError):
-                pass
-
+    findings = out["findings"]
     total = findings["critical"] + findings["high"] + findings["medium"] + findings["low"]
-    status = "pass" if findings["critical"] == 0 and findings["high"] == 0 else "fail"
+    # A file nothing could parse was not analysed: that is not a pass.
+    status = "fail" if out["status"] in ("fail", "unverified") else "pass"
 
     scan_id = _record_scan(
         asset_id,
@@ -294,47 +336,44 @@ def scan_sast(asset_path, asset_id, version_id, db_path=None):
         high=findings["high"],
         medium=findings["medium"],
         low=findings["low"],
-        details={"issues": findings["issues"][:20]},
+        details={"issues": findings["issues"][:20], "engine": out["engine"],
+                 "unparsed": findings.get("unparsed", [])[:20], "unanalysed": findings.get("unanalysed", [])[:20]},
         db_path=db_path,
     )
     return scan_id, {"status": status, "findings": findings}
 
 
-def scan_secrets(asset_path, asset_id, version_id, db_path=None):
-    """Gate 2: Secret detection.
+SECRET_TEXT_EXTENSIONS = {
+    ".py",
+    ".js",
+    ".ts",
+    ".go",
+    ".rs",
+    ".java",
+    ".cs",
+    ".yaml",
+    ".yml",
+    ".json",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".env",
+    ".md",
+    ".txt",
+    ".sh",
+    ".bat",
+}
 
-    Scans all text files for hardcoded secrets, API keys, credentials.
-    """
+
+def secret_findings(asset_path) -> list[dict]:
+    """Gate 2's findings over every text file under ``asset_path``, recorded nowhere (icx-ent-04)."""
     asset_path = Path(asset_path)
     findings = []
-
-    text_extensions = {
-        ".py",
-        ".js",
-        ".ts",
-        ".go",
-        ".rs",
-        ".java",
-        ".cs",
-        ".yaml",
-        ".yml",
-        ".json",
-        ".toml",
-        ".ini",
-        ".cfg",
-        ".env",
-        ".md",
-        ".txt",
-        ".sh",
-        ".bat",
-    }
-
-    for fpath in asset_path.rglob("*"):
-        if not fpath.is_file():
+    for fpath in sorted(asset_path.rglob("*")):
+        if not fpath.is_file() or fpath.is_symlink():
             continue
-        if fpath.suffix.lower() not in text_extensions:
+        if fpath.suffix.lower() not in SECRET_TEXT_EXTENSIONS:
             continue
-        # Skip binary-looking files
         try:
             content = fpath.read_text(encoding="utf-8", errors="ignore")
         except Exception:
@@ -351,7 +390,15 @@ def scan_secrets(asset_path, asset_id, version_id, db_path=None):
                         "match_preview": match.group()[:30] + "..." if len(match.group()) > 30 else match.group(),
                     }
                 )
+    return findings
 
+
+def scan_secrets(asset_path, asset_id, version_id, db_path=None):
+    """Gate 2: Secret detection.
+
+    Scans all text files for hardcoded secrets, API keys, credentials.
+    """
+    findings = secret_findings(asset_path)
     status = "pass" if len(findings) == 0 else "fail"
     scan_id = _record_scan(
         asset_id,
@@ -443,6 +490,23 @@ def scan_dependencies(asset_path, asset_id, version_id, db_path=None):
         db_path=db_path,
     )
     return scan_id, {"status": status, "findings": findings}
+
+
+def cui_banner_files(asset_path) -> list[str]:
+    """Every text file under ``asset_path`` whose first 10 lines carry a CUI banner (``CUI_PATTERNS``), recorded
+    nowhere (icx-ent-04: a package marked below CUI may carry none)."""
+    asset_path = Path(asset_path)
+    out = []
+    for fpath in sorted(asset_path.rglob("*")):
+        if not fpath.is_file() or fpath.is_symlink() or fpath.suffix.lower() not in SECRET_TEXT_EXTENSIONS:
+            continue
+        try:
+            header = "\n".join(fpath.read_text(encoding="utf-8", errors="ignore").split("\n")[:10])
+        except Exception:
+            continue
+        if any(re.search(p, header) for p in CUI_PATTERNS):
+            out.append(str(fpath.relative_to(asset_path)))
+    return out
 
 
 def scan_cui_markings(asset_path, asset_id, version_id, expected_classification=None, db_path=None):
