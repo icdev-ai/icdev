@@ -1,0 +1,8 @@
+# icx-ent-02: evidence collectors for customer environments. Four read-only collectors (AWS Config with SigV4, OIDC
+# discovery and SCIM, Intune via Graph, Splunk) against loopback stubs; credentials by reference only; freshness
+# (stale, future, timeless = unverified; never met from absence); the reviewed mapping; the icos-objective-evidence/v1
+# report against ICDEV[OS]'s pinned contract; publishing a person's declared step of the system's org, never the
+# preparer's; the append-only hash-chained ledger; visibility by org and marking; page, routes, twin threads and
+# replay, MCP read and draft; and the ambient PG run.
+tests/test_icx_ent_02_evidence_collectors.py
+tests/test_icx_ent_02_ambient.py

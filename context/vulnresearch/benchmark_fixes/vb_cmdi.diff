@@ -1,0 +1,9 @@
+--- a/src/vb_cmdi.py
++++ b/src/vb_cmdi.py
+@@ -5,5 +5,5 @@
+ 
+ 
+ def greet(name):
+-    out = subprocess.run(f"echo hello {name}", shell=True, capture_output=True, text=True)
++    out = subprocess.run(["echo", "hello", name], capture_output=True, text=True)
+     return out.stdout.strip()

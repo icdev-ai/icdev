@@ -1,0 +1,7 @@
+{
+  "description": "store publisher ledger: a store package prepared (its card signed by the publisher's key), then a person publishes or refuses; append-only and hash-chained per package (icx-ent-04)",
+  "date": "2026-11-22",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true
+}

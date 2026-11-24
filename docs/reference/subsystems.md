@@ -366,8 +366,10 @@ Customer developer communities share skills, goals, hardprompts, context, args, 
 
 ### Key Commands
 ```bash
-# Publish a skill to tenant-local catalog
-python tools/marketplace/publish_pipeline.py --asset-path /path --asset-type skill --tenant-id "tenant-abc" --publisher-user "user@mil" --json
+# RETIRED (icx-ent-04): publish_pipeline.py and review_queue.py refuse (code superseded). A person prepares a
+# signed ICDEV[OS] store package on /store-publisher/, another person publishes it, and ICDEV[OS] imports,
+# reviews and certifies it (docs/features/icx-ent-04-store-publisher.md):
+python -m tools.store_publisher.cli packages --json
 
 # Search the marketplace
 python tools/marketplace/search_engine.py --search "STIG checker" --json
@@ -378,9 +380,7 @@ python tools/marketplace/compatibility_checker.py --asset-id "asset-abc" --consu
 # Install an asset
 python tools/marketplace/install_manager.py --install --asset-id "asset-abc" --tenant-id "tenant-abc" --json
 
-# Review queue (ISSO/security officer)
-python tools/marketplace/review_queue.py --pending --json
-python tools/marketplace/review_queue.py --review --review-id "rev-abc" --reviewer-id "isso@mil" --decision approved --rationale "Passed review" --json
+# Review queue: RETIRED (icx-ent-04) -- a store package is reviewed and certified in ICDEV[OS]
 
 # Federation sync
 python tools/marketplace/federation_sync.py --status --json

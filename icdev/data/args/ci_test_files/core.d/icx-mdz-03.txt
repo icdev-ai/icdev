@@ -1,0 +1,7 @@
+# icx-mdz-03: features and processes without a model in the ICDEV[OS] bundle -- static and
+# REA-observed features with file:line evidence and capability hints, processes with step
+# signatures under a reviewed rule set, every bundle part present or missing with why, a
+# person's process review at its digest, the page, the twin, the MCP read tool, the three
+# regenerated real bundles; and the review record on PG.
+tests/test_icx_mdz_03_bundle_features.py
+tests/test_icx_mdz_03_ambient.py

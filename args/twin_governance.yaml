@@ -91,3 +91,26 @@ engineering_standards:
 data_discovery:
   waiting_warn_days: 7
   stale_days: 14
+
+# icx-ent-01: AI-assisted vulnerability discovery (tools/vulnresearch/twin.py). A registered target, a patch or a
+# prepared findings bundle waiting this long for a person, or a target whose newest published bundle is this old,
+# is a finding (args/vuln_research.yaml publish sets the defaults; these win when given).
+vulnresearch:
+  waiting_warn_days: 7
+  stale_days: 30
+
+# icx-ent-02: evidence collectors for customer environments (tools/evidence_collectors), canvas key
+# evidence_collectors. A prepared objective-evidence report waiting this long for a person is a finding; a
+# published report older than the shortest collector budget (args/evidence_collectors.yaml) is stale.
+evidence_collectors:
+  waiting_warn_days: 7
+
+# icx-ent-03: signed factory builds (tools/factory_builds), canvas key factory_builds. A prepared signed build waiting
+# this long for a person to publish or refuse it is a finding.
+factory_builds:
+  waiting_warn_days: 7
+
+# icx-ent-04: the store publisher (tools/store_publisher), canvas key store_publisher. A prepared store package waiting
+# this long for a person to publish or refuse it is a finding.
+store_publisher:
+  waiting_warn_days: 7

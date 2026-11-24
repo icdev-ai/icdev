@@ -2086,6 +2086,19 @@ def generate_sbom(
         conn.close()
 
 
+def cyclonedx_document(project, project_dir, *, spec_version=None, python_env=None):
+    """One CycloneDX document for ``project`` (``{id, name, ...}``) from ``project_dir``, in memory: no database row,
+    no file, no signature (icx-ent-03). The same resolution and the same builder ``generate_sbom`` uses, so a signed
+    factory build's SBOM says what every other ICDEV SBOM says. Returns ``(document, resolution summary)``."""
+    resolution = resolve_project(Path(project_dir) if project_dir else None,
+                                 declared_parsers=DECLARED_PARSERS, python_env=python_env)
+    active = spec_version or CYCLONEDX_SPEC_VERSION
+    document, _ = _build_cyclonedx_sbom(project, resolution["components"], spec_version=active,
+                                        schema=CYCLONEDX_SUPPORTED_VERSIONS[active],
+                                        coverage=resolution["coverage"], python_env=python_env)
+    return document, {"coverage": resolution["coverage"], "ecosystems": resolution["ecosystems"]}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate a Software Bill of Materials (CycloneDX or SPDX)")
     parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")

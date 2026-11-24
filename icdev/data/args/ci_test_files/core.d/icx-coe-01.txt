@@ -1,0 +1,7 @@
+# icx-coe-01: the engineering standards register with a lifecycle (one entry per standard, sources by
+# reference, check-as-code); a standard without a check refused at adoption (planted); propose -> review ->
+# adopt -> deprecate through declared steps, the author never the signer, nothing advancing by itself; seeds by
+# the labelled bootstrap identity; the append-only hash-chained ledger; the page, the twin and the MCP tools;
+# and the lifecycle on the ambient PG.
+tests/test_icx_coe_01_standards.py
+tests/test_icx_coe_01_ambient.py

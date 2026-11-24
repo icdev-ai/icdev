@@ -691,6 +691,73 @@ features:
           file: tools/data_canvas/discovery_blueprint.py
           text: "A person, never the preparer, publishes a source's prepared discovery bundle to ICDEV[OS], or refuses it."
 
+  # ── AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) ──
+  # Targets registered and authorised by a person (scope-locked), discovery from SAST,
+  # SCA, an agentic review (proposes only) and fuzz harnesses, a finding only with a
+  # proof of vulnerability replayed in the sandbox, patches a person reviews (never
+  # applied), FP/FN measured on planted labels, and one icos-findings/v1 bundle per
+  # target, prepared by one person and published by another.
+  - key: vulnresearch.discovery
+    component: vulnresearch
+    label: "Vulnerability discovery: authorised targets, PoV-proven findings, reviewed patches, findings bundles"
+    endpoints:
+      - vulnresearch.vr_page
+      - vulnresearch.vr_api_targets
+      - vulnresearch.vr_api_target_register
+      - vulnresearch.vr_api_target
+      - vulnresearch.vr_api_target_authorise
+      - vulnresearch.vr_api_target_revoke
+      - vulnresearch.vr_api_run
+      - vulnresearch.vr_api_measure
+      - vulnresearch.vr_api_patch_propose
+      - vulnresearch.vr_api_patch_review
+      - vulnresearch.vr_api_bundle_prepare
+      - vulnresearch.vr_api_bundle_publish
+      - vulnresearch.vr_api_bundle
+      - vulnresearch.vr_api_twin
+    mcp_tools: [vulnresearch_status, vulnresearch_prepare]
+    declared_decisions:
+      - id: vulnresearch.target.authorise
+        endpoint: vulnresearch.vr_api_target_authorise
+        evidence:
+          file: tools/vulnresearch/blueprint.py
+          text: "A person, never the registrant, authorises a registered target for testing, or refuses it."
+      - id: vulnresearch.patch.review
+        endpoint: vulnresearch.vr_api_patch_review
+        evidence:
+          file: tools/vulnresearch/blueprint.py
+          text: "A person, never the proposer, accepts or rejects a proposed patch. Nothing is applied."
+      - id: vulnresearch.bundle.publish
+        endpoint: vulnresearch.vr_api_bundle_publish
+        evidence:
+          file: tools/vulnresearch/blueprint.py
+          text: "A person, never the preparer, publishes a target's prepared findings bundle to ICDEV[OS], or refuses it."
+
+  # ── Store publisher (icx-ent-04) ───────────────────────────────────────────
+  # Signed ICDEV[OS] store packages (agent, crew, skill, MCP server, plugin): a JWS-signed A2A
+  # Agent Card binding the package's content and its declared tools, SBOM and dependency report,
+  # ceilings and budget, the publisher's red-team report and ICDEV's seven scanner gates run on it;
+  # prepared by a person, published by another of the package's org (icos-store-publish), exported
+  # for ICDEV[OS]'s agent store (osx-ent-11). Replaces the retired marketplace publish and review.
+  - key: store_publisher.signed_packages
+    component: store_publisher
+    label: "Store publisher: signed agent-store packages for ICDEV[OS], prepared by one person and published by another"
+    endpoints:
+      - store_publisher.sp_page
+      - store_publisher.sp_api_packages
+      - store_publisher.sp_api_package
+      - store_publisher.sp_api_prepare
+      - store_publisher.sp_api_publish
+      - store_publisher.sp_api_export
+      - store_publisher.sp_api_twin
+    mcp_tools: [store_publisher_status]
+    declared_decisions:
+      - id: store_publisher.publish
+        endpoint: store_publisher.sp_api_publish
+        evidence:
+          file: tools/store_publisher/blueprint.py
+          text: "A person, never the preparer, publishes a prepared store package for ICDEV[OS], or refuses it."
+
   # ── The audit itself (it follows the five rules too) ──────────────────────
   - key: conformance.audit
     component: twin_observatory
@@ -699,3 +766,53 @@ features:
       - twin_observatory.conformance_page
       - twin_observatory.api_conformance
     mcp_tools: [feature_conformance]
+
+  # ── Evidence collectors for customer environments (icx-ent-02) ──────────
+  # Read-only collectors (cloud configuration, identity provider, endpoints, SIEM) with
+  # credentials by reference; observations with a freshness budget; a reviewed mapping to
+  # SP 800-171 Rev. 2 and SP 800-53 Rev. 5 objectives; one icos-objective-evidence/v1
+  # report per system per run, prepared by one person and published by another of the
+  # system's org (decl-wft-ec-evidence-publish).
+  - key: evidence_collectors.objective_evidence
+    component: evidence_collectors
+    label: "Evidence collectors: read-only customer sources, objective evidence for ICDEV[OS]"
+    endpoints:
+      - evidence_collectors.ec_page
+      - evidence_collectors.ec_api_systems
+      - evidence_collectors.ec_api_system
+      - evidence_collectors.ec_api_prepare
+      - evidence_collectors.ec_api_publish
+      - evidence_collectors.ec_api_bundle
+      - evidence_collectors.ec_api_twin
+    mcp_tools: [evidence_collectors_status, evidence_collectors_prepare]
+    declared_decisions:
+      - id: evidence_collectors.publish
+        endpoint: evidence_collectors.ec_api_publish
+        evidence:
+          file: tools/evidence_collectors/blueprint.py
+          text: "A person, never the preparer, publishes a system's prepared objective-evidence report to ICDEV[OS], or refuses it."
+
+  # ── Signed factory builds (icx-ent-03) ───────────────────────────────────
+  # One signed icos-artefact/v1 per built artefact (image, model, agent, IaC): CycloneDX 1.7 SBOM
+  # or AI-BOM (a model's linked to its fine-tuning registry promotion), SLSA v1.2 provenance,
+  # OpenVEX, Sigstore bundles signed by the factory's KMS, keyring or keyless key, OpenSSF
+  # model-signing, OCI referrers; prepared by a person, published by another of the target's org
+  # (decl-wft-fb-build-publish), exported for ICDEV[OS]'s release register (osx-ent-06).
+  - key: factory_builds.signed_builds
+    component: factory_builds
+    label: "Signed factory builds: signed artefacts with SBOM/AI-BOM, provenance and VEX for ICDEV[OS]"
+    endpoints:
+      - factory_builds.fb_page
+      - factory_builds.fb_api_targets
+      - factory_builds.fb_api_target
+      - factory_builds.fb_api_prepare
+      - factory_builds.fb_api_publish
+      - factory_builds.fb_api_export
+      - factory_builds.fb_api_twin
+    mcp_tools: [factory_builds_status]
+    declared_decisions:
+      - id: factory_builds.publish
+        endpoint: factory_builds.fb_api_publish
+        evidence:
+          file: tools/factory_builds/blueprint.py
+          text: "A person, never the preparer, publishes a target's signed build to ICDEV[OS], or refuses it."

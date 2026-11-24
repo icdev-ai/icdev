@@ -1,3 +1,6 @@
-foreach r in aac.roadmaps
-  join s in aac.scans on s.scan_id == r.scan_id
-  select s.input_ref, r.title, r.total_effort_days, r.aimc_links, r.aadc_links
+# Roadmaps with the scan input they were generated from, effort and cross-canvas links.
+# Was `foreach r in aac.roadmaps join s in aac.scans on s.scan_id == r.scan_id`; IQE has
+# no `join ... on` clause, but both sides share the key name, so the join() built-in
+# (an inner join on scan_id) is the same query over the aiify.* collections.
+foreach r in join("aiify.roadmaps", "aiify.scans", "scan_id")
+  select r.input_ref, r.title, r.total_effort_days, r.aimc_links, r.aadc_links

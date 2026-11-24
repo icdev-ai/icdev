@@ -2,4 +2,4 @@
 foreach r in demo_runner.runs
 where r.status != "pass"
 select r.run_id, r.audience, r.status, r.scenarios_passed, r.scenarios_total, r.created_at
-order by r.created_at desc
+# Not applied: IQE has no `order by` or `limit`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by r.created_at desc.

@@ -32,6 +32,11 @@ the question in 79ms; it never
 calls ``git ls-files --ignored`` because a staged file is by definition tracked.
 Either spelling of a path is accepted (``tools/…`` or ``icdev/tools/…``) and is
 resolved to the SAME pair, so a change to the mirror alone is drift too.
+
+``DATA_MIRRORS`` adds packaged data trees to the same audit: today
+``args/ci_test_files`` <-> ``icdev/data/args/ci_test_files``, the allowlist an
+installed wheel reads. ``--all`` and ``--files`` cover it; see the constant for
+why that tree and not the rest of ``icdev/data/args``.
 """
 
 import argparse
@@ -45,6 +50,32 @@ import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+#: Packaged DATA trees that must be byte-identical to their source on every
+#: commit, not only after a release sync: ``(source dir, packaged twin)``,
+#: both repo-relative.
+#:
+#: ``args/ci_test_files`` is here because an installed wheel READS its twin:
+#: ``tools/ci/gated_test_list.repo_root`` resolves ``<pkg>/data/args/
+#: ci_test_files`` when there is no checkout, and ``icdev init`` copies
+#: ``icdev/data/args`` into every child project. It used to be left to
+#: ``sync_package_tree`` at release, and nothing compared the two in between,
+#: because this tool only knew ``tools/`` <-> ``icdev/tools/``. Measured on
+#: origin/main 2026-11-22, six weeks after release 1.2.44 left them identical:
+#: the packaged ``core.txt`` was 19 lines short (``test_competitive_intel_web``,
+#: ``test_creative_engine_sources`` and three more) and 75 ``core.d/``
+#: fragments were missing, so the wheel's allowlist was a different list from
+#: the one CI gates on. ``.gitattributes`` already declares both copies
+#: ``merge=union``, so the twin was always meant to be kept, not regenerated.
+#:
+#: The rest of ``icdev/data/args`` is still a release snapshot refreshed by
+#: ``sync_package_tree`` -- adding a tree here is a decision about that tree,
+#: made with evidence, never a sweep. Unlike ``tools/`` there is no grandfathered
+#: backlog, so EVERY difference is drift: a missing twin and a twin whose source
+#: was deleted block just as content drift does.
+DATA_MIRRORS = (
+    ("args/ci_test_files", "icdev/data/args/ci_test_files"),
+)
 
 
 def _sha256(path: Path) -> str:
@@ -129,14 +160,21 @@ def audit_all(fix: bool = False, root: Path = BASE_DIR) -> dict:
     Clean subtrees are counted but not listed — a report nobody can read is a
     report nobody reads.
     """
-    reports = [audit_path(p, fix=fix, root=root) for p in discover_mirrored_paths(root)]
+    packages = [audit_path(p, fix=fix, root=root) for p in discover_mirrored_paths(root)]
+    data_trees = audit_data_mirrors(fix=fix, root=root)
+    reports = packages + data_trees
     drifting = [r for r in reports if not r["clean"]]
     return {
-        "packages_audited": len(reports),
-        "packages_with_drift": len(drifting),
+        # A DATA_MIRRORS tree is not a tools/ package; it is counted on its own
+        # so "N mirrored package(s)" keeps meaning what it always meant.
+        "packages_audited": len(packages),
+        "data_trees_audited": len(data_trees),
+        "packages_with_drift": len([r for r in packages if not r["clean"]]),
+        "data_trees_with_drift": len([r for r in data_trees if not r["clean"]]),
         "content_drift": sum(len(r["content_drift"]) for r in reports),
         "missing_from_mirror": sum(len(r["missing_from_mirror"]) for r in reports),
         "mirror_only": sum(len(r["mirror_only"]) for r in reports),
+        "refused": sum(len(r["refused"]) for r in reports),
         "clean": not drifting,
         "reports": drifting,
     }
@@ -149,11 +187,79 @@ def audit_path(subpath: str, fix: bool = False, root: Path = BASE_DIR) -> dict:
     missing from or differing in icdev/ are copied from tools/ (the
     authority). icdev-only files are never deleted.
     """
-    live = root / "tools" / subpath
-    mirror = root / "icdev" / "tools" / subpath
+    return _compare_trees(subpath, root / "tools" / subpath, root / "icdev" / "tools" / subpath, fix, root)
 
+
+def audit_data_mirrors(fix: bool = False, root: Path = BASE_DIR) -> list:
+    """One report per ``DATA_MIRRORS`` pair, in the same shape as ``audit_path``.
+
+    Strict: a symlink anywhere in a data tree, or a tree that resolves outside
+    the checkout, is REFUSED (and blocks) whether or not ``fix`` is set. A data
+    tree holds plain files that ship; nothing in it has a reason to point away.
+    """
+    return [
+        _compare_trees(src, root / src, root / dst, fix, root, strict=True)
+        for src, dst in DATA_MIRRORS
+    ]
+
+
+def _has_dotdot(path) -> bool:
+    return ".." in str(path).replace("\\", "/").split("/")
+
+
+def _resolves_to_itself(tree: Path, root: Path) -> bool:
+    """True when no component of ``tree`` below ``root`` is a symlink.
+
+    ``tree.resolve()`` must be exactly ``root.resolve() / <tree relative to
+    root>``; a symlinked ``core.d`` (or ``icdev/data``) would otherwise let a
+    copy that looks "inside the tree" land anywhere.
+    """
+    try:
+        rel = tree.relative_to(root)
+        return tree.resolve() == root.resolve() / rel
+    except (ValueError, OSError):
+        return False
+
+
+def _inside(path: Path, tree: Path) -> bool:
+    try:
+        path.resolve().relative_to(tree.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def pair_problem(src: Path, dst: Path, src_tree: Path, dst_tree: Path, root: Path):
+    """Why ``src`` -> ``dst`` must not be read or copied, or None when it is safe.
+
+    Refuses a symlinked source or destination, a tree with a symlinked
+    component, and either side resolving outside its declared tree (and so
+    outside the checkout). ``..`` never reaches here: callers refuse it first.
+    """
+    for tree in (src_tree, dst_tree):
+        if not _inside(tree, root) or not _resolves_to_itself(tree, root):
+            return f"{tree.relative_to(root) if tree.is_relative_to(root) else tree} is not a plain directory inside the checkout"
+    if src.is_symlink():
+        return "the source is a symlink"
+    if dst.is_symlink():
+        return "the destination is a symlink"
+    if not _inside(src, src_tree):
+        return "the source resolves outside its declared tree"
+    if not _inside(dst, dst_tree):
+        return "the destination resolves outside its declared tree"
+    return None
+
+
+def _compare_trees(label: str, live: Path, mirror: Path, fix: bool, root: Path,
+                   strict: bool = False) -> dict:
+    """Byte-compare two trees; ``live`` is the authority. Never deletes.
+
+    ``fix`` copies only a pair ``pair_problem`` passes; anything else goes to
+    ``refused`` and keeps the report unclean. ``strict`` (data trees) checks
+    every pair, so a symlink there is refused even on a read-only audit.
+    """
     result = {
-        "path": subpath,
+        "path": label,
         "live_dir": str(live.relative_to(root)),
         "mirror_dir": str(mirror.relative_to(root)),
         "live_exists": live.is_dir(),
@@ -163,10 +269,27 @@ def audit_path(subpath: str, fix: bool = False, root: Path = BASE_DIR) -> dict:
         "mirror_only": [],           # in icdev/ only — INVESTIGATE, do not delete
         "in_parity": 0,
         "copied": [],
+        "refused": [],               # {"file", "reason"}: never read or copied
     }
+
+    if strict:
+        for tree in (live, mirror):
+            if tree.exists() and not _resolves_to_itself(tree, root):
+                result["refused"].append({"file": ".", "reason": f"{tree.relative_to(root)} is not a plain directory"})
+        if result["refused"]:
+            result["clean"] = False
+            return result
 
     live_files = _list_files(live, root)
     mirror_files = _list_files(mirror, root)
+    if strict:
+        for rel in sorted(live_files | mirror_files):
+            why = pair_problem(live / rel, mirror / rel, live, mirror, root)
+            if why:
+                result["refused"].append({"file": rel, "reason": why})
+        bad = {r["file"] for r in result["refused"]}
+        live_files -= bad
+        mirror_files -= bad
 
     for rel in sorted(live_files - mirror_files):
         result["missing_from_mirror"].append(rel)
@@ -193,15 +316,20 @@ def audit_path(subpath: str, fix: bool = False, root: Path = BASE_DIR) -> dict:
 
     if fix:
         for rel in result["missing_from_mirror"] + result["content_drift"]:
-            dst = mirror / rel
+            src, dst = live / rel, mirror / rel
+            why = pair_problem(src, dst, live, mirror, root)
+            if why:
+                result["refused"].append({"file": rel, "reason": why})
+                continue
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(live / rel, dst)
+            shutil.copy2(src, dst)
             result["copied"].append(rel)
 
     result["clean"] = not (
         result["missing_from_mirror"]
         or result["content_drift"]
         or result["mirror_only"]
+        or result["refused"]
     )
     return result
 
@@ -263,8 +391,72 @@ def normalise_live_rel(path, root: Path = BASE_DIR):
     return "/".join(parts)
 
 
-def audit_files(files, fix: bool = False, root: Path = BASE_DIR) -> dict:
-    """Audit ONLY the named files against their twins. No package walk, no git.
+def data_mirror_pair(path, root: Path = BASE_DIR):
+    """``(source_rel, packaged_rel)`` for a path inside a ``DATA_MIRRORS`` tree, else None.
+
+    Either spelling -- ``args/ci_test_files/x`` or ``icdev/data/args/
+    ci_test_files/x`` -- names the SAME pair, as ``normalise_live_rel`` does for
+    ``tools/``.
+    """
+    p = Path(str(path).replace("\\", "/"))
+    if p.is_absolute():
+        try:
+            p = p.resolve().relative_to(root.resolve())
+        except ValueError:
+            return None
+    posix = p.as_posix()
+    if "__pycache__" in posix.split("/") or ".." in posix.split("/"):
+        return None
+    for src, dst in DATA_MIRRORS:
+        for side in (src, dst):
+            if posix.startswith(side + "/"):
+                rest = posix[len(side) + 1:]
+                return f"{src}/{rest}", f"{dst}/{rest}"
+    return None
+
+
+def _data_tree_of(key: str):
+    """``(source tree, packaged tree)`` holding a data-mirror key, else None."""
+    for src, dst in DATA_MIRRORS:
+        if key.startswith(src + "/"):
+            return src, dst
+    return None
+
+
+def _index_entries(root: Path, paths) -> dict:
+    """path -> (mode, blob sha) for each of ``paths`` as STAGED; absent = not in the index."""
+    proc = subprocess.run(
+        ["git", "ls-files", "-s", "-z", "--full-name", "--", *paths],
+        cwd=root, capture_output=True, text=True, timeout=60, check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"git ls-files failed: {proc.stderr.strip()}")
+    out = {}
+    wanted = set(paths)
+    for entry in proc.stdout.split("\0"):
+        if not entry:
+            continue
+        meta, _, path = entry.partition("\t")
+        if path in wanted:
+            mode, sha, _stage = meta.split()
+            out[path] = (mode, sha)
+    return out
+
+
+def twin_of(key: str) -> str:
+    """The packaged twin's repo-relative path for an ``audit_files`` key."""
+    pair = data_mirror_pair(key)
+    return pair[1] if pair else f"icdev/tools/{key}"
+
+
+def source_of(key: str) -> str:
+    """The source's repo-relative path for an ``audit_files`` key."""
+    pair = data_mirror_pair(key)
+    return pair[0] if pair else f"tools/{key}"
+
+
+def audit_files(files, fix: bool = False, root: Path = BASE_DIR, staged: bool = False) -> dict:
+    """Audit ONLY the named files against their twins. No package walk.
 
     Classification per file, and the buckets are never merged:
       content_drift        both sides exist and the bytes differ  <- the finding
@@ -277,6 +469,20 @@ def audit_files(files, fix: bool = False, root: Path = BASE_DIR) -> dict:
                            names resolve to ONE module object, so there is no
                            stale half and comparing bytes is meaningless
       outside              not under tools/ or icdev/tools/ (ignored, listed)
+      refused              {"file", "reason"}: a ``..`` component, a directory,
+                           a symlink, or a side resolving outside its declared
+                           tree. Never read, never copied, and NOT clean.
+
+    A ``tools/`` file is keyed ``<pkg>/<rel>``; a file in a ``DATA_MIRRORS``
+    tree is keyed by its SOURCE path (``args/ci_test_files/<rel>``), and
+    ``twin_of`` / ``source_of`` spell either kind back out.
+
+    ``staged`` (the pre-commit hook) compares a data-mirror pair as it is in
+    the INDEX -- blob ids from ``git ls-files -s``, a staged delete is absent,
+    a symlink (mode 120000) is refused -- because the index is what the commit
+    records; the working tree may hold unstaged edits either way. ``tools/``
+    pairs are still compared in the working tree, as they always were.
+    ``staged`` cannot be combined with ``fix``: a fix writes the working tree.
 
     ``audit_path`` / ``audit_all`` deliberately do NOT apply the shim rule: the
     recorded baseline (args/mirror_drift_baseline.yaml) was measured without it
@@ -284,6 +490,8 @@ def audit_files(files, fix: bool = False, root: Path = BASE_DIR) -> dict:
     historical meaning and the shim exclusion is applied by the consumers that
     gate (coherence_checker, and this per-file audit).
     """
+    if staged and fix:
+        raise ValueError("--staged compares the index and --fix writes the working tree; pick one")
     result = {
         "scope": "files",
         "files": [],
@@ -295,9 +503,57 @@ def audit_files(files, fix: bool = False, root: Path = BASE_DIR) -> dict:
         "shim": [],
         "outside": [],
         "copied": [],
+        "refused": [],
     }
+
+    def _refuse(name, reason):
+        result["refused"].append({"file": str(name), "reason": reason})
+
     seen = set()
     for raw in files:
+        if _has_dotdot(raw):
+            _refuse(raw, "a '..' component is never followed")
+            continue
+        raw_path = Path(str(raw).replace("\\", "/"))
+        on_disk = raw_path if raw_path.is_absolute() else root / raw_path
+        pair = data_mirror_pair(raw, root)
+        if on_disk.is_dir() or (pair is not None and (root / pair[1]).is_dir()):
+            _refuse(raw, "is a directory -- name the files, or use --all")
+            continue
+        if pair is not None:
+            key, (src_rel, dst_rel) = pair[0], pair
+            if key in seen:
+                continue
+            seen.add(key)
+            result["files"].append(key)
+            src_tree, dst_tree = (root / t for t in _data_tree_of(key))
+            live, mirror = root / src_rel, root / dst_rel
+            why = pair_problem(live, mirror, src_tree, dst_tree, root)
+            if why:
+                _refuse(key, why)
+                continue
+            if staged:
+                entries = _index_entries(root, [src_rel, dst_rel])
+                a, b = entries.get(src_rel), entries.get(dst_rel)
+                if any(e and e[0] == "120000" for e in (a, b)):
+                    _refuse(key, "staged as a symlink")
+                elif a and not b:
+                    result["missing_from_mirror"].append(key)
+                elif b and not a:
+                    result["mirror_only"].append(key)
+                elif a and b:
+                    (result["in_parity"] if a[1] == b[1] else result["content_drift"]).append(key)
+                continue
+            if live.is_file() and not mirror.is_file():
+                result["missing_from_mirror"].append(key)
+            elif mirror.is_file() and not live.is_file():
+                result["mirror_only"].append(key)
+            elif live.is_file() and mirror.is_file():
+                if _sha256(live) != _sha256(mirror):
+                    result["content_drift"].append(key)
+                else:
+                    result["in_parity"].append(key)
+            continue
         rel = normalise_live_rel(raw, root)
         if rel is None:
             result["outside"].append(str(raw))
@@ -326,11 +582,23 @@ def audit_files(files, fix: bool = False, root: Path = BASE_DIR) -> dict:
         # neither side exists (a staged deletion): nothing to compare
     if fix:
         for rel in result["missing_from_mirror"] + result["content_drift"]:
-            dst = root / "icdev" / "tools" / rel
+            src, dst = root / source_of(rel), root / twin_of(rel)
+            trees = _data_tree_of(rel)
+            src_tree, dst_tree = (
+                (root / trees[0], root / trees[1]) if trees
+                else (root / "tools", root / "icdev" / "tools")
+            )
+            why = pair_problem(src, dst, src_tree, dst_tree, root)
+            if why:
+                _refuse(rel, why)
+                continue
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(root / "tools" / rel, dst)
+            shutil.copy2(src, dst)
             result["copied"].append(rel)
-    result["clean"] = not (result["content_drift"] or result["missing_from_mirror"] or result["mirror_only"])
+    result["clean"] = not (
+        result["content_drift"] or result["missing_from_mirror"] or result["mirror_only"]
+        or result["refused"]
+    )
     return result
 
 
@@ -345,16 +613,24 @@ def main() -> int:
     parser.add_argument(
         "--all",
         action="store_true",
-        help="Audit every tools/<pkg> that has an icdev/tools/<pkg> twin (auto-discovered).",
+        help="Audit every tools/<pkg> that has an icdev/tools/<pkg> twin (auto-discovered), "
+        "plus every DATA_MIRRORS tree (args/ci_test_files <-> icdev/data/args/ci_test_files).",
     )
     parser.add_argument(
         "--files",
-        help="Comma-separated files (tools/... or icdev/tools/...) audited against their twins only.",
+        help="Comma-separated files (tools/..., icdev/tools/..., or a DATA_MIRRORS path such as "
+        "args/ci_test_files/core.txt) audited against their twins only.",
     )
     parser.add_argument(
         "--root",
         default=None,
         help="Checkout to audit (default: the checkout this tool lives in).",
+    )
+    parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="With --files: compare a DATA_MIRRORS pair as staged in the index (the pre-commit hook). "
+        "tools/ pairs are still compared in the working tree.",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON report.")
     parser.add_argument(
@@ -373,14 +649,22 @@ def main() -> int:
     if not args.paths and not args.all and not args.files:
         parser.error("one of --paths, --files or --all is required")
 
+    if args.staged and not args.files:
+        parser.error("--staged applies to --files only")
+    if args.staged and args.fix:
+        parser.error("--staged compares the index and --fix writes the working tree; pick one")
+
     if args.files:
         report = audit_files(
-            [f.strip() for f in args.files.split(",") if f.strip()], fix=args.fix, root=root
+            [f.strip() for f in args.files.split(",") if f.strip()], fix=args.fix, root=root,
+            staged=args.staged,
         )
         if args.json:
             print(json.dumps(report, indent=2))
         else:
             status = "CLEAN" if report["clean"] else "DRIFT"
+            if report["refused"]:
+                status = "REFUSED"
             print(f"[{status}] {len(report['files'])} file(s)  ({len(report['in_parity'])} in parity)")
             for rel in report["content_drift"]:
                 print(f"    content-drift:       {rel}" + ("  -> copied" if rel in report["copied"] else ""))
@@ -392,10 +676,13 @@ def main() -> int:
                 print(f"    not-mirrored (package has no twin): {rel}")
             for rel in report["shim"]:
                 print(f"    shim (one module object, never drift): {rel}")
+            for item in report["refused"]:
+                print(f"    REFUSED: {item['file']}: {item['reason']}")
         if args.gate:
             remaining = (
                 (set(report["content_drift"]) | set(report["missing_from_mirror"])) - set(report["copied"])
                 or report["mirror_only"]
+                or report["refused"]
             )
             return 1 if remaining else 0
         return 0
@@ -407,8 +694,9 @@ def main() -> int:
             print(json.dumps(summary, indent=2))
         else:
             print(
-                f"audited {summary['packages_audited']} mirrored package(s): "
-                f"{summary['packages_with_drift']} with drift — "
+                f"audited {summary['packages_audited']} mirrored package(s) and "
+                f"{summary['data_trees_audited']} packaged data tree(s): "
+                f"{summary['packages_with_drift'] + summary['data_trees_with_drift']} with drift — "
                 f"{summary['content_drift']} content-drift, "
                 f"{summary['missing_from_mirror']} missing-from-mirror, "
                 f"{summary['mirror_only']} mirror-only"
@@ -419,6 +707,10 @@ def main() -> int:
                     print(f"      content-drift:       {rel}")
                 for rel in r["missing_from_mirror"]:
                     print(f"      missing-from-mirror: {rel}")
+                for rel in r["mirror_only"]:
+                    print(f"      mirror-only (INVESTIGATE, not deleted): {rel}")
+                for item in r["refused"]:
+                    print(f"      REFUSED: {item['file']}: {item['reason']}")
         if args.gate and not summary["clean"]:
             return 1
         return 0
@@ -438,12 +730,15 @@ def main() -> int:
                 print(f"    content-drift:       {rel}" + ("  -> copied" if rel in r["copied"] else ""))
             for rel in r["mirror_only"]:
                 print(f"    mirror-only (INVESTIGATE, not deleted): {rel}")
+            for item in r["refused"]:
+                print(f"    REFUSED: {item['file']}: {item['reason']}")
 
     if args.gate:
         # Re-evaluate after fix: copied items no longer count as drift.
         remaining = any(
             (set(r["missing_from_mirror"]) | set(r["content_drift"])) - set(r["copied"])
             or r["mirror_only"]
+            or r["refused"]
             for r in reports
         )
         return 1 if remaining else 0

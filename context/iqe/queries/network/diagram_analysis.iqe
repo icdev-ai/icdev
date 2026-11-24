@@ -1,12 +1,7 @@
-# Network Diagram Analysis seed queries for IQE
-# Each line is a natural-language prompt the widget can translate to IQE.
-show all diagram uploads
-show diagram analyses with status done
-show diagram findings with severity critical
-show diagram findings for IL4 compliance gaps
-show diagram analyses with topology mode hybrid
-show diagram findings from the last analysis
-show diagram uploads with format pdf
-show high severity security findings from diagram analysis
-show multi-cloud diagram analyses
-show diagram findings tab security ordered by severity
+# Network Diagram Analysis seed queries for IQE. Collections: network.diagram_uploads,
+# network.diagram_analyses, network.diagram_findings (tools/iqe/adapters/ndc.py).
+# The parser reads exactly ONE query per file and /iqe/run runs one, so this file
+# holds the first and diagram_analysis_02..10_*.iqe hold the others.
+# Prompt: show all diagram uploads
+foreach u in network.diagram_uploads
+select u.id, u.filename, u.format, u.page_count, u.topology_id, u.uploaded_at

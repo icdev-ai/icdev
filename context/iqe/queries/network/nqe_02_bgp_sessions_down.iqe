@@ -2,4 +2,4 @@
 # Collection: nqe.bgp_sessions
 foreach s in network.bgp_sessions
 where s.state != "Established"
-select { s.local_ip, s.peer_ip, s.state, s.peer_as, s.updown_time }
+select s.local_ip, s.peer_ip, s.state, s.peer_as, s.updown_time

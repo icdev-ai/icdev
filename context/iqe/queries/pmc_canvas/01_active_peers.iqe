@@ -2,7 +2,13 @@
 # Canvas: pmc | Collection: pmc.peers
 # Description: List all active BGP peers with traffic ratio and prefix counts
 
-show active peers
-show all active peering sessions
-list active bgp peers with traffic ratio
-which peers are active
+# Prompt: show active peers
+# Prompt: show all active peering sessions
+# Prompt: list active bgp peers with traffic ratio
+# Prompt: which peers are active
+# The lines above are paraphrases of ONE question for the NL widget. The IQE below
+# is what the pmc adapter answers it with (tools/iqe/adapters/pmc.py).
+foreach p in pmc.peers
+where p.status == "active"
+select p.id, p.asn, p.org_name, p.peer_type, p.policy, p.status, p.traffic_ratio, p.ipv4_prefix_count, p.ipv6_prefix_count, p.rir
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by p.org_name.

@@ -152,10 +152,10 @@ The system SHALL maintain a complete provenance chain for every asset version in
 |------|---------|
 | `tools/marketplace/catalog_manager.py` | CRUD for assets and versions |
 | `tools/marketplace/asset_scanner.py` | 7-gate security scanning pipeline |
-| `tools/marketplace/publish_pipeline.py` | Orchestrate scan, validate, sign, publish |
+| `tools/marketplace/publish_pipeline.py` | RETIRED (icx-ent-04): refuses; replaced by `tools/store_publisher` |
 | `tools/marketplace/install_manager.py` | Install/update/uninstall with dependency resolution |
 | `tools/marketplace/search_engine.py` | Hybrid BM25 + semantic search (Ollama air-gapped) |
-| `tools/marketplace/review_queue.py` | Human review workflow management |
+| `tools/marketplace/review_queue.py` | RETIRED (icx-ent-04): refuses; ICDEV[OS] reviews and certifies store packages |
 | `tools/marketplace/provenance_tracker.py` | Supply chain provenance tracking |
 | `tools/marketplace/compatibility_checker.py` | IL + version + dependency compatibility |
 | `tools/marketplace/federation_sync.py` | Tenant-local to central registry sync |
