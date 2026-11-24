@@ -9277,6 +9277,32 @@ RESOURCE_REGISTRY = {
             "required": ["path_id", "version"],
         },
     },
+    # -- data discovery export to ICDEV[OS] (osx-cap-02) -----------------------
+    "data_discovery_export": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_data_discovery_export",
+        "description": "Read the data discovery export to ICDEV[OS] (/data-discovery/): the sources declared in args/data_discovery_export.yaml and each one's newest prepared and published icos-discovery/v1 bundle (digest, who prepared it, who published it). With source: that source's bundle as it would be prepared now from its newest stored Data Design Canvas profile (or profile) -- tables and columns with types, null and distinct counts, PII flags by pattern NAME (never a value), rule-based anomalies with fixed descriptions, the design's quality rules and their latest results (not run is never a pass), and the catalogue entries that cover it; metadata only, never a datum. published=true returns the newest published bundle as ICDEV[OS] imports it. Read-only: prepares and publishes nothing.",
+        "input_schema": {"type": "object", "properties": {
+            "source": {"type": "string", "description": "A declared source key"},
+            "profile": {"type": "string", "description": "A stored Explore profile id (default: the newest)"},
+            "published": {"type": "boolean", "description": "Return the newest published bundle of source"}}},
+    },
+    "data_discovery_prepare": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_data_discovery_prepare",
+        "description": "Prepare a source's icos-discovery/v1 bundle as a DRAFT, recorded as the agent's (agent:<name>): it is built from the source's stored Data Design Canvas profile, quality rules and catalogue entries, and recorded at its digest. It decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or refuses it on /data-discovery/ (decl-wft-data-discovery-publish), a declared step an agent cannot take. Give source and optionally profile and as_of (YYYY-MM-DD).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The preparing agent's name (recorded as agent:<name>)"},
+                "source": {"type": "string"}, "profile": {"type": "string"}, "as_of": {"type": "string"},
+                "note": {"type": "string"},
+            },
+            "required": ["source"],
+        },
+    },
     # -- AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) ---
     "vulnresearch_status": {
         "category": "security",
@@ -10039,6 +10065,10 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     "store_publisher_status":                   True,
     "coe_golden_paths":                         True,
     "coe_golden_path_propose":                  False,
+    # osx-cap-02: the data discovery export. The read builds and reads; prepare records a draft
+    # bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
+    "data_discovery_export":                    True,
+    "data_discovery_prepare":                   False,
 })
 
 

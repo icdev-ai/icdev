@@ -421,6 +421,7 @@ tables:
   daemon_checkpoints: it
   dat_ingestion_log: it
   data_designs: it
+  data_discovery_export_events: it
   data_edges: it
   data_nodes: it
   data_residency_zones: it

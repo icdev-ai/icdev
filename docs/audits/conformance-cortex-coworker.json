@@ -2823,6 +2823,138 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "data_discovery_export read-only, tool_authorization tier 'read'",
+            "data_discovery_prepare mutating, approval tier 'unknown' (default_tier) halts"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-DDX-01 -> ddx.bundle -> tests/test_osx_cap_02_discovery_export.py::test_the_schema_is_icos_published_copy_pinned_by_file_and_body, tests/test_osx_cap_02_discovery_export.py::test_the_sources_are_declared_and_another_config_must_live_under_tests, tests/test_osx_cap_02_discovery_export.py::test_the_export_is_deterministic_given_its_inputs",
+            "PM-DDX-02 -> ddx.reuse, ddx.bundle -> tests/test_osx_cap_02_discovery_export.py::test_the_bundle_carries_metadata_only_and_meets_the_contract, tests/test_osx_cap_02_discovery_export.py::test_the_outlier_text_and_a_model_never_reach_the_bundle",
+            "PM-DDX-03 -> ddx.publish -> tests/test_osx_cap_02_discovery_export.py::test_publishing_is_a_persons_step_never_the_preparers, tests/test_osx_cap_02_discovery_export.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_osx_cap_02_ambient.py::test_a_discovery_bundle_prepared_and_published_on_the_platform_database",
+            "PM-DDX-04 -> if.ddx.console, ddx.twin, if.ddx.mcp -> tests/test_osx_cap_02_discovery_export.py::test_the_routes_and_the_page, tests/test_osx_cap_02_discovery_export.py::test_the_twin_observes_with_threads_and_replays, tests/test_osx_cap_02_discovery_export.py::test_the_twin_says_unverified_when_nothing_is_declared_or_readable, tests/test_osx_cap_02_discovery_export.py::test_the_mcp_tools_read_and_only_prepare"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "data_discovery.dd_api_prepare called from tools/dashboard/templates/data_canvas/discovery_export.html",
+            "data_discovery.dd_api_publish called from tools/dashboard/templates/data_canvas/discovery_export.html",
+            "nav links /data-discovery",
+            "page /data-discovery/ renders data_canvas/discovery_export.html",
+            "registry entry 'data_discovery'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "data_discovery.dd_export_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/data-discovery/",
+              "write": false
+            },
+            {
+              "by_id": [],
+              "endpoint": "data_discovery.dd_api_sources",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/data-discovery/api/sources",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/data_canvas/discovery_export.html"
+              ],
+              "endpoint": "data_discovery.dd_api_source",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/data-discovery/api/sources/<source>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/data_canvas/discovery_export.html"
+              ],
+              "endpoint": "data_discovery.dd_api_bundle",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/data-discovery/api/sources/<source>/bundle",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/data_canvas/discovery_export.html"
+              ],
+              "endpoint": "data_discovery.dd_api_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/data-discovery/api/sources/<source>/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/data_canvas/discovery_export.html"
+              ],
+              "endpoint": "data_discovery.dd_api_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/data-discovery/api/sources/<source>/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/data_canvas/discovery_export.html"
+              ],
+              "endpoint": "data_discovery.dd_api_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/data-discovery/api/twin",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/data_discovery.py::DataDiscoveryTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "data_discovery.dd_api_publish (declared (tools/data_canvas/discovery_blueprint.py: \"A person, never the preparer, publishes a source's prepared discovery bundle to ICDEV[OS], or refuses it.\")) -> template decl-wft-data-discovery-publish (args/workflow_hitl_templates/data-discovery-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "data_discovery",
+      "key": "data.discovery_export",
+      "label": "Data discovery export: a source's profile, PII, anomalies, quality and catalogue for ICDEV[OS]"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
             "evidence_collectors_prepare mutating, approval tier 'unknown' (default_tier) halts",
             "evidence_collectors_status read-only, tool_authorization tier 'read'"
           ],
@@ -4273,6 +4405,7 @@
       "tools/dashboard/templates/coworker/roles.html",
       "tools/dashboard/templates/coworker/trust.html",
       "tools/dashboard/templates/coworkers/index.html",
+      "tools/dashboard/templates/data_canvas/discovery_export.html",
       "tools/dashboard/templates/document_intelligence/explorer.html",
       "tools/dashboard/templates/evidence_collectors/index.html",
       "tools/dashboard/templates/factory_builds/index.html",
@@ -4308,8 +4441,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 32,
-    "features_conforming": 32,
+    "features": 33,
+    "features_conforming": 33,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -4465,6 +4598,13 @@
         "twin": 0,
         "workflow": 0
       },
+      "data.discovery_export": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
       "evidence_collectors.objective_evidence": {
         "ai_native": 0,
         "architecture": 0,
@@ -4544,11 +4684,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 210,
-    "routes_by_id": 176,
-    "routes_observed": 156,
-    "writes_by_id": 88,
-    "writes_observed": 88
+    "routes": 217,
+    "routes_by_id": 181,
+    "routes_observed": 161,
+    "writes_by_id": 90,
+    "writes_observed": 90
   },
   "tool": "feature_audit",
   "version": 1

@@ -1,0 +1,307 @@
+<!-- CUI // SP-CTI — Data discovery export to ICDEV[OS] (osx-cap-02) -->
+{% extends "base.html" %}
+{% block title %}Data discovery export — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .ddx-wrap { padding: 16px 24px; max-width: 1280px; color: var(--text-primary); }
+  .ddx-wrap h1 { font-size: 22px; margin: 0 0 4px; color: var(--text-primary); }
+  .ddx-wrap h2 { font-size: 16px; margin: 0 0 8px; color: var(--text-primary); }
+  .ddx-wrap h3 { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+  .ddx-help { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .ddx-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+  .ddx-card table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ddx-card th, .ddx-card td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; color: var(--text-primary); }
+  .ddx-card th { color: var(--text-secondary); font-weight: 600; }
+  .ddx-tag { display: inline-block; padding: 1px 7px; font-size: 12px; border-radius: 3px; border: 1px solid var(--border-light); color: var(--text-primary); background: var(--bg-card-hover); }
+  .ddx-tag.ok { background: var(--status-green-bg); border-color: var(--status-green); }
+  .ddx-tag.no { background: var(--status-red-bg); border-color: var(--status-red); }
+  .ddx-tag.wait { background: var(--status-yellow-bg); border-color: var(--status-yellow); }
+  .ddx-msg { font-size: 13px; color: var(--text-primary); min-height: 1.2em; }
+  .ddx-btn { padding: 4px 12px; border-radius: 5px; border: 1px solid var(--accent-blue); background: var(--bg-card-hover); color: var(--text-primary); cursor: pointer; font-size: 13px; }
+  .ddx-btn.deny { border-color: var(--status-red); }
+  .ddx-btn[aria-pressed="true"] { border-width: 2px; font-weight: 600; }
+  .ddx-link { background: none; border: none; padding: 0; text-decoration: underline; cursor: pointer; font: inherit; }
+  .ddx-wrap label { display: block; font-size: 12px; color: var(--text-secondary); margin: 6px 0 2px; }
+  .ddx-wrap input, .ddx-wrap select { background: var(--bg-input); color: var(--text-primary); border: 1px solid var(--border-light); border-radius: 5px; padding: 5px 8px; font-size: 13px; width: 100%; }
+  .ddx-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .ddx-row > div { min-width: 200px; }
+  .ddx-wrap code { color: var(--text-primary); word-break: break-all; }
+  /* Link colour per theme, at AA contrast on the card and the page in each (axe, e2e). */
+  .ddx-wrap { --ddx-link: #8cc4ff; }
+  html[data-theme="light"] .ddx-wrap { --ddx-link: #0d4f9e; }
+  .ddx-wrap a, .ddx-wrap .ddx-link { color: var(--ddx-link); text-decoration: underline; }
+</style>
+
+<div class="ddx-wrap">
+  <nav aria-label="Breadcrumb" class="ddx-help"><a href="/data/">Data Design Canvas</a> /
+    <a href="/data/explore">Explore</a> / Discovery export</nav>
+  <h1>Data discovery export to ICDEV[OS]</h1>
+  <p class="ddx-help" id="ddx-help">
+    What the Data Design Canvas found in a source goes to ICDEV[OS] as one <code>{{ schema }}</code> bundle per declared
+    source (<code>{{ view.get('config', {}).get('path', 'args/data_discovery_export.yaml') }}</code>), against the
+    ICDEV[OS] contract {{ contract }}. Profile the source on <a href="/data/explore">Explore</a> first. The bundle
+    carries <b>metadata only, never a datum</b>: each table's row count and each column's type, null and distinct
+    counts; the PII columns the scanner flagged, by the pattern <b>names</b> it matched, never a value; the
+    <b>rule-based</b> anomalies with a fixed description (a model's findings are never exported); the design's
+    quality rules and their latest results (a rule that never ran is <b>not run</b>, never a pass); and the catalogue
+    entries that cover the source. Anyone prepares it, and a person who did not prepare it publishes it
+    (<code>{{ template }}</code>), bound to its digest. ICDEV[OS] marks it by its own config, never by what it claims.
+  </p>
+  {% if error %}<p class="ddx-msg">The discovery export ledger could not be read: {{ error }}</p>{% endif %}
+
+  <div class="ddx-card">
+    <h2>Source</h2>
+    <div class="ddx-row" id="ddx-sources" role="group" aria-label="Source">
+      {% for s in view.get('sources') or [] %}
+      <button type="button" class="ddx-btn" data-source="{{ s.key }}" aria-pressed="false">{{ s.name }}</button>
+      {% else %}
+      <p class="ddx-help">No source is declared for export.</p>
+      {% endfor %}
+    </div>
+    <div class="ddx-row">
+      <div><label for="ddx-profile">Profile (newest when blank)</label><select id="ddx-profile"><option value="">newest</option></select></div>
+      <div><label for="ddx-asof">As of (YYYY-MM-DD, blank for the profile's date)</label><input id="ddx-asof" autocomplete="off"></div>
+      <div><button type="button" class="ddx-btn" id="ddx-reload">Build again</button></div>
+    </div>
+    <div class="ddx-msg" id="ddx-summary" aria-live="polite">Pick a source to see its bundle.</div>
+  </div>
+
+  <div class="ddx-card">
+    <h2>Tables and columns</h2>
+    <table id="ddx-tables">
+      <thead><tr><th scope="col">Table</th><th scope="col">Column</th><th scope="col">Type</th><th scope="col">Nulls</th><th scope="col">Distinct</th></tr></thead>
+      <tbody id="ddx-tables-body"><tr><td colspan="5">Not built yet.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="ddx-card">
+    <h2>PII flags and anomalies</h2>
+    <table id="ddx-pii">
+      <thead><tr><th scope="col">Column</th><th scope="col">PII</th><th scope="col">Severity</th><th scope="col">Patterns</th><th scope="col">Why</th></tr></thead>
+      <tbody id="ddx-pii-body"><tr><td colspan="5">Not built yet.</td></tr></tbody>
+    </table>
+    <h3>Rule-based anomalies</h3>
+    <table id="ddx-anomalies">
+      <thead><tr><th scope="col">Column</th><th scope="col">Type</th><th scope="col">Severity</th><th scope="col">Description</th></tr></thead>
+      <tbody id="ddx-anomalies-body"><tr><td colspan="4">Not built yet.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="ddx-card">
+    <h2>Quality and catalogue</h2>
+    <table id="ddx-quality">
+      <thead><tr><th scope="col">Rule</th><th scope="col">Where</th><th scope="col">Kind</th><th scope="col">Result</th><th scope="col">Ran</th></tr></thead>
+      <tbody id="ddx-quality-body"><tr><td colspan="5">Not built yet.</td></tr></tbody>
+    </table>
+    <div id="ddx-catalog" class="ddx-help"></div>
+  </div>
+
+  <div class="ddx-card" id="ddx-bundle">
+    <h2>Discovery bundle</h2>
+    <p class="ddx-help">Preparing records the source's bundle, as built now, at its digest. It decides nothing. A person
+      who did not prepare it then publishes it to ICDEV[OS] or refuses it, with a reason. Only a published bundle
+      leaves.</p>
+    <div id="ddx-ledger" class="ddx-help"></div>
+    <p><button type="button" class="ddx-btn" id="ddx-prepare">Prepare bundle</button></p>
+    <div class="ddx-msg" id="ddx-prepare-msg" role="status"></div>
+    <div id="ddx-publish"></div>
+    <div class="ddx-msg" id="ddx-publish-msg" role="status"></div>
+    <div id="ddx-published" class="ddx-help"></div>
+  </div>
+
+  <div class="ddx-card" id="ddx-twin">
+    <h2>Twin</h2>
+    <p class="ddx-help">The data discovery twin observes the export ledger: a source with no published bundle is
+      unverified, a published bundle carrying a failing quality rule or one that never ran is a finding, and so is one
+      waiting too long for a person. Each finding carries its thread to the ledger row it rests on. Recorded
+      observations and their replay are on the <a href="/twin-observatory/governance">governance twins</a> page.</p>
+    <p><button type="button" class="ddx-btn" id="ddx-observe">Observe now</button></p>
+    <div id="ddx-twin-body" class="ddx-help"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var sources = {{ (view.get('sources') or [])|tojson }};
+  var current = null;   // the source key
+  var view = null;      // the source's view: {profiles, bundle, ledger}
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+  /* Every route is named by its endpoint id where it is called (routes.gen.js). */
+  function getJson(sent) {
+    return sent.then(function (r) { return r.json().then(function (j) { return {ok: r.ok, j: j}; }); });
+  }
+  function postInit(body) {
+    return {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)};
+  }
+  function short(d) { return d ? String(d).slice(0, 16) : ''; }
+  function tag(cls, text, st) { return '<span class="ddx-tag ' + cls + '" data-status="' + esc(st || text) + '">' + esc(text) + '</span>'; }
+  function result(q) {
+    if (q.passed === true) return tag('ok', 'pass', 'pass');
+    if (q.passed === false) return tag('no', 'fail', 'fail');
+    return tag('wait', 'not run', 'unrun');
+  }
+
+  function render(v) {
+    view = v;
+    var sel = document.getElementById('ddx-profile');
+    var keep = sel.value;
+    sel.innerHTML = '<option value="">newest</option>' + (v.profiles || []).map(function (p) {
+      return '<option value="' + esc(p.id) + '">' + esc(p.id) + ' (' + esc(p.table_count) + ' tables, ' + esc(p.created_at) + ')</option>';
+    }).join('');
+    sel.value = keep;
+    var b = v.bundle;
+    if (!b) {
+      document.getElementById('ddx-summary').innerHTML = '<span id="ddx-unbuilt">Not built: ' + esc((v.unbuilt || {}).error) + '</span>';
+      ['ddx-tables-body', 'ddx-pii-body', 'ddx-anomalies-body', 'ddx-quality-body'].forEach(function (id) {
+        document.getElementById(id).innerHTML = '<tr><td colspan="5">No profile.</td></tr>';
+      });
+      renderLedger(v.ledger);
+      return;
+    }
+    var s = b.summary;
+    document.getElementById('ddx-summary').innerHTML =
+      '<b>' + esc(b.source.name) + '</b> (' + esc(b.source.kind) + ') from profile <code id="ddx-profile-id">' + esc(b.source.profile_id) + '</code>' +
+      ' as of <b>' + esc(b.as_of) + '</b> &middot; bundle digest <code id="ddx-digest">' + esc(b.content_digest) + '</code>' +
+      ' &middot; ' + esc(s.tables) + ' tables, ' + esc(s.columns) + ' columns, ' + esc(s.pii) + ' PII flags, ' + esc(s.anomalies) +
+      ' anomalies, quality ' + esc(s.quality_passed) + ' pass / ' + esc(s.quality_failed) + ' fail / ' + esc(s.quality_unrun) + ' not run';
+    document.getElementById('ddx-tables-body').innerHTML = (b.tables || []).map(function (t) {
+      return (t.columns || []).map(function (c, i) {
+        return '<tr data-col="' + esc(t.name + '.' + c.name) + '"><td>' + (i === 0 ? '<b>' + esc(t.name) + '</b> (' + esc(t.row_count) + ' rows)' : '') + '</td>' +
+          '<td>' + esc(c.name) + '</td><td>' + esc(c.physical_type || '-') + ' &rarr; ' + esc(c.inferred_type) + '</td>' +
+          '<td>' + esc(c.null_count) + ' (' + esc(c.null_pct) + '%)</td><td>' + esc(c.distinct_count) + '</td></tr>';
+      }).join('');
+    }).join('') || '<tr><td colspan="5">The profile has no table.</td></tr>';
+    document.getElementById('ddx-pii-body').innerHTML = (b.pii || []).map(function (p) {
+      return '<tr data-pii="' + esc(p.table + '.' + p.column) + '"><td>' + esc(p.table + '.' + p.column) + '</td><td>' + esc(p.pii_type) + '</td>' +
+        '<td>' + esc(p.severity) + '</td><td>' + esc((p.patterns || []).join(', ') || 'by name') + '</td><td>' + esc(p.reason) + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">No column flagged.</td></tr>';
+    document.getElementById('ddx-anomalies-body').innerHTML = (b.anomalies || []).map(function (a) {
+      return '<tr data-anomaly="' + esc(a.table + '.' + a.column + ':' + a.type) + '"><td>' + esc(a.table + '.' + a.column) + '</td><td>' + esc(a.type) +
+        '</td><td>' + esc(a.severity) + '</td><td>' + esc(a.description) + '</td></tr>';
+    }).join('') || '<tr><td colspan="4">No anomaly.</td></tr>';
+    document.getElementById('ddx-quality-body').innerHTML = (b.quality || []).map(function (q) {
+      return '<tr data-rule="' + esc(q.rule_id) + '" data-kind="' + esc(q.kind) + '"><td><code>' + esc(q.rule_id) + '</code></td><td>' + esc(q.table) + (q.column ? '.' + esc(q.column) : '') +
+        '</td><td>' + esc(q.kind) + '</td><td>' + result(q) + (q.actual != null ? ' (' + esc(q.actual) + ' against ' + esc(q.threshold) + ')' : '') +
+        '</td><td>' + esc(q.ran_at || 'never') + '</td></tr>';
+    }).join('') || '<tr><td colspan="5">The design has no quality rule.</td></tr>';
+    document.getElementById('ddx-catalog').innerHTML = 'Catalogue entries that cover this source: ' + ((b.catalog || []).map(function (c) {
+      return '<b>' + esc(c.name) + '</b> (' + esc(c.product_id) + (c.domain_name ? ', ' + esc(c.domain_name) : '') + ')';
+    }).join(', ') || 'none') + '.';
+    renderLedger(v.ledger);
+  }
+
+  function renderLedger(l) {
+    var p = l.prepared, pub = l.published;
+    document.getElementById('ddx-ledger').innerHTML =
+      (p ? 'Newest prepared: <code id="ddx-prepared-digest">' + esc(short(p.content_digest)) + '</code> by ' + esc(p.actor) + ' at ' + esc(p.created_at) +
+        (p.decided ? ' (' + esc(p.decided.event) + ' by ' + esc(p.decided.actor) + ')' : ' <span class="ddx-tag wait">waiting for a person</span>') : 'No bundle of this source has been prepared.') +
+      '<br>' + (pub ? 'Newest published: <code>' + esc(short(pub.content_digest)) + '</code> by ' + esc(pub.actor) + ' (step <code>' + esc(pub.step_id) + '</code>)' : 'No bundle of this source has been published: ICDEV[OS] has nothing to import.') +
+      (l.chain && l.chain.intact === false ? '<br><b>The ledger does not verify:</b> ' + esc(l.chain.problems[0].problem) : '');
+    var box = document.getElementById('ddx-publish');
+    if (p && !p.decided) {
+      var who = Object.keys(l.builders || {});
+      box.innerHTML = '<h3>Your step</h3><p class="ddx-help">May not publish it: <b>' + esc(who.join(', ')) + '</b>. A reason is required. Bound to digest <code>' +
+        esc(short(p.content_digest)) + '</code>.</p><label for="ddx-reason">Reason</label><input id="ddx-reason" autocomplete="off">' +
+        '<p><button type="button" class="ddx-btn" data-publish="publish">Publish to ICDEV[OS]</button> <button type="button" class="ddx-btn deny" data-publish="refuse">Refuse</button></p>';
+    } else {
+      box.innerHTML = '';
+    }
+    if (pub) {
+      document.getElementById('ddx-published').innerHTML = '<p id="ddx-published-bundle">Published bundle, digest <code id="ddx-published-digest">' +
+        esc(pub.content_digest) + '</code>, published by ' + esc(pub.actor) + ' (prepared by ' + esc(pub.prepared_by) + '). <a id="ddx-bundle-link" href="' +
+        esc(icdevRoute('data_discovery.dd_api_bundle', {source: current})) + '?download=1" download>Download the bundle as ICDEV[OS] imports it</a>.</p>';
+    } else {
+      document.getElementById('ddx-published').innerHTML = '';
+    }
+  }
+
+  function query() {
+    var q = {};
+    var prof = document.getElementById('ddx-profile').value;
+    var asOf = (document.getElementById('ddx-asof').value || '').trim();
+    if (prof) q.profile = prof;
+    if (asOf) q.as_of = asOf;
+    return q;
+  }
+
+  function load(key) {
+    if (key !== current) document.getElementById('ddx-profile').value = '';
+    current = key;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-source]'), function (el) {
+      el.setAttribute('aria-pressed', el.getAttribute('data-source') === key ? 'true' : 'false');
+    });
+    document.getElementById('ddx-summary').textContent = 'Building ' + key + '...';
+    return getJson(icdevFetch('data_discovery.dd_api_source', {source: key}, {}, query())).then(function (res) {
+      if (!res.ok) { document.getElementById('ddx-summary').textContent = 'Not built (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      render(res.j);
+    });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (!t.getAttribute) return;
+    var s = t.getAttribute('data-source');
+    if (s) { document.getElementById('ddx-prepare-msg').textContent = ''; document.getElementById('ddx-publish-msg').textContent = ''; load(s); return; }
+    var dec = t.getAttribute('data-publish');
+    if (!dec || !view) return;
+    var msg = document.getElementById('ddx-publish-msg');
+    var reason = ((document.getElementById('ddx-reason') || {}).value || '').trim();
+    if (!reason) { msg.textContent = 'A reason is required.'; return; }
+    var p = view.ledger.prepared;
+    getJson(icdevFetch('data_discovery.dd_api_publish', {source: current}, postInit({decision: dec, reason: reason, digest: p.content_digest}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Refused (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      var o = res.j;
+      msg.textContent = 'Recorded: ' + o.source + ' bundle ' + o.event + ' by ' + o.decided_by + ' (step ' + o.step.step_id + ').';
+      load(current);
+    });
+  });
+
+  document.getElementById('ddx-prepare').addEventListener('click', function () {
+    var msg = document.getElementById('ddx-prepare-msg');
+    if (!current) { msg.textContent = 'Pick a source first.'; return; }
+    var q = query();
+    getJson(icdevFetch('data_discovery.dd_api_prepare', {source: current}, postInit({profile: q.profile || '', as_of: q.as_of || '', note: 'prepared on /data-discovery/'}))).then(function (res) {
+      if (!res.ok) { msg.textContent = 'Not prepared (' + (res.j.code || 'error') + '): ' + (res.j.error || 'refused'); return; }
+      msg.textContent = 'Prepared ' + res.j.source + ' bundle ' + res.j.content_digest + ' as ' + res.j.prepared_by + '. A person who did not prepare it publishes it.';
+      load(current);
+    });
+  });
+  document.getElementById('ddx-reload').addEventListener('click', function () { if (current) load(current); });
+  document.getElementById('ddx-profile').addEventListener('change', function () { if (current) load(current); });
+
+  document.getElementById('ddx-observe').addEventListener('click', function () {
+    var box = document.getElementById('ddx-twin-body');
+    getJson(icdevFetch('data_discovery.dd_api_twin')).then(function (res) {
+      if (!res.ok) { box.textContent = res.j.error || 'the twin could not observe'; return; }
+      var env = res.j;
+      var vs = env.violations || [];
+      box.innerHTML = '<p id="ddx-twin-verdict">Verdict ' + tag('', env.verdict, env.verdict) + ' coverage ' + esc(env.coverage_score) + ', ' + esc(vs.length) + ' finding(s).</p>' +
+        '<ul>' + vs.map(function (f) {
+          return '<li data-rule="' + esc(f.rule_id) + '">' + esc(f.severity) + ': ' + esc(f.title || f.message) +
+            ' &middot; thread <button type="button" class="ddx-link" data-thread="' + esc(f.thread_id) + '">' + esc(f.thread_id) + '</button></li>';
+        }).join('') + '</ul><div id="ddx-thread"></div>';
+    });
+  });
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    var th = t.getAttribute && t.getAttribute('data-thread');
+    if (!th) return;
+    getJson(icdevFetch('data_discovery.dd_api_twin', {}, {}, {thread: th})).then(function (res) {
+      var rec = res.j.record || {};
+      document.getElementById('ddx-thread').innerHTML = res.j.resolved
+        ? '<p id="ddx-thread-resolved">Thread <code>' + esc(th) + '</code> rests on ' + esc(res.j.source) + ' row: ' + esc(rec.source || '') + ' ' + esc(rec.event || '') +
+          ' by ' + esc(rec.actor || '') + ' ' + esc(rec.created_at || '') + ', digest <code>' + esc(short(rec.content_digest)) + '</code></p>'
+        : '<p>Thread <code>' + esc(th) + '</code> did not resolve: ' + esc(res.j.reason) + '</p>';
+    });
+  });
+
+  if (sources.length) load(sources[0].key);
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,37 @@
+# CUI // SP-CTI
+id: decl-wft-data-discovery-publish
+name: "Data discovery bundles: a person publishes a source's prepared bundle to ICDEV[OS], or refuses it (prepare -> publish)"
+description: >-
+  A data discovery bundle (icos-discovery/v1) is what ICDEV[OS] learns about a
+  source from the Data Design Canvas: its tables and columns with types and
+  counts, the PII columns the scanner flagged (pattern names, never values), the
+  rule-based anomalies, the quality rules and their results, and the catalogue
+  entries that cover it -- metadata only, never a datum. Leaving the factory is a
+  release, so a person attests it. Anyone, or an agent, prepares a source's
+  bundle on /data-discovery/ from a stored profile, which records it at its digest
+  and decides nothing. A person who did not prepare it reads it and publishes it
+  or refuses, with a reason, bound to that digest. Nothing publishes itself, and a
+  newer bundle needs a new step.
+decides: [data_discovery.dd_api_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject:
+  "discovery:<source>"; payload: the source, the bundle's content digest, the
+  prepared event and the profile). data_discovery_export_events appends a
+  published or refused event bound to that step and chained to the row before it.
+  Only a published bundle carries its publication (who, the step, when, the
+  digest), and only a published bundle is exported for ICDEV[OS]
+  (tools/data_canvas/discovery_export.py --published).
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: prepare
+    step_type: automated
+    description: Someone (a person, or an agent's draft) built the source's bundle from a stored profile and recorded it at its digest.
+  - name: publish
+    step_type: manual
+    role: discovery_publisher
+    holders: [admin, isso, reviewer]
+    # The person who prepared the bundle never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]

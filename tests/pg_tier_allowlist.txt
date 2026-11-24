@@ -149,6 +149,10 @@ tests/test_icx_coe_03_ambient.py
 # (PL/pgSQL append-only triggers, UNIQUE(path_id, prev_hash)) and the decl-wft-coe-golden-path-publish step in
 # wf_decision_steps.
 tests/test_icx_coe_04_ambient.py
+# osx-cap-02: a data discovery bundle prepared and published on the ambient PG: data_discovery_export_events
+# (PL/pgSQL append-only triggers, UNIQUE(source, prev_hash)) and the decl-wft-data-discovery-publish step in
+# wf_decision_steps.
+tests/test_osx_cap_02_ambient.py
 # icx-ent-01: a target registered and authorised, discovery run, and a findings bundle prepared and published on the
 # ambient PG: vr_events (PL/pgSQL append-only triggers, UNIQUE(stream, prev_hash)) and the decl-wft-vr-* steps in
 # wf_decision_steps.

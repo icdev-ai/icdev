@@ -60,8 +60,8 @@ def test_every_template_is_well_formed_and_decides_its_own_surfaces():
     # icx-mdz-06 survivor IV&V sign-off; icx-coe-01 the standards lifecycle (review, adopt, deprecate);
     # icx-coe-02 exemption grant and renew, ADR accept and supersede; icx-coe-03 conformance bundle publish;
     # icx-coe-04 golden path publish and retire; icx-ent-01 target authorise, patch review, findings publish;
-    # icx-ent-02 objective-evidence publish; icx-ent-03 fb build publish
-    assert len(templates) == 33  # icx-ent-04: icos-store-publish
+    # icx-ent-02 objective-evidence publish; icx-ent-03 fb build publish; osx-cap-02 data discovery bundle publish
+    assert len(templates) == 34  # icx-ent-04: icos-store-publish
     owners = {}
     for tid, tmpl in templates.items():
         assert declared.validate_template(tmpl) == [], tid
@@ -97,6 +97,8 @@ def test_every_template_is_well_formed_and_decides_its_own_surfaces():
         "idp.idp_api_conformance_publish",
         # icx-coe-04: a golden path version is published or retired by a person, never its author
         "idp.idp_api_golden_path_publish", "idp.idp_api_golden_path_retire",
+        # osx-cap-02: a person (never the preparer) publishes a source's data discovery bundle to ICDEV[OS]
+        "data_discovery.dd_api_publish",
         # icx-ent-01: a target is authorised, a patch reviewed and a findings bundle published by a person
         # who did not register, propose or prepare it
         "vulnresearch.vr_api_target_authorise", "vulnresearch.vr_api_patch_review",
@@ -126,10 +128,10 @@ def test_seed_is_idempotent_and_never_a_canvas_default(declared, wf_db):
     first = declared.seed_declared_templates()
     second = declared.seed_declared_templates()
     # icx-ent-04: icos-store-publish carries the id ICDEV[OS]'s store contract pins, not the decl-wft- prefix
-    assert len(first["seeded"]) == 33 and second == {"seeded": [], "updated": []}
+    assert len(first["seeded"]) == 34 and second == {"seeded": [], "updated": []}  # osx-cap-02
     rows = _rows(wf_db, "SELECT id, is_default, is_system FROM wf_templates "
                         "WHERE id LIKE 'decl-wft-%'")
-    assert len(rows) == 32 and all(r[1] == 0 and r[2] == 1 for r in rows)
+    assert len(rows) == 33 and all(r[1] == 0 and r[2] == 1 for r in rows)
     store = _rows(wf_db, "SELECT id, is_default, is_system FROM wf_templates WHERE id = 'icos-store-publish'")
     assert [tuple(r) for r in store] == [("icos-store-publish", 0, 1)]
 
@@ -624,7 +626,7 @@ def test_the_decisions_page_lists_and_decides(wf_db):
     assert as_pm.post(f"/decisions/api/steps/{prop['step_id']}/decide",
                       json={"decision": "accept"}).status_code == 409
     templates = as_pm.get("/decisions/api/templates").get_json()["templates"]
-    assert len(templates) == 33  # icx-ent-04: 1; icx-mdz-05, icx-mdz-06: 1 each; icx-coe-01: 3; icx-coe-02: 4; icx-coe-03: 1; icx-coe-04: 2; icx-ent-01: 3; icx-ent-02: 1; icx-ent-03: 1
+    assert len(templates) == 34  # icx-ent-04: 1; icx-mdz-05, icx-mdz-06: 1 each; icx-coe-01: 3; icx-coe-02: 4; icx-coe-03: 1; icx-coe-04: 2; icx-ent-01: 3; icx-ent-02: 1; icx-ent-03: 1; osx-cap-02: 1
 
 
 def test_the_mcp_tool_reads_and_never_decides(wf_db):
@@ -632,7 +634,7 @@ def test_the_mcp_tool_reads_and_never_decides(wf_db):
     from tools.mcp.tool_registry import READ_ONLY_DECLARATIONS, tool_authorization
 
     out = handle_workflow_decision_steps({"status": "pending"})
-    assert out["steps"] == [] and len(out["templates"]) == 33  # icx-ent-04: store publish; icx-coe-02: exemptions and ADRs; icx-coe-03: publish; icx-coe-04: golden paths; icx-ent-01: vr-*; icx-ent-02: ec publish; icx-ent-03: fb publish
+    assert out["steps"] == [] and len(out["templates"]) == 34  # icx-ent-04: store publish; icx-coe-02: exemptions and ADRs; icx-coe-03: publish; icx-coe-04: golden paths; icx-ent-01: vr-*; icx-ent-02: ec publish; icx-ent-03: fb publish; osx-cap-02: discovery publish
     assert READ_ONLY_DECLARATIONS["workflow_decision_steps"] is True
     assert tool_authorization("workflow_decision_steps")["tier"] == "read"
 

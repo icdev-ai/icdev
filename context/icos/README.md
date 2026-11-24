@@ -32,6 +32,26 @@ it. ICDEV[OS] recomputes the digest on import and refuses a mismatch, a bundle n
 preparer. To take a newer contract: copy the new schema, update the digest in `conformance.SCHEMA_SHA256`,
 `conformance.SCHEMA_CONTRACT` and this file, and run `tests/test_icx_coe_03_conformance.py`.
 
+## The data discovery bundle (osx-cap-02; owned by ICDEV[OS])
+
+`discovery.schema.json` is ICDEV[OS]'s `icos-discovery/v1` bundle schema (`urn:icdev-os:contract:discovery:1`), copied
+verbatim from the ICDEV[OS] published contract (`contracts/schemas/discovery.schema.json`, contract version 1.194.0,
+file SHA-256 `dce0c1a844142310fc079c97799d5919519ff0ebe73cd066e348c995bf4e8aba`, body SHA-256
+`cb86216d08d69500864070c06892a969b5fa65c9a22aa5c38e02a22ab9189857`). The body digest is SHA-256 of the canonical JSON
+(keys sorted, separators `,` and `:`, UTF-8 unescaped) of the schema without its `x-icos-contract` key; every bundle
+carries it as `schema_pin.body_sha256`, with the contract version, and ICDEV[OS] refuses another pin. One bundle per
+declared source: what the Data Design Canvas found in it (types and counts, PII by pattern name, rule-based anomalies,
+quality results, catalogue entries) -- metadata only, never a datum. It is licensed Apache-2.0 (`LICENSE`, `NOTICE`
+here), unlike the rest of this repository.
+
+`tools/data_canvas/discovery_bundle.py` validates every bundle against it and refuses to run if the file's digest or
+its body digest is not the one pinned in `discovery_bundle.SCHEMA_SHA256` / `SCHEMA_BODY_SHA256`. `content_digest` is
+SHA-256 over the canonical JSON of the bundle without `content_digest`, `publication` and `produced_at`; `publication`
+is a person's declared step (`decl-wft-data-discovery-publish`) bound to it. The pin is to the contract the ICDEV[OS]
+branch kanban/osx-cap-02 produced; it is re-pinned when that merges. To take a newer contract: copy the new schema,
+update the digests and `SCHEMA_CONTRACT` in `discovery_bundle.py` and this file, and run
+`tests/test_osx_cap_02_discovery_export.py`.
+
 ## The findings bundle (icx-ent-01; adopted by ICDEV[OS] in osx-ent-07)
 
 `findings.schema.json` is ICDEV[OS]'s `icos-findings/v1` bundle schema (`urn:icdev-os:contract:findings:1`), copied

@@ -1,0 +1,6 @@
+# osx-cap-02: a declared source's icos-discovery/v1 bundle for ICDEV[OS] from the Data Design Canvas (profile, PII by
+# pattern name, rule-based anomalies, quality results, catalogue entries; metadata only) against the pinned ICOS
+# schema; publishing a person's declared step, never the preparer's; the append-only hash-chained ledger; page,
+# routes, twin threads and replay, MCP read and draft; and the ambient PG run.
+tests/test_osx_cap_02_discovery_export.py
+tests/test_osx_cap_02_ambient.py
