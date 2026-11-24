@@ -85,6 +85,13 @@ engineering_standards:
     waiting_warn_days: 14
     drift_stale_days: 30
 
+# osx-cop-02: the AI-BOM export twin (tools/twin_core/adapters/aibom.py). A prepared icos-aibom/v1
+# bundle waiting this long for a person, or a published one this old, is a finding
+# (args/aibom_export.yaml publish sets the defaults; these win).
+aibom:
+  waiting_warn_days: 7
+  stale_days: 30
+
 # icx-ent-01: AI-assisted vulnerability discovery (tools/vulnresearch/twin.py). A registered target, a patch or a
 # prepared findings bundle waiting this long for a person, or a target whose newest published bundle is this old,
 # is a finding (args/vuln_research.yaml publish sets the defaults; these win when given).

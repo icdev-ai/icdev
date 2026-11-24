@@ -267,6 +267,8 @@ const config = defineConfig({
       ICDEV_ACE_E2E_ROLES_DIR: path.resolve(ROOT, 'tests/e2e/fixtures/ace_roles'),
       // icx-mdz-05: the team capacity the modernisation seed declares for its synthetic app (honoured only under tests/).
       ICDEV_MODERNISATION_CAPACITY_E2E: path.resolve(ROOT, 'tests/e2e/fixtures/.mdz05_capacity.yaml'),
+      // osx-cop-02: the SYNTHETIC AI components the AI-BOM export page declares (honoured only under tests/; as in CI).
+      ICDEV_AIBOM_SOURCES_E2E: 'tests/e2e/fixtures/aibom_sources.yaml',
       // icx-cnf-08: the canvases the audited features live on (as in CI's e2e env).
       ICDEV_CORTEX_ENABLED: 'true',
       ICDEV_DIC_ENABLED: 'true',

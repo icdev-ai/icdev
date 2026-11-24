@@ -5254,6 +5254,52 @@ def handle_coe_golden_path_propose(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_aibom_export(args: dict) -> dict:
+    """MCP (osx-cop-02): ICDEV[IT]'s AI-BOM export -- the declared AI components, the AI-BOM built now, the ledger, or
+    the newest published bundle.
+
+    Read-only: prompts by digest, never their text. Prepares and publishes nothing.
+    """
+    try:
+        from tools.compliance import aibom_bundle
+
+        try:
+            if args.get("published"):
+                b = aibom_bundle.published_bundle()
+                if b is None:
+                    return {"error": "no AI-BOM has been published", "code": "unpublished"}
+                return {"classification": CORTEX_CLASSIFICATION, "bundle": b}
+            return {"classification": CORTEX_CLASSIFICATION,
+                    "aibom": aibom_bundle.view(as_of=str(args.get("as_of") or "") or None)}
+        except aibom_bundle.AIBOMRefused as exc:
+            return exc.to_dict()
+    except Exception as exc:
+        logger.warning("handle_aibom_export: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_aibom_prepare(args: dict) -> dict:
+    """MCP (osx-cop-02): an agent prepares ICDEV[IT]'s AI-BOM as a DRAFT, recorded as ``agent:<id>``.
+
+    Preparing decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or refuses
+    it on /ai-bom/ (decl-wft-aibom-publish).
+    """
+    try:
+        from tools.compliance import aibom_bundle
+
+        agent = str(args.get("agent_id") or "mcp").strip() or "mcp"
+        try:
+            out = aibom_bundle.prepare({"id": f"agent:{agent}", "role": "service"},
+                                       as_of=str(args.get("as_of") or "") or None, note=str(args.get("note") or ""))
+        except aibom_bundle.AIBOMRefused as exc:
+            return exc.to_dict()
+        return {"classification": CORTEX_CLASSIFICATION, "draft": out,
+                "next": "a person who did not prepare it publishes it or refuses it on /ai-bom/"}
+    except Exception as exc:
+        logger.warning("handle_aibom_prepare: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_vulnresearch_status(args: dict) -> dict:
     """MCP (icx-ent-01): read vulnerability discovery. Sealed PoVs are never returned. Changes nothing."""
     try:

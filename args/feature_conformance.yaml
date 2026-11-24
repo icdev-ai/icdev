@@ -666,6 +666,31 @@ features:
           file: tools/idp/blueprint.py
           text: "A person, never the version's author, retires a published golden path version, or keeps it."
 
+  # ── ICDEV[IT]'s AI-BOM for ICDEV[OS] (osx-cop-02) ─────────────────────────
+  # ICDEV[IT]'s own AI components (router configs, the models they route to and the
+  # registered ones, datasets, gold sets, prompts by digest) as one AI-BOM in SPDX 3.0.1
+  # (AI and Dataset profiles) and CycloneDX 1.7 (ML-BOM), each validated against the
+  # official schema, in an icos-aibom/v1 bundle. Preparing decides nothing; publishing it to
+  # ICDEV[OS] is a person's declared step (decl-wft-aibom-publish), never the preparer's.
+  - key: compliance.aibom_export
+    component: aibom
+    label: "AI-BOM export: ICDEV[IT]'s AI components as SPDX 3.0.1 AI and CycloneDX 1.7 ML-BOM for ICDEV[OS]"
+    endpoints:
+      - aibom.aibom_page
+      - aibom.aibom_api_view
+      - aibom.aibom_api_prepare
+      - aibom.aibom_api_publish
+      - aibom.aibom_api_bundle
+      - aibom.aibom_api_document
+      - aibom.aibom_api_twin
+    mcp_tools: [aibom_export, aibom_prepare]
+    declared_decisions:
+      - id: compliance.aibom_export.publish
+        endpoint: aibom.aibom_api_publish
+        evidence:
+          file: tools/compliance/aibom_blueprint.py
+          text: "A person, never the preparer, publishes ICDEV[IT]'s prepared AI-BOM to ICDEV[OS], or refuses it."
+
   # ── AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) ──
   # Targets registered and authorised by a person (scope-locked), discovery from SAST,
   # SCA, an agentic review (proposes only) and fuzz harnesses, a finding only with a

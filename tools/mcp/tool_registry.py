@@ -9207,6 +9207,29 @@ RESOURCE_REGISTRY = {
             "required": ["repo"],
         },
     },
+    # -- ICDEV[IT]'s AI-BOM for ICDEV[OS] (osx-cop-02) --------------------------
+    "aibom_export": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_aibom_export",
+        "description": "Read ICDEV[IT]'s AI-BOM export to ICDEV[OS] (/ai-bom/, args/aibom_export.yaml): its own AI components (router configs, the models they route to and the registered ones, datasets, gold sets, prompts by digest -- never their text) and what was left out for want of a digest, the icos-aibom/v1 bundle as it would be prepared now (an SPDX 3.0.1 AI/Dataset document and a CycloneDX 1.7 ML-BOM, each valid against the official schema), and the ledger's newest prepared and published AI-BOM. published=true returns the newest published bundle as ICDEV[OS] imports it. Read-only: prepares and publishes nothing.",
+        "input_schema": {"type": "object", "properties": {
+            "as_of": {"type": "string", "description": "Build as of this date (YYYY-MM-DD)"},
+            "published": {"type": "boolean", "description": "Return the newest published bundle"}}},
+    },
+    "aibom_prepare": {
+        "category": "conformance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_aibom_prepare",
+        "description": "Prepare ICDEV[IT]'s icos-aibom/v1 AI-BOM as a DRAFT, recorded as the agent's (agent:<name>): it is built from the declared AI components, validated against SPDX 3.0.1 and CycloneDX 1.7, and recorded at its digest. It decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or refuses it on /ai-bom/, a declared step an agent cannot take.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The preparing agent's name (recorded as agent:<name>)"},
+                "as_of": {"type": "string"}, "note": {"type": "string"},
+            },
+        },
+    },
     # -- evidence collectors for customer environments (icx-ent-02) ----------
     "evidence_collectors_status": {
         "category": "compliance",
@@ -10023,6 +10046,10 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
     "coe_conformance":                          True,
     "coe_conformance_prepare":                  False,
+    # osx-cop-02: the AI-BOM. The read builds and reads; prepare records a draft AI-BOM (one
+    # ledger row) and decides nothing, so it is not read-only and halts at the gate.
+    "aibom_export":                             True,
+    "aibom_prepare":                            False,
     # icx-ent-01: vulnerability discovery. The read reads (sealed PoVs withheld); prepare records a
     # draft bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
     "vulnresearch_status":                      True,

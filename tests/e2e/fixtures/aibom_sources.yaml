@@ -1,0 +1,12 @@
+# CUI // SP-CTI
+# osx-cop-02: the AI-BOM declared for tests and the e2e journey (ICDEV_AIBOM_SOURCES_E2E). SYNTHETIC
+# components, labelled, under tests/e2e/fixtures/aibom/: no real model, provider or prompt.
+router_configs: [tests/e2e/fixtures/aibom/router.yaml]
+models_from_router: true
+registry: false
+datasets: [tests/e2e/fixtures/aibom/dataset.jsonl]
+gold_sets: [tests/e2e/fixtures/aibom/gold.yaml]
+prompts: [tests/e2e/fixtures/aibom/prompts]
+publish:
+  waiting_warn_days: 7
+  stale_days: 30

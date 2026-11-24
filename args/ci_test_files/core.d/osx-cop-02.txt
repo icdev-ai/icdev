@@ -1,0 +1,6 @@
+# osx-cop-02: ICDEV[IT]'s own AI-BOM (router configs, models, datasets, gold sets, prompts by digest) as an
+# SPDX 3.0.1 AI document and a CycloneDX 1.7 ML-BOM, each held to the official schema, in an icos-aibom/v1 bundle for
+# ICDEV[OS]; publishing a person's declared step, never the preparer's; the append-only hash-chained ledger; page,
+# routes, twin threads and replay, MCP read and draft; and the ambient PG run.
+tests/test_osx_cop_02_aibom.py
+tests/test_osx_cop_02_ambient.py

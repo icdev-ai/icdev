@@ -1656,6 +1656,140 @@
       "cells": {
         "ai_native": {
           "evidence": [
+            "aibom_export read-only, tool_authorization tier 'read'",
+            "aibom_prepare mutating, approval tier 'unknown' (default_tier) halts"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "architecture": {
+          "evidence": [
+            "PM-AIB-01 -> aib.bundle, aib.standards -> tests/test_osx_cop_02_aibom.py::test_the_schemas_are_pinned_the_icos_contract_by_file_and_body, tests/test_osx_cop_02_aibom.py::test_the_ai_bom_is_spdx_and_cyclonedx_valid_against_the_official_schemas, tests/test_osx_cop_02_aibom.py::test_an_ai_bom_failing_the_official_schema_is_refused",
+            "PM-AIB-02 -> aib.bundle -> tests/test_osx_cop_02_aibom.py::test_the_export_is_deterministic_given_its_inputs, tests/test_osx_cop_02_aibom.py::test_the_components_are_declared_and_another_config_must_live_under_tests, tests/test_osx_cop_02_aibom.py::test_the_registry_models_and_datasets_by_their_digest_or_said_left_out",
+            "PM-AIB-03 -> aib.publish -> tests/test_osx_cop_02_aibom.py::test_publishing_is_a_persons_step_never_the_preparers, tests/test_osx_cop_02_aibom.py::test_the_ledger_is_append_only_and_hash_chained, tests/test_osx_cop_02_ambient.py::test_an_ai_bom_prepared_and_published_on_the_platform_database",
+            "PM-AIB-04 -> if.aib.console, aib.twin, if.aib.mcp -> tests/test_osx_cop_02_aibom.py::test_the_routes_and_the_page, tests/test_osx_cop_02_aibom.py::test_the_twin_observes_with_threads_and_replays, tests/test_osx_cop_02_aibom.py::test_the_twin_says_unverified_when_nothing_is_declared_or_readable, tests/test_osx_cop_02_aibom.py::test_the_mcp_tools_read_and_only_prepare"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "gui": {
+          "evidence": [
+            "aibom.aibom_api_prepare called from tools/dashboard/templates/compliance/aibom_export.html",
+            "aibom.aibom_api_publish called from tools/dashboard/templates/compliance/aibom_export.html",
+            "nav links /ai-bom",
+            "page /ai-bom/ renders compliance/aibom_export.html",
+            "registry entry 'aibom'"
+          ],
+          "gaps": [],
+          "routes": [
+            {
+              "by_id": [],
+              "endpoint": "aibom.aibom_page",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/ai-bom/",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/compliance/aibom_export.html"
+              ],
+              "endpoint": "aibom.aibom_api_bundle",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/ai-bom/api/bundle",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/compliance/aibom_export.html"
+              ],
+              "endpoint": "aibom.aibom_api_document",
+              "methods": [
+                "GET"
+              ],
+              "observed": false,
+              "rule": "/ai-bom/api/document/<kind>",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/compliance/aibom_export.html"
+              ],
+              "endpoint": "aibom.aibom_api_prepare",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/ai-bom/api/prepare",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/compliance/aibom_export.html"
+              ],
+              "endpoint": "aibom.aibom_api_publish",
+              "methods": [
+                "POST"
+              ],
+              "observed": true,
+              "rule": "/ai-bom/api/publish",
+              "write": true
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/compliance/aibom_export.html"
+              ],
+              "endpoint": "aibom.aibom_api_twin",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/ai-bom/api/twin",
+              "write": false
+            },
+            {
+              "by_id": [
+                "tools/dashboard/templates/compliance/aibom_export.html"
+              ],
+              "endpoint": "aibom.aibom_api_view",
+              "methods": [
+                "GET"
+              ],
+              "observed": true,
+              "rule": "/ai-bom/api/view",
+              "write": false
+            }
+          ],
+          "status": "pass"
+        },
+        "twin": {
+          "evidence": [
+            "adapter tools/twin_core/adapters/aibom.py::AIBOMTwin"
+          ],
+          "gaps": [],
+          "status": "pass"
+        },
+        "workflow": {
+          "evidence": [
+            "aibom.aibom_api_publish (declared (tools/compliance/aibom_blueprint.py: \"A person, never the preparer, publishes ICDEV[IT]'s prepared AI-BOM to ICDEV[OS], or refuses it.\")) -> template decl-wft-aibom-publish (args/workflow_hitl_templates/aibom-publish.yaml)"
+          ],
+          "gaps": [],
+          "status": "pass"
+        }
+      },
+      "component": "aibom",
+      "key": "compliance.aibom_export",
+      "label": "AI-BOM export: ICDEV[IT]'s AI components as SPDX 3.0.1 AI and CycloneDX 1.7 ML-BOM for ICDEV[OS]"
+    },
+    {
+      "cells": {
+        "ai_native": {
+          "evidence": [
             "feature_conformance read-only, tool_authorization tier 'read'"
           ],
           "gaps": [],
@@ -4256,6 +4390,7 @@
       "tools/dashboard/templates/ace/trust.html",
       "tools/dashboard/templates/aiify/page.html",
       "tools/dashboard/templates/aiify/posture.html",
+      "tools/dashboard/templates/compliance/aibom_export.html",
       "tools/dashboard/templates/cortex/_rest_runner.html",
       "tools/dashboard/templates/cortex/airgap.html",
       "tools/dashboard/templates/cortex/govern.html",
@@ -4308,8 +4443,8 @@
   ],
   "stale_reasons": [],
   "summary": {
-    "features": 32,
-    "features_conforming": 32,
+    "features": 33,
+    "features_conforming": 33,
     "gaps_by_feature": {
       "ace.abort": {
         "ai_native": 0,
@@ -4375,6 +4510,13 @@
         "workflow": 0
       },
       "coe.standards": {
+        "ai_native": 0,
+        "architecture": 0,
+        "gui": 0,
+        "twin": 0,
+        "workflow": 0
+      },
+      "compliance.aibom_export": {
         "ai_native": 0,
         "architecture": 0,
         "gui": 0,
@@ -4544,11 +4686,11 @@
       "workflow": 0
     },
     "gaps_total": 0,
-    "routes": 210,
-    "routes_by_id": 176,
-    "routes_observed": 156,
-    "writes_by_id": 88,
-    "writes_observed": 88
+    "routes": 217,
+    "routes_by_id": 182,
+    "routes_observed": 160,
+    "writes_by_id": 90,
+    "writes_observed": 90
   },
   "tool": "feature_audit",
   "version": 1

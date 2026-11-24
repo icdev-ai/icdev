@@ -5320,6 +5320,25 @@ python tools/filesync/sync_engine.py --watch --job-id "fsync-xxx" --json
 python tools/filesync/sync_engine.py --health --json
 ```
 
+### ICDEV[IT]'s AI-BOM for ICDEV[OS] (osx-cop-02)
+
+ICDEV[IT]'s own AI components declared in `args/aibom_export.yaml` (router configs, the models they
+route to and the registered ones, datasets, gold sets, prompts by digest) as one AI-BOM in SPDX 3.0.1
+(AI and Dataset profiles) and CycloneDX 1.7 (ML-BOM), each validated against the official schema
+(`context/standards/`), in one `icos-aibom/v1` bundle for ICDEV[OS] (`context/icos/aibom.schema.json`).
+Prepared on `/ai-bom/` (or by an agent through MCP) and published only by a person who did not prepare it.
+
+```bash
+# The AI-BOM, deterministic given its inputs (a draft unless a person published this content)
+python tools/compliance/aibom_export.py --out .tmp/aibom --as-of 2026-11-18 --at 2026-11-18T00:00:00Z
+
+# The newest PUBLISHED AI-BOM, as ICDEV[OS] imports it
+python tools/compliance/aibom_export.py --published --out .tmp/aibom
+
+# The declared components and the ledger state
+python tools/compliance/aibom_export.py --list
+```
+
 ---
 
 ## Innovation Engine — Autonomous Self-Improvement (Phase 35)

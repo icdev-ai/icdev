@@ -208,6 +208,7 @@ tables:
   ai_oversight_plans: it
   ai_reassessment_schedule: it
   ai_use_case_inventory: it
+  aibom_export_events: it
   aiify_audit_log: it
   aiify_hitl_decisions: it
   aiify_innovation_bridge: it

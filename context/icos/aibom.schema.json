@@ -1,0 +1,355 @@
+{
+  "$defs": {
+    "Component": {
+      "additionalProperties": false,
+      "description": "One AI component the BOM describes. ``digest`` is the SHA-256 of what it is: a router config's or prompt's file\nbytes, a model's declared entry (an external model) or weights (one ICDEV[IT] registered), a dataset's or gold set's\ncontent. A prompt is carried by its digest and path, never its text.",
+      "properties": {
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "id": {
+          "description": "<kind>:<name>; the SPDX element is urn:icdev:aibom:component:<id> and the CycloneDX component's bom-ref is <id>",
+          "pattern": "^(router-config|model|dataset|gold-set|prompt):[A-Za-z0-9._/@+-]{1,200}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "router-config",
+            "model",
+            "dataset",
+            "gold-set",
+            "prompt"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Purpose"
+        },
+        "supplier": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "who supplies it (a model's provider)",
+          "title": "Supplier"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "digest"
+      ],
+      "title": "Component",
+      "type": "object"
+    },
+    "Producer": {
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "const": "icdev-it",
+          "default": "icdev-it",
+          "title": "System",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "version"
+      ],
+      "title": "Producer",
+      "type": "object"
+    },
+    "Publication": {
+      "additionalProperties": false,
+      "description": "A person's publication of the bundle in ICDEV[IT]'s declared step, bound to its content_digest; never by the\nperson who prepared it. A bundle with no publication is a draft nobody published, and ICOS refuses it.",
+      "properties": {
+        "content_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Digest",
+          "type": "string"
+        },
+        "decided_at": {
+          "format": "date-time",
+          "title": "Decided At",
+          "type": "string"
+        },
+        "event_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Id"
+        },
+        "prepared_by": {
+          "minLength": 1,
+          "title": "Prepared By",
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "signed_by": {
+          "minLength": 1,
+          "title": "Signed By",
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "title": "Step Id",
+          "type": "string"
+        },
+        "template": {
+          "minLength": 1,
+          "title": "Template",
+          "type": "string"
+        }
+      },
+      "required": [
+        "signed_by",
+        "step_id",
+        "decided_at",
+        "template",
+        "content_digest",
+        "prepared_by"
+      ],
+      "title": "Publication",
+      "type": "object"
+    },
+    "SchemaPin": {
+      "additionalProperties": false,
+      "description": "The contract the producer validated the bundle against: its version, and the SHA-256 of the schema's body.",
+      "properties": {
+        "body_sha256": {
+          "description": "SHA-256 of the canonical JSON of the schema file without x-icos-contract",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Body Sha256",
+          "type": "string"
+        },
+        "contract": {
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "title": "Contract",
+          "type": "string"
+        }
+      },
+      "required": [
+        "contract",
+        "body_sha256"
+      ],
+      "title": "SchemaPin",
+      "type": "object"
+    },
+    "Standards": {
+      "additionalProperties": false,
+      "description": "The two documents' standards and versions, exactly.",
+      "properties": {
+        "cyclonedx": {
+          "const": "1.7",
+          "default": "1.7",
+          "title": "Cyclonedx",
+          "type": "string"
+        },
+        "spdx": {
+          "const": "3.0.1",
+          "default": "3.0.1",
+          "title": "Spdx",
+          "type": "string"
+        }
+      },
+      "title": "Standards",
+      "type": "object"
+    },
+    "Summary": {
+      "additionalProperties": false,
+      "properties": {
+        "datasets": {
+          "minimum": 0,
+          "title": "Datasets",
+          "type": "integer"
+        },
+        "gold_sets": {
+          "minimum": 0,
+          "title": "Gold Sets",
+          "type": "integer"
+        },
+        "models": {
+          "minimum": 0,
+          "title": "Models",
+          "type": "integer"
+        },
+        "prompts": {
+          "minimum": 0,
+          "title": "Prompts",
+          "type": "integer"
+        },
+        "router_configs": {
+          "minimum": 0,
+          "title": "Router Configs",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "router_configs",
+        "models",
+        "datasets",
+        "gold_sets",
+        "prompts"
+      ],
+      "title": "Summary",
+      "type": "object"
+    }
+  },
+  "$id": "urn:icdev-os:contract:aibom:1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Owned by ICDEV[OS] (osx-cop-02); exported by ICDEV[IT] (tools/compliance/aibom_export.py). ICDEV[IT]'s own AI components (router configs, models, datasets, gold sets, prompts by digest) as an SPDX 3.0.1 AI/Dataset document and a CycloneDX 1.7 ML-BOM. Each document is held to its OFFICIAL published schema; every listed component appears in both with the same SHA-256. schema_pin is the contract version and the SHA-256 of this schema's canonical JSON without x-icos-contract. content_digest is SHA-256 over the canonical JSON (keys sorted, separators ',' and ':') of the bundle without content_digest, publication and produced_at; ICOS recomputes it. publication is a person's declared step bound to that digest, never by its preparer.",
+  "properties": {
+    "as_of": {
+      "format": "date",
+      "title": "As Of",
+      "type": "string"
+    },
+    "classification": {
+      "default": "",
+      "description": "what ICDEV[IT] banners it; a claim only, never a marking",
+      "title": "Classification",
+      "type": "string"
+    },
+    "components": {
+      "items": {
+        "$ref": "#/$defs/Component"
+      },
+      "maxItems": 5000,
+      "minItems": 1,
+      "title": "Components",
+      "type": "array"
+    },
+    "content_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Digest",
+      "type": "string"
+    },
+    "cyclonedx": {
+      "additionalProperties": true,
+      "description": "the CycloneDX 1.7 BOM; held to CycloneDX's published schema, not this one",
+      "title": "Cyclonedx",
+      "type": "object"
+    },
+    "produced_at": {
+      "format": "date-time",
+      "title": "Produced At",
+      "type": "string"
+    },
+    "producer": {
+      "$ref": "#/$defs/Producer"
+    },
+    "publication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Publication"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "schema": {
+      "const": "icos-aibom/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "schema_pin": {
+      "$ref": "#/$defs/SchemaPin"
+    },
+    "spdx": {
+      "additionalProperties": true,
+      "description": "the SPDX 3.0.1 JSON-LD document; held to SPDX's published schema, not this one",
+      "title": "Spdx",
+      "type": "object"
+    },
+    "standards": {
+      "$ref": "#/$defs/Standards"
+    },
+    "summary": {
+      "$ref": "#/$defs/Summary"
+    },
+    "system": {
+      "description": "the system the AI-BOM describes (ICDEV[IT])",
+      "maxLength": 80,
+      "minLength": 1,
+      "title": "System",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "schema_pin",
+    "producer",
+    "produced_at",
+    "as_of",
+    "system",
+    "standards",
+    "components",
+    "spdx",
+    "cyclonedx",
+    "summary",
+    "content_digest"
+  ],
+  "title": "AIBOM",
+  "type": "object",
+  "x-icos-contract": "1.195.0",
+  "x-license": "Apache-2.0"
+}

@@ -37,3 +37,11 @@
 | ISO 42001 Catalog | context/compliance/iso42001_controls.json | 18 ISO 42001 requirements (10 clauses + 8 Annex A) with dual hub crosswalk | (data) | JSON catalog |
 
 | MCP Authz Evidence Probe | tools/security/mcp_authz_evidence.py | Behavioural evidence for MCP per-tool RBAC — exercises the D261 policy AND the surface that has a principal; never satisfied in monitor mode. Replaces file-existence checks in 4 compliance generators (exa-policy-08) | --json, --gate, --allow-monitor | Status + scope-out |
+
+## aibom_bundle.py, aibom_export.py, aibom_blueprint.py (osx-cop-02)
+
+| Tool | Path | Purpose | CLI | Output |
+|---|---|---|---|---|
+| AI-BOM bundle and ledger | tools/compliance/aibom_bundle.py | ICDEV[IT]'s own AI components declared in `args/aibom_export.yaml` (router configs, the models they route to and the registered ones from `ft_model_versions`, datasets from `ft_datasets` and files, gold sets, prompts by digest only) as one AI-BOM in SPDX 3.0.1 (AI and Dataset profiles) and CycloneDX 1.7 (ML-BOM), each validated against the official schema vendored unmodified (`context/standards/`), in one `icos-aibom/v1` bundle for ICDEV[OS] against its pinned contract (`context/icos/aibom.schema.json`). Prepared by anyone, published by a person who did not prepare it (`decl-wft-aibom-publish`), in the append-only hash-chained `aibom_export_events`. | (library) | dict |
+| AI-BOM export | tools/compliance/aibom_export.py | `python tools/compliance/aibom_export.py --out <dir> [--as-of D] [--at T]` writes `icdev-it.json`, deterministic given its inputs; carries its `publication` only when a person published that exact content. `--published` writes the newest published AI-BOM; `--list` the components and the ledger. Never publishes. | --out, --as-of, --at, --published, --list | JSON file + summary |
+| AI-BOM export page | tools/compliance/aibom_blueprint.py | Blueprint `aibom` at `/ai-bom/`: the components, what was left out, the two standards, prepare, publish (declared step, closed to the preparer), the published bundle and both documents (download), the twin with thread resolution. | (Flask blueprint) | HTML / JSON |

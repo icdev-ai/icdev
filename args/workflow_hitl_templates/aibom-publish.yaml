@@ -1,0 +1,34 @@
+# CUI // SP-CTI
+id: decl-wft-aibom-publish
+name: "AI-BOM: a person publishes ICDEV[IT]'s prepared AI bill of materials to ICDEV[OS], or refuses it (prepare -> publish)"
+description: >-
+  The AI-BOM (icos-aibom/v1) describes ICDEV[IT]'s own AI components -- its router
+  configurations, the models they route to and the models it registered, its datasets
+  and gold sets, and its prompts by digest -- as an SPDX 3.0.1 AI document and a
+  CycloneDX 1.7 ML-BOM, each validated against the official schema. Leaving the
+  factory is a release, so a person attests it. Anyone, or an agent, prepares it on
+  /ai-bom/, which records it at its digest and decides nothing. A person who did not
+  prepare it reads it and publishes it or refuses, with a reason, bound to that
+  digest. Nothing publishes itself, and a newer AI-BOM needs a new step.
+decides: [aibom.aibom_api_publish]
+effect: >-
+  The decided step in wf_decision_steps is the publication (subject: "aibom:icdev-it";
+  payload: the content digest and the prepared event). aibom_export_events appends a
+  published or refused event bound to that step and chained to the row before it.
+  Only a published AI-BOM carries its publication (who, the step, when, the digest),
+  and only a published one is exported for ICDEV[OS]
+  (tools/compliance/aibom_export.py --published).
+approval_policy: any_one
+kickback_limit: 1
+stages:
+  - name: prepare
+    step_type: automated
+    description: Someone (a person, or an agent's draft) built the AI-BOM from the declared AI components and recorded it at its digest.
+  - name: publish
+    step_type: manual
+    role: aibom_publisher
+    holders: [admin, isso, reviewer]
+    # The person who prepared the AI-BOM never publishes it.
+    separate_from: builders
+    decisions: {publish: affirm, refuse: deny}
+    reason_required: [publish, refuse]

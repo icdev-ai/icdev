@@ -1349,6 +1349,27 @@ components:
     links:
     - label: Decisions
       href: /decisions/
+- key: aibom
+  kind: core_extension
+  display_name: AI-BOM Export
+  description: ICDEV[IT]'s own AI components (router configs, the models they route to and the registered ones,
+    datasets, gold sets, prompts by digest) as one AI bill of materials in SPDX 3.0.1 (AI and Dataset profiles) and
+    CycloneDX 1.7 (ML-BOM), each validated against the official schema, exported to ICDEV[OS] as an icos-aibom/v1
+    bundle (osx-cop-02). Anyone prepares it; a person who did not prepare it publishes it (decl-wft-aibom-publish).
+    Always on, because the decisions are.
+  env_flag: ICDEV_AIBOM_ENABLED
+  default_enabled: true
+  module: tools.compliance.aibom_blueprint
+  blueprint_attr: aibom_bp
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Security
+    label: AI-BOM Export
+    links:
+    - label: AI-BOM Export
+      href: /ai-bom/
 # icx-ent-01: AI-assisted vulnerability discovery, proven or dropped. Its own blueprint
 # (tools/vulnresearch/blueprint.py, mounted at /vulnresearch/); a finding exists only with a
 # proof of vulnerability replayed in the sandbox, and every decision is a declared step.
