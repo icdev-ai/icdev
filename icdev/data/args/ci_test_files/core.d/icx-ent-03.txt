@@ -1,0 +1,8 @@
+# icx-ent-03: signed factory builds. The artefact key (KMS and keyring fakes, throwaway test keys, no MAC fallback),
+# keyless against a loopback Fulcio stub with a throwaway CA, a loopback Rekor stub; per built artefact an
+# icos-artefact/v1 against ICDEV[OS]'s pinned contract with a CycloneDX 1.7 SBOM or AI-BOM, SLSA v1.2 provenance,
+# OpenVEX, Sigstore bundles and OCI referrers; the AI-BOM linked to the fine-tuning registry promotion; confined
+# inputs; prepare by a person, publish by another of the target's org, export only with its step; the ledger; page,
+# routes, twin, IQE and MCP; and the ambient PG run.
+tests/test_icx_ent_03_factory_builds.py
+tests/test_icx_ent_03_ambient.py

@@ -767,8 +767,6 @@ tools/marketplace/install_manager.py::<module>::BASE_DIR
 tools/marketplace/license_client.py::<module>::BASE_DIR
 tools/marketplace/openclaw_bridge.py::<module>::BASE_DIR
 tools/marketplace/provenance_tracker.py::<module>::BASE_DIR
-tools/marketplace/publish_pipeline.py::<module>::BASE_DIR
-tools/marketplace/review_queue.py::<module>::BASE_DIR
 tools/marketplace/search_engine.py::<module>::BASE_DIR
 tools/marketplace/token_store.py::<module>::BASE_DIR
 tools/mbse/des_assessor.py::<module>::BASE_DIR

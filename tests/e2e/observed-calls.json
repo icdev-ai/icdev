@@ -415,6 +415,44 @@
     "Cortex findings: adjudicate an open finding with a reason"
    ]
   },
+  "GET evidence_collectors.ec_api_twin": {
+   "endpoint": "evidence_collectors.ec_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the observations, refuse nothing-determinable and the preparer, publish, see the report, open the thread, hide it from another org"
+   ]
+  },
+  "GET evidence_collectors.ec_page": {
+   "endpoint": "evidence_collectors.ec_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the observations, refuse nothing-determinable and the preparer, publish, see the report, open the thread, hide it from another org"
+   ]
+  },
+  "GET factory_builds.fb_api_twin": {
+   "endpoint": "factory_builds.fb_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "build and sign on the page, refuse the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org",
+    "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
+   ]
+  },
+  "GET factory_builds.fb_page": {
+   "endpoint": "factory_builds.fb_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "build and sign on the page, refuse the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org",
+    "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
+   ]
+  },
   "GET idp.idp_adrs_page": {
    "endpoint": "idp.idp_adrs_page",
    "method": "GET",
@@ -660,6 +698,24 @@
     "7R: assess an application, then record the strategy it proposes"
    ]
   },
+  "GET store_publisher.sp_api_twin": {
+   "endpoint": "store_publisher.sp_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare and sign on the page, refuse the preparer, publish, export, open the thread, see the MCP gates, hide it from another org"
+   ]
+  },
+  "GET store_publisher.sp_page": {
+   "endpoint": "store_publisher.sp_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare and sign on the page, refuse the preparer, publish, export, open the thread, see the MCP gates, hide it from another org"
+   ]
+  },
   "GET twin_observatory.conformance_page": {
    "endpoint": "twin_observatory.conformance_page",
    "method": "GET",
@@ -667,6 +723,37 @@
    "test": false,
    "tests": [
     "the conformance page shows each route named by id and seen in e2e"
+   ]
+  },
+  "GET vulnresearch.vr_api_target": {
+   "endpoint": "vulnresearch.vr_api_target",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread",
+    "the vulnerability discovery page in the dark theme has no axe violations",
+    "the vulnerability discovery page in the light theme has no axe violations"
+   ]
+  },
+  "GET vulnresearch.vr_api_twin": {
+   "endpoint": "vulnresearch.vr_api_twin",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread",
+    "the vulnerability discovery page in the dark theme has no axe violations",
+    "the vulnerability discovery page in the light theme has no axe violations"
+   ]
+  },
+  "GET vulnresearch.vr_page": {
+   "endpoint": "vulnresearch.vr_page",
+   "method": "GET",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
    ]
   },
   "GET workflow_canvas.api_observed_drafts": {
@@ -1064,6 +1151,44 @@
     "Cortex findings: adjudicate an open finding with a reason"
    ]
   },
+  "POST evidence_collectors.ec_api_prepare": {
+   "endpoint": "evidence_collectors.ec_api_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the observations, refuse nothing-determinable and the preparer, publish, see the report, open the thread, hide it from another org"
+   ]
+  },
+  "POST evidence_collectors.ec_api_publish": {
+   "endpoint": "evidence_collectors.ec_api_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "see the observations, refuse nothing-determinable and the preparer, publish, see the report, open the thread, hide it from another org"
+   ]
+  },
+  "POST factory_builds.fb_api_prepare": {
+   "endpoint": "factory_builds.fb_api_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "build and sign on the page, refuse the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org",
+    "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
+   ]
+  },
+  "POST factory_builds.fb_api_publish": {
+   "endpoint": "factory_builds.fb_api_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "build and sign on the page, refuse the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org",
+    "see the signed build, refuse an unkeyed build and the preparer, publish, export, open the thread, see the AI-BOM, hide it from another org"
+   ]
+  },
   "POST idp.idp_api_adr_accept": {
    "endpoint": "idp.idp_api_adr_accept",
    "method": "POST",
@@ -1287,6 +1412,105 @@
    "test": false,
    "tests": [
     "Modernisation: waves, approve a cloud-native job, the bundle, review a process, check an ICDEV[OS] export"
+   ]
+  },
+  "POST store_publisher.sp_api_prepare": {
+   "endpoint": "store_publisher.sp_api_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare and sign on the page, refuse the preparer, publish, export, open the thread, see the MCP gates, hide it from another org"
+   ]
+  },
+  "POST store_publisher.sp_api_publish": {
+   "endpoint": "store_publisher.sp_api_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "prepare and sign on the page, refuse the preparer, publish, export, open the thread, see the MCP gates, hide it from another org"
+   ]
+  },
+  "POST vulnresearch.vr_api_bundle_prepare": {
+   "endpoint": "vulnresearch.vr_api_bundle_prepare",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_bundle_publish": {
+   "endpoint": "vulnresearch.vr_api_bundle_publish",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_measure": {
+   "endpoint": "vulnresearch.vr_api_measure",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_patch_propose": {
+   "endpoint": "vulnresearch.vr_api_patch_propose",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_patch_review": {
+   "endpoint": "vulnresearch.vr_api_patch_review",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_run": {
+   "endpoint": "vulnresearch.vr_api_run",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_target_authorise": {
+   "endpoint": "vulnresearch.vr_api_target_authorise",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_target_register": {
+   "endpoint": "vulnresearch.vr_api_target_register",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
+   ]
+  },
+  "POST vulnresearch.vr_api_target_revoke": {
+   "endpoint": "vulnresearch.vr_api_target_revoke",
+   "method": "POST",
+   "page": true,
+   "test": false,
+   "tests": [
+    "register, authorise, discover, prove, patch, review, prepare, publish, open the twin thread"
    ]
   },
   "POST workflow_canvas.api_cleanup_processify_tasks": {

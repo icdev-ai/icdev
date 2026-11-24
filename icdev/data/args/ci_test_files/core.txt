@@ -207,6 +207,11 @@ tests/integration/test_dashboard_panels.py
 # unstubbed, so a cap that regresses to a silent slice fails here rather than on
 # the board. ~1.5s, pure Python, no DB service/LLM/network (xbm-promote-01).
 tests/innovation/test_innovation_kanban_promoter.py
+# Website competitor scanning (changelog/feed, robots fail-closed, DTD refusal) + gh token fallback. ~0.1s, no network.
+tests/innovation/test_competitive_intel_web.py
+# Creative engine sources: robots fail closed, Reddit only via its OAuth API, Product Hunt via its Atom feed, per-domain
+# subreddits/topics, unknown --domain is an error, one gap/spec per pain point, dedupe of old duplicates. ~0.5s, no network.
+tests/test_creative_engine_sources.py
 
 tests/test_sbom_component_producer.py
 tests/test_sbom_component_license.py
@@ -2415,3 +2420,44 @@ tests/cortex/test_search_external_backend.py
 # query and 86% unrelated evidence. Gated so a config edit that widens, narrows
 # or empties the prefix list fails here instead of degrading retrieval quietly.
 tests/cortex/test_document_intelligence_lens.py
+# task-coh-3a357f8a — coherence check_template_variable_parity, the scope-aware
+# rewrite that took the check from 476 false positives to 0. Gated because the
+# extraction rules below were each a distinct FP class that the old two-regex
+# version got wrong: {% for/set/with/macro/from-import %} template-local
+# definitions, Jinja keywords and test names, guard positions that cannot
+# raise UndefinedError (|default, or-fallback, is defined, bare {% if %}),
+# context-processor injection, per-template kwargs UNION across a blueprint's
+# call sites, and that a genuinely missing STRICT var is still caught. A
+# regression here is silent by construction — templates render wrong or the
+# check goes back to noise that hides real zero-context renders like the
+# ZIG-pillar 404 it exposed. ~0.3s, pure stdlib, no DB/LLM/network.
+tests/test_coherence_template_variable_parity.py
+# ICDEV[OS] Phase 254: the modernisation tooling over real-app-shaped trees (scratch sqlite, no model; ~7s).
+tests/test_icx_modsamples_pipeline.py
+# test_iqe_seed_queries_parse.py: every shipped .iqe seed (context/iqe/queries and the
+# packaged copy) parses with tools.iqe.parser.parse exactly as /iqe/run reads it; 164
+# had stopped parsing (other dialects, NL prompts, YAML, several queries per file).
+# test_iqe_seed_join_views.py runs the three join seeds over their joined-view
+# collections; test_iqe_parser.py leaves the backlog with the `//` comment and `*`/`/`
+# operand cases. Pure Python, scratch in-memory SQLite, ~2s.
+tests/test_iqe_seed_queries_parse.py
+tests/test_iqe_seed_join_views.py
+tests/test_iqe_parser.py
+# The packaged allowlist (icdev/data/args/ci_test_files) is byte-identical to args/ci_test_files on
+# every commit: mirror_parity DATA_MIRRORS, the pre-commit hook and this backstop. ~1s, no DB/network.
+tests/ci/test_packaged_args_parity.py
+# Every shipped .iqe seed query is free of merge-conflict markers (source and packaged copy; <2s).
+tests/test_iqe_seed_queries_no_conflict_markers.py
+# IQE seeds must RUN, not just parse (review of #2604). test_iqe_seed_collections_registered.py:
+# after loading every adapter, each seed's collections are registered or listed, with a
+# reason, in tools/iqe/catalog.py NO_EXECUTOR_SOURCE. test_iqe_canvas_seed_fields.py runs
+# the ccc/dsoc/pmc/ohc seeds over their real schemas and checks every field exists.
+# test_iqe_run_routes_honest.py: /iqe/run and /api/v1/iqe/query report an unreadable
+# collection as ok/false with the reason, never ok/true with zero rows. test_iqe_route.py
+# and test_iqe_seed_queries.py leave the backlog: they exercise the executor fallback this
+# changes. Pure Python, scratch in-memory SQLite, ~5s.
+tests/test_iqe_seed_collections_registered.py
+tests/test_iqe_canvas_seed_fields.py
+tests/test_iqe_run_routes_honest.py
+tests/test_iqe_route.py
+tests/test_iqe_seed_queries.py

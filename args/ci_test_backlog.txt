@@ -1009,13 +1009,10 @@ tests/test_iqe_nl_to_iqe_ip.py
 tests/test_iqe_nl_to_iqe_temporal.py
 tests/test_iqe_observability_adapter.py
 tests/test_iqe_observability_seeds.py
-tests/test_iqe_parser.py
 tests/test_iqe_pipeline_adapter.py
 tests/test_iqe_pipeline_seeds.py
-tests/test_iqe_route.py
 tests/test_iqe_security_adapter.py
 tests/test_iqe_security_seeds.py
-tests/test_iqe_seed_queries.py
 tests/test_ironbank_generator.py
 tests/test_jise_api.py
 tests/test_jise_portal.py
@@ -1090,7 +1087,6 @@ tests/test_lpx_proxy_reconcile.py
 tests/test_lpx_team_budgets.py
 tests/test_lpx_team_limits.py
 tests/test_lpx_team_spend.py
-tests/test_marketplace_publish.py
 tests/test_marketplace_search.py
 tests/test_markitdown_adapter.py
 tests/test_markov_sequencer.py

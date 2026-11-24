@@ -1,0 +1,6 @@
+# icx-mdz-02: 7R on evidence, one engine -- criteria by name (a mismatch is refused), unmeasured
+# lowers confidence and never scores 0.5, the other 7R generators consume the assessor, may-plan
+# enforced in monolith_decomposer and refactor_jobs (refused writes nothing, audited, shown, twinned);
+# and the refusal record on PG.
+tests/test_icx_mdz_02_seven_r_evidence.py
+tests/test_icx_mdz_02_ambient.py

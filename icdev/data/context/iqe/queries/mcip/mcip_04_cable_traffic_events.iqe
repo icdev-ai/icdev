@@ -1,0 +1,6 @@
+# MCIP DAT seed query (split from mcip.iqe). Collection: dat.events.
+# Prompt: show diplomatic events from cable traffic source
+# "cable_traffic" is the source type's key (DAT_SOURCE_TYPES in tools/mcip/constants.py).
+foreach e in dat.events
+where e.source_type == "cable_traffic"
+select e.id, e.source_type, e.sender, e.recipient, e.classification, e.tension_signal, e.ingested_at

@@ -1,0 +1,5 @@
+# Benchmark labels and pins decide the false-positive and false-negative rates. A change needs a code owner's
+# review; this takes effect only with branch protection's 'Require review from Code Owners' and a second account,
+# since GitHub never counts a PR author's own review.
+/args/vuln_research.yaml @icdev-ai
+/context/vulnresearch/ @icdev-ai

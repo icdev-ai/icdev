@@ -1,13 +1,16 @@
--- CUI // SP-CTI
--- IQE Query: FRH-002
--- Title: FedRAMP High — Controls Without Evidence
--- Framework: FedRAMP High
--- Category: evidence-gap
--- Severity: critical
--- Description: FedRAMP High authorization requires documented evidence for
---   every control. Controls with no evidence reference cannot be submitted
---   in an authorization package and block the entire ATO process.
+# CUI // SP-CTI
+# IQE Query: FRH-002
+# Title: FedRAMP High — Controls Without Evidence
+# Framework: FedRAMP High
+# Category: evidence-gap
+# Severity: critical
+# Description: FedRAMP High authorization requires documented evidence for
+#   every control. Controls with no evidence reference cannot be submitted
+#   in an authorization package and block the entire ATO process.
 
-foreach ctrl in framework('FedRAMP High').controls
-where ctrl.evidence_ref is null
+# Written in the retired cATO regex engine's dialect (framework('X').controls,
+# starts_with, is null); bdt-iqe-1 moved that surface to compliance.twin_snapshots,
+# startswith and == null (tools/genesis/reflexes/cato_twin.py), so this is the same query.
+foreach ctrl in compliance.twin_snapshots('FedRAMP High')
+where ctrl.evidence_ref == null
 select ctrl.control_id, ctrl.implementation_status, ctrl.project_id

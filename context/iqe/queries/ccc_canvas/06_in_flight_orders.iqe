@@ -1,4 +1,9 @@
-collection: ccc.xc_orders
-query: in-flight cross-connect orders status pipeline
-description: All cross-connect orders currently in-flight (quoted through testing) with ETA and carrier ticket
-tags: [orders, cross-connect, in-flight, pipeline]
+# collection: ccc.xc_orders
+# query: in-flight cross-connect orders status pipeline
+# description: All cross-connect orders currently in-flight (quoted through testing) with ETA and carrier ticket
+# tags: [orders, cross-connect, in-flight, pipeline]
+# The IQE below is what the ccc adapter answers this prompt with (tools/iqe/adapters/ccc.py).
+foreach o in ccc.xc_orders
+where o.order_status == "quoted" or o.order_status == "ordered" or o.order_status == "loa_submitted" or o.order_status == "loa_approved" or o.order_status == "installing" or o.order_status == "testing"
+select o.id, o.xc_number, o.facility, o.order_status, o.estimated_delivery, o.carrier_ticket_id, o.ordered_by
+# Not applied: IQE has no `order by`, so the executor returns every matching row, unsorted and uncapped. Intended presentation, not performed: sort by o.estimated_delivery asc.

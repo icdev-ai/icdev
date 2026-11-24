@@ -1,0 +1,3 @@
+# NSA ZIG IQE seed query (split from zig_queries.iqe). Collection: zig.*
+# Query 5: Implemented capabilities count by pillar
+foreach c in zig.capabilities where c.implementation_status == "implemented" select c.pillar_slug, c.title, c.phase

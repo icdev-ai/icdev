@@ -1,0 +1,186 @@
+# CUI // SP-CTI
+# AI-assisted vulnerability discovery, proven or dropped (icx-ent-01).
+#
+# Read by tools/vulnresearch/*. Defensive research on AUTHORISED targets only:
+#
+#   * a target (a source tree at a recorded digest) is scanned only when it is
+#     registered, a person who did not register it has authorised it
+#     (decl-wft-vr-target-authorise), it is not revoked or expired, and its tree
+#     still has the digest it was registered at. Anything else is refused, never
+#     warned about (tools/vulnresearch/targets.py::assert_in_scope);
+#   * the tree must sit under one of scope.allowed_roots. Adding a root is the
+#     deliberate act that makes a path testable, and it must be paired with an
+#     authorisation -- the allowlist alone grants nothing (the same rule as
+#     args/redteam_scope.yaml for hosts);
+#   * target code runs only inside the sandbox executor with no network
+#     (tools/security/sandbox_executor.py::SandboxExecutor.run_isolated);
+#   * a candidate becomes a finding ONLY with a proof of vulnerability (PoV) that
+#     replays in the sandbox through tools/security/reproduction_validator.py and
+#     discriminates (fires on the PoV input, does not fire on the benign control).
+#     Otherwise it is dropped and counted, by reason;
+#   * a PoV is canary-only by construction (the recipes below), sealed in the
+#     ledger and never exported or shown; nothing generates a variant of it.
+#
+# Changing this file changes behaviour: the run records its digest.
+
+version: 1
+
+scope:
+  # Repo-relative (or absolute) roots a target may live under. Default: the
+  # synthetic benchmark only, and the operator's own target checkouts under
+  # data/ (never committed). Nothing else adds a root: no environment variable,
+  # flag or request (a change here is a reviewed config change).
+  allowed_roots:
+    - context/vulnresearch/benchmark
+    - data/vulnresearch/targets
+  # What a target's tree digest covers (and what discovery reads).
+  # Only these files are hashed, and only these (regular files, no symlinks) are ever staged into the sandbox:
+  # anything else beside the code -- a shared object, bytecode, a .pth file -- never runs.
+  include: ["**/*.py", "**/*.txt", "**/pyproject.toml"]
+  exclude_dirs: [".git", "__pycache__", ".venv", "venv", "node_modules"]
+  max_files: 400
+  max_file_bytes: 262144
+  # An authorisation lapses after this many days unless the registration names
+  # an earlier date.
+  authorisation_days: 30
+
+sandbox:
+  # Every PoV replay and fuzz run is one container, no network, read-only root,
+  # every capability dropped (SandboxExecutor.run_isolated). The image is pinned
+  # by digest; the fuzz image adds atheris (deploy/vuln-sandbox/Dockerfile) and
+  # is used only when it is present locally, else the built-in fuzzer runs in
+  # the plain image (documented in docs/features/icx-ent-01-ai-vulnerability-discovery.md).
+  image: "python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b"
+  # A locally built tag (deploy/vuln-sandbox, itself FROM the pinned digest above with a hash-pinned wheel), so
+  # it cannot be pinned by a registry digest: every fuzz run records the image ID it actually ran (image_id).
+  fuzz_image: "icdev-vuln-sandbox:atheris-3.1.0"
+  timeout_seconds: 60
+  memory_mb: 512
+  pids_limit: 128
+  call_timeout_seconds: 5
+
+# What a run on a target must be isolated by. Code that is not ours runs only under gVisor (runsc) or a microVM
+# (Kata, Firecracker): SandboxExecutor.run_isolated REFUSES a plain container (runc) for it. Installing one into
+# the container engine is an OWNER/ROOT step (docs/features/icx-ent-01-ai-vulnerability-discovery.md, "Isolation"),
+# then sandbox.isolated.oci_runtime in args/sandbox_config.yaml names it.
+#
+# A WAIVER lets a plain container run, by name, for one scope only, and is recorded in the run and the bundle.
+# The only one: the synthetic benchmark of ICDEV's own planted code (context/vulnresearch/benchmark), which is
+# also all that CI runs. It never applies to any other target.
+isolation:
+  require: [gvisor, microvm]
+  waivers:
+    - id: vr-waiver-synthetic-benchmark
+      applies_to: synthetic_benchmark
+      reason: >-
+        The target is ICDEV's own synthetic benchmark of planted code (context/vulnresearch/benchmark), whose
+        proofs are canary-only; it runs in the hardened container (no network, read-only root, capabilities
+        dropped) on hosts without gVisor or a microVM, including CI. No other target is covered.
+      recorded_by: "icx-ent-01 (card builder); for the owner to confirm"
+      recorded_on: "2026-11-18"
+
+fuzz:
+  iterations: 4000
+  seed: 1337
+  max_input_len: 256
+  # Exceptions a function may raise to REJECT bad input. Anything else escaping
+  # the entry point on a fuzz input is a crash.
+  expected_exceptions: [ValueError]
+
+sca:
+  # A KEV flag is claimed only from a feed refreshed within this many days; otherwise it is null (unverified).
+  kev_max_age_days: 7
+
+review:
+  # Agentic source review through Cortex governance and the LLM router
+  # (llm_function vuln_source_review). It only proposes candidates.
+  llm_function: vuln_source_review
+  max_source_bytes: 60000
+  max_candidates: 20
+patch:
+  llm_function: vuln_patch_draft
+
+# SAST rule -> weakness class. A bandit finding whose test id is not listed is
+# kept as an unproven lead with no recipe (dropped: no_recipe).
+sast_cwe:
+  B602: CWE-78
+  B605: CWE-78
+  B604: CWE-78
+  B603: CWE-78
+  B607: CWE-78
+  B307: CWE-95
+  B102: CWE-95
+  B301: CWE-502
+  B403: CWE-502
+  B608: CWE-89
+
+# PoV recipes: one per weakness class. Canary-only: a payload can create an empty
+# file under /tmp or read a planted canary, inside the sandbox, and nothing else.
+# {canary} is a per-candidate path under /tmp, {token} its marker, {dotdots} a run
+# of ../ long enough to reach /. The control is a benign input the oracle must NOT
+# fire on: a PoV that also fires on its control proves nothing and is dropped.
+recipes:
+  CWE-78:
+    name: OS command injection
+    severity: critical
+    payload: "x;touch {canary};#"
+    control: "hello"
+    oracle: file_created
+  CWE-95:
+    name: Code injection (eval/exec)
+    severity: critical
+    payload: "__import__('pathlib').Path('{canary}').touch()"
+    control: "1+1"
+    oracle: file_created
+  CWE-22:
+    name: Path traversal
+    severity: high
+    payload: "{dotdots}{canary_rel}"
+    control: "readme.txt"
+    oracle: opened
+    plant: true
+  CWE-89:
+    name: SQL injection
+    severity: high
+    payload: "x' UNION SELECT '{token}' --"
+    control: "alice"
+    oracle: returned
+  CWE-502:
+    name: Deserialisation of untrusted data (pickle)
+    severity: critical
+    payload: "@canary_pickle"
+    control: "@benign_pickle"
+    oracle: file_created
+  CWE-20:
+    name: Improper input validation (a crash found by fuzzing)
+    severity: medium
+    payload: "@fuzz_crash"
+    control: "@fuzz_seed"
+    oracle: exception
+
+benchmark:
+  path: context/vulnresearch/benchmark
+  labels: context/vulnresearch/benchmark/labels.yaml
+  # The committed benchmark's tree digest (targets.tree over the in-scope files). The isolation waiver applies
+  # ONLY to a target whose registered AND current tree has exactly this digest: an edited benchmark is a real
+  # target and needs gVisor or a microVM. Recompute after a reviewed change to the benchmark with
+  #   python tools/vulnresearch/cli.py benchmark-digest --write
+  # (--check, and tests/test_icx_ent_01_vulnresearch.py, fail while the pin is stale).
+  tree_digest: "90e15f4ae00d76a86f488f555723f2cd4020ea63c9a6c030b68cf58c4eec339d"
+  # The labels' SHA-256 (the raw file). A measurement against labels that do not hash to this is unverified,
+  # its rates null; labels with reviewed_by null are measured "against unreviewed labels" (a warning: a person
+  # signing the labels is the owner's act, like the ops gold set).
+  labels_sha256: "2cd792133ebedde02867daff258fa3571271260418f715bf2a031fb80bb5f3ca"
+  # The only patched content that runs under the benchmark's waiver: the SHA-256 of each file as the committed
+  # reference fixes (context/vulnresearch/benchmark_fixes/*.diff) leave it. Any other patch on the benchmark is
+  # code that is not ours and needs gVisor or a microVM. benchmark-digest --check recomputes these.
+  reference_fixes:
+    src/vb_cmdi.py: ["db5035aa35d7833e715c44c09d312cf217a9e9e0c447c31e74d1b6ec3b741327"]
+    src/vb_parser.py: ["4e5f8bb194a7403281148c6f0036976fd8afcf0daf3b13ab8fd2c56c5c781350"]
+  fixes_dir: context/vulnresearch/benchmark_fixes
+
+publish:
+  # A prepared findings bundle waiting this long for a person, or a target whose
+  # newest published bundle is this old, is a twin finding.
+  waiting_warn_days: 7
+  stale_days: 30

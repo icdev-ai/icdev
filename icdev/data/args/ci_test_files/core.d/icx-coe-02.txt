@@ -1,0 +1,10 @@
+# icx-coe-02: exemptions that expire (scope, mandatory expiry, an expired exemption FAILS the scorecard and the CI
+# check, planted; grant and renew are a person's declared steps, never the requester's, bound to the digest; the
+# append-only hash-chained log and the bootstrap migration of expiry-less grants) and ADRs as records (the flat doc
+# generated from them, migrated losslessly, drift fails; accept and supersede are declared steps, never the
+# author's); the pages, the twin and the MCP tools; both lifecycles on the ambient PG; and idp-score-04's own tests,
+# changed by this card and now gated.
+tests/test_icx_coe_02_exemptions.py
+tests/test_icx_coe_02_adrs.py
+tests/test_icx_coe_02_ambient.py
+tests/test_idp_exemptions.py

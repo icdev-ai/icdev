@@ -2812,7 +2812,7 @@ TOOL_REGISTRY = {
         "category": "marketplace",
         "module": "tools.mcp.marketplace_server",
         "handler": "handle_openclaw_promote",
-        "description": "Promote a quarantined OpenClaw import to the ICDEV™ marketplace (requires passed gates + review)",
+        "description": "RETIRED (icx-ent-04): refuses. An agent never promotes into the marketplace; a person does, on the console",
         "input_schema": {
             "type": "object",
             "properties": {"import_id": {"type": "string"}, "promoted_by": {"type": "string"}},
@@ -9207,7 +9207,50 @@ RESOURCE_REGISTRY = {
             "required": ["repo"],
         },
     },
+    # -- evidence collectors for customer environments (icx-ent-02) ----------
+    "evidence_collectors_status": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_evidence_collectors_status",
+        "description": "Read the read-only evidence collectors for customer systems (/evidence-collectors/, args/evidence_collectors.yaml): with no system, the systems you may see at the MCP marking (CUI) and each one's newest prepared and published icos-objective-evidence/v1 report (digest, who prepared it, who published it), the others only counted; the reviewed mapping from observed facts (cloud configuration via AWS Config, the identity provider via OIDC discovery and SCIM, endpoints via Intune, the SIEM via Splunk) to SP 800-171 Rev. 2 and SP 800-53 Rev. 5 objectives. With system: its collectors, the observations its newest report rests on (each with observed_at, collector and freshness budget; unverified with why), the objectives judged satisfied or other than satisfied and those left unverified. published=true returns the newest published report as ICDEV[OS] imports it. Reads only: collects, prepares and publishes nothing; credentials are never returned.",
+        "input_schema": {"type": "object", "properties": {
+            "system": {"type": "string", "description": "A system id (args/evidence_collectors.yaml)"},
+            "published": {"type": "boolean", "description": "Return the newest published report of system"}}},
+    },
+    "evidence_collectors_prepare": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_evidence_collectors_prepare",
+        "description": "Collect (read-only) from a customer system's declared sources and prepare its icos-objective-evidence/v1 report as a DRAFT, recorded as the agent's (agent:<name>) at its digest. It decides nothing and nothing leaves: a person of the system's org who did not prepare it publishes it to ICDEV[OS] or refuses it on /evidence-collectors/, a declared step an agent cannot take. Give system.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The preparing agent's name (recorded as agent:<name>)"},
+                "system": {"type": "string"}, "note": {"type": "string"},
+            },
+            "required": ["system"],
+        },
+    },
+    # -- signed factory builds (icx-ent-03) -----------------------------------
+    "factory_builds_status": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_factory_builds_status",
+        "description": "Read the signed factory builds (/factory-builds/, args/factory_builds.yaml): with no target, the SYNTHETIC targets you may see at the MCP marking (CUI) and each one's newest prepared and published icos-artefact/v1 build (artefact digest, who prepared it, who published it, the signing mode and whether a transparency log was used), the others only counted. With target: its newest build's record (subject, key id, a model's fine-tuning registry promotion it rests on), the SBOM or AI-BOM summary, the VEX statements and the history. export=true returns the newest PUBLISHED build as ICDEV[OS] imports it ({bundle, publication}). Reads only: it never builds, signs or publishes; an agent never makes the factory's key sign.",
+        "input_schema": {"type": "object", "properties": {
+            "target": {"type": "string", "description": "A target id (args/factory_builds.yaml)"},
+            "export": {"type": "boolean", "description": "Return the newest published build of target"}}},
+    },
     # -- golden paths: a new service conformant by construction (icx-coe-04) ---
+    # -- store publisher (icx-ent-04) ------------------------------------------
+    "store_publisher_status": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_store_publisher_status",
+        "description": "Read the store publisher (/store-publisher/, args/store_publisher.yaml): with no package, the SYNTHETIC store packages you may see at the MCP marking (CUI) and each one's newest prepared and published icos-store-package/v1 version (content digest, who prepared it, who published it), the others only counted. With package: its newest version's Agent Card (name, version, skills, the content digest it binds), its seven scanner gate results (the publisher's own report), its red-team summary, ceilings, budget and history. Reads only: it never prepares, signs, publishes or exports the bundle (a person takes it out); an agent never makes the publisher's key sign.",
+        "input_schema": {"type": "object", "properties": {
+            "package": {"type": "string", "description": "A package id (args/store_publisher.yaml)"}}},
+    },
     "coe_golden_paths": {
         "category": "conformance",
         "module": "tools.mcp.gap_handlers",
@@ -9232,6 +9275,29 @@ RESOURCE_REGISTRY = {
                 "note": {"type": "string"},
             },
             "required": ["path_id", "version"],
+        },
+    },
+    # -- AI-assisted vulnerability discovery, proven or dropped (icx-ent-01) ---
+    "vulnresearch_status": {
+        "category": "security",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_vulnresearch_status",
+        "description": "Read AI-assisted vulnerability discovery (/vulnresearch/). With no target_id: every registered target and its state (awaiting_authorisation, authorised, refused, revoked, expired) and the newest false-positive / false-negative measurement on the labelled benchmark (judged by planted labels, no model judges). With target_id: its registration (tree digest), the person's authorisation, its newest discovery run (findings, each confirmed by a proof of vulnerability replayed in the sandbox; dropped candidates counted by reason; dependency advisories carried as unproven with their KEV flag), its patch proposals and reviews, and its findings bundle ledger. Proofs of vulnerability are sealed: only their digest and replay outcomes are returned. Read-only: registers, runs, proposes and publishes nothing.",
+        "input_schema": {"type": "object", "properties": {
+            "target_id": {"type": "string", "description": "A registered target (vrt-...)"}}},
+    },
+    "vulnresearch_prepare": {
+        "category": "security",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_vulnresearch_prepare",
+        "description": "Prepare a target's icos-findings/v1 bundle as a DRAFT, recorded as the agent's (agent:<name>): built from the target's newest discovery run and recorded at its digest. It decides nothing and nothing leaves: a person who did not prepare it publishes it to ICDEV[OS] or refuses it on /vulnresearch/, a declared step an agent cannot take. Give target_id.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent_id": {"type": "string", "description": "The preparing agent's name (recorded as agent:<name>)"},
+                "target_id": {"type": "string"}, "note": {"type": "string"},
+            },
+            "required": ["target_id"],
         },
     },
 }
@@ -9957,8 +10023,20 @@ READ_ONLY_DECLARATIONS = MappingProxyType({
     # bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
     "coe_conformance":                          True,
     "coe_conformance_prepare":                  False,
+    # icx-ent-01: vulnerability discovery. The read reads (sealed PoVs withheld); prepare records a
+    # draft bundle (one ledger row) and decides nothing, so it is not read-only and halts at the gate.
+    "vulnresearch_status":                      True,
+    "vulnresearch_prepare":                     False,
+    # icx-ent-02: evidence collectors. The read reads; prepare collects read-only and records a draft
+    # report (one ledger row), decides nothing, so it is not read-only and halts at the gate.
+    "evidence_collectors_status":               True,
+    "evidence_collectors_prepare":              False,
     # icx-coe-04: golden paths. The read reads; propose records a draft version (one ledger row)
     # and decides nothing, so it is not read-only and halts at the gate.
+    # icx-ent-03: signed factory builds. Reads only (an agent never makes the factory's key sign).
+    "factory_builds_status":                    True,
+    # icx-ent-04: the store publisher. Reads only (an agent never makes the publisher's key sign).
+    "store_publisher_status":                   True,
     "coe_golden_paths":                         True,
     "coe_golden_path_propose":                  False,
 })

@@ -175,3 +175,48 @@ def register(registry) -> None:
     registry.register("pmc.prefixes", prefixes_adapter, description="Peer prefixes — RPKI validation, IRR registration")
     registry.register("pmc.peering_requests", requests_adapter, description="Peering session requests and their lifecycle")
     registry.register("pmc.route_policies", policies_adapter, description="BGP route import/export policies")
+
+
+# ── Executor collections ──────────────────────────────────────────────────────
+#
+# The adapters above are the canvas widget's natural-language router: they take
+# the question text and pick a canned query (handle_query). Nothing registered
+# these collections on the IQE executor, so /iqe/run and the seed queries under
+# context/iqe/queries/pmc_canvas/ could never read them. args/component_registry.yaml
+# declares them as this module's IQE collections; these are the executor view of
+# the same tables -- whole rows, the seed's where/select doing the filtering --
+# through the module's own connection helper, failing loudly, honestly capped.
+
+from tools.iqe.executor import fetch_rows as _fetch_rows
+from tools.iqe.executor import register_collection as _register_collection
+
+_EXECUTOR_VIEWS = {
+    "pmc.peers": "SELECT * FROM peering_peers",
+    "pmc.ix_memberships": "SELECT * FROM peering_ix",
+    "pmc.prefixes": (
+        "SELECT pp.*, pr.asn, pr.org_name FROM peering_prefixes pp "
+        "JOIN peering_peers pr ON pp.peer_id = pr.id"
+    ),
+    "pmc.peering_requests": (
+        "SELECT pr.*, pp.asn, pp.org_name FROM peering_requests pr "
+        "LEFT JOIN peering_peers pp ON pr.peer_id = pp.id"
+    ),
+    "pmc.route_policies": "SELECT * FROM peering_policies",
+}
+
+
+def _executor_adapter(collection: str, sql: str):
+    def fetch(conn=None) -> list[dict]:
+        c, owned = _pmc_conn(conn)
+        try:
+            return _fetch_rows(c, sql, collection)
+        finally:
+            if owned:
+                c.close()
+
+    fetch.__name__ = "executor_" + collection.replace(".", "_")
+    return fetch
+
+
+for _name, _sql in _EXECUTOR_VIEWS.items():
+    _register_collection(_name, _executor_adapter(_name, _sql))

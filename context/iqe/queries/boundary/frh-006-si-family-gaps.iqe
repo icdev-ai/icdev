@@ -1,13 +1,16 @@
--- CUI // SP-CTI
--- IQE Query: FRH-006
--- Title: FedRAMP High — System & Information Integrity (SI) Family Gaps
--- Framework: FedRAMP High
--- Category: control-family
--- Severity: high
--- Description: SI-family controls at FedRAMP High add continuous malware
---   scanning (SI-3), integrity verification, and automated alerting not
---   required at Moderate. Surface unsatisfied SI controls for prioritisation.
+# CUI // SP-CTI
+# IQE Query: FRH-006
+# Title: FedRAMP High — System & Information Integrity (SI) Family Gaps
+# Framework: FedRAMP High
+# Category: control-family
+# Severity: high
+# Description: SI-family controls at FedRAMP High add continuous malware
+#   scanning (SI-3), integrity verification, and automated alerting not
+#   required at Moderate. Surface unsatisfied SI controls for prioritisation.
 
-foreach ctrl in framework('FedRAMP High').controls
-where ctrl.control_id starts_with 'SI' and ctrl.status != 'satisfied'
+# Written in the retired cATO regex engine's dialect (framework('X').controls,
+# starts_with, is null); bdt-iqe-1 moved that surface to compliance.twin_snapshots,
+# startswith and == null (tools/genesis/reflexes/cato_twin.py), so this is the same query.
+foreach ctrl in compliance.twin_snapshots('FedRAMP High')
+where ctrl.control_id startswith 'SI' and ctrl.status != 'satisfied'
 select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id

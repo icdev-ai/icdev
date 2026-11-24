@@ -1,0 +1,9 @@
+# icx-mdz-01: modernisation joins the five-rules audit -- 7R record, AI-Ify promotion and
+# deletion, Process-Ify observed review, CAM job approval, the Modernisation page, the
+# ICDEV[OS] decisions check, the twin, the MCP read tools; and the same reads on PG.
+tests/test_icx_mdz_01_modernisation.py
+tests/test_icx_mdz_01_ambient.py
+# Promoted from args/ci_test_backlog.txt: the AI-Ify route and auth tests, green alone and
+# in-suite once their app records the person's declared step (wf_db).
+tests/test_penta_aiify_auth.py
+tests/test_penta_aiify_routes.py

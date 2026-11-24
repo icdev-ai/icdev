@@ -1,0 +1,4 @@
+# osx-cop-04: the Application CoP's architecture records on the golden path. `icdev scaffold service` emits C4 views
+# and an arc42 description beside the one proposed ADR record; section 9 links it and nothing copies it (ADR records
+# are not duplicated); the drift check judges it as the piece architecture_records; the templates credit C4 and arc42.
+tests/test_osx_cop_04_architecture_records.py
