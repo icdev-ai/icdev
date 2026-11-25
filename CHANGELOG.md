@@ -14,6 +14,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   by their module's reader rule, Cortex, exemption and studio rows by their own tenant and marking, audit rows by their
   marking); for anyone else the answer is exactly what an unknown id gets. Studio workflows and exemption requests are
   now stamped with their writer's org, and migration 20261124230000 gives old studio workflows their creator's tenant.
+  A studio workflow whose creator was a fixed name (`studio`, `processify`) and a legacy exemption carry no tenant and
+  can no longer be followed from a twin finding.
 - **Factory builds bind their org.** The declared publish step and the publication carry the target's org, and export
   re-checks the publisher's org and clearance. **Factory builds published before this change must be published
   again**: their export is refused with 409 `step_missing`.

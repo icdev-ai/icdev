@@ -346,17 +346,77 @@ def test_the_migration_gives_old_studio_workflows_their_creator_s_tenant(tmp_pat
     assert mig.up(bare)["status"] == "skipped"
 
 
+def test_an_exemption_is_the_platform_s_only_if_it_was_from_its_first_row(wf_db):
+    """Re-review M1: migrate_legacy appends a bootstrap row to a PERSON's legacy exemption; that row is the person's
+    exemption, not the platform's. Only an exemption a bootstrap identity filed itself is the platform's."""
+    from tools.idp import exemptions
+    from tools.twin_core import governance
+
+    expires = (date.today() + timedelta(days=30)).isoformat()
+    person = exemptions.request_exemption("component-readiness", "e2e-spec", f"sec01-p-{uuid.uuid4().hex[:6]}",
+                                          reason="SYNTHETIC: a person's", requested_by="u-sec01-alice", expires=expires)
+    conn = governance._thread_conn("rls")
+    try:
+        cur = exemptions._latest(conn, person["exemption_key"])
+        later = exemptions._append_event(
+            conn, current=cur, key=person["exemption_key"], scorecard_key=cur["scorecard_key"],
+            rule_identifier=cur["rule_identifier"], component_key=cur["component_key"], event="migrated",
+            status=cur["status"], reason=cur["reason"], requested_by=cur["requested_by"], decided_by="u-sec01-bob",
+            decision_reason="SYNTHETIC", expires_on=expires, notified=[], tenant_id=None,
+            scope_kind=cur["scope_kind"], scope_ref=cur["scope_ref"], standard_ids=[],
+            actor="bootstrap:icx-coe-02-exemption-migration", actor_kind="bootstrap")
+    finally:
+        conn.close()
+    cleared = {"id": "u-sec01-x", "role": "isso", "clearance": "SECRET", "org": "syn-sec01-org-b"}
+    _hidden_like_unknown(f"idp_exemption:{later['id']}", "idp_exemption:" + "0" * 32, [cleared, _agent(), None])
+    platform = exemptions.request_exemption("component-readiness", "e2e-spec", f"sec01-plat-{uuid.uuid4().hex[:6]}",
+                                            reason="SYNTHETIC: the platform's", expires=expires,
+                                            requested_by="bootstrap:icx-sec-01-test", actor_kind="bootstrap")
+    assert governance.resolve_thread(f"idp_exemption:{platform['id']}", reader=cleared)["resolved"]
+    _hidden_like_unknown(f"idp_exemption:{platform['id']}", "idp_exemption:" + "0" * 32,
+                         [dict(cleared, clearance="PUBLIC"), None])
+
+
+def test_a_platform_seed_is_never_stamped_with_its_visitor_s_org(wf_db, monkeypatch):
+    """Re-review L2: a seed that runs inside someone's request passes tenant_id=None; a person's save is theirs."""
+    from tools.studio import workflow_editor
+    from tools.twin_core import governance
+
+    seed, own = f"wf-sec01-seed-{uuid.uuid4().hex[:6]}", f"wf-sec01-own-{uuid.uuid4().hex[:6]}"
+    ctx = _signed_in(ORG_A, monkeypatch)
+    try:
+        workflow_editor.save_workflow(seed, "SYNTHETIC seed", "name: s\n", created_by="dod_lab_api", tenant_id=None)
+        workflow_editor.save_workflow(own, "SYNTHETIC own", "name: s\n", created_by=ORG_A["id"])
+    finally:
+        ctx.pop()
+    conn = governance._thread_conn("core")
+    try:
+        got = dict(conn.execute("SELECT workflow_id, tenant_id FROM studio_workflows WHERE workflow_id IN (%s, %s)",
+                                (seed, own)).fetchall())
+    finally:
+        conn.close()
+    assert got == {seed: None, own: ORG_A["tenant_id"]}
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "tools" / "ndc" / "dod_lab_api.py").read_text(encoding="utf-8")
+    assert "tenant_id=None" in src, "the DoD lab demo seed is the platform's"
+
+
 # ── review L3: a single-tenant install's people are in ``default`` ───────────
 
 
-@pytest.mark.parametrize("shared", [False, True])
-def test_a_person_with_no_tenant_is_in_default_only_on_a_single_tenant_install(wf_db, monkeypatch, shared):
+@pytest.mark.parametrize("signal", [None, "ICDEV_MULTI_TENANT", "ICDEV_SAAS_MODE"])
+def test_a_person_with_no_tenant_is_in_default_only_on_a_single_tenant_install(wf_db, monkeypatch, signal):
+    """Re-review L3: either signal, read at call time through tools/saas/db/db_compat.is_shared_deployment."""
+    from tools.saas.db import db_compat
     from tools.twin_core import governance
 
     for var in ("ICDEV_SAAS_MODE", "ICDEV_MULTI_TENANT"):
         monkeypatch.delenv(var, raising=False)
+    shared = signal is not None
     if shared:
-        monkeypatch.setenv("ICDEV_MULTI_TENANT", "true")
+        monkeypatch.setenv(signal, "true")
+    assert db_compat.is_shared_deployment() is shared
     a = f"cgov-sec01-{uuid.uuid4().hex[:8]}"
     _row("INSERT INTO cortex_audit (id, session_id, tenant_id, classification, function, outcome) "
          "VALUES (%s,%s,%s,%s,%s,%s)", (a, "s-1", "default", "CUI", "cortex", "pass"))

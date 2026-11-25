@@ -2010,6 +2010,10 @@ def create_workflow(
         conn.close()
 
 
+#: ``save_workflow``'s default: stamp the signed-in writer's org (icx-sec-01). A platform seed passes ``None``.
+_SIGNED_IN = object()
+
+
 def save_workflow(
     workflow_id: str,
     name: str,
@@ -2018,10 +2022,16 @@ def save_workflow(
     category: str = "general",
     description: str = "",
     created_by: str = "studio",
+    tenant_id: Any = _SIGNED_IN,
 ) -> None:
-    """Persist a workflow with a caller-supplied workflow_id."""
+    """Persist a workflow with a caller-supplied workflow_id.
+
+    ``tenant_id`` (icx-sec-01): by default the signed-in writer's org; a PLATFORM seed passes ``None`` explicitly, so
+    a seed that runs inside someone's request is never stamped with that visitor's org."""
     now = _now_iso()
     from tools.saas.auth.middleware import signed_in_org  # icx-sec-01: the row is its writer's org's
+
+    tenant = signed_in_org() if tenant_id is _SIGNED_IN else tenant_id
 
     conn = get_connection()
     try:
@@ -2030,8 +2040,7 @@ def save_workflow(
                (workflow_id, name, description, template_yaml, category,
                 created_by, created_at, updated_at, tenant_id)
                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (workflow_id, name, description, template_yaml, category, created_by, now, now,
-             signed_in_org()),
+            (workflow_id, name, description, template_yaml, category, created_by, now, now, tenant),
         )
         conn.commit()
     finally:

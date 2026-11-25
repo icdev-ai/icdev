@@ -16,7 +16,7 @@ person's row read fresh); MCP `twin_governance` passes an agent in no org; the C
 |---|---|
 | `wf_step` | its workflow item: a factory build's target, a store package, a system's objective evidence (each module's own `visible`); CoE standard/ADR/golden-path/conformance and vulnerability discovery steps are as open as their registers; any other template resolves for no one |
 | `factory_builds`, `evidence_collectors` | the module's `thread_record(event_id, reader)` |
-| `cortex_audit`, `cortex_finding`, `idp_exemption`, `studio_workflow` | the row's own tenant and marking. A row with no tenant fails closed, unless identifiably the platform's (an exemption row of the CoE bootstrap migration, `actor_kind: bootstrap`) |
+| `cortex_audit`, `cortex_finding`, `idp_exemption`, `studio_workflow` | the row's own tenant and marking. A row with no tenant fails closed, unless identifiably the platform's: an exemption whose FIRST row a bootstrap identity filed (`actor_kind: bootstrap`, `requested_by` a `bootstrap:` id). A bootstrap row appended later (`migrate_legacy` giving a person's legacy exemption an expiry) is that person's exemption, not the platform's |
 | `audit_trail`, `ace_audit` | the row's marking |
 
 A person whose row has no tenant is in `default` on a single-tenant install (neither `ICDEV_SAAS_MODE` nor
@@ -26,10 +26,19 @@ A person whose row has no tenant is in `default` on a single-tenant install (nei
 ## Writes carry their writer's org
 
 Exemption requests (`/idp/api/exemptions/request`) and the five write paths into `studio_workflows` stamp
-`tenant_id` from the signed-in person (`signed_in_org()`). Migration `20261124230000_studio_workflows_tenant` gives an
-existing workflow with no tenant its creator's tenant. Exemption rows are append-only and hash-chained, with
-`tenant_id` inside the hash, so old exemption rows are not backfilled: one with no tenant stays no one's (the CoE
-bootstrap's excepted).
+`tenant_id` from the signed-in person (`signed_in_org()`); a platform seed passes `tenant_id=None` explicitly
+(`save_workflow`, the DoD lab demo), so a seed that runs inside a visitor's request is never stamped with their org.
+Migration `20261124230000_studio_workflows_tenant` gives an existing workflow with no tenant its creator's tenant.
+
+**What stays unfollowable.** Most existing studio workflows were written with a fixed `created_by` (`studio`,
+`processify`, `dod_lab_api`), not a person, so the migration cannot know their tenant: their threads no longer resolve
+for anyone, and a person re-saving one gives it their org. Exemption rows are append-only and hash-chained, with
+`tenant_id` inside the hash, so old exemption rows are not backfilled either: one with no tenant (every legacy
+exemption, and its `migrated` bootstrap row) stays no one's. The twin still reports these findings; only following the
+thread to the row is closed.
+
+Whether an install is shared is read in one place, at call time: `tools/saas/db/db_compat.py is_shared_deployment()`
+(`ICDEV_SAAS_MODE` or `ICDEV_MULTI_TENANT`), used by the twin's single-tenant mapping and the retriever's warning.
 
 ## Factory builds and ClawHub
 

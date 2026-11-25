@@ -110,6 +110,7 @@ def _ensure_workflow() -> None:
                 "with Kanban + Qwen3. Runs in Studio Execution Runner."
             ),
             created_by="dod_lab_api",
+            tenant_id=None,     # icx-sec-01: a platform seed, never the first visitor's org
         )
 
 

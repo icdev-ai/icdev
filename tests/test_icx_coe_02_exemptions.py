@@ -408,8 +408,16 @@ def test_legacy_exemptions_are_migrated_by_the_bootstrap_identity_never_granted(
     env = governance.observe(governance.adapter_for("idp"), record=False)
     mig = [x for x in env["violations"] if x["rule_id"] == "coe.exemption.migrated"]
     assert mig and mig[0]["thread_id"] == f"idp_exemption:{last['id']}"
-    t = governance.resolve_thread(mig[0]["thread_id"], reader=TENANT_READER)
-    assert t["resolved"] and t["record"]["actor_kind"] == "bootstrap"
+    # icx-sec-01 (review M1): the bootstrap row carries alice's exemption and bob's grant, and the legacy rows name no
+    # tenant: it is no one's, not the platform's. No reader of any org, and no agent, follows it; the answer is exactly
+    # an unknown id's. (The finding still names it, for the owner, on the console's own twin page.)
+    from tools.store_publisher.service import mcp_reader
+
+    unknown = "idp_exemption:" + "0" * 32
+    for r in (TENANT_READER, dict(TENANT_READER, org="another-org", clearance="SECRET"), mcp_reader("coe02"), None):
+        got, want = governance.resolve_thread(mig[0]["thread_id"], reader=r), governance.resolve_thread(unknown, reader=r)
+        assert not got["resolved"] and {k: v for k, v in got.items() if k != "thread_id"} == \
+            {k: v for k, v in want.items() if k != "thread_id"}, r
 
 
 def test_the_migration_adds_columns_and_triggers(tmp_path, monkeypatch):

@@ -721,15 +721,37 @@ _INT_REFS = ("ace_audit", "ace_event", "aiify_decision", "audit_trail")
 #     legacy_app, mc_refactor_job, aiify_decision (project-scoped modernisation records with no project-to-tenant
 #     rule). audit_trail is held to its marking only, not to a project's tenant.
 
+def _exemption_is_platform(row: dict) -> bool:
+    """An exemption with no tenant is the platform's only when it was the platform's FROM THE START: its first row
+    was written by a bootstrap identity (``actor_kind: bootstrap``, ``requested_by`` a ``bootstrap:`` id). A
+    bootstrap row appended later -- ``migrate_legacy`` gives a PERSON's legacy approved exemption an expiry -- carries
+    that person's exemption and is not (review M1). Unreadable: not the platform's."""
+    conn = None
+    try:
+        conn = _thread_conn("rls")
+        first = conn.execute(
+            "SELECT actor_kind, requested_by FROM idp_rule_exemptions WHERE exemption_key = %s AND event_index = 1",
+            (str(row.get("exemption_key") or ""),)).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("exemption first row %s: %s", row.get("exemption_key"), exc)
+        return False
+    finally:
+        close_quietly(conn)
+    if len(first) != 1:
+        return False
+    kind, requested_by = tuple(first[0])
+    return str(kind or "") == "bootstrap" and str(requested_by or "").startswith("bootstrap:")
+
+
 #: Rows that carry their own tenant and marking: a reader of that tenant, cleared for it. A row with NO tenant fails
-#: closed, unless it is identifiably the platform's (the platform column holds one of the platform values: the CoE's
-#: bootstrap migration writes exemptions with actor_kind ``bootstrap``); then any reader cleared for it.
-#: kind -> (tenant column, marking column, platform column or None, platform values)
+#: closed, unless the kind can tell it is the platform's (its platform test; for an exemption: platform from its first
+#: row, never from a later bootstrap row); then any reader cleared for it.
+#: kind -> (tenant column, marking column, platform test or None)
 _TENANT_ROWS = {
-    "cortex_audit": ("tenant_id", "classification", None, ()),
-    "cortex_finding": ("tenant_id", "classification", None, ()),
-    "idp_exemption": ("tenant_id", "classification", "actor_kind", ("bootstrap",)),
-    "studio_workflow": ("tenant_id", "classification", None, ()),
+    "cortex_audit": ("tenant_id", "classification", None),
+    "cortex_finding": ("tenant_id", "classification", None),
+    "idp_exemption": ("tenant_id", "classification", _exemption_is_platform),
+    "studio_workflow": ("tenant_id", "classification", None),
 }
 #: Rows that carry a marking and no tenant: a reader cleared for it.
 _MARKED_ROWS = {"audit_trail": "classification", "ace_audit": "classification"}
@@ -812,10 +834,10 @@ def _of_tenant(reader: dict | None, row: dict, kind: str) -> bool:
 
     if not reader:
         return False
-    tcol, _, pcol, pvals = _TENANT_ROWS[kind]
+    tcol, _, is_platform = _TENANT_ROWS[kind]
     tenant = str(row.get(tcol) or "").strip()
     if not tenant:
-        return pcol is not None and str(row.get(pcol) or "") in pvals
+        return is_platform is not None and bool(is_platform(row))
     org = effective_org(reader)
     return bool(org) and org == tenant
 
@@ -894,8 +916,7 @@ def resolve_thread(thread_id: str, reader: dict | None = None) -> dict:
         return out
     if kind in _THREAD_TABLES:
         conn_kind, table, id_col, cols = _THREAD_TABLES[kind]
-        gate = tuple(c for c in (_TENANT_ROWS.get(kind) or ())[:3] if c) \
-            or ((_MARKED_ROWS[kind],) if kind in _MARKED_ROWS else ())
+        gate = tuple((_TENANT_ROWS.get(kind) or ())[:2]) or ((_MARKED_ROWS[kind],) if kind in _MARKED_ROWS else ())
         select = tuple(cols) + tuple(c for c in gate if c not in cols)
         conn = None
         try:

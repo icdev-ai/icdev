@@ -435,18 +435,6 @@ def get_current_tenant_id() -> str | None:
 SINGLE_TENANT_ORG = "default"
 
 
-def is_shared_deployment() -> bool:
-    """Is this a shared (SaaS / multi-tenant) install? The platform's existing signals, read where they are declared
-    (``args/re_engines.yaml shared_deployment_signals``: ICDEV_SAAS_MODE, ICDEV_MULTI_TENANT). Unreadable: shared
-    (fail closed: no person's empty org is mapped to the single tenant)."""
-    try:
-        from tools.analyzers.re_engines import deployment_context
-
-        return bool(deployment_context()["shared"])
-    except Exception:  # noqa: BLE001 — unreadable: treat as shared
-        return True
-
-
 def effective_org(reader: dict | None) -> str:
     """The org a reader is of (icx-sec-01). A PERSON with no tenant on their row is in the single tenant
     (``default``) on a single-tenant install, and in no org on a shared one; an agent is in no org unless bound to
@@ -459,7 +447,13 @@ def effective_org(reader: dict | None) -> str:
     rid = str(reader.get("id") or "")
     if reader.get("role") == "service" or rid.startswith(("agent:", "bootstrap:")) or not rid:
         return ""
-    return "" if is_shared_deployment() else SINGLE_TENANT_ORG
+    try:
+        from tools.saas.db.db_compat import is_shared_deployment
+
+        shared = is_shared_deployment()
+    except Exception:  # noqa: BLE001 — unreadable: shared (no one is mapped into the single tenant)
+        shared = True
+    return "" if shared else SINGLE_TENANT_ORG
 
 
 def signed_in_org() -> str | None:

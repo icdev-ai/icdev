@@ -21,7 +21,24 @@ from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("saas.db.compat")
 
-SAAS_MODE = os.environ.get("ICDEV_SAAS_MODE", "false").lower() in ("true", "1", "yes")
+_TRUTHY = ("true", "1", "yes")
+
+
+def saas_mode() -> bool:
+    """``ICDEV_SAAS_MODE``, read at call time (the Helm chart sets it)."""
+    return os.environ.get("ICDEV_SAAS_MODE", "false").strip().lower() in _TRUTHY
+
+
+def is_shared_deployment() -> bool:
+    """Is this a shared (SaaS or multi-tenant) install? ``ICDEV_SAAS_MODE`` or ``ICDEV_MULTI_TENANT``, read at call
+    time. The ONE place both signals are read for tenancy (icx-sec-01): the twin's single-tenant ``default`` org
+    (``tools/saas/auth/middleware.py effective_org``) and the retriever's multi-tenant warning ask here; the same two
+    names are ``args/re_engines.yaml shared_deployment_signals``."""
+    return saas_mode() or os.environ.get("ICDEV_MULTI_TENANT", "").strip().lower() in _TRUTHY
+
+
+#: Kept for importers of the old constant; this module reads :func:`saas_mode` at call time.
+SAAS_MODE = saas_mode()
 
 
 class DBAdapter:
@@ -134,7 +151,7 @@ def get_connection(
     if db_path:
         return get_sqlite_connection(db_path)
 
-    if SAAS_MODE:
+    if saas_mode():
         tenant_url = os.environ.get("TENANT_DB_URL")
         if tenant_url:
             return get_pg_connection(tenant_url)
