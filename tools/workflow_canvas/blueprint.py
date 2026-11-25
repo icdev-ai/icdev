@@ -892,6 +892,8 @@ Form description: {text}"""
         source_doc_text = (data.get("source_doc_text") or "")[:50000]  # cap at 50k chars
 
         workflow_id = _new_id("wfl")
+        from tools.saas.auth.middleware import signed_in_org  # icx-sec-01: the row is its writer's org's
+
         conn = get_connection()
         try:
             ph = _ph(conn)
@@ -899,11 +901,11 @@ Form description: {text}"""
                 f"""INSERT INTO studio_workflows
                     (workflow_id, name, description, template_yaml, category,
                      created_by, created_at, updated_at, version, shared,
-                     source_doc_text)
-                    VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                     source_doc_text, tenant_id)
+                    VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
                 (workflow_id, workflow_name, workflow_desc, workflow_yaml,
                  industry, "processify", _now_iso(), _now_iso(), 1, 0,
-                 source_doc_text or None),
+                 source_doc_text or None, signed_in_org()),
             )
             conn.commit()
         finally:

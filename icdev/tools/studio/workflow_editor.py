@@ -1994,13 +1994,15 @@ def create_workflow(
         # auth-bypass context) and makes the create->delete roundtrip 404.
         ctx = getattr(conn, "_security_context", None)
         classification = getattr(ctx, "classification", None) or "CUI"
+        from tools.saas.auth.middleware import signed_in_org  # icx-sec-01: the row is its writer's org's
+
         conn.execute(
             """INSERT INTO studio_workflows
                (workflow_id, name, description, template_yaml, category,
-                created_by, created_at, updated_at, classification)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                created_by, created_at, updated_at, classification, tenant_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (wf_id, name, description, template_yaml, category, created_by, now, now,
-             classification),
+             classification, signed_in_org()),
         )
         conn.commit()
         return {"status": "ok", "workflow_id": wf_id}
@@ -2019,14 +2021,17 @@ def save_workflow(
 ) -> None:
     """Persist a workflow with a caller-supplied workflow_id."""
     now = _now_iso()
+    from tools.saas.auth.middleware import signed_in_org  # icx-sec-01: the row is its writer's org's
+
     conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO studio_workflows
                (workflow_id, name, description, template_yaml, category,
-                created_by, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-            (workflow_id, name, description, template_yaml, category, created_by, now, now),
+                created_by, created_at, updated_at, tenant_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (workflow_id, name, description, template_yaml, category, created_by, now, now,
+             signed_in_org()),
         )
         conn.commit()
     finally:

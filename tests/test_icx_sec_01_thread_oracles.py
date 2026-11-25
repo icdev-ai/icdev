@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import sys
 import uuid
+from datetime import date, timedelta
 
 import pytest
 from flask import Flask, g
@@ -205,12 +206,11 @@ def test_a_tenant_row_is_followed_only_by_its_tenant_cleared_for_it(wf_db):
         assert res["resolved"] and "tenant_id" not in res["record"] and "classification" not in res["record"]
         _hidden_like_unknown(thread, unknown, [other, low, _agent(), None])
     assert governance.resolve_thread(f"cortex_audit:{s}", reader=dict(tenant, clearance="SECRET"))["resolved"]
-    # A row with no tenant is a platform row: any reader cleared for it, never no reader.
+    # A row with no tenant is no one's unless identifiably the platform's (review M1): it fails closed.
     x = f"cgov-sec01-{uuid.uuid4().hex[:8]}"
     _row("INSERT INTO cortex_audit (id, session_id, tenant_id, classification, function, outcome) "
          "VALUES (%s,%s,%s,%s,%s,%s)", (x, "s-3", "", "CUI // SP-CTI", "cortex", "pass"))
-    assert governance.resolve_thread(f"cortex_audit:{x}", reader=other)["resolved"]
-    _hidden_like_unknown(f"cortex_audit:{x}", "cortex_audit:cgov-none", [low, None])
+    _hidden_like_unknown(f"cortex_audit:{x}", "cortex_audit:cgov-none", [tenant, other, _agent(), None])
     _hidden_like_unknown(f"cortex_audit:{s}", "cortex_audit:cgov-none", [tenant, _agent()])
 
 
@@ -229,6 +229,143 @@ def test_a_marked_audit_row_is_followed_only_by_a_reader_cleared_for_it(wf_db):
     assert governance.resolve_thread(f"audit_trail:{rid}", reader=cleared)["resolved"]
     _hidden_like_unknown(f"audit_trail:{rid}", "audit_trail:999999999",
                          [dict(cleared, clearance="CUI"), _agent(), None])
+
+
+# ── review M1: writes carry their writer's org; a NULL row is no one's ──────
+
+
+def _signed_in(user: dict, monkeypatch):
+    """A request of ``user``, their org and clearance on their own row (tools.dashboard.auth.get_user_by_id)."""
+    from tools.dashboard import auth
+
+    row = {"id": user["id"], "role": user["role"], "tenant_id": user.get("tenant_id"),
+           "clearance_level": user.get("clearance_level", "CUI"), "status": "active",
+           "created_by": user.get("created_by", "test-admin")}
+    monkeypatch.setattr(auth, "get_user_by_id", lambda uid, tenant_id=None: dict(row) if uid == user["id"] else None)
+    app = Flask(__name__)
+    ctx = app.test_request_context("/")
+    ctx.push()
+    g.current_user = {"id": user["id"], "role": user["role"]}
+    return ctx
+
+
+ORG_A = {"id": "u-sec01-org-a", "role": "reviewer", "tenant_id": "syn-sec01-org-a", "clearance_level": "CUI"}
+
+
+def test_a_requested_exemption_is_its_requester_s_org_s_only(wf_db, monkeypatch):
+    from tools.idp import blueprint as idp_bp
+    from tools.idp import exemptions
+    from tools.twin_core import governance
+
+    ctx = _signed_in(ORG_A, monkeypatch)
+    try:
+        org = idp_bp._signed_in_org()
+        row = exemptions.request_exemption("component-readiness", "e2e-spec", f"sec01-{uuid.uuid4().hex[:6]}",
+                                           reason="SYNTHETIC: headless", requested_by=ORG_A["id"],
+                                           expires=(date.today() + timedelta(days=30)).isoformat(), tenant_id=org)
+    finally:
+        ctx.pop()
+    assert org == ORG_A["tenant_id"] and row["tenant_id"] == ORG_A["tenant_id"], "the route's stamp is the person's org"
+    thread = f"idp_exemption:{row['id']}"
+    mine = {"id": "u-sec01-a2", "role": "isso", "clearance": "CUI", "org": ORG_A["tenant_id"]}
+    assert governance.resolve_thread(thread, reader=mine)["resolved"]
+    other = dict(mine, id="u-sec01-b", org="syn-sec01-org-b")
+    _hidden_like_unknown(thread, "idp_exemption:" + "0" * 32, [other, _agent(), None])
+    # The same request with no org (an agent's MCP request, a CLI one): no one's, and not the platform's.
+    agent_row = exemptions.request_exemption("component-readiness", "e2e-spec", f"sec01-{uuid.uuid4().hex[:6]}",
+                                             reason="SYNTHETIC: from an agent", requested_by="agent:sec01",
+                                             expires=row["expires_on"], actor_kind="agent")
+    assert agent_row["tenant_id"] is None
+    _hidden_like_unknown(f"idp_exemption:{agent_row['id']}", "idp_exemption:" + "0" * 32,
+                         [mine, other, _agent(), None])
+
+
+def test_a_studio_workflow_carries_its_writer_s_org(wf_db, monkeypatch):
+    from tools.studio import workflow_editor
+    from tools.twin_core import governance
+
+    ctx = _signed_in(ORG_A, monkeypatch)
+    try:
+        out = workflow_editor.create_workflow("SYNTHETIC sec01", "name: s\nsteps: []\n", created_by=ORG_A["id"])
+    finally:
+        ctx.pop()
+    wid = out["workflow_id"]
+    conn = governance._thread_conn("core")
+    try:
+        assert conn.execute("SELECT tenant_id FROM studio_workflows WHERE workflow_id = %s",
+                            (wid,)).fetchone()[0] == ORG_A["tenant_id"]
+    finally:
+        conn.close()
+    mine = {"id": "u-sec01-a2", "role": "isso", "clearance": "CUI", "org": ORG_A["tenant_id"]}
+    assert governance.resolve_thread(f"studio_workflow:{wid}", reader=mine)["resolved"]
+    _hidden_like_unknown(f"studio_workflow:{wid}", "studio_workflow:wf-none",
+                         [dict(mine, org="syn-sec01-org-b"), _agent(), None])
+
+
+def test_every_studio_write_path_names_the_tenant():
+    """The five INSERTs into studio_workflows each stamp tenant_id (a sixth would leave a row no one may read)."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    import re
+
+    found = 0
+    for rel in ("tools/studio/workflow_editor.py", "tools/studio/nl_app_builder.py", "tools/workflow_canvas/blueprint.py",
+                "tools/workflow_canvas/observed_processify.py"):
+        text = (root / rel).read_text(encoding="utf-8")
+        for m in re.finditer(r"INSERT INTO studio_workflows\s*\(([^)]*)\)", text):
+            found += 1
+            assert "tenant_id" in m.group(1), rel
+    assert found == 5
+    hits = [p for p in (root / "tools").rglob("*.py") if "INSERT INTO studio_workflows" in p.read_text(
+        encoding="utf-8", errors="ignore")]
+    assert {p.relative_to(root).as_posix() for p in hits} == {
+        "tools/studio/workflow_editor.py", "tools/studio/nl_app_builder.py", "tools/workflow_canvas/blueprint.py",
+        "tools/workflow_canvas/observed_processify.py"}
+
+
+def test_the_migration_gives_old_studio_workflows_their_creator_s_tenant(tmp_path):
+    import importlib
+    import sqlite3
+
+    mig = importlib.import_module("tools.db.migrations.20261124230000_studio_workflows_tenant.up")
+    db = sqlite3.connect(tmp_path / "m.db")
+    db.executescript("""
+        CREATE TABLE dashboard_users (id TEXT PRIMARY KEY, tenant_id TEXT);
+        CREATE TABLE studio_workflows (workflow_id TEXT PRIMARY KEY, created_by TEXT, tenant_id TEXT);
+        INSERT INTO dashboard_users VALUES ('u-a', 'org-a'), ('u-none', NULL);
+        INSERT INTO studio_workflows VALUES ('w1', 'u-a', NULL), ('w2', 'studio', NULL), ('w3', 'u-none', NULL),
+                                            ('w4', 'u-a', 'org-kept');
+    """)
+    assert mig.up(db)["status"] == "applied"
+    assert dict(db.execute("SELECT workflow_id, tenant_id FROM studio_workflows")) == {
+        "w1": "org-a", "w2": None, "w3": None, "w4": "org-kept"}
+    assert mig.up(db)["status"] == "applied", "a re-run converges"
+    bare = sqlite3.connect(tmp_path / "bare.db")
+    bare.execute("CREATE TABLE dashboard_users (id TEXT PRIMARY KEY)")
+    assert mig.up(bare)["status"] == "skipped"
+
+
+# ── review L3: a single-tenant install's people are in ``default`` ───────────
+
+
+@pytest.mark.parametrize("shared", [False, True])
+def test_a_person_with_no_tenant_is_in_default_only_on_a_single_tenant_install(wf_db, monkeypatch, shared):
+    from tools.twin_core import governance
+
+    for var in ("ICDEV_SAAS_MODE", "ICDEV_MULTI_TENANT"):
+        monkeypatch.delenv(var, raising=False)
+    if shared:
+        monkeypatch.setenv("ICDEV_MULTI_TENANT", "true")
+    a = f"cgov-sec01-{uuid.uuid4().hex[:8]}"
+    _row("INSERT INTO cortex_audit (id, session_id, tenant_id, classification, function, outcome) "
+         "VALUES (%s,%s,%s,%s,%s,%s)", (a, "s-1", "default", "CUI", "cortex", "pass"))
+    person = {"id": "u-sec01-solo", "role": "isso", "clearance": "CUI", "org": ""}
+    got = governance.resolve_thread(f"cortex_audit:{a}", reader=person)
+    assert got["resolved"] is (not shared)
+    if shared:
+        _hidden_like_unknown(f"cortex_audit:{a}", "cortex_audit:cgov-none", [person])
+    _hidden_like_unknown(f"cortex_audit:{a}", "cortex_audit:cgov-none", [_agent(), None])
 
 
 # ── the surfaces pass who is asking ──────────────────────────────────────────
@@ -349,6 +486,13 @@ def clawhub(monkeypatch, tmp_path):
 
         return StorageConnection(sqlite3.connect(db), "sqlite")
 
+    from tools.dashboard import auth
+
+    people = {"u-sec01-isso": {"id": "u-sec01-isso", "role": "isso", "created_by": "test-admin"},
+              "u-sec01-admin": {"id": "u-sec01-admin", "role": "admin", "created_by": "test-admin"},
+              "u-sec01-dev": {"id": "u-sec01-dev", "role": "developer", "created_by": "test-admin"},
+              "u-sec01-envadmin": {"id": "u-sec01-envadmin", "role": "admin", "created_by": "env_bootstrap"}}
+    monkeypatch.setattr(auth, "get_user_by_id", lambda uid, tenant_id=None: people.get(str(uid)))
     calls = []
     monkeypatch.setattr(bridge, "_get_db", get_db)
     monkeypatch.setattr(bridge, "promote_import", lambda iid, by: calls.append((iid, by)) or
@@ -381,12 +525,18 @@ def test_promote_is_the_signed_in_person_s_never_the_body_s(clawhub):
     r = clawhub["client"](isso).post("/api/clawhub/promote", json={"import_id": "oci-plain",
                                                                     "promoted_by": "someone-else"})
     assert r.status_code == 200 and clawhub["calls"] == [("oci-plain", "u-sec01-isso")]
-    for who, status in ((None, 401), ({"id": "u-svc", "role": "service"}, 403),
-                        ({"id": "agent:helper", "role": "admin"}, 403)):
+    for who, status, code in ((None, 401, "no_person"), ({"id": "u-svc", "role": "service"}, 403, "not_a_person"),
+                              ({"id": "agent:helper", "role": "admin"}, 403, "not_a_person"),
+                              ({"id": "u-sec01-dev", "role": "developer"}, 403, "role"),
+                              ({"id": "u-sec01-envadmin", "role": "admin"}, 403, "not_a_named_person"),
+                              ({"id": "u-sec01-nobody", "role": "isso"}, 403, "not_a_named_person")):
         r = clawhub["client"](who).post("/api/clawhub/promote", json={"import_id": "oci-plain",
                                                                        "promoted_by": "isso@test"})
-        assert r.status_code == status
+        assert (r.status_code, r.get_json()["code"]) == (status, code), who
     assert len(clawhub["calls"]) == 1
+    r = clawhub["client"]({"id": "u-sec01-admin", "role": "admin"}).post("/api/clawhub/promote",
+                                                                        json={"import_id": "oci-plain"})
+    assert r.status_code == 200 and clawhub["calls"][-1] == ("oci-plain", "u-sec01-admin")
 
 
 def test_promote_never_approves_its_own_review(clawhub):

@@ -712,17 +712,24 @@ _INT_REFS = ("ace_audit", "ace_event", "aiify_decision", "audit_trail")
 # A thread names a record; knowing its id is not a right to read it. A reader is ``{id, role, clearance, org}`` (the
 # shape every module console uses; an agent through MCP is in no org). Each kind below is followed only for a reader
 # who may see the item its record belongs to, and for anyone else -- including no reader at all -- the answer is the
-# one an id that does not exist gets, byte for byte. A kind in none of these is a platform register any observer may
-# read (the CoE's standards, ADRs, golden paths and conformance, vulnerability discovery, the ACE engine, the
-# modernisation records, config and the conformance snapshot); see the card's report for the ones still to bind.
+# one an id that does not exist gets, byte for byte. A kind in none of these is open to any observer:
+#
+#   * platform registers, open by design: coe_standard, coe_adr, coe_golden_path, coe_conformance, vulnresearch,
+#     twin_obs, config, conformance;
+#   * NOT HELD YET (they still resolve for anyone holding an id; no visibility rule exists for their items -- card
+#     icx-sec-02): ace_instance, ace_trust, ace_event, ace_grant (the ACE engine) and mdz_assessment, migration_plan,
+#     legacy_app, mc_refactor_job, aiify_decision (project-scoped modernisation records with no project-to-tenant
+#     rule). audit_trail is held to its marking only, not to a project's tenant.
 
-#: Rows that carry their own tenant and marking: a reader of that tenant, cleared for it (a row with no tenant is a
-#: platform row: a reader cleared for it). (tenant column, marking column)
+#: Rows that carry their own tenant and marking: a reader of that tenant, cleared for it. A row with NO tenant fails
+#: closed, unless it is identifiably the platform's (the platform column holds one of the platform values: the CoE's
+#: bootstrap migration writes exemptions with actor_kind ``bootstrap``); then any reader cleared for it.
+#: kind -> (tenant column, marking column, platform column or None, platform values)
 _TENANT_ROWS = {
-    "cortex_audit": ("tenant_id", "classification"),
-    "cortex_finding": ("tenant_id", "classification"),
-    "idp_exemption": ("tenant_id", "classification"),
-    "studio_workflow": ("tenant_id", "classification"),
+    "cortex_audit": ("tenant_id", "classification", None, ()),
+    "cortex_finding": ("tenant_id", "classification", None, ()),
+    "idp_exemption": ("tenant_id", "classification", "actor_kind", ("bootstrap",)),
+    "studio_workflow": ("tenant_id", "classification", None, ()),
 }
 #: Rows that carry a marking and no tenant: a reader cleared for it.
 _MARKED_ROWS = {"audit_trail": "classification", "ace_audit": "classification"}
@@ -797,15 +804,20 @@ def _cleared_for(reader: dict | None, label: Any) -> bool:
     return lab.replace(" ", "").startswith("CUI//") and "CUI" in held
 
 
-def _of_tenant(reader: dict | None, tenant: Any) -> bool:
-    """A row of a tenant is its tenant's only. A row with NO tenant (a platform row: the CoE's bootstrap migration
-    writes exemptions so) is the platform's, held to its marking alone -- but only for a reader at all."""
+def _of_tenant(reader: dict | None, row: dict, kind: str) -> bool:
+    """A row of a tenant is its tenant's only (the reader's org through ``effective_org``: a person with no tenant on
+    a single-tenant install is in ``default``). A row with NO tenant is the platform's only when identifiably so, and
+    then only for a reader at all; otherwise it fails closed."""
+    from tools.saas.auth.middleware import effective_org
+
     if not reader:
         return False
-    if not str(tenant or "").strip():
-        return True
-    org = str(reader.get("org") or "").strip()
-    return bool(org) and org == str(tenant or "").strip()
+    tcol, _, pcol, pvals = _TENANT_ROWS[kind]
+    tenant = str(row.get(tcol) or "").strip()
+    if not tenant:
+        return pcol is not None and str(row.get(pcol) or "") in pvals
+    org = effective_org(reader)
+    return bool(org) and org == tenant
 
 
 def _step_visible(rows: list[dict], reader: dict | None) -> bool:
@@ -882,7 +894,8 @@ def resolve_thread(thread_id: str, reader: dict | None = None) -> dict:
         return out
     if kind in _THREAD_TABLES:
         conn_kind, table, id_col, cols = _THREAD_TABLES[kind]
-        gate = _TENANT_ROWS.get(kind) or ((_MARKED_ROWS[kind],) if kind in _MARKED_ROWS else ())
+        gate = tuple(c for c in (_TENANT_ROWS.get(kind) or ())[:3] if c) \
+            or ((_MARKED_ROWS[kind],) if kind in _MARKED_ROWS else ())
         select = tuple(cols) + tuple(c for c in gate if c not in cols)
         conn = None
         try:
@@ -902,8 +915,8 @@ def resolve_thread(thread_id: str, reader: dict | None = None) -> dict:
         finally:
             close_quietly(conn)
         if kind in _TENANT_ROWS:
-            tcol, mcol = _TENANT_ROWS[kind]
-            rows = [r for r in rows if _of_tenant(reader, r.get(tcol)) and _cleared_for(reader, r.get(mcol))]
+            mcol = _TENANT_ROWS[kind][1]
+            rows = [r for r in rows if _of_tenant(reader, r, kind) and _cleared_for(reader, r.get(mcol))]
         elif kind in _MARKED_ROWS:
             rows = [r for r in rows if _cleared_for(reader, r.get(_MARKED_ROWS[kind]))]
         elif kind == "wf_step" and rows and not _step_visible(rows, reader):

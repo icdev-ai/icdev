@@ -345,14 +345,16 @@ def save_draft(draft: Mapping[str, Any], *, conn: Any = None, created_by: str = 
         # same caller read and review the draft (workflow_editor.create_workflow).
         ctx = getattr(conn, "_security_context", None)
         classification = getattr(ctx, "classification", None) or "CUI"
+        from tools.saas.auth.middleware import signed_in_org  # icx-sec-01: the row is its writer's org's
+
         conn.execute(
             f"""INSERT INTO studio_workflows
                 (workflow_id, name, description, template_yaml, category,
-                 created_by, created_at, updated_at, version, shared, classification)
-                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                 created_by, created_at, updated_at, version, shared, classification, tenant_id)
+                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
             (workflow_id, draft.get("workflow_name"), draft.get("workflow_description"),
              yaml.safe_dump(body, default_flow_style=False, allow_unicode=True, sort_keys=False),
-             "observed", created_by, now, now, 1, 0, classification),
+             "observed", created_by, now, now, 1, 0, classification, signed_in_org()),
         )
         conn.commit()
     finally:

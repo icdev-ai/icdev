@@ -423,13 +423,15 @@ def create_builder_session(description: str, *, app_name: str | None = None) -> 
     blueprint["source_description"] = description
 
     # Store session
+    from tools.saas.auth.middleware import signed_in_org  # icx-sec-01: the row is its writer's org's
+
     conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO studio_workflows
                (workflow_id, name, description, template_yaml, category,
-                created_by, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                created_by, created_at, updated_at, tenant_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 session_id,
                 f"App Builder: {app_name}",
@@ -439,6 +441,7 @@ def create_builder_session(description: str, *, app_name: str | None = None) -> 
                 "studio",
                 _now_iso(),
                 _now_iso(),
+                signed_in_org(),
             ),
         )
         conn.commit()

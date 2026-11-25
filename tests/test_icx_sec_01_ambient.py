@@ -90,6 +90,62 @@ def test_rows_with_a_tenant_or_a_marking_and_steps_on_the_platform_database():
             assert not got["resolved"] and _same(got, want), (thread, r, got, want)
     assert governance.resolve_thread(f"wf_step:{open_step}", reader=agent)["resolved"]
 
+    # Review M1: an exemption request carries its requester's org; one with none is no one's.
+    from datetime import date, timedelta
+
+    from tools.idp import exemptions
+
+    expires = (date.today() + timedelta(days=30)).isoformat()
+    mine = exemptions.request_exemption("component-readiness", "e2e-spec", f"sec01-amb-{run}", reason="SYNTHETIC",
+                                        requested_by=tenant["id"], expires=expires, tenant_id=org)
+    nobody = exemptions.request_exemption("component-readiness", "e2e-spec", f"sec01-amb-{run}-agent",
+                                          reason="SYNTHETIC", requested_by="agent:sec01-amb", expires=expires,
+                                          actor_kind="agent")
+    assert governance.resolve_thread(f"idp_exemption:{mine['id']}", reader=tenant)["resolved"]
+    for thread, readers in ((f"idp_exemption:{mine['id']}", [other, agent, None]),
+                            (f"idp_exemption:{nobody['id']}", [tenant, other, agent, None])):
+        for r in readers:
+            got = governance.resolve_thread(thread, reader=r)
+            want = governance.resolve_thread("idp_exemption:" + "0" * 32, reader=r)
+            assert not got["resolved"] and _same(got, want), (thread, r)
+
+
+def test_the_tenant_backfill_runs_on_the_platform_database():
+    """Migration 20261124230000 on whatever the platform database is: a creator's tenant fills a NULL row."""
+    import importlib
+
+    from tools.twin_core import governance
+
+    run = uuid.uuid4().hex[:8]
+    mig = importlib.import_module("tools.db.migrations.20261124230000_studio_workflows_tenant.up")
+    conn = governance._thread_conn("rls")
+    try:
+        conn.execute("SELECT tenant_id FROM dashboard_users WHERE 1 = 0").fetchall()
+    except Exception:  # noqa: BLE001 — the conftest SQLite users table has no tenant: the migration skips
+        with contextlib.suppress(Exception):
+            conn.rollback()
+        assert mig.up(conn)["status"] == "skipped"
+        conn.close()
+        return
+    uid, wid = f"u-sec01-mig-{run}", f"wf-sec01-mig-{run}"
+    try:
+        conn.execute("INSERT INTO dashboard_users (id, email, display_name, role, status, tenant_id) "
+                     "VALUES (%s,%s,%s,%s,%s,%s)", (uid, f"{uid}@test.invalid", "SYNTHETIC (icx-sec-01)", "developer",
+                                                    "active", f"syn-sec01-mig-{run}"))
+        conn.execute("INSERT INTO studio_workflows (workflow_id, name, template_yaml, created_by) "
+                     "VALUES (%s,%s,%s,%s)", (wid, "SYNTHETIC", "name: s\n", uid))
+        conn.commit()
+        assert mig.up(conn)["status"] == "applied"
+        assert conn.execute("SELECT tenant_id FROM studio_workflows WHERE workflow_id = %s",
+                            (wid,)).fetchone()[0] == f"syn-sec01-mig-{run}"
+    finally:
+        with contextlib.suppress(Exception):
+            conn.rollback()
+        conn.execute("DELETE FROM studio_workflows WHERE workflow_id = %s", (wid,))
+        conn.execute("DELETE FROM dashboard_users WHERE id = %s", (uid,))
+        conn.commit()
+        conn.close()
+
 
 def test_the_publisher_s_own_row_is_read_fresh_at_export():
     """``_publisher_still_eligible`` reads ``dashboard_users`` itself: a real row on PostgreSQL (tenant_id,

@@ -68,6 +68,11 @@ Sigstore clients; the schema says only "base64-encoded strings" (not verified ag
   with a reason, bound to the digest read. The build is verified again first.
 - **Export**: `{"bundle": icos-release-transfer/v1, "publication": icdev-build-publication/v1}`, only for a published
   build whose declared step is recorded that way by that person.
+- **The org is bound** (icx-sec-01): the declared step and the publication carry the target's owning org (`org`, an
+  optional, additive field of the draft publication schema), and export re-reads the publisher's own row: a publisher
+  no longer of that org, no longer cleared for the target's marking, or no longer active publishes nothing (409
+  `publisher`, fixed words). **A build published before icx-sec-01 must be published again**: its step carries no org,
+  so its export is refused (409 `step_missing`) until a person of the target's org decides a new prepared build.
 
 **"A person" includes that person's dashboard API key** (review M3). ICDEV resolves a dashboard API key to the
 person who owns it, with that person's role, org and clearance, and every declared step on the platform treats it the

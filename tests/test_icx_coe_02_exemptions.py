@@ -579,7 +579,9 @@ def test_the_twin_reports_expired_and_migrated_exemptions_with_threads(coe_db):
 
     e = _ex()
     then = _clock(40)
-    row = _request(component="coe02-twin", expires=(TODAY - timedelta(days=10)).isoformat(), clock=then)
+    # icx-sec-01: a request carries its requester's org (the route stamps it); its thread is that org's only.
+    row = _request(component="coe02-twin", expires=(TODAY - timedelta(days=10)).isoformat(), clock=then,
+                   tenant_id=TENANT_READER["org"])
     cur = e._latest(e._open_connection(), row["exemption_key"])
     e.decide_exemption(row["exemption_key"], decision="grant", reason="ok", read_digest=e.exemption_digest(cur),
                        actor=APPROVER, clock=then)
@@ -595,6 +597,7 @@ def test_the_twin_reports_expired_and_migrated_exemptions_with_threads(coe_db):
     assert exp["severity"] == "high" and row["exemption_key"] in exp["title"]
     t = governance.resolve_thread(exp["thread_id"], reader=TENANT_READER)
     assert t["resolved"] and t["source"] == "idp_rule_exemptions" and t["record"]["event"] == "approved"
+    assert not governance.resolve_thread(exp["thread_id"], reader=dict(TENANT_READER, org="another-org"))["resolved"]
     assert "coe.exemption.expiring" in found
     assert env["extra"]["summary"]["exemption_gate"] == "fail"
     rep = governance.replay(adapter, env["extra"]["observation_id"])

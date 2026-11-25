@@ -1,0 +1,7 @@
+{
+  "description": "studio_workflows rows with no tenant get their creator's tenant from dashboard_users; the twin thread resolver holds a workflow to its tenant and fails closed on none (icx-sec-01)",
+  "date": "2026-11-24",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false
+}
