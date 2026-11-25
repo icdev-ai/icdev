@@ -16,9 +16,11 @@ SCHEMA_CONTRACT = "1.208.0"
 #: icdev_os/publication.py check_publication and no model yet: publication_template null until this card ships).
 PUBLICATION_SCHEMA = "icdev-build-publication/v1"
 PUBLICATION_RELPATH = "context/icos/build-publication.schema.json"
-PUBLICATION_SHA256 = "18e0056f111d0ac03d9de8cb7100fed8c46844d6c33d6e4b78f7a8873c834985"
+#: icx-sec-01 added ``org`` (optional, additive): the target's owning org, which the declared step binds and the
+#: publisher must still be of at export.
+PUBLICATION_SHA256 = "b0c2cd1b833e3371ff3d30544f999a1c37eaf02a31311a1e77642ea9463562c6"
 PUBLICATION_FIELDS = ("schema", "content_digest", "signed_by", "role", "prepared_by", "step_id", "template",
-                      "decided_at", "event_id", "row_hash", "producer")
+                      "decided_at", "event_id", "row_hash", "org", "producer")
 TRANSFER = "icos-release-transfer/v1"
 MANIFEST = "artefact.json"
 SBOM, PROVENANCE, VEX = "sbom.cdx.json", "provenance.slsa.json", "vex.openvex.json"

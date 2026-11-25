@@ -39,7 +39,7 @@ def _rollback_close(conn):
     conn.close()
 
 
-def test_builds_prepared_and_published_on_the_platform_database(tmp_path):
+def test_builds_prepared_and_published_on_the_platform_database(tmp_path, monkeypatch):
     from tools.crypto import artefact_signer as asig
     from tools.db.storage import get_canvas_connection, get_connection
     from tools.factory_builds import config, ledger, service, synthetic
@@ -77,6 +77,12 @@ def test_builds_prepared_and_published_on_the_platform_database(tmp_path):
         a = {"id": f"u-ent03-amb-{run}-preparer", "role": "reviewer"}
         b = {"id": f"u-ent03-amb-{run}-publisher", "role": "isso"}
         ra, rb = {**a, "clearance": "CUI", "org": ORG}, {**b, "clearance": "CUI", "org": ORG}
+        # icx-sec-01: the export re-reads the publisher's own row (tests/test_icx_sec_01_ambient.py reads a real one).
+        from tools.dashboard import auth
+
+        people = {x["id"]: {"id": x["id"], "role": x["role"], "tenant_id": ORG, "clearance_level": "CUI",
+                            "status": "active"} for x in (a, b)}
+        monkeypatch.setattr(auth, "get_user_by_id", lambda uid, tenant_id=None: people.get(str(uid)))
         for t in cfg["targets"]:
             p = service.prepare(t["id"], a, ra, version="1.0.0", cfg=copy.deepcopy(cfg), signer=s, commit=COMMIT)
             with pytest.raises(service.Refused):

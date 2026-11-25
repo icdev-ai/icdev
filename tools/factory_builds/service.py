@@ -166,8 +166,9 @@ def _files_of(ordered: list[dict], event_id: str) -> dict[str, bytes]:
     return sigstore.from_transfer(ledger.payload(row).get("transfer"))
 
 
-def step_ok(pub: dict) -> bool:
-    """The publication's declared step is recorded, decided affirmatively, by the person the ledger names."""
+def step_ok(pub: dict, org: str | None = None) -> bool:
+    """The publication's declared step is recorded, decided affirmatively, by the person the ledger names, over this
+    build's digest and prepared event -- and, given the target's ``org``, bound to that org (icx-sec-01)."""
     from tools.workflow_hitl import declared
 
     try:
@@ -180,7 +181,8 @@ def step_ok(pub: dict) -> bool:
     return bool(st) and st["status"] in ("decided", "spent") and st["affirmative"] is True \
         and str(st["decided_by"]) == str(pub["actor"]) and decided.get("template_id") == TEMPLATE \
         and signed.get("content_digest") == pub["content_digest"] \
-        and signed.get("prepared_event") == pub.get("prepared_event")
+        and signed.get("prepared_event") == pub.get("prepared_event") \
+        and (org is None or str(signed.get("org") or "") == str(org))
 
 
 # ── signing ──────────────────────────────────────────────────────────────────
@@ -337,7 +339,7 @@ def publish(tid: str, *, decision: str, reason: str, read_digest: str, actor: di
         try:
             taken = declared.take_step(TEMPLATE, surface=SURFACE, decision=dec, subject=f"factory_build:{t['id']}",
                                        reason=str(reason or ""), actor=actor, separated_from=builders(st),
-                                       payload={"target": t["id"], "system_id": t["system_id"],
+                                       payload={"target": t["id"], "system_id": t["system_id"], "org": t["org"],
                                                 "content_digest": p["content_digest"], "prepared_event": p["event_id"]})
         except declared.StepRefused as exc:
             raise Refused(exc.status, exc.code, exc.message) from exc
@@ -382,8 +384,33 @@ def _publication_errors(pub: dict) -> list[str]:
     return sorted(e.message[:200] for e in v.iter_errors(pub))
 
 
+#: icx-sec-01: the refusal when the person who published is no longer of the target's org, or no longer cleared for
+#: its marking, or their row cannot be read. Fixed words: it names no person, org or marking.
+PUBLISHER_REFUSED = ("the person who published this build is no longer of its owning org and cleared for its marking: "
+                     "it publishes nothing until a person who is publishes it again")
+
+
+def _publisher_still_eligible(pub: dict, t: dict) -> bool:
+    """The publisher's org and clearance, read FRESH from their own row at export: of the target's org, cleared for
+    its marking. An unreadable or missing row, or an inactive person, fails closed."""
+    try:
+        from tools.dashboard.auth import get_user_by_id
+
+        row = get_user_by_id(str(pub.get("actor") or ""))
+    except Exception:  # noqa: BLE001 — unreadable: not eligible
+        return False
+    if row is None:
+        return False
+    row = dict(row)
+    if str(row.get("status") or "active").strip().lower() != "active":
+        return False
+    return visible(t, {"id": str(pub.get("actor") or ""), "role": str(row.get("role") or ""),
+                       "clearance": str(row.get("clearance_level") or ""), "org": str(row.get("tenant_id") or "")})
+
+
 def export(tid: str, reader: dict | None, *, cfg: dict | None = None, conn=None) -> dict:
-    """The newest PUBLISHED build of the target, as ICDEV[OS] imports it. Refused unless published, its step recorded."""
+    """The newest PUBLISHED build of the target, as ICDEV[OS] imports it. Refused unless published, its step recorded
+    and bound to the target's org, and its publisher still of that org and cleared for its marking (icx-sec-01)."""
     cfg = cfg or cmod.load()
     t = _target(tid, reader, cfg)
     own = conn is None
@@ -398,9 +425,11 @@ def export(tid: str, reader: dict | None, *, cfg: dict | None = None, conn=None)
     pub = st["published"]
     if pub is None:
         raise Refused(404, "unpublished", "no build of this target has been published: a draft never leaves")
-    if not step_ok(pub):
+    if not step_ok(pub, t["org"]):
         raise Refused(409, "step_missing", "the publication's declared step is not recorded that way, by that person: "
                                            "it publishes nothing")
+    if not _publisher_still_eligible(pub, t):
+        raise Refused(409, "publisher", PUBLISHER_REFUSED)
     files = _files_of(ordered, pub["prepared_event"])
     import importlib.metadata as md
 
@@ -414,7 +443,7 @@ def export(tid: str, reader: dict | None, *, cfg: dict | None = None, conn=None)
     publication = {"schema": PUBLICATION_SCHEMA, "content_digest": pub["content_digest"], "signed_by": pub["actor"],
                    "role": pub["actor_role"] or None, "prepared_by": pub["prepared_by"], "step_id": pub["step_id"],
                    "template": TEMPLATE, "decided_at": decided.strftime("%Y-%m-%dT%H:%M:%SZ") if decided else "",
-                   "event_id": pub["event_id"], "row_hash": pub["row_hash"],
+                   "event_id": pub["event_id"], "row_hash": pub["row_hash"], "org": t["org"],
                    "producer": {"system": "icdev-it", "tool": PRODUCER, "version": version}}
     errs = _publication_errors(publication)
     if errs:
@@ -561,7 +590,7 @@ def twin_evidence(reader: dict | None = None, *, cfg: dict | None = None, check_
             row["published"] = {"event_id": pub["event_id"], "created_at": pub["created_at"],
                                 "self_published": str(pub["actor"]).strip().casefold() ==
                                 str(pub["prepared_by"]).strip().casefold(),
-                                "step_ok": step_ok(pub) if check_steps else True,
+                                "step_ok": step_ok(pub, t["org"]) if check_steps else True,
                                 "promotion_stands": None if not promo else
                                 aibom.still_promoted(promo["model_version_id"], promo["promotion_log_id"])}
             row["tlog"] = (rec.get("transparency_log") or {}).get("mode")
@@ -627,5 +656,5 @@ def twin_judge(ev: dict, policy: dict, observed_at: str) -> tuple[list[dict], li
     return checks, findings, summary
 
 
-__all__ = ["Refused", "current_reader", "export", "mcp_reader", "prepare", "publish", "replay", "step_ok",
+__all__ = ["PUBLISHER_REFUSED", "Refused", "current_reader", "export", "mcp_reader", "prepare", "publish", "replay", "step_ok",
            "target_view", "targets_view", "thread_record", "twin_evidence", "twin_judge", "visible"]

@@ -53,6 +53,13 @@
       "title": "Event Id",
       "type": "string"
     },
+    "org": {
+      "description": "the owning org (ICDEV[IT] tenant) of the build's target, the org the declared step was bound to and its publisher was of at export (icx-sec-01)",
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Org",
+      "type": "string"
+    },
     "prepared_by": {
       "description": "a person's account id, or agent:<name>",
       "maxLength": 120,

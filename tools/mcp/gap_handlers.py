@@ -4979,8 +4979,10 @@ def handle_twin_governance(args: dict) -> dict:
 
         thread_id = str(args.get("thread_id") or "").strip()
         if thread_id:
+            # icx-sec-01: an agent is in no org; it follows only what an agent may see.
             return {"classification": CORTEX_CLASSIFICATION,
-                    "thread": governance.resolve_thread(thread_id)}
+                    "thread": governance.resolve_thread(thread_id,
+                                                        reader=governance.agent_reader("twin-governance"))}
         obs_id = str(args.get("observation_id") or "").strip()
         if obs_id:
             result = governance.replay_any(obs_id)

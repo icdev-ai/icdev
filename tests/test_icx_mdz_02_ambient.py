@@ -53,5 +53,6 @@ def test_the_twin_reads_the_refusal_and_its_thread_resolves():
     ev = ModernisationGovernanceTwin().collect()
     assert "refusals" not in ev["errors"], ev["errors"]
     assert any(r["application"] == app for r in ev["refusals"])
-    thread = governance.resolve_thread(f"audit_trail:{exc.value.answer['audit_id']}")
+    thread = governance.resolve_thread(f"audit_trail:{exc.value.answer['audit_id']}",
+                                       reader={"id": "u-mdz02-reader", "role": "isso", "clearance": "CUI"})
     assert thread["resolved"] is True and thread["record"]["action"] == f"{plan_gate.REFUSED}:{app}"

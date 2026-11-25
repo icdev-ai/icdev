@@ -32,6 +32,8 @@ REQUESTER = {"id": "u-coe02-requester", "role": "reviewer"}
 APPROVER = {"id": "u-coe02-approver", "role": "reviewer"}
 OTHER = {"id": "u-coe02-other", "role": "isso"}
 DEVELOPER = {"id": "u-coe02-dev", "role": "developer"}
+#: icx-sec-01: an exemption row's thread is followed only by a reader of its tenant cleared for its marking.
+TENANT_READER = {"id": "u-coe02-reader", "role": "isso", "clearance": "CUI", "org": "default"}
 CARD = "component-readiness"
 
 #: The exemption log keeps UTC dates.
@@ -406,7 +408,7 @@ def test_legacy_exemptions_are_migrated_by_the_bootstrap_identity_never_granted(
     env = governance.observe(governance.adapter_for("idp"), record=False)
     mig = [x for x in env["violations"] if x["rule_id"] == "coe.exemption.migrated"]
     assert mig and mig[0]["thread_id"] == f"idp_exemption:{last['id']}"
-    t = governance.resolve_thread(mig[0]["thread_id"])
+    t = governance.resolve_thread(mig[0]["thread_id"], reader=TENANT_READER)
     assert t["resolved"] and t["record"]["actor_kind"] == "bootstrap"
 
 
@@ -591,7 +593,7 @@ def test_the_twin_reports_expired_and_migrated_exemptions_with_threads(coe_db):
     found = {x["rule_id"]: x for x in env["violations"]}
     exp = found["coe.exemption.expired"]
     assert exp["severity"] == "high" and row["exemption_key"] in exp["title"]
-    t = governance.resolve_thread(exp["thread_id"])
+    t = governance.resolve_thread(exp["thread_id"], reader=TENANT_READER)
     assert t["resolved"] and t["source"] == "idp_rule_exemptions" and t["record"]["event"] == "approved"
     assert "coe.exemption.expiring" in found
     assert env["extra"]["summary"]["exemption_gate"] == "fail"

@@ -29,7 +29,7 @@ def builds_adapter(conn: Any = None) -> list[dict]:
         if not service.visible(t, reader) or stream in broken:
             continue        # a chain that does not verify publishes nothing
         pub = service.replay(ch.get(stream, []))["published"]
-        if pub is None or not service.step_ok(pub):
+        if pub is None or not service.step_ok(pub, t["org"]):
             continue
         rec = pub.get("record") or {}
         rows.append({"target": t["id"], "kind": t["kind"], "system": t["system_id"], "digest": pub["content_digest"],

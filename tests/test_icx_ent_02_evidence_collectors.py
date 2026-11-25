@@ -683,7 +683,7 @@ def test_the_twin_observes_with_threads_and_replays(ec):
     assert chk["evidence_collectors.syn-dib-01"]["status"] == "verified"
     f = [v for v in env2["violations"] if v["rule_id"] == "evidence_collectors.other_than_satisfied"]
     assert f and all(v["thread_id"] == f"evidence_collectors:{pub['event_id']}" for v in f)
-    res = governance.resolve_thread(f[0]["thread_id"])
+    res = governance.resolve_thread(f[0]["thread_id"], reader=reader(PUBLISHER))
     assert res["resolved"] and res["record"]["event"] == "published" and "payload_json" not in res["record"]
     assert governance.replay(adapter, env2["extra"]["observation_id"])["match"]
     b, o = _page_app(PUBLISHER), _page_app(OUTSIDER)
@@ -879,7 +879,7 @@ def test_a_twin_thread_names_no_system_person_or_reason(ec):
     from tools.twin_core import governance
 
     _, pub = _publish_one(ec)
-    res = governance.resolve_thread(f"evidence_collectors:{pub['event_id']}")
+    res = governance.resolve_thread(f"evidence_collectors:{pub['event_id']}", reader=reader(PUBLISHER))
     assert res["resolved"]
     assert not {"system_id", "stream", "actor", "reason"} & set(res["record"])
     page = _page_app(PUBLISHER).get("/evidence-collectors/api/twin",

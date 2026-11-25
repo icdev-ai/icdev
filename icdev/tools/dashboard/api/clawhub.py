@@ -69,34 +69,62 @@ def api_clawhub_import():
     except Exception as exc:
         return jsonify({"error": str(exc)})
 
+#: icx-sec-01: a ClawHub import that needs a human review cannot be promoted here. Its review must be a person
+#: other than the promoter, and ClawHub has no review path since the marketplace review queue was retired
+#: (tools/marketplace/review_queue.py, icx-ent-04); the old route approved its own review. Fixed words.
+REVIEW_REFUSED = ("this import needs a human review by a person other than whoever promotes it, and ClawHub has no "
+                  "review path (the marketplace review queue was retired): it cannot be promoted here")
+
+
+def _promoter():
+    """The signed-in PERSON promoting, or (status, refusal). Never the request body's word, never a service key or
+    an agent."""
+    from tools.workflow_hitl import declared
+
+    who = declared.current_actor()
+    if not who:
+        return None, (401, {"error": "promoting an import is a signed-in person's act", "code": "no_person"})
+    if who.get("role") == declared.SERVICE_ROLE or str(who["id"]).startswith(("agent:", "bootstrap:")):
+        return None, (403, {"error": "an agent or a service key never promotes an import: a person does",
+                            "code": "not_a_person"})
+    return who, None
+
+
+def _needs_review(import_id: str) -> bool:
+    """True when the import needs a human review, or its record cannot be read (fail closed). A review id already
+    on the row proves nothing: the retired route wrote one for itself."""
+    from tools.marketplace.openclaw_bridge import _get_db
+
+    conn = _get_db()
+    try:
+        row = conn.execute("SELECT review_required FROM openclaw_imports WHERE id = %s", (import_id,)).fetchone()
+    except Exception:  # noqa: BLE001 — unreadable: refused
+        return True
+    finally:
+        conn.close()
+    if row is None:
+        return False          # promote_import answers "not found" itself
+    return bool(row["review_required"] if hasattr(row, "keys") else row[0])
+
+
 @clawhub_api.route("/api/clawhub/promote", methods=["POST"])
 def api_clawhub_promote():
-    """Promote a quarantined import (auto-approves review if needed)."""
+    """Promote a quarantined import that needs no human review (registers its draft catalog asset), as the signed-in
+    person. One that needs a review is refused: ClawHub has no review path, and a route never approves its own."""
     data = flask_request.get_json(silent=True) or {}
-    import_id = data.get("import_id", "")
-    promoted_by = data.get("promoted_by", "dashboard-isso")
+    import_id = str(data.get("import_id") or "").strip()
+    who, refusal = _promoter()
+    if refusal:
+        return jsonify(refusal[1]), refusal[0]
+    promoted_by = who["id"]
     if not import_id:
         return jsonify({"error": "Missing 'import_id'"})
     try:
-        from tools.marketplace.openclaw_bridge import promote_import, _get_db
+        from tools.marketplace import openclaw_bridge
 
-        # Auto-approve review if not yet done (dashboard user = ISSO)
-        conn = _get_db()
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "UPDATE openclaw_imports SET review_id = %s WHERE id = %s AND review_id IS NULL",
-                (f"rev-dash-{import_id[:8]}", import_id),
-            )
-            conn.commit()
-        except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-        finally:
-            conn.close()
-        result = promote_import(import_id, promoted_by)
+        if _needs_review(import_id):
+            return jsonify({"error": REVIEW_REFUSED, "code": "review_required"}), 409
+        result = openclaw_bridge.promote_import(import_id, promoted_by)
         # Trigger companion sync so skill distributes to all 9 LLM platforms
         if result.get("success"):
             try:

@@ -254,7 +254,7 @@ def vr_api_twin():
     thread = (flask_request.args.get("thread") or "").strip()
     try:
         if thread:
-            return jsonify(governance.resolve_thread(thread))
+            return jsonify(governance.resolve_thread(thread, reader=governance.thread_reader()))
         import tools.twin_core.adapters.vulnresearch  # noqa: F401  (registers the twin)
 
         return jsonify(governance.observe(governance.adapter_for("vulnresearch"), record=False))

@@ -503,7 +503,8 @@ def test_the_twin_observes_a_refusal_resolves_its_thread_and_replays(db):
     assert any(t.startswith("mdz_assessment:") for t in threads), "the not-assessable application is a finding"
     replayed = governance.replay(governance.adapter_for("mdc"), env["extra"]["observation_id"])
     assert replayed["match"] is True, replayed["reason"]
-    thread = governance.resolve_thread(f"audit_trail:{audit_id}")
+    thread = governance.resolve_thread(f"audit_trail:{audit_id}",
+                                       reader={"id": "u-mdz02-reader", "role": "isso", "clearance": "CUI"})
     assert thread["resolved"] is True and thread["record"]["action"] == "mdz.may_plan.refused:app-rich"
 
 
