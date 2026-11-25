@@ -164,3 +164,6 @@ tests/test_icx_ent_03_ambient.py
 # sp_events (PL/pgSQL append-only triggers, UNIQUE(stream, prev_hash)) and the icos-store-publish step in
 # wf_decision_steps.
 tests/test_icx_ent_04_ambient.py
+# icx-sec-01: the thread resolver's tenant/marking SELECTs (cortex_audit, studio_workflows, audit_trail) and a
+# declared step's rows on the ambient PG, and a publisher's own dashboard_users row read fresh at export.
+tests/test_icx_sec_01_ambient.py

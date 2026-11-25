@@ -1,0 +1,6 @@
+# icx-sec-01: thread oracles narrowed. The shared twin thread resolver follows a thread only for a reader who may see
+# its item (wf_step by its workflow item, factory builds and objective evidence by their module's reader rule, rows
+# by their own tenant and marking), and an id the reader may not see reads exactly as one that does not exist; a
+# factory build's export carries its org and re-checks its publisher; ClawHub promote never approves its own review.
+tests/test_icx_sec_01_thread_oracles.py
+tests/test_icx_sec_01_ambient.py

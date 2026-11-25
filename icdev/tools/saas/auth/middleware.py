@@ -431,6 +431,47 @@ def get_current_tenant_id() -> str | None:
         return None
 
 
+#: The tenant a single-tenant install's people are in (cortex_* rows default to it). icx-sec-01.
+SINGLE_TENANT_ORG = "default"
+
+
+def effective_org(reader: dict | None) -> str:
+    """The org a reader is of (icx-sec-01). A PERSON with no tenant on their row is in the single tenant
+    (``default``) on a single-tenant install, and in no org on a shared one; an agent is in no org unless bound to
+    one; no reader is in none."""
+    if not reader:
+        return ""
+    org = str(reader.get("org") or "").strip()
+    if org:
+        return org
+    rid = str(reader.get("id") or "")
+    if reader.get("role") == "service" or rid.startswith(("agent:", "bootstrap:")) or not rid:
+        return ""
+    try:
+        from tools.saas.db.db_compat import is_shared_deployment
+
+        shared = is_shared_deployment()
+    except Exception:  # noqa: BLE001 — unreadable: shared (no one is mapped into the single tenant)
+        shared = True
+    return "" if shared else SINGLE_TENANT_ORG
+
+
+def signed_in_org() -> str | None:
+    """The org a signed-in person's writes are stamped with (``tenant_id``): the SaaS middleware's tenant when it set
+    one, else the person's own row read fresh (``tools.store_publisher.service.current_reader``), mapped by
+    :func:`effective_org`. None outside a request, for a service key, or with no org: a row written so is held by no
+    reader's tenant (icx-sec-01)."""
+    tid = get_current_tenant_id()
+    if tid:
+        return str(tid)
+    try:
+        from tools.store_publisher.service import current_reader
+
+        return effective_org(current_reader()) or None
+    except Exception:  # noqa: BLE001 — no reader: no org
+        return None
+
+
 def get_current_tenant_name() -> str:
     """Return the human-readable tenant name for the current request, defaulting to 'System'."""
     try:

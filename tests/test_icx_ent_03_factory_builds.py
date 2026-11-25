@@ -112,6 +112,13 @@ def fb(wf_db, monkeypatch, signer):
 
     # The factory's configured key, as a site would set it, is the test's throwaway signer.
     monkeypatch.setattr(service, "signer_for", lambda cfg: signer)
+    # The test people's own rows (icx-sec-01: the export re-reads the publisher's org and clearance from theirs).
+    from tools.dashboard import auth
+
+    rows = {u["id"]: {"id": u["id"], "role": u["role"], "tenant_id": u["tenant_id"],
+                      "clearance_level": u["clearance_level"], "status": "active"}
+            for u in (PREPARER, PUBLISHER, OUTSIDER, UNCLEARED)}
+    monkeypatch.setattr(auth, "get_user_by_id", lambda uid, tenant_id=None: rows.get(str(uid)))
     yield {"cfg": cfg, "db": wf_db, "root": config.BASE_DIR / rel, "inputs": out}
     shutil.rmtree(config.BASE_DIR / rel, ignore_errors=True)
 
@@ -836,7 +843,7 @@ def test_the_twin_observes_with_threads_and_replays(fb, signer):
     assert chk["factory_builds.syn-ent03-portal"]["status"] == "verified"
     f = [v for v in env2["violations"] if v["rule_id"] == "factory_builds.promotion_withdrawn"]
     assert f and f[0]["thread_id"] == f"factory_builds:{pubm['event_id']}"
-    res = governance.resolve_thread(f"factory_builds:{pub['event_id']}")
+    res = governance.resolve_thread(f"factory_builds:{pub['event_id']}", reader=reader(PUBLISHER))
     assert res["resolved"] and res["record"]["event"] == "published" and "actor" not in res["record"]
     assert governance.replay(adapter, env2["extra"]["observation_id"])["match"]
     b, o = _page_app(PUBLISHER), _page_app(OUTSIDER)

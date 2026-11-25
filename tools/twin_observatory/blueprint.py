@@ -133,12 +133,13 @@ def api_governance_replay(observation_id: str):
 @twin_observatory_bp.route("/api/governance/thread")
 def api_governance_thread():
     """Follow a violation's thread to its record (and provenance, where it has one)."""
-    from tools.twin_core.governance import resolve_thread
+    from tools.twin_core.governance import resolve_thread, thread_reader
 
     thread_id = (request.args.get("id") or "").strip()
     if not thread_id:
         return jsonify({"error": "id is required"}), 400
-    result = resolve_thread(thread_id)
+    # icx-sec-01: for the signed-in person; an item they may not see reads as one that does not exist.
+    result = resolve_thread(thread_id, reader=thread_reader())
     return jsonify(result), (200 if result["resolved"] else 404)
 
 

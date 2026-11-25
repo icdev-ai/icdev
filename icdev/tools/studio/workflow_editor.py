@@ -1994,18 +1994,24 @@ def create_workflow(
         # auth-bypass context) and makes the create->delete roundtrip 404.
         ctx = getattr(conn, "_security_context", None)
         classification = getattr(ctx, "classification", None) or "CUI"
+        from tools.saas.auth.middleware import signed_in_org  # icx-sec-01: the row is its writer's org's
+
         conn.execute(
             """INSERT INTO studio_workflows
                (workflow_id, name, description, template_yaml, category,
-                created_by, created_at, updated_at, classification)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                created_by, created_at, updated_at, classification, tenant_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (wf_id, name, description, template_yaml, category, created_by, now, now,
-             classification),
+             classification, signed_in_org()),
         )
         conn.commit()
         return {"status": "ok", "workflow_id": wf_id}
     finally:
         conn.close()
+
+
+#: ``save_workflow``'s default: stamp the signed-in writer's org (icx-sec-01). A platform seed passes ``None``.
+_SIGNED_IN = object()
 
 
 def save_workflow(
@@ -2016,17 +2022,25 @@ def save_workflow(
     category: str = "general",
     description: str = "",
     created_by: str = "studio",
+    tenant_id: Any = _SIGNED_IN,
 ) -> None:
-    """Persist a workflow with a caller-supplied workflow_id."""
+    """Persist a workflow with a caller-supplied workflow_id.
+
+    ``tenant_id`` (icx-sec-01): by default the signed-in writer's org; a PLATFORM seed passes ``None`` explicitly, so
+    a seed that runs inside someone's request is never stamped with that visitor's org."""
     now = _now_iso()
+    from tools.saas.auth.middleware import signed_in_org  # icx-sec-01: the row is its writer's org's
+
+    tenant = signed_in_org() if tenant_id is _SIGNED_IN else tenant_id
+
     conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO studio_workflows
                (workflow_id, name, description, template_yaml, category,
-                created_by, created_at, updated_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
-            (workflow_id, name, description, template_yaml, category, created_by, now, now),
+                created_by, created_at, updated_at, tenant_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (workflow_id, name, description, template_yaml, category, created_by, now, now, tenant),
         )
         conn.commit()
     finally:

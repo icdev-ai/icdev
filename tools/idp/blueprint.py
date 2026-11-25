@@ -471,7 +471,7 @@ def idp_api_standards_twin():
     thread = (flask_request.args.get("thread") or "").strip()
     try:
         if thread:
-            return jsonify(governance.resolve_thread(thread))
+            return jsonify(governance.resolve_thread(thread, reader=governance.thread_reader()))
         import tools.twin_core.adapters.coe_standards  # noqa: F401  (registers the twin)
 
         return jsonify(governance.observe(governance.adapter_for("idp"), record=False))
@@ -540,6 +540,13 @@ def idp_api_exemption(ref: str):
         return _exemption_refused(exc)
 
 
+def _signed_in_org():
+    """The requester's org, stamped on the exemption's rows (icx-sec-01: its thread is that org's only)."""
+    from tools.saas.auth.middleware import signed_in_org
+
+    return signed_in_org()
+
+
 @bp.route("/api/exemptions/request", methods=["POST"])
 def idp_api_exemption_request():
     """Request an exemption. Anyone signed in; requesting decides nothing.
@@ -562,7 +569,7 @@ def idp_api_exemption_request():
             str(data.get("component") or ""), reason=str(data.get("reason") or ""),
             requested_by=str(actor.get("id") or ""), expires=str(data.get("expires") or ""),
             scope=str(data.get("scope") or "rule"), scope_ref=str(data.get("scope_ref") or ""),
-            standards=standards,
+            standards=standards, tenant_id=_signed_in_org(),
             actor_kind="agent" if actor.get("role") == "service" else "person")
     except exemptions.ExemptionError as exc:
         return _exemption_refused(exc)

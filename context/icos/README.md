@@ -89,9 +89,12 @@ of `artefact.json`. It is licensed Apache-2.0 (`LICENSE`, `NOTICE` here), unlike
 
 `build-publication.schema.json` is a **DRAFT** by ICDEV[IT] (`icdev-build-publication/v1`,
 `urn:icdev-it:contract:build-publication:1:draft`, SHA-256
-`18e0056f111d0ac03d9de8cb7100fed8c46844d6c33d6e4b78f7a8873c834985`) for ICDEV[OS] to adopt, in the shape of the
+`b0c2cd1b833e3371ff3d30544f999a1c37eaf02a31311a1e77642ea9463562c6`) for ICDEV[OS] to adopt, in the shape of the
 findings publication: a person who did not prepare the build took `decl-wft-fb-build-publish`, bound to the artefact
-digest (`sha256:` form, the digest ICDEV[OS]'s admission recomputes), with the ledger event and its row hash. The
+digest (`sha256:` form, the digest ICDEV[OS]'s admission recomputes), with the ledger event and its row hash. Since
+icx-sec-01 it also carries `org` (optional, additive): the build target's owning org, which the declared step binds
+and the publisher must still be of, and cleared for the target's marking, at export. The pinned `icos-artefact/v1`
+manifest has no org field and is not changed; ICDEV[OS] binds the org through the registered system. The
 artefact travels as an `icos-release-transfer/v1` document with the publication BESIDE it
 (`{"bundle": ..., "publication": ...}`), exactly what `icdev_os/release/admission.py` reads through the one shared import
 (`icdev_os/publication.py` `split(raw, "beside")`, `check_publication`). ICDEV[OS] pins the step by setting

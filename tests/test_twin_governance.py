@@ -212,14 +212,21 @@ def test_cortex_observes_gates_chain_findings_with_threads(full_db):
     assert env["extra"]["recorded"] is True
 
 
+#: A reader of the seeded rows' tenant, cleared for their marking (icx-sec-01: a thread is followed only for a reader
+#: who may see its record; another tenant, or no reader, reads it as one that does not exist).
+READER = {"id": "u-twin-gov-reader", "role": "isso", "clearance": "CUI", "org": "default"}
+
+
 def test_cortex_threads_resolve_to_the_record_and_its_provenance(full_db):
     _seed_cortex()
-    t = gov.resolve_thread("cortex_audit:cgov-open")
+    assert not gov.resolve_thread("cortex_audit:cgov-open")["resolved"], "no reader: nothing (icx-sec-01)"
+    assert not gov.resolve_thread("cortex_audit:cgov-open", reader=dict(READER, org="another"))["resolved"]
+    t = gov.resolve_thread("cortex_audit:cgov-open", reader=READER)
     assert t["resolved"] and t["record"]["id"] == "cgov-open"
     assert t["provenance"]["id"] == "scr-ok"
-    f = gov.resolve_thread("cortex_finding:cef-old")
+    f = gov.resolve_thread("cortex_finding:cef-old", reader=READER)
     assert f["resolved"] and f["provenance"]["source_table"] == "cortex_governance"
-    gone = gov.resolve_thread("cortex_audit:cgov-missing")
+    gone = gov.resolve_thread("cortex_audit:cgov-missing", reader=READER)
     assert not gone["resolved"] and "no cortex_audit row" in gone["reason"]
     assert not gov.resolve_thread("nonsense")["resolved"]
 
@@ -377,7 +384,7 @@ def test_ace_observes_runs_checkpoints_aborts_and_trust(db):
     assert env["extra"]["summary"]["checkpoints_waiting"] == 2
     # every thread resolves
     for v in env["violations"]:
-        assert gov.resolve_thread(v["thread_id"])["resolved"], v["thread_id"]
+        assert gov.resolve_thread(v["thread_id"], reader=READER)["resolved"], v["thread_id"]
     assert _adapter("ace").replay(env["extra"]["observation_id"])["match"]
 
 
@@ -474,12 +481,18 @@ def test_console_page_observe_replay_and_thread(db, client):
                        json={"canvas": "ndc"}).status_code == 404
 
 
-def test_page_shows_why_buttons_for_each_finding(full_db, client):
+def test_page_shows_why_buttons_for_each_finding(full_db, client, monkeypatch):
     _seed_cortex()
     client.post("/twin-observatory/api/governance/observe", json={"canvas": "cortex"})
     body = client.get("/twin-observatory/governance").get_data(as_text=True)
     assert 'data-thread="cortex_audit:cgov-hole"' in body
-    thread = client.get("/twin-observatory/api/governance/thread?id=cortex_audit:cgov-hole")
+    url = "/twin-observatory/api/governance/thread?id=cortex_audit:cgov-hole"
+    assert client.get(url).status_code == 404, "no one signed in: no thread (icx-sec-01)"
+    # A signed-in person of the rows' tenant (the route asks governance.thread_reader for who is asking).
+    from tools.twin_core import governance
+
+    monkeypatch.setattr(governance, "thread_reader", lambda: READER)
+    thread = client.get(url)
     assert thread.status_code == 200 and thread.get_json()["record"]["id"] == "cgov-hole"
 
 

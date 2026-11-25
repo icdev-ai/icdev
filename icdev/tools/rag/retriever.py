@@ -385,9 +385,13 @@ class RAGRetriever:
 
         # SEC: Warn when tenant_id is empty in multi-tenant environment
         if not tenant_id:
-            import os
+            try:
+                from tools.saas.db.db_compat import is_shared_deployment
 
-            if os.environ.get("ICDEV_MULTI_TENANT", "").lower() in ("true", "1", "yes"):
+                shared = is_shared_deployment()
+            except Exception:  # noqa: BLE001 — unreadable: warn as if shared
+                shared = True
+            if shared:
                 logger.warning(
                     "RAGRetriever initialized without tenant_id in multi-tenant mode. "
                     "Queries may return cross-tenant results."

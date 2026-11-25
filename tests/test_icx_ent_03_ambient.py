@@ -33,6 +33,21 @@ def platform_db(request):
     return request.getfixturevalue("wf_db")
 
 
+@pytest.fixture(autouse=True)
+def people_rows(monkeypatch):
+    """icx-sec-01: the export re-reads the publisher's own row (tools.dashboard.auth.get_user_by_id). The test people
+    are made up per run, so their rows are given here; tests/test_icx_sec_01_ambient.py reads a real row on PG."""
+    from tools.dashboard import auth
+
+    def row(uid, tenant_id=None):
+        uid = str(uid)
+        if uid.startswith("u-ent03-amb-"):
+            return {"id": uid, "role": "isso", "tenant_id": ORG, "clearance_level": "CUI", "status": "active"}
+        return None
+
+    monkeypatch.setattr(auth, "get_user_by_id", row)
+
+
 def _rollback_close(conn):
     with contextlib.suppress(Exception):
         conn.rollback()

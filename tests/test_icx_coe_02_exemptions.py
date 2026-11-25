@@ -32,6 +32,8 @@ REQUESTER = {"id": "u-coe02-requester", "role": "reviewer"}
 APPROVER = {"id": "u-coe02-approver", "role": "reviewer"}
 OTHER = {"id": "u-coe02-other", "role": "isso"}
 DEVELOPER = {"id": "u-coe02-dev", "role": "developer"}
+#: icx-sec-01: an exemption row's thread is followed only by a reader of its tenant cleared for its marking.
+TENANT_READER = {"id": "u-coe02-reader", "role": "isso", "clearance": "CUI", "org": "default"}
 CARD = "component-readiness"
 
 #: The exemption log keeps UTC dates.
@@ -406,8 +408,16 @@ def test_legacy_exemptions_are_migrated_by_the_bootstrap_identity_never_granted(
     env = governance.observe(governance.adapter_for("idp"), record=False)
     mig = [x for x in env["violations"] if x["rule_id"] == "coe.exemption.migrated"]
     assert mig and mig[0]["thread_id"] == f"idp_exemption:{last['id']}"
-    t = governance.resolve_thread(mig[0]["thread_id"])
-    assert t["resolved"] and t["record"]["actor_kind"] == "bootstrap"
+    # icx-sec-01 (review M1): the bootstrap row carries alice's exemption and bob's grant, and the legacy rows name no
+    # tenant: it is no one's, not the platform's. No reader of any org, and no agent, follows it; the answer is exactly
+    # an unknown id's. (The finding still names it, for the owner, on the console's own twin page.)
+    from tools.store_publisher.service import mcp_reader
+
+    unknown = "idp_exemption:" + "0" * 32
+    for r in (TENANT_READER, dict(TENANT_READER, org="another-org", clearance="SECRET"), mcp_reader("coe02"), None):
+        got, want = governance.resolve_thread(mig[0]["thread_id"], reader=r), governance.resolve_thread(unknown, reader=r)
+        assert not got["resolved"] and {k: v for k, v in got.items() if k != "thread_id"} == \
+            {k: v for k, v in want.items() if k != "thread_id"}, r
 
 
 def test_the_migration_adds_columns_and_triggers(tmp_path, monkeypatch):
@@ -577,7 +587,9 @@ def test_the_twin_reports_expired_and_migrated_exemptions_with_threads(coe_db):
 
     e = _ex()
     then = _clock(40)
-    row = _request(component="coe02-twin", expires=(TODAY - timedelta(days=10)).isoformat(), clock=then)
+    # icx-sec-01: a request carries its requester's org (the route stamps it); its thread is that org's only.
+    row = _request(component="coe02-twin", expires=(TODAY - timedelta(days=10)).isoformat(), clock=then,
+                   tenant_id=TENANT_READER["org"])
     cur = e._latest(e._open_connection(), row["exemption_key"])
     e.decide_exemption(row["exemption_key"], decision="grant", reason="ok", read_digest=e.exemption_digest(cur),
                        actor=APPROVER, clock=then)
@@ -591,8 +603,9 @@ def test_the_twin_reports_expired_and_migrated_exemptions_with_threads(coe_db):
     found = {x["rule_id"]: x for x in env["violations"]}
     exp = found["coe.exemption.expired"]
     assert exp["severity"] == "high" and row["exemption_key"] in exp["title"]
-    t = governance.resolve_thread(exp["thread_id"])
+    t = governance.resolve_thread(exp["thread_id"], reader=TENANT_READER)
     assert t["resolved"] and t["source"] == "idp_rule_exemptions" and t["record"]["event"] == "approved"
+    assert not governance.resolve_thread(exp["thread_id"], reader=dict(TENANT_READER, org="another-org"))["resolved"]
     assert "coe.exemption.expiring" in found
     assert env["extra"]["summary"]["exemption_gate"] == "fail"
     rep = governance.replay(adapter, env["extra"]["observation_id"])

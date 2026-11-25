@@ -30,7 +30,9 @@ Three rules hold everywhere:
 2. **Every violation carries a thread.** ``thread_id`` names the record the
    finding rests on (``cortex_audit:<id>``, ``ace_audit:<id>``, ...).
    :func:`resolve_thread` follows it to that record and, where the record names
-   one, on to its ``source_citation_registry`` provenance row.
+   one, on to its ``source_citation_registry`` provenance row -- for a reader who
+   may see the item the record belongs to (icx-sec-01). For anyone else the
+   answer is exactly what an id that does not exist gets: no existence oracle.
 3. **The schema module is not touched.** :func:`tools.twin_core.schema.twin_verdict`
    builds the envelope; ``thread_id`` is added to each canonical violation after,
    in order, because the vendored schema keeps only its own fields.
@@ -669,16 +671,16 @@ _THREAD_TABLES = {
                 ("event_id", "adr_id", "version", "event", "actor", "actor_kind", "step_id",
                  "reason", "entry_digest", "row_hash", "created_at")),
     # icx-ent-03: one event of a target's signed factory builds (prepared, published, refused). The artefact stays
-    # in payload_json, never in a thread, and this generic resolver (any observer, MCP twin_governance) names no
-    # target, person, reason or step: the console's /factory-builds/api/twin?thread= resolves the row for a reader
-    # who may see its target.
+    # in payload_json, never in a thread, and this generic resolver names no target, person, reason or step: the
+    # console's /factory-builds/api/twin?thread= resolves the whole row. icx-sec-01: either way only for a reader
+    # who may see its target (_ITEM_ROWS).
     "factory_builds": ("core", "fb_events", "event_id",
                        ("event_id", "event", "actor_kind", "content_digest", "row_hash", "created_at")),
     # icx-coe-03: one event in a repo's conformance bundles (prepared, published, refused).
     # icx-ent-02: one event of a customer system's objective-evidence reports (prepared, published,
     # refused), on the system's hash chain. The observations stay in payload_json, never in a thread, and this
-    # generic resolver (any observer, MCP twin_governance) names no system, person, reason or step: the console's
-    # /evidence-collectors/api/twin?thread= resolves the whole row for a reader who may see its system.
+    # generic resolver names no system, person, reason or step: the console's /evidence-collectors/api/twin?thread=
+    # resolves the whole row. icx-sec-01: either way only for a reader who may see its system (_ITEM_ROWS).
     "evidence_collectors": ("core", "ec_events", "event_id",
                             ("event_id", "event", "actor_kind", "content_digest", "row_hash", "created_at")),
     "coe_conformance": ("core", "coe_conformance_events", "event_id",
@@ -695,13 +697,167 @@ _THREAD_TABLES = {
                      ("event_id", "stream", "event", "subject", "actor", "actor_kind", "actor_role", "step_id",
                       "reason", "content_digest", "row_hash", "created_at")),
     # icx-coe-04: one declared decision step (its rows in wf_decision_steps), the thread a service
-    # scaffolded on a golden path gives its findings.
+    # scaffolded on a golden path gives its findings. icx-sec-01: held to its workflow item's visibility
+    # (_STEP_ITEMS); a step whose item declares none resolves for no one.
     "wf_step": ("rls", "wf_decision_steps", "step_id",
                 ("event_id", "step_id", "event", "template_id", "surface", "subject", "actor", "actor_role",
                  "decision", "reason", "created_at")),
 }
 #: Thread kinds whose ref is an integer row id.
 _INT_REFS = ("ace_audit", "ace_event", "aiify_decision", "audit_trail")
+
+
+# ── who may follow a thread (icx-sec-01) ─────────────────────────────────────
+#
+# A thread names a record; knowing its id is not a right to read it. A reader is ``{id, role, clearance, org}`` (the
+# shape every module console uses; an agent through MCP is in no org). Each kind below is followed only for a reader
+# who may see the item its record belongs to, and for anyone else -- including no reader at all -- the answer is the
+# one an id that does not exist gets, byte for byte. A kind in none of these is open to any observer:
+#
+#   * platform registers, open by design: coe_standard, coe_adr, coe_golden_path, coe_conformance, vulnresearch,
+#     twin_obs, config, conformance;
+#   * NOT HELD YET (they still resolve for anyone holding an id; no visibility rule exists for their items -- card
+#     icx-sec-02): ace_instance, ace_trust, ace_event, ace_grant (the ACE engine) and mdz_assessment, migration_plan,
+#     legacy_app, mc_refactor_job, aiify_decision (project-scoped modernisation records with no project-to-tenant
+#     rule). audit_trail is held to its marking only, not to a project's tenant.
+
+def _exemption_is_platform(row: dict) -> bool:
+    """An exemption with no tenant is the platform's only when it was the platform's FROM THE START: its first row
+    was written by a bootstrap identity (``actor_kind: bootstrap``, ``requested_by`` a ``bootstrap:`` id). A
+    bootstrap row appended later -- ``migrate_legacy`` gives a PERSON's legacy approved exemption an expiry -- carries
+    that person's exemption and is not (review M1). Unreadable: not the platform's."""
+    conn = None
+    try:
+        conn = _thread_conn("rls")
+        first = conn.execute(
+            "SELECT actor_kind, requested_by FROM idp_rule_exemptions WHERE exemption_key = %s AND event_index = 1",
+            (str(row.get("exemption_key") or ""),)).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("exemption first row %s: %s", row.get("exemption_key"), exc)
+        return False
+    finally:
+        close_quietly(conn)
+    if len(first) != 1:
+        return False
+    kind, requested_by = tuple(first[0])
+    return str(kind or "") == "bootstrap" and str(requested_by or "").startswith("bootstrap:")
+
+
+#: Rows that carry their own tenant and marking: a reader of that tenant, cleared for it. A row with NO tenant fails
+#: closed, unless the kind can tell it is the platform's (its platform test; for an exemption: platform from its first
+#: row, never from a later bootstrap row); then any reader cleared for it.
+#: kind -> (tenant column, marking column, platform test or None)
+_TENANT_ROWS = {
+    "cortex_audit": ("tenant_id", "classification", None),
+    "cortex_finding": ("tenant_id", "classification", None),
+    "idp_exemption": ("tenant_id", "classification", _exemption_is_platform),
+    "studio_workflow": ("tenant_id", "classification", None),
+}
+#: Rows that carry a marking and no tenant: a reader cleared for it.
+_MARKED_ROWS = {"audit_trail": "classification", "ace_audit": "classification"}
+#: Rows of an item with its own visibility rule: the owning module resolves the row for a reader
+#: (``thread_record(event_id, reader)``, None for a row that does not exist and one the reader may not see alike).
+_ITEM_ROWS = {"factory_builds": "tools.factory_builds.service",
+              "evidence_collectors": "tools.evidence_collectors.service"}
+
+
+def _fb_target(ref: str, reader: dict | None) -> bool:
+    from tools.factory_builds import config, service
+
+    t = config.target(config.load(), ref)
+    return t is not None and service.visible(t, reader)
+
+
+def _sp_package(ref: str, reader: dict | None) -> bool:
+    from tools.store_publisher import config, service
+
+    p = config.package(config.load(), ref)
+    return p is not None and service.visible(p, reader)
+
+
+def _ec_system(ref: str, reader: dict | None) -> bool:
+    from tools.evidence_collectors import config, service
+
+    s = config.system(config.load(), ref)
+    return s is not None and service.visible(s, reader)
+
+
+#: A declared step's workflow item: its template -> (the subject prefix it takes, who may see that item).
+_STEP_ITEMS = {
+    "decl-wft-fb-build-publish": ("factory_build:", _fb_target),
+    "icos-store-publish": ("store_package:", _sp_package),
+    "decl-wft-ec-evidence-publish": ("objective_evidence:", _ec_system),
+}
+#: Templates whose items are platform registers whose own threads any observer follows (coe_standard, coe_adr,
+#: coe_golden_path, coe_conformance, vulnresearch): their steps are as open as the register. Every other template's
+#: steps -- a tenant's bid, agent launch, exemption, modernisation decision, a generated service's item -- declare no
+#: item visibility here, so they resolve for no one through this resolver (each module's own pages show its items).
+_PLATFORM_STEP_TEMPLATES = ("decl-wft-coe-standard-", "decl-wft-coe-adr-", "decl-wft-coe-golden-path-",
+                            "decl-wft-coe-conformance-", "decl-wft-vr-")
+
+
+def thread_reader() -> dict | None:
+    """The signed-in person as a thread reader, org and clearance read fresh from their own row; None for no request,
+    a service key or an unreadable row (fail closed). The strict reader the module consoles already share."""
+    from tools.store_publisher.service import current_reader
+
+    return current_reader()
+
+
+def agent_reader(agent: str) -> dict:
+    """An agent through MCP: cleared to the MCP results' marking, in no org (it sees synthetic items only)."""
+    from tools.store_publisher.service import mcp_reader
+
+    return mcp_reader(agent)
+
+
+def _cleared_for(reader: dict | None, label: Any) -> bool:
+    """Bell-LaPadula read-down over ICDEV's labels (``security_context``). An unknown clearance or label, or none,
+    fails closed; ``CUI // <category>`` is CUI."""
+    from tools.security.security_context import _CLASSIFICATION_LABELS, classifications_dominated_by
+
+    clearance = " ".join(str((reader or {}).get("clearance") or "").upper().split())
+    lab = " ".join(str(label or "").upper().split())
+    if clearance not in _CLASSIFICATION_LABELS or not lab:
+        return False
+    held = classifications_dominated_by(clearance)
+    if lab in held:
+        return True
+    return lab.replace(" ", "").startswith("CUI//") and "CUI" in held
+
+
+def _of_tenant(reader: dict | None, row: dict, kind: str) -> bool:
+    """A row of a tenant is its tenant's only (the reader's org through ``effective_org``: a person with no tenant on
+    a single-tenant install is in ``default``). A row with NO tenant is the platform's only when identifiably so, and
+    then only for a reader at all; otherwise it fails closed."""
+    from tools.saas.auth.middleware import effective_org
+
+    if not reader:
+        return False
+    tcol, _, is_platform = _TENANT_ROWS[kind]
+    tenant = str(row.get(tcol) or "").strip()
+    if not tenant:
+        return is_platform is not None and bool(is_platform(row))
+    org = effective_org(reader)
+    return bool(org) and org == tenant
+
+
+def _step_visible(rows: list[dict], reader: dict | None) -> bool:
+    """A step's rows share one template and subject; the step is visible when its item is."""
+    templates, subjects = {r.get("template_id") for r in rows}, {r.get("subject") for r in rows}
+    if len(templates) != 1 or len(subjects) != 1:
+        return False
+    tid, subject = str(next(iter(templates)) or ""), str(next(iter(subjects)) or "")
+    if tid.startswith(_PLATFORM_STEP_TEMPLATES):
+        return True
+    item = _STEP_ITEMS.get(tid)
+    if item is None or not subject.startswith(item[0]) or not reader:
+        return False
+    try:
+        return bool(item[1](subject[len(item[0]):], reader))
+    except Exception as exc:  # noqa: BLE001 — an item that cannot be looked up is not visible
+        logger.debug("wf_step item %s: %s", subject, exc)
+        return False
 
 
 def _thread_conn(kind: str):
@@ -744,11 +900,13 @@ def _provenance(provenance_id: str) -> Optional[dict]:
         close_quietly(conn)
 
 
-def resolve_thread(thread_id: str) -> dict:
-    """Follow a violation's thread to the record it rests on.
+def resolve_thread(thread_id: str, reader: dict | None = None) -> dict:
+    """Follow a violation's thread to the record it rests on, for ``reader``.
 
     ``resolved`` is false when the record is gone or unreadable; that is itself
-    worth seeing, and never hidden behind an empty 200.
+    worth seeing, and never hidden behind an empty 200. A record of an item the
+    reader may not see (another org, a higher marking, an agent, no reader) reads
+    exactly as one that does not exist (icx-sec-01).
     """
     kind, _, ref = str(thread_id or "").partition(":")
     out: dict[str, Any] = {"thread_id": thread_id, "kind": kind, "resolved": False,
@@ -758,19 +916,37 @@ def resolve_thread(thread_id: str) -> dict:
         return out
     if kind in _THREAD_TABLES:
         conn_kind, table, id_col, cols = _THREAD_TABLES[kind]
+        gate = tuple((_TENANT_ROWS.get(kind) or ())[:2]) or ((_MARKED_ROWS[kind],) if kind in _MARKED_ROWS else ())
+        select = tuple(cols) + tuple(c for c in gate if c not in cols)
         conn = None
         try:
-            conn = _thread_conn(conn_kind)
-            rows = rows_as_dicts(conn.execute(
-                f"SELECT {', '.join(cols)} FROM {table} WHERE {id_col} = %s",  # nosec B608
-                (int(ref) if kind in _INT_REFS and ref.isdigit() else ref,)), cols)
+            if kind in _ITEM_ROWS:
+                import importlib
+
+                rec = importlib.import_module(_ITEM_ROWS[kind]).thread_record(ref, reader)
+                rows = [] if rec is None else [{c: rec.get(c) for c in cols}]
+            else:
+                conn = _thread_conn(conn_kind)
+                rows = rows_as_dicts(conn.execute(
+                    f"SELECT {', '.join(select)} FROM {table} WHERE {id_col} = %s",  # nosec B608
+                    (int(ref) if kind in _INT_REFS and ref.isdigit() else ref,)), select)
         except Exception as exc:  # noqa: BLE001
             out["reason"] = f"{table} unreadable: {exc}"
             return out
         finally:
             close_quietly(conn)
+        if kind in _TENANT_ROWS:
+            mcol = _TENANT_ROWS[kind][1]
+            rows = [r for r in rows if _of_tenant(reader, r, kind) and _cleared_for(reader, r.get(mcol))]
+        elif kind in _MARKED_ROWS:
+            rows = [r for r in rows if _cleared_for(reader, r.get(_MARKED_ROWS[kind]))]
+        elif kind == "wf_step" and rows and not _step_visible(rows, reader):
+            rows = []
+        rows = [{c: r.get(c) for c in cols} for r in rows]
         if not rows:
-            out["reason"] = f"no {table} row {ref}"
+            # The ref is in thread_id already; the reason does not echo it, so a hidden row's answer and an unknown
+            # one's are the same apart from the id the caller sent.
+            out["reason"] = f"no {table} row with that id"
             return out
         if table == "ace_dispatch_grants":  # the grant itself, then what followed
             rows.sort(key=lambda r: (r["event"] != "granted", str(r["created_at"])))

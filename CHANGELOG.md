@@ -8,6 +8,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+- **Twin threads are held to their item (icx-sec-01).** The shared governance thread resolver follows a thread only for
+  a reader who may see the record's item (a declared step by its workflow item, factory builds and objective evidence
+  by their module's reader rule, Cortex, exemption and studio rows by their own tenant and marking, audit rows by their
+  marking); for anyone else the answer is exactly what an unknown id gets. Studio workflows and exemption requests are
+  now stamped with their writer's org, and migration 20261124230000 gives old studio workflows their creator's tenant.
+  A studio workflow whose creator was a fixed name (`studio`, `processify`) and a legacy exemption carry no tenant and
+  can no longer be followed from a twin finding.
+- **Factory builds bind their org.** The declared publish step and the publication carry the target's org, and export
+  re-checks the publisher's org and clearance. **Factory builds published before this change must be published
+  again**: their export is refused with 409 `step_missing`.
+- **ClawHub promote is a named person's act.** `promoted_by` is the signed-in person (never the request body), an ISSO
+  or admin, never the shared bootstrap account; the route no longer approves its own review, and an import that needs
+  one is refused (ClawHub has no review path since the marketplace review queue was retired).
+
 ## [1.2.44] - 2026-10-11
 
 ### Added
